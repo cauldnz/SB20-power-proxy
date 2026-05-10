@@ -1,0 +1,147 @@
+{
+  "annotations": {"list": []},
+  "description": "Phase 0 capture overview — power, cadence, page mix, and channel events for one or more capture sessions.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "influxdb", "uid": "InfluxDB"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisLabel": "Watts",
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 4,
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "watt"
+        }
+      },
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]},
+        "tooltip": {"mode": "multi", "sort": "desc"}
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"${INFLUX_BUCKET}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ant_power_only\")\n  |> filter(fn: (r) => r._field == \"power_w\")\n  |> filter(fn: (r) => r.capture_id =~ /${capture_id:regex}/)",
+          "refId": "A"
+        }
+      ],
+      "title": "Power over time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "InfluxDB"},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"drawStyle": "line", "lineWidth": 1},
+          "unit": "rpm"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 9},
+      "id": 2,
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom"},
+        "tooltip": {"mode": "multi"}
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"${INFLUX_BUCKET}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ant_power_only\" or r._measurement == \"ant_crank_torque\")\n  |> filter(fn: (r) => r._field == \"cadence_rpm\")\n  |> filter(fn: (r) => r.capture_id =~ /${capture_id:regex}/)",
+          "refId": "A"
+        }
+      ],
+      "title": "Cadence over time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "InfluxDB"},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"drawStyle": "bars", "fillOpacity": 30}
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 9},
+      "id": 3,
+      "options": {
+        "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["sum", "mean"]},
+        "tooltip": {"mode": "multi"}
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"${INFLUX_BUCKET}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ant_page_count\")\n  |> filter(fn: (r) => r.capture_id =~ /${capture_id:regex}/)\n  |> aggregateWindow(every: 5s, fn: sum, createEmpty: false)\n  |> group(columns: [\"page_name\"])",
+          "refId": "A"
+        }
+      ],
+      "title": "Page mix (counts per 5s, by page name)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "InfluxDB"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 17},
+      "id": 4,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "query": "from(bucket: \"${INFLUX_BUCKET}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ant_manufacturer\" or r._measurement == \"ant_product_info\" or r._measurement == \"ant_battery\")\n  |> filter(fn: (r) => r.capture_id =~ /${capture_id:regex}/)\n  |> last()\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")",
+          "refId": "A"
+        }
+      ],
+      "title": "Common Pages — last seen values",
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "influxdb", "uid": "InfluxDB"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 25},
+      "id": 5,
+      "options": {"showHeader": true},
+      "targets": [
+        {
+          "query": "from(bucket: \"${INFLUX_BUCKET}\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ant_calibration\" or r._measurement == \"ant_channel_event\" or r._measurement == \"ant_acknowledged\")\n  |> filter(fn: (r) => r.capture_id =~ /${capture_id:regex}/)\n  |> sort(columns: [\"_time\"], desc: false)",
+          "refId": "A"
+        }
+      ],
+      "title": "Channel events, calibration, ACKs (chronological)",
+      "type": "table"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["sb20proxy", "phase-0"],
+  "templating": {
+    "list": [
+      {
+        "current": {"selected": true, "text": "All", "value": "$__all"},
+        "datasource": {"type": "influxdb", "uid": "InfluxDB"},
+        "definition": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${INFLUX_BUCKET}\", tag: \"capture_id\")",
+        "includeAll": true,
+        "label": "Capture",
+        "multi": true,
+        "name": "capture_id",
+        "options": [],
+        "query": {
+          "query": "import \"influxdata/influxdb/schema\"\nschema.tagValues(bucket: \"${INFLUX_BUCKET}\", tag: \"capture_id\")"
+        },
+        "refresh": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {"from": "now-30m", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Phase 0 Capture Overview",
+  "uid": "sb20-phase0-overview",
+  "version": 1,
+  "weekStart": ""
+}

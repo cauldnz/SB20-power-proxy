@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS detritus
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project-specific
+# Don't commit Influx token or env values
+code/docker/.env
+
+# Don't commit huge raw captures by default — but DO commit findings/
+# (the analyses, decisions log, summaries). If a particular capture file
+# is small enough and worth committing, add it explicitly with `git add -f`.
+findings/captures/*.jsonl
+findings/captures/*.json
+!findings/captures/.gitkeep
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# mypy / ruff caches
+.mypy_cache/
+.ruff_cache/

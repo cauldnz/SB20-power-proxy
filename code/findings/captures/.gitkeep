@@ -1,0 +1,4 @@
+# This file just exists so the directory is tracked by git.
+# Real captures go alongside this file: A-stagesL-steady-YYYYMMDD-HHMM.jsonl etc.
+# By default, *.jsonl in this directory is gitignored (raw captures can get big).
+# Commit specific captures explicitly with `git add -f` if they're worth keeping.

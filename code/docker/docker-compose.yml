@@ -1,0 +1,64 @@
+# Docker Compose stack for InfluxDB 2.x + Grafana — local development.
+# Used for Phase 0 capture analysis. Runs InfluxDB + a pre-configured Grafana
+# pointing at it, and ingests JSONL captures via scripts/03_ingest_jsonl_to_influx.py.
+#
+# Usage:
+#   cp .env.example .env  # then edit values if you want
+#   docker compose up -d
+#
+# Then:
+#   - InfluxDB UI:  http://localhost:8086
+#   - Grafana UI:   http://localhost:3000  (login: admin / admin, change on first login)
+#
+# Data persists in named volumes (influxdb-data, grafana-data) so you can
+# `docker compose down` and back up without losing captures.
+
+services:
+  influxdb:
+    image: influxdb:2.7
+    container_name: sb20proxy-influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USERNAME:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD:-changeme-please}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG:-sb20proxy}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET:-captures}
+      DOCKER_INFLUXDB_INIT_RETENTION: 0  # 0 = infinite — these are forensic captures
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN:-dev-token-change-me}
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: sb20proxy-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      INFLUX_TOKEN: ${INFLUX_TOKEN:-dev-token-change-me}
+      INFLUX_ORG: ${INFLUX_ORG:-sb20proxy}
+      INFLUX_BUCKET: ${INFLUX_BUCKET:-captures}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  influxdb-data:
+  influxdb-config:
+  grafana-data:

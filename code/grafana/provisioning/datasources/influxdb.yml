@@ -1,0 +1,19 @@
+apiVersion: 1
+
+# Auto-provisioned InfluxDB datasource for Grafana. Reads token/org/bucket
+# from environment variables set in docker-compose.yml.
+
+datasources:
+  - name: InfluxDB
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    isDefault: true
+    jsonData:
+      version: Flux
+      organization: ${INFLUX_ORG}
+      defaultBucket: ${INFLUX_BUCKET}
+      tlsSkipVerify: true
+    secureJsonData:
+      token: ${INFLUX_TOKEN}
+    editable: true
