@@ -218,3 +218,15 @@ Owner direction (evening before the first full session): the power-source-consis
 - **Productisation angle (use case 3):** every SB20 owner's meter pair differs; the guided calibration ride becomes the onboarding flow — ride 12 minutes, the tool fits *your* pair's model, the fitted parameters become proxy config.
 - **Data capture for the model:** the proper version is dual ANT+ capture — two sticks, one slave per meter, same ride, perfectly time-aligned JSONL on both sides (the owner has two sticks). Tomorrow's cheap first pass: a watch records the Assioma side while Session A captures the Stages side; the **30 s coast block at t=10:30 is the cross-correlation sync marker** between the FIT file and the JSONL (a distinctive zero-power notch in both streams).
 - **Discipline:** no regression code and no grid-ride session design freeze until dual-meter data exists. Analyse tomorrow's first-pass deltas first; design the calibration ride from what they show.
+
+## 2026-06-10 — Baseline workaround documented: dual-FTP hack and why it's a dead end
+
+Current state of the art (owner's actual practice, pre-proxy): set FTP=330 on the watch (Assioma reference) and FTP=367 in the Stages bike control, so that Zone-N / %FTP workouts "roughly line up." This is a constant-ratio correction (367/330 ≈ 1.112) applied at the zone-definition layer — %FTP targets cancel a constant multiplicative error if both FTPs were measured on their own meters.
+
+Why it frays (and why the proxy + calibration model is a different class of solution):
+1. If the inter-meter delta is torque-shaped (see calibration-model entry above), the cancellation only holds near the power/cadence where the FTPs were measured — zones line up in the middle and drift at the extremes.
+2. Absolute-watt workouts (TrainerRoad/Zwift watt-specified intervals) bypass FTP scaling entirely and break.
+3. Cross-meter analytics: TSS/IF/CTL and ride files are computed in two different "currencies" with no exchange rate — indoor and outdoor files aren't comparable.
+4. It cannot touch anything that reads raw watts from the bike's broadcasts.
+
+The proxy collapses this to one FTP / one currency (bike's erg loop runs on Assioma-derived watts), and the per-pair fitted calibration replaces the constant with a function. Keep this story for the README / phase-0 report framing: "what owners do today, and why it can't be fixed at the app layer."
