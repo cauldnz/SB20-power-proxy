@@ -19,7 +19,8 @@ code/
 │   ├── 02_capture_assioma.py       Phase 0 — capture Assioma
 │   ├── 03_ingest_jsonl_to_influx.py  Analysis — JSONL → InfluxDB
 │   ├── 04_summarize_capture.py     Analysis — JSONL → markdown summary
-│   └── 05_diff_captures.py         Analysis — diff two JSONLs
+│   ├── 05_diff_captures.py         Analysis — diff two JSONLs
+│   └── 06_capture_ble.py           Optional parallel BLE (CPS) capture — native Windows, see START-HERE
 └── src/sb20proxy/
     ├── __init__.py
     ├── reading.py             ← canonical PowerReading event
@@ -40,8 +41,12 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev,analysis]"
 
-# Linux only — udev rule for ANT+ stick
-sudo $(which python) -m openant.udev_rules
+# Linux only — udev rule for ANT+ stick (write directly; openant's helper
+# isn't pip-shipped). Then unplug+replug the stick.
+sudo tee /etc/udev/rules.d/42-ant-usb-sticks.rules >/dev/null <<'RULE'
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0fcf", MODE="0666"
+RULE
+sudo udevadm control --reload-rules && sudo udevadm trigger
 
 # Optional — bring up InfluxDB + Grafana for capture analysis
 cd docker
@@ -59,31 +64,36 @@ See `../09-exploring-captures.md` for the full capture-to-analysis workflow.
 python scripts/01_capture_stages.py \
     --device-id 12345 \
     --duration 900 \
-    --output ../findings/captures/A-stagesL-steady-$(date +%Y%m%d-%H%M).jsonl
+    --output findings/captures/A-stagesL-steady-$(date +%Y%m%d-%H%M).jsonl
+
+# CHECKPOINT: validate Session A before running any further sessions.
+# PASS (exit 0) / REVIEW (exit 1) / FAIL (exit 2). Add --markdown to paste into chat.
+python scripts/00_validate_capture.py \
+    --input 'findings/captures/A-stagesL-steady-*.jsonl'   # keep glob quoted
 
 # Same for Assioma
 python scripts/02_capture_assioma.py \
     --device-id 67890 \
     --duration 900 \
-    --output ../findings/captures/D-assioma-steady-$(date +%Y%m%d-%H%M).jsonl
+    --output findings/captures/D-assioma-steady-$(date +%Y%m%d-%H%M).jsonl
 
 # Ingest into InfluxDB so you can explore visually in Grafana
 export INFLUXDB_TOKEN=dev-token-change-me  # match docker/.env
 python scripts/03_ingest_jsonl_to_influx.py \
-    --input ../findings/captures/A-stagesL-steady-NNNN.jsonl \
+    --input findings/captures/A-stagesL-steady-NNNN.jsonl \
     --source-role stagesL
 
 # Produce a markdown summary (good for sharing with Claude)
 python scripts/04_summarize_capture.py \
-    --input ../findings/captures/A-stagesL-steady-NNNN.jsonl \
-    > ../findings/captures/A-stagesL-summary.md
+    --input findings/captures/A-stagesL-steady-NNNN.jsonl \
+    > findings/captures/A-stagesL-summary.md
 
 # Produce a side-by-side diff of two captures (the headline Phase 0 artefact)
 python scripts/05_diff_captures.py \
-    --left  ../findings/captures/A-stagesL-steady-NNNN.jsonl \
-    --right ../findings/captures/D-assioma-steady-NNNN.jsonl \
+    --left  findings/captures/A-stagesL-steady-NNNN.jsonl \
+    --right findings/captures/D-assioma-steady-NNNN.jsonl \
     --left-label "Stages L" --right-label "Assioma" \
-    > ../findings/captures/diff-stages-vs-assioma.md
+    > findings/captures/diff-stages-vs-assioma.md
 ```
 
 See `../03-central-hypothesis-and-phase-zero.md` for the full Phase 0 capture plan.

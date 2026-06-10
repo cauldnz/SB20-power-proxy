@@ -50,8 +50,13 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 
-# udev rule for ANT+ stick (lets us run without sudo)
-sudo python -m openant.udev_rules
+# udev rule for ANT+ stick (lets us run without sudo). Written directly —
+# openant's `udev_rules` helper copies from a relative resources/ path that
+# pip doesn't ship, so it errors.
+sudo tee /etc/udev/rules.d/42-ant-usb-sticks.rules >/dev/null <<'RULE'
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0fcf", MODE="0666"
+RULE
+sudo udevadm control --reload-rules && sudo udevadm trigger
 # unplug and replug the ANT+ stick after this
 ```
 
@@ -94,8 +99,8 @@ cd .. && pip install -e ".[analysis]"
 
 # After running a capture (say A-stagesL-steady-NNNN.jsonl):
 export INFLUXDB_TOKEN=dev-token-change-me  # match docker/.env
-python scripts/03_ingest_jsonl_to_influx.py --input ../findings/captures/A-stagesL-steady-NNNN.jsonl --source-role stagesL
-python scripts/04_summarize_capture.py --input ../findings/captures/A-stagesL-steady-NNNN.jsonl > ../findings/captures/A-stagesL-summary.md
+python scripts/03_ingest_jsonl_to_influx.py --input findings/captures/A-stagesL-steady-NNNN.jsonl --source-role stagesL
+python scripts/04_summarize_capture.py --input findings/captures/A-stagesL-steady-NNNN.jsonl > findings/captures/A-stagesL-summary.md
 ```
 
 The summary script produces markdown that's easy to share with Claude for collaborative analysis. Grafana is for visual pattern-matching the owner does on their own. The diff script (`05_diff_captures.py`) compares two captures side-by-side and is the core Phase 0 analytical artefact.
@@ -120,22 +125,24 @@ WSL2 with USB passthrough is the cleanest path. The capture scripts are POSIX-y 
 
 **One-time setup** is covered in detail in [`START-HERE.md`](START-HERE.md#one-time-setup-windows--wsl2--usb-passthrough). Quick summary:
 
-1. Install WSL2 + Ubuntu: `wsl --install -d Ubuntu` from Administrator PowerShell
+1. Install WSL2 + Ubuntu: `wsl --install -d Ubuntu` from Administrator PowerShell, then `wsl --update` (USB passthrough needs a recent WSL kernel — skip this and `lsusb` comes up empty after attach)
 2. Install [`usbipd-win`](https://github.com/dorssel/usbipd-win) for USB passthrough: `winget install --interactive --exact dorssel.usbipd-win`
 3. From Administrator PowerShell, with the ANT+ stick plugged in:
    ```powershell
    usbipd list                              # find the busid (look for VID 0fcf)
-   usbipd bind --busid <BUSID>              # one-time per stick
-   usbipd attach --wsl --busid <BUSID>      # per-WSL-session
+   usbipd bind --busid <BUSID>              # one-time per stick (persists)
+   usbipd attach --wsl --busid <BUSID>      # per-WSL-session (redo after reboot/shutdown)
    ```
-4. Inside WSL Ubuntu, verify with `lsusb | grep -i dynastream` — the stick should appear.
-5. Apply the openant udev rule inside WSL (so non-root scripts work):
+4. Inside WSL Ubuntu, verify with `lsusb | grep -i dynastream` — the stick should appear. Install system libs: `sudo apt update && sudo apt install -y python3 python3-venv libusb-1.0-0 libusb-1.0-0-dev usbutils`
+5. Write the udev rule so non-root scripts can use the stick, then detach + re-attach (PowerShell) so it applies:
    ```bash
-   sudo apt update && sudo apt install -y python3 python3-pip python3-venv libusb-1.0-0 libusb-1.0-0-dev
-   pip install --user openant
-   sudo $(python3 -m site --user-base)/bin/python3 -m openant.udev_rules
-   # then detach + re-attach the stick (in PowerShell) so the rule applies
+   sudo tee /etc/udev/rules.d/42-ant-usb-sticks.rules >/dev/null <<'RULE'
+   SUBSYSTEM=="usb", ATTRS{idVendor}=="0fcf", MODE="0666"
+   RULE
+   sudo udevadm control --reload-rules
+   sudo udevadm trigger --subsystem-match=usb --attr-match=idVendor=0fcf --action=add
    ```
+   Do **not** use openant's `python -m openant.udev_rules` helper: it copies a rules file from a relative `resources/` path that pip doesn't ship, so it errors. (In WSL, udev rules only auto-apply if systemd/udev is running; if not, run captures with `sudo $(which python) scripts/01_capture_stages.py ...` instead.)
 
 After that, all the Linux instructions in this doc work as-written.
 
@@ -170,7 +177,11 @@ cd ~/sb20-power-proxy/code
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
-sudo $(which python) -m openant.udev_rules
+# udev rule for ANT+ sticks (write directly; openant's helper isn't pip-shipped)
+sudo tee /etc/udev/rules.d/42-ant-usb-sticks.rules >/dev/null <<'RULE'
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0fcf", MODE="0666"
+RULE
+sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
 ### systemd unit (template — to be finalised in Phase 3)

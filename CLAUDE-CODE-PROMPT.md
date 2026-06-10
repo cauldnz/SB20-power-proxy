@@ -67,10 +67,21 @@ Don't run anything yet. Just read, summarise, and critique.
 
 ## Follow-up prompts (for later sessions)
 
+After Session A is captured by the owner (often before Claude Code is deeply involved):
+
+```
+I just ran Session A. Here's the validator output:
+
+[paste output from 00_validate_capture.py --markdown]
+
+Does this look right? Should I continue with sessions B–F, or is something
+wrong I need to fix first?
+```
+
 After Phase 0 captures are committed:
 
 ```
-Read findings/phase-0-report.md and findings/captures/*.jsonl.
+Read code/findings/phase-0-report.md and code/findings/captures/*.jsonl.
 
 Update 04-architecture.md to reflect what we now know vs what we assumed. Specifically:
 - Channel parameters table (what we need to spoof)
@@ -88,7 +99,7 @@ The Phase 1 replay failed. Symptoms:
 [paste exact symptoms]
 
 Captures from the failure are in:
-findings/captures/[paste paths]
+code/findings/captures/[paste paths]
 
 Form 3 hypotheses for what went wrong, in order of likelihood. For each:
 - What in the capture would confirm or refute it?

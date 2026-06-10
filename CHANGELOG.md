@@ -1,5 +1,223 @@
 # Changelog
 
+## Revision 9 — Guided ride wizard for the Phase-0 sessions
+
+Makes the capture sessions a single-command, talked-through experience so the
+owner can ride them solo (with Claude watching the JSONL live over
+`\\wsl.localhost` and chatting during the ride).
+
+### New
+- **`code/scripts/ride_wizard.py`** — interactive WSL wizard that runs
+  C-0 → A → optional B in one sitting: preflight (stick check), timed
+  on-screen cues with bell (when to zero-reset, power blocks in Stages watts,
+  the 30 s coast for zero-power samples, cadence-extreme blocks), a live
+  data heartbeat (message count + last power seen, with a loud warning if
+  nothing is arriving), automatic C-0 page-0x01 verdict, automatic Session A
+  validation, auto-generated per-session `-notes.md` timestamp annotations
+  (satisfying the Session C/A annotation requirement), and optional
+  auto-launch of the Windows BLE adv survey via WSL interop (`cmd.exe start`).
+  `--preview` shows the full cue flow at 20x speed without hardware.
+- **`RIDE-CARD.md`** (repo root) — one-page morning reference: stick attach,
+  wizard start, session tables, troubleshooting, live-chat workflow, and the
+  optional Assioma-on-watch recording for the open question #7 scaling data.
+
+### Fixed during in-WSL testing (real-environment shakeout)
+- `importlib` loading of the validator must register the module in
+  `sys.modules` first — `@dataclass` resolves its module that way on
+  Python 3.12 and crashes otherwise.
+- A `CueThread._stop` Event attribute shadowed `threading.Thread._stop()`,
+  crashing `join()` — renamed. Both found by running the actual preview in
+  the owner's WSL distro rather than assuming.
+
+## Revision 8 — Parallel BLE capture (optionality for a BLE-path implementation)
+
+Adds passive BLE Cycling Power capture alongside the ANT+ sessions, motivated by
+implementation optionality: a future low-cost target like an **ESP32 cannot speak
+ANT+** (no ANT radio), so any ESP32/QZ endgame runs on the BLE path — and the BLE
+protocol model of the Stages cranks is capturable for free during the rides we're
+already doing. Existing DIY projects (e.g. kochcodes/ESP32_BLE_CyclingPowerMeter)
+prove ESP32-as-CPS-peripheral is viable.
+
+### New
+- **`code/scripts/06_capture_ble.py`** — bleak-based, cross-platform (Windows/
+  Linux/macOS) BLE capture: advertisement survey, GATT table dump, device-info
+  reads, and decoded Cycling Power Measurement (0x2A63) notifications to JSONL
+  (same envelope as the ANT+ captures; `protocol: "ble"` in session_start).
+  **Passive by design** — never writes to any characteristic; the Control Point
+  (0x2A66) is logged as present but untouched. Auto-reconnects on link drops.
+  CPS flag-field decoder unit-tested against synthetic payloads incl. truncation.
+- **Windows-side venv** at `code/.venv-win` (bleak 3.0.2 / Python 3.14) — BLE
+  capture runs on **native Windows**, because the stock WSL2 kernel has no
+  Bluetooth subsystem (custom-kernel-only; not worth it). ANT+ stays in WSL;
+  the two terminals share the host clock so JSONL timestamps align.
+  bleak 3.0.2's API surface (BleakScanner detection_callback,
+  discovered_devices_and_advertisement_data, BleakClient disconnected_callback)
+  verified against the installed source, same discipline as openant.
+- **START-HERE.md** §"Optional: parallel BLE capture" — second-terminal workflow;
+  `03-...md` cross-reference ahead of the session list.
+
+### Guardrail
+Parallel BLE capture is additive-only: the bike remains ANT+-paired to the
+cranks throughout Sessions A–F. The app's "Pair with Bluetooth" toggle (which
+re-homes the crank↔bike link onto BLE) stays a Session G activity, after the
+ANT+ baseline is fully captured.
+
+### Owner decisions (2026-06-10)
+- First dual-capture ride runs BLE in `--adv-only` survey mode; connect-mode
+  capture follows on a later ride.
+- **ESP32 confirmed as a real deployment target** → Session G promoted from
+  optional to planned (post A–F) in `03-central-hypothesis-and-phase-zero.md`;
+  the phase-0 report must now cover BLE-paired erg behaviour and the CP 0x2A66
+  calibration handshake.
+
+## Revision 7 — Capture path verified against real openant + hardened before first session
+
+Pre-flight hardening of `01_capture_stages.py` ahead of the first real Session A
+and the Session C-0 ACK dry run. Every assumed openant API was checked against the
+**actual installed source (openant 1.3.4)**, not against assumption. Full detail in
+`code/findings/decisions.md` (2026-06-10 entry).
+
+### Verified (openant 1.3.4 source)
+- `Channel.Type.BIDIRECTIONAL_RECEIVE`, `set_id/set_period/set_rf_freq/set_search_timeout`,
+  `ANTPLUS_NETWORK_KEY`, and `on_acknowledge_data` (the correct RX-ack dispatch hook)
+  all exist as assumed.
+- `Channel.enable_extended_messages()` exists natively (0x66) — **no pirower fork needed.**
+- Reference `PowerMeter` uses `period=8182, device_type=11, trans_type=0` — matches our
+  defaults and the validator.
+- Page 0x50 `manufacturer_id` at bytes 4–5 confirmed against openant `devices/common.py`
+  (the H2 smoking-gun offset is correct as coded).
+
+### Changed — `code/scripts/01_capture_stages.py`
+- **Extended messages now actually enabled.** The docstring claimed they were on; the
+  code never called `enable_extended_messages`. Now it does, and logs an `ext_messages`
+  record. `decode_page` parses the appended source channel ID into `ext_device_number` /
+  `ext_device_type` / `ext_transmission_type` (proves *which* meter each packet came from).
+- **Toggle-bit-robust page matching** — pages matched against `data[0] & 0x7F` while the
+  raw page byte + toggle bit are still recorded.
+- **New `--log-channel-events` flag** tees non-data channel events (RX_FAIL, search
+  timeout, channel closed, collision) into the JSONL. Off by default; recommended for
+  Sessions C/F to catch pairing failures. Replaces previously-dead `_on_event` code.
+
+### Changed — framing
+- **Session C-0 pass criterion rewritten** in `03-central-hypothesis-and-phase-zero.md`.
+  The capturable artefact is the crank's calibration **response** (broadcast page 0x01,
+  ID 0xAC), **not** a `"kind": "acknowledged"` record. The SB20→crank *request* is a
+  slave uplink a passive sniffer cannot see; its absence is normal, not a failure. The
+  honest fallback for the request bytes (sniffer hardware) is noted, alongside the point
+  that the proxy only strictly needs the response.
+
+### Validation (no hardware)
+- `py_compile` clean; `decode_page` smoke-tested on synthetic fixtures (plain page,
+  page+ext tail, manufacturer-ID 69, toggled 0x90 page, calibration offset −50,
+  short-payload guard); full synthetic JSONL run end-to-end through `00_validate`,
+  `04_summarize`, and `05_diff` with the new schema fields present.
+
+### Changed — WSL ANT-stick passthrough (START-HERE.md, 07, CLAUDE.md)
+- **Fixed a broken udev command across all setup docs.** `python -m openant.udev_rules`
+  copies a rules file from a relative `resources/` path that pip does **not** ship in the
+  openant wheel, so it fails with `FileNotFoundError`. Replaced everywhere with a direct
+  one-line rule write (`/etc/udev/rules.d/42-ant-usb-sticks.rules`, vendor `0x0fcf`,
+  `MODE="0666"`) + `udevadm reload/trigger`.
+- **Added `wsl --update` to Step 1** + a troubleshooting note for the classic "`usbipd
+  attach` succeeds but `lsusb` is empty" symptom (outdated WSL kernel missing USB/IP).
+- Documented the WSL udev caveat (rules auto-apply only under systemd/udev) with a
+  `sudo $(which python) ...` capture fallback. Confirmed `usbipd` 4.x syntax.
+
+### Changed — final pre-session review pass
+- **Fixed an end-of-capture crash in `01_capture_stages.py`.** On the normal
+  duration-expiry path, `stop()` ran twice (once from the SIGALRM handler, once from
+  `run()`'s `finally`); the second call tried to close an already-stopped driver and then
+  log the failure to an already-closed file — `ValueError: I/O operation on closed file`
+  at the end of *every* duration-limited capture. Data was written fine, but the user
+  would see a traceback and reasonably conclude the session failed. `stop()` is now
+  idempotent (`_stopped` guard). Pre-existing bug; surfaced by tracing the alarm path.
+- **Validator now checks the `ext_messages` record** (`00_validate_capture.py`):
+  PASS when extended messages enabled, WARN when the enable failed or the record is
+  missing (old script copy). Surfaces stick capability in the Session A paste-back.
+- **Findings path unified to `code/findings/captures/`.** START-HERE (cwd repo root),
+  09 + code/README + 07 (cwd `code/`), HANDOFF, and CLAUDE-CODE-PROMPT all previously
+  resolved capture paths to a nonexistent root-level `findings/`; the committed tree is
+  `code/findings/`. All commands now resolve there. Root `.gitignore` capture patterns
+  updated to match (raw `.jsonl` stays ignored-by-default, opt-in via `git add -f`).
+- **Validator globs quoted** in START-HERE/code/README examples — an unquoted glob
+  expands to multiple args (and an argparse error) as soon as a second matching capture
+  exists, e.g. a smoke-test file plus the real Session A.
+
+### Why this matters
+The previous capture script would have run a real session with extended messages *off*
+(despite the docstring), and the team would have searched Session C-0 output for
+`"kind": "acknowledged"` records that a passive slave can never produce — concluding the
+capture method was broken when it was working. The setup docs would also have failed at
+the udev step (a command that cannot work with a pip-installed openant) and at an empty
+`lsusb` with no hint why. The review pass then caught a crash on the normal end-of-capture
+path that would have made every successful session *look* like a failure, and a path
+mismatch that would have scattered captures outside the committed findings tree. This
+revision aligns code, docs, and on-air reality — and clears the USB-passthrough path —
+before the hard-to-repeat sessions are run.
+
+## Revision 6 — Review pass + Session A validator (re-added) + current Stages status
+
+A fresh-eyes review of the whole package, plus the realisation that the
+Session A checkpoint work from the previous session's final turn never made
+it into the committed repo. This revision restores it and applies a set of
+review fixes.
+
+### New / restored
+- **`code/scripts/00_validate_capture.py`** — restored. Sanity-checks a Phase 0
+  capture and emits a single verdict: PASS (exit 0) / REVIEW (exit 1) /
+  FAIL (exit 2). Reads the JSONL schema that `01_capture_stages.py` produces
+  (no openant import, no hardware). `--markdown` emits paste-friendly output
+  for a second opinion in chat. Verified against synthetic PASS / REVIEW /
+  FAIL / empty / no-receipt fixtures.
+- **Session A checkpoint** re-added to `START-HERE.md` between Session A and
+  Session B, and referenced in `README.md` (script list), `code/README.md`
+  (Phase 0 usage), and `HANDOFF.md` (step 4).
+- **Session C-0 ACK dry run** added to both `03-central-hypothesis-and-phase-zero.md`
+  and `START-HERE.md`. De-risks the assumption that the capture can see the
+  SB20→crank acknowledged traffic *before* the hard-to-repeat Session C. If
+  the dry run shows no inbound traffic, hardening extended-message capture is
+  the first Claude Code task.
+
+### Changed — factual / framing
+- **Stages status updated throughout.** Stages Cycling's assets were acquired
+  by Giant Group (SPIA Cycling) in 2024; there's a discretionary, time-limited
+  support program. "Stages went bankrupt / support will run out / no commercial
+  harm" framing replaced with the accurate position in `README.md`,
+  `01-project-brief.md`, and `08-risks-and-gotchas.md`. The manufacturer-ID
+  spoofing ethics note now rests on "private interoperability with hardware you
+  own," not "the maker is gone."
+- **Power-source consistency promoted to a first-class use case.** The brief
+  now leads with using a standard meter (Assioma) to drive the SB20's *erg
+  control loop* — not just app display — so indoor targets match outdoor
+  efforts. Added open question #7 about whether the SB20 applies internal power
+  scaling (which would affect this use case).
+
+### Changed — review fixes
+- **H1/H2 ranking refined** in `03-...md`. Assiomas *do* respond to standard
+  ANT+ zero-offset calibration, so "Assioma stays silent" is unlikely; the
+  likelier H1 variant is the SB20 rejecting the *form* of the response, making
+  H1 and H2 roughly co-equal. Documented so Claude Code doesn't anchor on
+  "no response."
+- **pirower fork guidance corrected** — flagged as GitLab, ~2020, pre-1.0
+  openant; reference-only, not a drop-in for openant 1.3.x. Prefer enabling
+  extended messages via the 0x66 config message directly.
+- **Page 0x50 decode comment fixed** in `01_capture_stages.py` — the comment
+  contradicted the (correct) code and the spec; manufacturer_id is at bytes
+  4–5. Added a warning not to "simplify" it.
+- **SIGALRM note** added to `01_capture_stages.py` — Unix-only; run captures
+  in WSL2, not native Windows.
+- **Doc cross-reference fixed** — `03-...md` pointed at `09-relationship-to-QZ.md`;
+  corrected to `10-relationship-to-QZ.md`.
+
+### Why this matters
+The validator and checkpoint are the safety rail for Phase 0; their absence
+from the repo meant the owner could have run all six sessions off a bad first
+capture. The C-0 dry run protects the single most valuable session. The Stages
+status fix keeps the public-facing framing honest now that an active company
+owns the IP. The H1/H2 refinement prevents premature anchoring during analysis.
+
+---
+
 ## Revision 5 — GitHub bootstrap + Windows/WSL onboarding
 
 The owner is taking the project to a GitHub repo and will run Phase 0 captures themselves on a Windows machine with WSL2 before kicking off Claude Code. This revision adds the missing pieces for that:

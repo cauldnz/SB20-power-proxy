@@ -38,7 +38,12 @@ Setup (Linux / WSL Ubuntu):
 cd code
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,analysis]"
-sudo $(which python) -m openant.udev_rules   # one-off, then unplug+replug stick
+# udev rule for ANT+ sticks — write directly; openant's `udev_rules` helper
+# copies from a relative resources/ path that pip doesn't ship, so it errors.
+sudo tee /etc/udev/rules.d/42-ant-usb-sticks.rules >/dev/null <<'RULE'
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0fcf", MODE="0666"
+RULE
+sudo udevadm control --reload-rules && sudo udevadm trigger   # then unplug+replug stick
 ```
 
 For Windows users, USB passthrough to WSL is required — see `START-HERE.md` and `07-hardware-and-environment.md` §"Windows + WSL".

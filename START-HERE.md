@@ -25,7 +25,7 @@ If you're not the owner — if you've stumbled across this repo and are trying t
 
 ## What you're about to do
 
-Phase 0 is **diagnostic capture, not coding**. The goal is to record what the SB20's native Stages cranks broadcast over ANT+, what your Assioma DUO broadcasts, and crucially what the SB20 sends *to* a crank during the pairing/zero-reset flow. From those captures we derive a precise specification of what the proxy needs to spoof.
+Phase 0 is **diagnostic capture, not coding**. The goal is to record what the SB20's native Stages cranks broadcast over ANT+, what your Assioma DUO broadcasts, and crucially how a Stages crank *responds* during the pairing/zero-reset flow (its calibration reply — page 0x01 — is the piece the proxy must mimic). From those captures we derive a precise specification of what the proxy needs to spoof.
 
 Six capture sessions, plus an optional seventh:
 
@@ -69,9 +69,12 @@ In an **Administrator PowerShell**:
 
 ```powershell
 wsl --install -d Ubuntu
+wsl --update              # CRITICAL: USB passthrough needs a recent WSL kernel
 ```
 
 Reboot if prompted. Open the Ubuntu app from the Start menu, set your Linux username and password.
+
+> **Why `wsl --update` matters:** USB passthrough relies on USB/IP (`vhci_hcd`) support in the WSL2 kernel. Kernels older than 5.10.60.1 lack it, and the symptom is nasty — `usbipd attach` *succeeds*, but `lsusb` inside WSL shows nothing and you'll chase the wrong problem. Run `wsl --update` now and you avoid it.
 
 Verify you're on WSL2 (not WSL1):
 
@@ -137,24 +140,15 @@ For the **second ANT+ stick**, repeat `usbipd list` → `usbipd bind --busid <ne
 
 > **After every Windows reboot or `wsl --shutdown`**, you'll need to re-run `usbipd attach --wsl --busid <busid>`. The `bind` step persists; only `attach` is per-session. There are scripts and Task Scheduler tricks to auto-attach on boot if this becomes annoying.
 
-### Step 4 — udev rule inside WSL for non-root USB access
+### Step 4 — System USB libraries inside WSL
 
-Without this, every Python script needs `sudo`.
+Install the system libraries openant needs to talk to the stick. (The **udev rule** that lets scripts use the stick without `sudo` is set up at the end of the next section — it's a one-line rule we write directly, so it doesn't matter that openant isn't installed yet.)
 
 ```bash
-# Install the project's openant (we'll do this properly in the next section,
-# but the udev rule needs openant available)
-sudo apt update && sudo apt install -y python3 python3-pip python3-venv libusb-1.0-0 libusb-1.0-0-dev
-pip install --user openant
-
-# Apply the udev rule
-sudo $(python3 -m site --user-base)/bin/python3 -m openant.udev_rules
-
-# Detach + reattach the stick from PowerShell so the new rule applies
-# (in PowerShell: usbipd detach --busid 2-1; usbipd attach --wsl --busid 2-1)
+sudo apt update && sudo apt install -y python3 python3-pip python3-venv libusb-1.0-0 libusb-1.0-0-dev usbutils
 ```
 
-After re-attaching, you should be able to talk to the stick as your normal user without `sudo`.
+> **Troubleshooting — `lsusb` is empty after `usbipd attach`:** the attach reported success but the device isn't in WSL. Almost always an outdated WSL kernel — run `wsl --update` (PowerShell), then `wsl --shutdown`, reopen Ubuntu, and re-attach. Also confirm `usbipd list` shows the stick as **Attached** (not just Shared), and that you're on WSL **2** (`wsl -l -v`). As a last resort inside WSL: `sudo modprobe vhci-hcd`.
 
 ---
 
@@ -172,7 +166,27 @@ source .venv/bin/activate
 
 # Install with the analysis extras (so summarize/diff/ingest scripts have what they need)
 pip install -e ".[dev,analysis]"
+
+# Grant non-root access to ANT+ USB sticks (Dynastream/Garmin, USB vendor 0x0fcf).
+# NB: we write the udev rule directly rather than using openant's bundled
+# `python -m openant.udev_rules` helper — that helper copies a rules file from a
+# relative resources/ path that pip does NOT ship in the wheel, so it errors out.
+sudo tee /etc/udev/rules.d/42-ant-usb-sticks.rules >/dev/null <<'RULE'
+# ANT+ USB sticks (Dynastream/Garmin) — allow access without root
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0fcf", MODE="0666"
+RULE
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=usb --attr-match=idVendor=0fcf --action=add
 ```
+
+Then **detach + re-attach the stick** from an Administrator PowerShell so the rule is applied to a fresh device node:
+
+```powershell
+usbipd detach --busid <BUSID>
+usbipd attach --wsl --busid <BUSID>
+```
+
+> **WSL + udev caveat:** udev rules only auto-apply if WSL is running systemd/udev. Recent WSL2 does by default; if yours doesn't, either enable it (add `[boot]\nsystemd=true` to `/etc/wsl.conf`, then `wsl --shutdown` and reopen), **or** just run the capture with the venv python as root — `sudo $(which python) scripts/01_capture_stages.py ...` (the absolute venv-python path keeps your environment). Either way gets you talking to the stick.
 
 Verify:
 
@@ -195,7 +209,7 @@ Before kicking off Session A, check these:
 - [ ] **Stages cranks**: install fresh CR2032s. Note the date if you want to track battery life.
 - [ ] **The two Stages crank ANT+ IDs and the Assioma's left-pedal ANT+ ID** are written down. You'll be passing them to the capture script.
 - [ ] **Bike paired and working normally** with its native cranks, via the Stages app, *before* you start fiddling. You want a known-good baseline to capture.
-- [ ] **Findings directory exists**: `mkdir -p findings/captures` (relative to project root).
+- [ ] **Findings directory exists**: `mkdir -p code/findings/captures` (relative to project root).
 
 ---
 
@@ -208,10 +222,67 @@ cd ~/sb20-power-proxy
 python code/scripts/01_capture_stages.py \
     --device-id <STAGES_L_ID> \
     --duration 900 \
-    --output findings/captures/A-stagesL-steady-$(date +%Y%m%d-%H%M).jsonl
+    --output code/findings/captures/A-stagesL-steady-$(date +%Y%m%d-%H%M).jsonl
 ```
 
 Spin up on the bike and pedal at varied power levels for ~15 minutes. The script logs everything; just ride.
+
+### 🛑 Checkpoint: validate Session A before continuing
+
+Don't run sessions B–F until you've confirmed the capture mechanism works. The cost of a broken stick, wrong device ID, or misconfigured channel multiplies if you run all six sessions before noticing the first was bad.
+
+```bash
+python code/scripts/00_validate_capture.py \
+    --input 'code/findings/captures/A-stagesL-steady-*.jsonl'
+# NB: keep the glob QUOTED — the validator picks the newest match itself.
+# Unquoted, bash expands multiple matches into multiple args and errors.
+```
+
+This runs a battery of sanity checks and ends with a clear verdict:
+
+- **✅ PASS** (exit 0) — capture mechanism is working. Proceed with Session B.
+- **⚠️ REVIEW** (exit 1) — usable, but something looks unusual. Read the WARN rows; if you're unsure whether to re-record, paste the output into a chat for a second opinion before continuing.
+- **❌ FAIL** (exit 2) — capture is not usable; something is broken. Stop. Paste the output into a chat before re-running — re-running with the same broken setup just produces another bad capture.
+
+**To get a second opinion regardless of verdict**, add `--markdown` for nicer formatting in chat:
+
+```bash
+python code/scripts/00_validate_capture.py \
+    --input 'code/findings/captures/A-stagesL-steady-*.jsonl' \
+    --markdown > /tmp/session-a-validation.md
+# then open /tmp/session-a-validation.md, copy, paste into a chat
+```
+
+When you paste it, just say "Session A done — does this look right?" and you'll get either "yes, continue" or specific things to check.
+
+### Optional: parallel BLE capture (any pedalling session)
+
+Stages cranks (and Assiomas) broadcast BLE Cycling Power alongside ANT+. Capturing the BLE side during the same ride costs nothing extra on the bike and buys optionality for a future BLE-path implementation (e.g. an ESP32 target — ESP32 has no ANT+ radio, so that endgame *requires* the BLE protocol model). This is **passive**: we connect as a second BLE client; the bike stays ANT+-paired to the cranks. Do **not** toggle the app's "Pair with Bluetooth" switch — that mode change is Session G, much later.
+
+WSL2 has no Bluetooth, so the BLE capture runs in a **second terminal on native Windows** (PowerShell), using the Windows-side venv at `code\.venv-win`. Both terminals are the same machine, so the timestamps in the two JSONL files line up.
+
+**First dual-capture ride: advertisement survey only** (owner's call, 2026-06-10 — cautious first step; no BLE connections while we baseline the ANT+ sessions):
+
+```powershell
+# PowerShell, from C:\repos\cauldnz\SB20-power-proxy — start this right after
+# the ANT+ capture is running in the WSL terminal:
+code\.venv-win\Scripts\python.exe code\scripts\06_capture_ble.py `
+    --adv-only --duration 900 `
+    --output code\findings\captures\ble-adv-survey-$(Get-Date -Format yyyyMMdd-HHmm).jsonl
+```
+
+This logs every BLE advertisement from anything Stages-named or broadcasting Cycling Power — the cranks, the bike ("Stages Bike ####"), with names, addresses, RSSI, service UUIDs, and manufacturer data. Zero interaction with any device. It answers the key first question: *does the crank's BLE side advertise at all while the bike holds it on ANT+?*
+
+**On a later ride** (once the adv survey looks sane), drop `--adv-only` to connect and capture the full GATT surface + decoded power notifications:
+
+```powershell
+code\.venv-win\Scripts\python.exe code\scripts\06_capture_ble.py `
+    --name Stages --duration 900 `
+    --output code\findings\captures\A-stagesL-ble-$(Get-Date -Format yyyyMMdd-HHmm).jsonl
+# (use --name Assioma during Session D)
+```
+
+In connect mode the script scans ~15 s, connects to the strongest name match, dumps the GATT table and device-info strings, then logs every Cycling Power Measurement notification (decoded flags, power, balance, crank revs) until the duration ends, auto-reconnecting on drops. It never writes to the device.
 
 ### Session B — Stages R crank, steady state
 
@@ -219,10 +290,33 @@ Spin up on the bike and pedal at varied power levels for ~15 minutes. The script
 python code/scripts/01_capture_stages.py \
     --device-id <STAGES_R_ID> \
     --duration 600 \
-    --output findings/captures/B-stagesR-steady-$(date +%Y%m%d-%H%M).jsonl
+    --output code/findings/captures/B-stagesR-steady-$(date +%Y%m%d-%H%M).jsonl
 ```
 
 Same bike, capturing the R crank's independent broadcast. R crank in this mode reports half-power; that's expected behaviour.
+
+### Session C-0 — ACK-capture dry run (do this BEFORE Session C)
+
+Session C is only worth doing if the capture can actually *see* the calibration exchange that happens during the zero-reset. Don't find out it can't during the careful, hard-to-repeat Session C. Prove it on the working setup first. (Run with `--log-channel-events` so a dropped channel during the reset is visible too.)
+
+```bash
+python code/scripts/01_capture_stages.py \
+    --device-id <STAGES_L_ID> \
+    --duration 180 --log-channel-events \
+    --output code/findings/captures/C0-ack-dryrun-$(date +%Y%m%d-%H%M).jsonl
+```
+
+While it runs, trigger a single zero-reset from the Stages app (cranks vertical, tap zero). Then stop and check whether the **calibration page 0x01** appeared:
+
+```bash
+grep -E '"page": ?1[,}]' code/findings/captures/C0-ack-dryrun-*.jsonl | head
+# Equivalently: grep for '"page_hex": "0x01"'. Expect it as "kind": "broadcast".
+```
+
+**What you're looking for, and why it's a broadcast (not an "acknowledged" record):** the crank's calibration *response* (page 0x01, ID `0xAC` + a 16-bit offset) is sent as a normal interleaved **broadcast** in the crank's stream — so it shows up as `"kind": "broadcast"` with `"page": 1`. The SB20's calibration *request* to the crank is a slave-to-master uplink that a passive sniffer like ours **cannot** see, so do **not** expect a `"kind": "acknowledged"` record — its absence is normal, not a failure. The response is the piece the proxy actually needs to mimic.
+
+- **If a page 0x01 record appears when you trigger the zero-reset** → ✅ the capture sees the calibration exchange; proceed to Session C.
+- **If no page 0x01 appears at all** (only 0x10/0x50/0x51/0x52) → 🛑 stop. Check: did the zero-reset actually fire in the app? Does the JSONL contain `"kind": "ext_messages"` with `"enabled": true`? Is the crank battery healthy? Did `--log-channel-events` record a channel drop during the reset? Paste the dry-run JSONL (or the validator output) into a chat and we'll work out the fix before you spend Session C.
 
 ### Session C — Stages L crank, full pairing + zero-reset (CRITICAL)
 
@@ -235,7 +329,7 @@ This one needs care. You're going to deliberately un-pair and re-pair the L cran
    python code/scripts/01_capture_stages.py \
        --device-id <STAGES_L_ID> \
        --duration 900 \
-       --output findings/captures/C-stagesL-pairing-$(date +%Y%m%d-%H%M).jsonl
+       --output code/findings/captures/C-stagesL-pairing-$(date +%Y%m%d-%H%M).jsonl
    ```
 
 3. **Record timestamps in a notebook**:
@@ -248,9 +342,9 @@ This one needs care. You're going to deliberately un-pair and re-pair the L cran
 
 4. **Re-enter the L crank ID in the Stages app**, do the pairing flow per the app's prompts, do the zero-reset (cranks vertical, tap zero), then pedal for the rest of the 15 minutes.
 
-5. After the capture finishes, save your timestamp notes alongside the JSONL — paste them into `findings/captures/C-stagesL-pairing-<timestamp>-notes.md` so they're committed together.
+5. After the capture finishes, save your timestamp notes alongside the JSONL — paste them into `code/findings/captures/C-stagesL-pairing-<timestamp>-notes.md` so they're committed together.
 
-This capture is the highest-information one in Phase 0. If the capture script ran but `openant` didn't see any acknowledged messages from the SB20 to the crank, that's a sign extended messages weren't enabled — a known limitation we'll resolve in Claude Code's first task.
+This capture is the highest-information one in Phase 0. The key artefact is the crank's **calibration response** (broadcast page 0x01, ID `0xAC` + offset) around your zero-reset timestamp — that's what the proxy must mimic. As covered in Session C-0, do not expect to see the SB20→crank *request* (a slave uplink a passive sniffer can't capture); its absence is normal. Run this session with `--log-channel-events` too, so any channel drop during pairing is recorded.
 
 ### Session D — Assioma DUO, steady state
 
@@ -260,7 +354,7 @@ You don't need to be on the SB20 for this; any compatible bike (or a stationary 
 python code/scripts/01_capture_stages.py \
     --device-id <ASSIOMA_LEFT_ID> \
     --duration 900 \
-    --output findings/captures/D-assioma-steady-$(date +%Y%m%d-%H%M).jsonl
+    --output code/findings/captures/D-assioma-steady-$(date +%Y%m%d-%H%M).jsonl
 ```
 
 The script is named `01_capture_stages.py` but it works for any standard ANT+ Bike Power device. (There's also `02_capture_assioma.py` which is a thin wrapper if you prefer the named version.)
@@ -282,12 +376,12 @@ This is the one where you reproduce the original problem.
    python code/scripts/01_capture_stages.py \
        --device-id <ASSIOMA_LEFT_ID> \
        --duration 600 \
-       --output findings/captures/F-failure-mode-$(date +%Y%m%d-%H%M).jsonl
+       --output code/findings/captures/F-failure-mode-$(date +%Y%m%d-%H%M).jsonl
    ```
 
 3. Walk through the SB20 pairing flow normally. Record what happens in the app: error message, timeout, "paired" state but no power, etc. Write it down.
 
-4. When done, `git add -f findings/captures/F-failure-mode-*-notes.md` if you wrote notes.
+4. When done, `git add -f code/findings/captures/F-failure-mode-*-notes.md` if you wrote notes.
 
 ### Session G — (optional) BLE-paired cranks
 
@@ -303,7 +397,9 @@ After captures are saved, you don't need to wait for Claude Code to look at them
 
 ```bash
 python code/scripts/04_summarize_capture.py \
-    --input findings/captures/A-stagesL-steady-*.jsonl
+    --input 'code/findings/captures/A-stagesL-steady-*.jsonl'
+# NB: keep the glob QUOTED — the validator picks the newest match itself.
+# Unquoted, bash expands multiple matches into multiple args and errors.
 ```
 
 Prints (or `--out summary.md` writes) a markdown summary: session metadata, page mix with rates, common-page values, power/cadence stats, calibration events.
@@ -312,11 +408,11 @@ Prints (or `--out summary.md` writes) a markdown summary: session metadata, page
 
 ```bash
 python code/scripts/05_diff_captures.py \
-    --left  findings/captures/A-stagesL-steady-*.jsonl \
-    --right findings/captures/D-assioma-steady-*.jsonl \
+    --left  code/findings/captures/A-stagesL-steady-*.jsonl \
+    --right code/findings/captures/D-assioma-steady-*.jsonl \
     --left-label  "Stages L" \
     --right-label "Assioma" \
-    > findings/captures/diff-stages-vs-assioma.md
+    > code/findings/captures/diff-stages-vs-assioma.md
 ```
 
 The diff is the headline Phase 0 deliverable. The most important row to look at: **`page 0x50 → manufacturer_id`**. If Stages says `69` and Assioma says `263`, that's a smoking gun for hypothesis H2 (the SB20 might be validating manufacturer ID).
@@ -352,7 +448,7 @@ Ingest a capture into InfluxDB:
 cd ~/sb20-power-proxy
 export INFLUX_TOKEN=dev-token-change-me   # or your custom value from .env
 python code/scripts/03_ingest_jsonl_to_influx.py \
-    --input findings/captures/A-stagesL-steady-*.jsonl \
+    --input code/findings/captures/A-stagesL-steady-*.jsonl \
     --source-role stagesL
 ```
 
@@ -364,15 +460,15 @@ For more detail on the analysis pipeline, see `09-exploring-captures.md`.
 
 ## Hand off to Claude Code
 
-Once you have at least sessions A, D, and ideally C committed under `findings/captures/`:
+Once you have at least sessions A, D, and ideally C committed under `code/findings/captures/`:
 
 1. Generate a diff for me to look at:
    ```bash
    python code/scripts/05_diff_captures.py \
-       --left findings/captures/A-stagesL-steady-*.jsonl \
-       --right findings/captures/D-assioma-steady-*.jsonl \
+       --left code/findings/captures/A-stagesL-steady-*.jsonl \
+       --right code/findings/captures/D-assioma-steady-*.jsonl \
        --left-label "Stages L" --right-label "Assioma" \
-       > findings/captures/diff-A-vs-D.md
+       > code/findings/captures/diff-A-vs-D.md
    ```
 
 2. Skim the diff yourself. Note anything surprising.
@@ -436,7 +532,7 @@ Likely causes, in order:
 
 ### "I want to start over"
 
-Captures are immutable; you don't lose anything by starting fresh. Just don't delete old captures from `findings/captures/` — they're history.
+Captures are immutable; you don't lose anything by starting fresh. Just don't delete old captures from `code/findings/captures/` — they're history.
 
 ```bash
 # In WSL: detach and re-attach the stick
@@ -458,7 +554,7 @@ pip install -e ".[dev,analysis]"
 
 After a couple of evenings of capture, you have:
 
-- 4–6 JSONL files in `findings/captures/`, each ~hundreds of KB
+- 4–6 JSONL files in `code/findings/captures/`, each ~hundreds of KB
 - A markdown diff between Stages and Assioma showing concrete differences
 - Notes on what happened during pairing in Session C
 - Notes on what the SB20 displayed during the failure-mode reproduction in Session F

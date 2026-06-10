@@ -34,7 +34,7 @@ Below is the SB20-spoof-specific reading list that builds on top of that.
 - https://github.com/Tigge/openant
 - Python ANT+ library. Active, maintained, supports both RX and TX on Garmin/Dynastream sticks.
 - Install: `pip install openant`
-- Linux udev: `sudo python -m openant.udev_rules`
+- Linux udev (non-root USB access): write a rule for vendor `0x0fcf` directly (`/etc/udev/rules.d/42-ant-usb-sticks.rules` with `SUBSYSTEM=="usb", ATTRS{idVendor}=="0fcf", MODE="0666"`, then `udevadm control --reload-rules && udevadm trigger`). openant's bundled `python -m openant.udev_rules` helper copies from a relative `resources/` path pip doesn't ship, so it errors — see `07-hardware-and-environment.md`.
 - Read: `openant/devices/power_meter.py` for the receiver pattern; `openant/easy/node.py` for channel/lifecycle; `openant/base/ant.py` for low-level message construction.
 - Examples worth studying in the repo's `examples/` folder.
 - Caveat per `06-rate-thread`: queue-handling in `_worker` and `_main` adds ~100 ms sleep loops that drop messages above ~15 Hz. For 4 Hz Bike Power broadcasts this won't bite, but be aware. See https://www.thisisant.com/forum/viewthread/7284 for the patch (it's small).

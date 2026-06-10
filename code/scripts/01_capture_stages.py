@@ -15,11 +15,17 @@ Usage:
 
 Notes:
 - Wake the crank before starting (rotate it) or capture will sit idle.
-- For pairing-handshake captures, ensure extended messages are enabled so
-  you see ACK traffic from the SB20 to the crank. This script enables them
-  by default — if you see only outbound broadcasts and no inbound ACKs,
-  check that the openant version supports extended messages (or use the
-  pirower fork).
+- This script enables ANT+ extended RX messages (0x66) so every captured
+  packet is stamped with its source device number (recorded as
+  ext_device_number in the decoded data). That helps disambiguate meters in
+  multi-device sessions. NOTE: extended messages do NOT let a passive slave
+  see the SB20->crank acknowledged *request* during pairing/zero-reset — a
+  slave cannot sniff another slave's uplink to the master. What you CAN
+  capture is the crank's calibration *response*, which the Bike Power profile
+  sends as an interleaved broadcast page 0x01 (logged as kind="broadcast").
+  Run the Session C-0 dry run to confirm that page 0x01 appears on zero-reset
+  before relying on Session C. The on_acknowledge_data hook is wired anyway as
+  cheap insurance for any ACK the master happens to direct at us.
 - For two-stick captures (one for L, one for R), run two instances of this
   script with different --usb-stick-index values.
 
@@ -43,6 +49,7 @@ try:
     from openant.easy.node import Node
     from openant.easy.channel import Channel
     from openant.devices import ANTPLUS_NETWORK_KEY
+    from openant.base.message import Message
 except ImportError as e:
     print(f"openant not installed or import failed: {e}", file=sys.stderr)
     print("Run: pip install openant", file=sys.stderr)
@@ -79,13 +86,18 @@ def decode_page(data: bytes) -> dict[str, Any]:
         return {"page": None, "raw_hex": data.hex(), "error": "short payload"}
 
     page = data[0]
+    # The MSB of the data-page byte can be a page-toggle bit in some ANT+
+    # profiles. Bike Power doesn't toggle its main pages, but mask it off for
+    # matching so the decoder is robust if a toggled page (e.g. 0x90) ever
+    # appears. The raw page byte and the toggle bit are both recorded below.
+    page_match = page & 0x7F
     decoded: dict[str, Any] = {
         "page": page,
         "page_hex": f"0x{page:02X}",
         "raw_hex": data.hex(),
     }
 
-    if page == PAGE_POWER_ONLY:
+    if page_match == PAGE_POWER_ONLY:
         # Byte 1: event count (rolls 0..255)
         # Byte 2: pedal power (LSB = balance%, MSB bit = differentiation flag)
         # Byte 3: instantaneous cadence (RPM, 0xFF = invalid)
@@ -101,7 +113,7 @@ def decode_page(data: bytes) -> dict[str, Any]:
             "instantaneous_power_w": int.from_bytes(data[6:8], "little"),
         })
 
-    elif page == PAGE_CRANK_TORQUE:
+    elif page_match == PAGE_CRANK_TORQUE:
         # Byte 1: event count
         # Byte 2: crank ticks
         # Byte 3: instantaneous cadence
@@ -115,7 +127,7 @@ def decode_page(data: bytes) -> dict[str, Any]:
             "accumulated_torque": int.from_bytes(data[6:8], "little"),
         })
 
-    elif page == PAGE_TORQUE_EFFECTIVENESS:
+    elif page_match == PAGE_TORQUE_EFFECTIVENESS:
         decoded.update({
             "event_count": data[1],
             "left_te_raw": data[2],
@@ -124,17 +136,23 @@ def decode_page(data: bytes) -> dict[str, Any]:
             "right_ps_raw": data[5],
         })
 
-    elif page == PAGE_MANUFACTURER_INFO:
-        # Byte 1: HW revision
-        # Bytes 2-3: manufacturer ID (LE uint16) — Stages? Favero? Other?
-        # Bytes 4-5: model number (LE uint16)
+    elif page_match == PAGE_MANUFACTURER_INFO:
+        # Common Page 0x50 (Manufacturer's Identification), per D00001086 §12:
+        #   byte 0: page number (0x50)
+        #   bytes 1-2: reserved (0xFF)
+        #   byte 3: HW revision
+        #   bytes 4-5: manufacturer ID (LE uint16) — Stages? Favero? Other?
+        #   bytes 6-7: model number (LE uint16)
+        # NOTE: the byte offsets below are correct against the spec. Do not
+        # "simplify" them to bytes 1-3 — manufacturer_id lives at bytes 4-5,
+        # and this field is the central evidence for hypothesis H2.
         decoded.update({
-            "hw_revision": data[3],   # spec says byte 3 (1-indexed in spec, 0-indexed here)
+            "hw_revision": data[3],
             "manufacturer_id": int.from_bytes(data[4:6], "little"),
             "model_number": int.from_bytes(data[6:8], "little"),
         })
 
-    elif page == PAGE_PRODUCT_INFO:
+    elif page_match == PAGE_PRODUCT_INFO:
         # Byte 1: SW revision (supplemental)
         # Byte 2: SW revision (main)
         # Bytes 4-7: serial number (LE uint32)
@@ -144,7 +162,7 @@ def decode_page(data: bytes) -> dict[str, Any]:
             "serial_number": int.from_bytes(data[4:8], "little"),
         })
 
-    elif page == PAGE_BATTERY_STATUS:
+    elif page_match == PAGE_BATTERY_STATUS:
         decoded.update({
             "battery_id": data[2],
             "operating_time_lsb": int.from_bytes(data[3:6], "little"),
@@ -152,7 +170,7 @@ def decode_page(data: bytes) -> dict[str, Any]:
             "battery_status_byte": data[7],
         })
 
-    elif page == PAGE_CALIBRATION:
+    elif page_match == PAGE_CALIBRATION:
         # Byte 1: calibration ID (0xAC = success, 0xAF = failure, 0xAA = manual zero request)
         # Byte 2: auto-zero status / response sub-id
         # Bytes 6-7: calibration data (offset value for zero-offset)
@@ -167,6 +185,23 @@ def decode_page(data: bytes) -> dict[str, Any]:
     decoded["page_toggle_bit"] = bool(page & 0x80)
     decoded["page_no_toggle"] = page & 0x7F
 
+    # Extended-message tail. When extended RX messages are enabled (0x66), the
+    # ANT stick appends the source channel ID after the 8 data bytes:
+    #   data[8]    = flag byte
+    #   data[9:11] = device number (LE uint16)  <- which meter this came from
+    #   data[11]   = device type
+    #   data[12]   = transmission type
+    # This is purely additive: the page and all page fields live in bytes 0-7,
+    # so the decoding above is unaffected. Recording the source device number
+    # lets Sessions C/F prove which device each packet came from when several
+    # meters are live at once. (Layout confirmed against openant
+    # devices/common.py _on_data, which reads data[9:13] the same way.)
+    if len(data) >= 13:
+        decoded["ext_flag"] = data[8]
+        decoded["ext_device_number"] = int.from_bytes(data[9:11], "little")
+        decoded["ext_device_type"] = data[11]
+        decoded["ext_transmission_type"] = data[12]
+
     return decoded
 
 
@@ -177,14 +212,26 @@ class CaptureRunner:
     message (broadcast and acknowledged) to a JSONL output file.
     """
 
+    # Data event codes are dispatched to the per-channel data callbacks already;
+    # everything else (search timeout, RX fail, channel closed, collision, queue
+    # overflow, ...) is a "true" channel event worth recording.
+    _DATA_EVENT_CODES = frozenset({
+        Message.Code.EVENT_TX,
+        Message.Code.EVENT_RX_BROADCAST,
+        Message.Code.EVENT_RX_ACKNOWLEDGED,
+        Message.Code.EVENT_RX_BURST_PACKET,
+    })
+
     def __init__(self, *, device_id: int, output_path: Path,
                  transmission_type: int = DEFAULT_TRANSMISSION_TYPE,
                  channel_period: int = DEFAULT_CHANNEL_PERIOD,
-                 device_type: int = DEVICE_TYPE_BIKE_POWER):
+                 device_type: int = DEVICE_TYPE_BIKE_POWER,
+                 log_channel_events: bool = False):
         self.device_id = device_id
         self.transmission_type = transmission_type
         self.channel_period = channel_period
         self.device_type = device_type
+        self.log_channel_events = log_channel_events
         self.output_path = output_path
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         self._fp = open(self.output_path, "w", buffering=1)  # line-buffered
@@ -192,6 +239,7 @@ class CaptureRunner:
         self._channel: Channel | None = None
         self._t0 = time.monotonic()
         self._messages_logged = 0
+        self._stopped = False
 
     def _log(self, kind: str, **fields: Any) -> None:
         """Write one JSONL row. Always includes timestamp and uptime."""
@@ -209,10 +257,6 @@ class CaptureRunner:
         decoded = decode_page(bytes(data))
         self._log("broadcast", data=decoded)
 
-    def _on_event(self, data: Any) -> None:
-        """Channel event callback. Useful for tracking RX_FAIL, channel closes, etc."""
-        self._log("channel_event", event=str(data))
-
     def _on_acknowledged(self, data: bytes) -> None:
         """Acknowledged-data callback. Critical for capturing pairing/calibration ACKs."""
         decoded = decode_page(bytes(data))
@@ -229,10 +273,12 @@ class CaptureRunner:
         self._node = Node()
         self._node.set_network_key(0x00, ANTPLUS_NETWORK_KEY)
 
-        # Slave channel — RX-only by default in openant.easy.Channel.
-        # We want to also see ACK traffic; openant may need extended messages
-        # enabled at the node level for this. Document this limitation in the
-        # output if it's not visible.
+        # Slave (BIDIRECTIONAL_RECEIVE) channel. on_acknowledge_data is the
+        # correct openant hook for received acknowledged data (node._main
+        # dispatches to it); we wire it as insurance, though the Stages
+        # calibration response actually arrives as a broadcast page 0x01.
+        # Extended messages (enabled below) stamp each packet with its source
+        # device ID but do not expose the SB20's slave-to-master uplink.
         self._channel = self._node.new_channel(Channel.Type.BIDIRECTIONAL_RECEIVE)
         self._channel.on_broadcast_data = self._on_data
         self._channel.on_burst_data = self._on_data
@@ -247,21 +293,79 @@ class CaptureRunner:
         self._channel.set_rf_freq(RF_FREQ_ANT_PLUS)
         # Search timeout: allow plenty of time to find the device on first run.
         self._channel.set_search_timeout(0xFF)  # infinite
+
+        # Enable extended RX messages (0x66 ENABLE_EXT_RX_MESGS). This appends
+        # the source channel ID (flag + device number + device type + trans
+        # type) to every received payload, so we can record WHICH meter each
+        # packet came from (decode_page parses the tail into ext_* fields). It
+        # is safe for decode_page() — the extra bytes are appended after the 8
+        # data bytes. IMPORTANT: extended messages do NOT make the SB20->crank
+        # acknowledged *request* visible — a passive slave cannot sniff another
+        # slave's uplink to the master. The Stages calibration *response*
+        # arrives as a broadcast page 0x01, which we do capture.
+        try:
+            self._channel.enable_extended_messages(1)
+            self._log("ext_messages", enabled=True)
+        except Exception as e:
+            # Not fatal: capture still works, we just won't get source-ID tails.
+            self._log("ext_messages", enabled=False, error=str(e))
+
         self._channel.open()
 
         self._log("channel_open", note="waiting for broadcast")
+
+    def _install_channel_event_tap(self) -> None:
+        """Wrap the node's channel-event handler to log non-data events.
+
+        Reaches into openant internals (node.ant.channel_event_function), so it
+        is best-effort and gated behind --log-channel-events. By the time run()
+        calls this, the openant worker thread has already installed the node's
+        own handler (setup() round-trips several config messages through it), so
+        we capture that handler and chain through it.
+        """
+        if self._node is None:
+            return
+        inner = self._node.ant.channel_event_function
+
+        def _tap(channel: int, event: int, data: Any) -> Any:
+            if event not in self._DATA_EVENT_CODES:
+                try:
+                    self._log("channel_event", event=str(event),
+                              event_code=event, channel=channel)
+                except Exception:
+                    pass
+            return inner(channel, event, data)
+
+        self._node.ant.channel_event_function = _tap
 
     def run(self, duration_s: float) -> None:
         if self._node is None:
             raise RuntimeError("setup() not called")
         try:
             # openant's Node.start() blocks; we set up a deadline via signal.
+            # NOTE: signal.SIGALRM / signal.alarm() are Unix-only. This is fine
+            # under WSL2 / Linux / macOS (the supported capture environment).
+            # On native Windows, SIGALRM does not exist and this raises
+            # AttributeError — run captures inside WSL, not native Windows.
+            # (A threading.Timer fallback could be added if native-Windows
+            # capture is ever needed; not worth the complexity for Phase 0.)
             def _alarm(signum, frame):  # noqa: ARG001
                 self._log("duration_reached", duration_s=duration_s)
                 self.stop()
 
             signal.signal(signal.SIGALRM, _alarm)
             signal.alarm(int(duration_s))
+
+            # Optionally tee non-data channel events (RX_FAIL, search timeout,
+            # channel closed, collisions) into the JSONL. These are invisible to
+            # the per-channel data callbacks but are diagnostic gold for Session
+            # C/F, where a failed pairing shows up here rather than in the data
+            # stream. Installed now — after setup() has driven the worker thread,
+            # so node.ant.channel_event_function is already the node's handler —
+            # and chained through it so normal data flow is preserved.
+            if self.log_channel_events:
+                self._install_channel_event_tap()
+
             self._node.start()
         except KeyboardInterrupt:
             self._log("interrupted", reason="ctrl-c")
@@ -269,6 +373,15 @@ class CaptureRunner:
             self.stop()
 
     def stop(self) -> None:
+        # Idempotent: stop() runs both from the SIGALRM handler (duration
+        # reached) and from run()'s finally block. Without this guard the
+        # second call would try to close an already-stopped driver and then
+        # log the failure to an already-closed file — crashing with
+        # "I/O operation on closed file" at the end of every duration-limited
+        # capture, after the data was safely written.
+        if self._stopped:
+            return
+        self._stopped = True
         try:
             if self._channel is not None:
                 self._channel.close()
@@ -295,6 +408,11 @@ def main() -> int:
                    help="Transmission type byte (default 0 = wildcard)")
     p.add_argument("--channel-period", type=int, default=DEFAULT_CHANNEL_PERIOD,
                    help="Channel period in 1/32768 s units (default 8182 = 4 Hz)")
+    p.add_argument("--log-channel-events", action="store_true",
+                   help="Also log non-data channel events (RX_FAIL, search "
+                        "timeout, channel closed, collisions). Useful for "
+                        "diagnosing pairing failures in Sessions C/F. Off by "
+                        "default; reaches into openant internals.")
     args = p.parse_args()
 
     print(f"Starting capture: device {args.device_id}, {args.duration:.0f}s, → {args.output}")
@@ -305,6 +423,7 @@ def main() -> int:
         output_path=args.output,
         transmission_type=args.transmission_type,
         channel_period=args.channel_period,
+        log_channel_events=args.log_channel_events,
     )
     runner.setup()
     runner.run(args.duration)

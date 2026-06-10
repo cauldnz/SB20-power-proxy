@@ -49,12 +49,12 @@ pip install -e ".[analysis]"
 
 # 3. Capture some traffic (Phase 0 sessions A–F per 03-central-hypothesis-and-phase-zero.md)
 python scripts/01_capture_stages.py --device-id 12345 --duration 900 \
-    --output ../findings/captures/A-stagesL-steady-$(date +%Y%m%d-%H%M).jsonl
+    --output findings/captures/A-stagesL-steady-$(date +%Y%m%d-%H%M).jsonl
 
 # 4. Ingest into InfluxDB for visual exploration
 export INFLUXDB_TOKEN=dev-token-change-me   # match docker/.env
 python scripts/03_ingest_jsonl_to_influx.py \
-    --input ../findings/captures/A-stagesL-steady-NNNN.jsonl \
+    --input findings/captures/A-stagesL-steady-NNNN.jsonl \
     --source-role stagesL
 
 # 5. Open Grafana, navigate to "SB20 Proxy → Phase 0 Capture Overview"
@@ -62,15 +62,15 @@ python scripts/03_ingest_jsonl_to_influx.py \
 
 # 6. Generate text summaries to share / analyse / commit
 python scripts/04_summarize_capture.py \
-    --input ../findings/captures/A-stagesL-steady-NNNN.jsonl \
-    > ../findings/captures/A-stagesL-summary.md
+    --input findings/captures/A-stagesL-steady-NNNN.jsonl \
+    > findings/captures/A-stagesL-summary.md
 
 # 7. Generate a diff between two captures (the core Phase 0 deliverable)
 python scripts/05_diff_captures.py \
-    --left  ../findings/captures/A-stagesL-steady-NNNN.jsonl \
-    --right ../findings/captures/D-assioma-steady-NNNN.jsonl \
+    --left  findings/captures/A-stagesL-steady-NNNN.jsonl \
+    --right findings/captures/D-assioma-steady-NNNN.jsonl \
     --left-label "Stages L" --right-label "Assioma DUO" \
-    > ../findings/captures/diff-stages-vs-assioma.md
+    > findings/captures/diff-stages-vs-assioma.md
 ```
 
 ## Why three tools, not one

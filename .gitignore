@@ -11,6 +11,7 @@ build/
 
 # Virtual environments
 .venv/
+.venv-win/
 venv/
 env/
 ENV/
@@ -33,9 +34,9 @@ code/docker/.env
 # Don't commit huge raw captures by default — but DO commit findings/
 # (the analyses, decisions log, summaries). If a particular capture file
 # is small enough and worth committing, add it explicitly with `git add -f`.
-findings/captures/*.jsonl
-findings/captures/*.json
-!findings/captures/.gitkeep
+code/findings/captures/*.jsonl
+code/findings/captures/*.json
+!code/findings/captures/.gitkeep
 
 # Pytest / coverage
 .pytest_cache/

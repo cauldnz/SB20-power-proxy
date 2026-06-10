@@ -74,3 +74,137 @@ Decision: Don't create a `CLAUDE.md` at the project root yet; do so as one of th
 Context: QZ has a substantial `CLAUDE.md` documenting build commands, architecture, and verification steps for adding new device patterns. We could mirror that, but right now we don't have enough concrete project surface (no real device patterns yet, no captured protocol details) to write a useful equivalent. Creating one too early would be aspirational rather than load-bearing.
 
 Will revisit when: Phase 0 captures are committed and Phase 1 implementation begins. At that point a `CLAUDE.md` describing capture-then-decode workflow, the source/target ABC contract, and how to add a new `PowerSource` becomes worth writing.
+
+## 2026-06-10 — openant 1.3.4 API verified; capture path hardened before first real session
+
+Decision: Harden `01_capture_stages.py` ahead of Session A / Session C-0, after verifying every assumed openant API against the actual installed source (openant **1.3.4**), not against assumption.
+
+What was verified (against real source, openant 1.3.4):
+- `Channel.Type.BIDIRECTIONAL_RECEIVE == 0x00`, plus `set_id` / `set_period` / `set_rf_freq` / `set_search_timeout` — all present with the assumed signatures (`easy/channel.py`).
+- `on_acknowledge_data` is the correct RX-ack hook: `node._main` dispatches received acknowledged data to `on_acknowledge_data` (`easy/node.py:209-210`). Note: openant's own slave reference (`devices/common.py:272`) wires `on_acknowledge` instead, which is **never** dispatched — a latent bug in the library's reference; our script's `on_acknowledge_data` is the right choice, do not "fix" it to match the reference.
+- `ANTPLUS_NETWORK_KEY == [0xB9,0xA5,0x21,0xFB,0xBD,0x72,0xC3,0x45]` imports from `openant.devices`.
+- `Channel.enable_extended_messages(enable)` exists natively (`easy/channel.py:118` → 0x66 `ENABLE_EXT_RX_MESGS`). **No pirower fork needed.**
+- Reference `PowerMeter` uses `period=8182, device_type=11, trans_type=0` (`devices/power_meter.py:36-40`) — identical to our script defaults and the validator's `EXPECTED_PERIOD`.
+
+Load-bearing protocol facts (confirmed against `devices/common.py`):
+- **Common Page 0x50 (Manufacturer ID):** `hw_rev = data[3]`, `manufacturer_id = data[4:6] LE`, `model = data[6:8] LE` (common.py:366-369). The H2 smoking-gun offset (manufacturer_id at bytes 4-5) is **correct** as coded.
+- **Extended-message tail:** when 0x66 is enabled, the source channel ID is *appended* after the 8 data bytes — `data[8]=flag, data[9:11]=device number LE, data[11]=device type, data[12]=trans type` (common.py:329-334). Because it is appended, decode of pages 0x10/0x12/0x50/0x01 (all in bytes 0-7) is unaffected.
+
+Changes applied to `01_capture_stages.py`:
+1. Actually call `enable_extended_messages(1)` in `setup()` — the docstring previously *claimed* extended messages were on but the code never enabled them. Logs an `ext_messages` record (`enabled=True/False`).
+2. `decode_page` now parses the extended tail into `ext_device_number` / `ext_device_type` / `ext_transmission_type` (source-meter ID per packet — disambiguates Sessions C/F).
+3. `decode_page` matches pages against `data[0] & 0x7F` (toggle-bit-robust) while still recording the raw page byte + toggle bit.
+4. New `--log-channel-events` flag tees non-data channel events (RX_FAIL=2, search-timeout=1, channel-closed=7, collision=9) into the JSONL via a chained wrap of `node.ant.channel_event_function`. Off by default; recommended for Sessions C/F. (Closes the gap that the previous `_on_event` handler was dead code — openant never dispatches channel events to a per-channel callback.)
+
+Hypothesis refuted / reframed: the assumption that `on_acknowledge_data` would capture the **SB20→crank** pairing/zero-reset traffic is **wrong**. The SB20 is itself an ANT+ *slave* to the crank-master, and a second passive slave cannot sniff another slave's uplink. The capturable artefact is the crank's calibration **response** (page 0x01, ID 0xAC + offset), which the Bike Power profile sends as an interleaved **broadcast** — so it arrives as `kind="broadcast"`, page 0x01, **not** `kind="acknowledged"`. Session C-0's pass criterion in `03-...md` was rewritten accordingly.
+
+Validation done (no hardware): `py_compile` clean; `decode_page` smoke-tested on synthetic fixtures (plain page, page+ext tail, 0x50 manuf=69, toggled 0x90 page, 0x01 cal response offset=-50, short-payload guard — all pass); a full synthetic JSONL run end-to-end through `00_validate` (PASS/REVIEW), `04_summarize` (manuf_id + cal_id + channel-event row render), and `05_diff` (manufacturer_id 69-vs-263 headline row). Reference fixture for the 69-vs-263 manufacturer-ID diff retained.
+
+Will revisit when: real Session A + C-0 captures land. If C-0 shows no page 0x01 broadcast on zero-reset, the next step is sniffer hardware for the request bytes — but the proxy only strictly needs the response.
+
+## 2026-06-10 — WSL ANT-stick passthrough hardened; openant udev helper is broken for pip installs
+
+Decision: Stop using `python -m openant.udev_rules` in all setup docs; write the udev rule directly. Harden the WSL USB-passthrough instructions.
+
+Refuted assumption: the documented `sudo $(which python) -m openant.udev_rules` (in CLAUDE.md, START-HERE.md Step 4, and 07's WSL + Pi sections) does **not** work with a pip-installed openant. Verified against openant 1.3.4: `udev_rules.install_udev_rules()` does `shutil.copy("resources/42-ant-usb-sticks.rules", "/etc/udev/rules.d")` — a **relative** path — and the `resources/` directory is **not shipped in the wheel** (confirmed: no `*.rules` file anywhere under site-packages). So the command fails with `FileNotFoundError` regardless of how it's invoked. The previous START-HERE variant (`pip install --user openant` + `sudo $(python3 -m site --user-base)/bin/python3 -m openant.udev_rules`) was doubly broken: `--user` installs no python at `~/.local/bin/python3`, and root can't see `--user` packages anyway.
+
+Replacement (works, self-contained, no openant dependency):
+```bash
+sudo tee /etc/udev/rules.d/42-ant-usb-sticks.rules >/dev/null <<'RULE'
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0fcf", MODE="0666"
+RULE
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=usb --attr-match=idVendor=0fcf --action=add
+```
+Vendor-only match (0x0fcf = Dynastream/Garmin) covers all ANT stick PIDs (0x1004/0x1008/0x1009) and future ones. `lsusb` shows our stick as `0fcf:1009`.
+
+Other WSL passthrough fixes applied to START-HERE.md / 07:
+- Added `wsl --update` to Step 1. The #1 silent failure is an old WSL kernel lacking USB/IP (vhci_hcd): `usbipd attach` reports success but `lsusb` is empty. Added a troubleshooting note for exactly this symptom.
+- Noted the udev-in-WSL caveat: rules only auto-apply if WSL runs systemd/udev. Fallback documented — run captures as `sudo $(which python) scripts/01_capture_stages.py ...` (absolute venv-python path preserves the environment).
+- Reordered: udev rule now applied *after* the venv `pip install` (one-time apt libs stay in the passthrough section).
+
+usbipd syntax confirmed current (4.x): `usbipd list` / `usbipd bind --busid <B>` (persists) / `usbipd attach --wsl --busid <B>` (per WSL session). VID to look for: 0x0fcf.
+
+Will revisit if: openant ships the rules file in a future wheel, or adds an `openant udev` CLI subcommand — then the helper becomes usable again.
+
+## 2026-06-10 — Final pre-session review: end-of-capture crash fixed, findings path unified
+
+Decision: Three more fixes from a final fresh-eyes review before the first hardware session, all verified without hardware.
+
+1. **`stop()` made idempotent in `01_capture_stages.py`.** The duration-expiry path called `stop()` twice — from the SIGALRM handler, then from `run()`'s `finally`. The second call closed an already-stopped driver, the `except` then logged to an already-closed JSONL file, and the script died with `ValueError: I/O operation on closed file` at the end of every duration-limited capture. The JSONL itself was complete (first `stop()` wrote `session_end` before closing), so the validator would have said PASS while the console showed a traceback — a confusing "looks broken, actually fine" failure for the very first session. Pre-existing bug, present before this revision's other changes; found by tracing the alarm path end-to-end rather than reviewing `stop()` in isolation. Guard: `self._stopped` flag, second call returns immediately. Tested: double/triple `stop()` produces exactly one `session_end` and no exception.
+
+2. **Validator checks `ext_messages`.** `00_validate_capture.py` now reports PASS if extended messages enabled, WARN if the enable failed (with the error string) or if the record is missing (likely an outdated copy of the capture script). Tested on all three fixture variants.
+
+3. **Findings path unified to `code/findings/captures/`.** Docs disagreed on where captures live: script docstrings → `code/findings/` (correct, where `decisions.md` and the committed tree are); START-HERE (cwd repo root) and 09/code-README/07 (cwd `code/`) both resolved to a nonexistent root-level `findings/`. All commands now resolve to `code/findings/captures/`. Root `.gitignore` patterns updated (`code/findings/captures/*.jsonl|json` ignored by default, `.gitkeep` kept, opt-in commit via `git add -f` — policy unchanged, just re-anchored). HANDOFF and CLAUDE-CODE-PROMPT references updated so the *next* Claude session looks in the right place.
+
+Also: validator glob examples quoted everywhere (`--input 'code/findings/captures/A-*.jsonl'`) — the script picks the newest match itself; an unquoted glob breaks via shell expansion as soon as a second matching file exists (e.g. smoke-test + real Session A on the same day).
+
+Confirmed fine on review (no change needed): `02_capture_assioma.py` re-executes 01 by path and inherits all hardening including `--log-channel-events`; `pyproject.toml` pins `openant>=1.3.0` (verified against 1.3.4); the channel-event tap's `_DATA_EVENT_CODES` filter matches openant's `Message.Code` values (data events 3/1000/2000/3000 excluded; RX_FAIL=2, SEARCH_TIMEOUT=1, CHANNEL_CLOSED=7, COLLISION=9 captured).
+
+## 2026-06-10 — First real capture: Stages manufacturer ID CONFIRMED = 69
+
+Finding (from `A-stagesL-steady-20260610-1740.jsonl`, device #62144, 56s smoke run, validator verdict REVIEW — short length + old-script warning only):
+
+- **Page 0x50 manufacturer_id = 69 (0x45) — the hypothesised Stages value is confirmed from a live capture.** `raw_hex 50ffff0345000300`: hw_rev 3, manufacturer_id 69, model_number 3. The H2 diff target is no longer "to be confirmed."
+- Page 0x51: sw 18.2 (main 18, supp 2), serial 11821518. Page 0x52 present.
+- **Page mix: 0x12 (crank torque) dominant** — 86×0x12, 43×0x10, 30×0x13, 2 each of 0x50/0x51/0x52 over ~56s. The proxy will likely need to emit 0x12 (and possibly 0x13), not just power-only 0x10.
+- Power mean 156 W / max 314 W, cadence 42–72 rpm — real pedalling, plausibly combined (not half) power.
+- **Aggregate rate 2.94 Hz, not 4 Hz — expected, not a dropout.** openant's base layer deliberately skips consecutive identical broadcasts (`ant.py` `_last_data` check: "Only do callbacks for new data"). The JSONL is lossless w.r.t. *distinct* messages; identical repeats are coalesced. Do not chase this as RF interference.
+- `openant scan` found two PowerMeter IDs live: **62144** (captured) and **17039** (uncaptured — presumably the other crank or the bike's own PM rebroadcast). Which sticker ID is the L crank still needs confirming against the bike/app before the full Session A is trusted.
+
+Process notes: the WSL working clone was pulled from GitHub and predates Rev 7, so this capture ran the OLD script (no ext_messages record, extended messages off). The two hardened scripts were copied directly into the WSL tree (hash-verified) after this run; the Windows repo still holds the uncommitted canonical changes — commit + push after today's sessions, then `git pull` in WSL to reconverge. openant scan's Ctrl-C `USBError ... attach_kernel_driver` traceback is a known openant scanner-shutdown quirk under WSL (no kernel driver to reattach) — cosmetic, ignore.
+
+## 2026-06-10 — Full read of the Session A smoke capture (56s, device #62144, old-script run)
+
+Protocol observations from reading the complete JSONL (these inform the eventual spoof spec; full 15-min Session A still to come):
+
+- **Device #62144 is broadcasting dual-sided combined data**: page 0x10 carries `pedal_power_differentiation=true` with balance fluctuating 47–65%, and page 0x13 carries distinct left/right TE+PS values. That's the combined (L-master) stream, not a half-power R broadcast — consistent with #62144 being the **L crank or the bike's mirror of it**. Sticker/app check still needed to distinguish from #17039 (the other PowerMeter ID `openant scan` saw).
+- **Page cycle**: a repeating ~4-message pattern of 0x12, 0x12, 0x10, 0x13 (crank torque at ~2× the rate of power-only), with a **burst of all three commons (0x50, 0x51, 0x52 consecutively) roughly every 30 s** (seen at t≈13.4s and t≈43.2s). The proxy will need to emit 0x12 and 0x13, not just 0x10, and schedule a commons burst.
+- **Battery heads-up**: page 0x52 = `52ff019ddc019db2` → status **Ok** (not New/Good), coarse+frac voltage ≈ **2.61 V**, ~68 h operating time on a 2 s-resolution counter. A fresh CR2032 reads ~3 V. Per the Phase-0 risk note ("cranks may already be partially failing"), consider fresh CR2032s before Session C so weak batteries don't add noise to the calibration capture.
+- The observed ~2.9 Hz log rate with occasional identical consecutive 0x12 rows is explained: openant's dedup only drops *immediately* repeated payloads; an interleaved 0x13/0x10 between two identical 0x12 transmissions lets both through. On-air rate is the standard 4 Hz.
+- Ctrl-C teardown logged `node_stop_error: [Errno 2] Entity not found` then a clean `session_end` — the same benign libusb attach_kernel_driver quirk as the scanner; handled, cosmetic.
+
+Still outstanding: full 15-min Session A (varied power) with the Rev-7 script (ext_messages on), Session C-0 dry run, identity confirmation of #62144 vs #17039.
+
+## 2026-06-10 — Parallel BLE capture added; BLE path is the ESP32/QZ optionality route
+
+Decision: capture the cranks' BLE Cycling Power side passively, in parallel with the ANT+ sessions, via a new `06_capture_ble.py` (bleak) running on native Windows. The bike stays ANT+-paired throughout; the "Pair with Bluetooth" mode switch remains Session G.
+
+Why: implementation optionality. An ESP32 endgame **cannot use ANT+** (ANT is a Nordic/Garmin-licensed radio; ESP32 has BLE+Wi-Fi only), and a QZ contribution is BLE-only on mobile — so both attractive future targets run on the BLE path. The BLE protocol model of the Stages crank (advertisement, GATT table, CPS measurement flags/fields, control-point surface) is capturable for free during rides we're already doing. DIY ESP32 CPS peripherals that Zwift/Garmin accept already exist (kochcodes/ESP32_BLE_CyclingPowerMeter, kswiorek/ble-powermeter), so the eventual spoof-on-ESP32 step is proven feasible in principle.
+
+Platform decision: **BLE capture runs on native Windows, not WSL.** Stock WSL2 kernels ship without the Bluetooth subsystem (CONFIG_BT/btusb absent); enabling it requires a custom kernel build plus usbipd-attaching the adapter (microsoft/WSL#12234, usbipd-win discussion #310) — not worth it when bleak's WinRT backend works natively. Verified live on the owner's ThinkPad (Intel Wireless Bluetooth): bleak 3.0.2 on Python 3.14 in `code/.venv-win`, 16 devices seen in a 6 s scan, full script lifecycle (scan→JSONL framing→clean exit) tested. ANT+ capture stays in WSL; same host clock means the two JSONL streams cross-correlate on iso_time.
+
+Passivity rule (engineering discipline): the BLE capture NEVER writes to any characteristic — Control Point 0x2A66 is logged as present but untouched. No calibration pokes during A/D captures. Verified the script enforces this by construction (no write_gatt_char anywhere).
+
+API verification (same discipline as openant): bleak 3.0.2 is a new major version; its installed source was introspected before relying on it — `BleakScanner(detection_callback=…)`, `discovered_devices_and_advertisement_data`, `BleakClient(address, disconnected_callback=…, timeout=…)`, `start_notify`, `read_gatt_char`, `services` all present with assumed signatures. CPS measurement decoder (0x2A63 flag-ordered optional fields) unit-tested on synthetic payloads: minimal, balance+crank-revs, torque variants, signed power, short payload, truncated-optional-fields.
+
+Open empirical question for the first dual capture: does the Stages crank's BLE side advertise/accept a connection while the bike holds it on ANT+? If yes → full CPS model for free. If no → that's itself a Phase-0 finding (BLE only available when not bike-paired), which raises Session G's importance for the ESP32 route.
+
+Will revisit when: the first parallel capture lands (does BLE advertise at all?), and at the Phase-0 report (whether BLE pairing mode + Session G gets promoted from optional to planned, which the ESP32 question drives).
+
+## 2026-06-10 — Owner decisions: adv-only first BLE ride; ESP32 promoted to real target
+
+Two scope decisions from the owner (recorded same-day):
+
+1. **First dual-capture ride runs BLE in advertisement-survey mode only** (`--adv-only`) — no BLE connections to the cranks while the ANT+ sessions are being baselined. Connect-mode capture (GATT dump + CPS notifications) happens on a later ride once the survey confirms what's on the air. Rationale: cautious sequencing; removes even the theoretical risk of a BLE client changing crank behaviour during the first real ANT+ sessions.
+
+2. **ESP32 is a real deployment target, not just optionality.** Session G (bike paired to cranks over BLE) is promoted from optional to a **planned** Phase-0 session — after Sessions A–F, so the ANT+ baseline is never disturbed mid-stream. The phase-0 report must now answer: does erg mode work fully with BLE-paired cranks, and what does the BLE calibration handshake (CP 0x2A66) look like? This also raises the eventual priority of a `StagesBleTarget` implementation and keeps the QZ-contribution door open. ANT+/Pi/Python remains the Phase-1/2 build path; ESP32 is the productisation direction to keep unblocked.
+
+START-HERE and 03 updated accordingly.
+
+## 2026-06-10 — Guided ride wizard for solo morning sessions
+
+Decision: wrap the morning's Phase-0 sessions (C-0 → A → optional B) in a single interactive wizard (`code/scripts/ride_wizard.py`, WSL) rather than having the owner juggle commands mid-ride. Companion one-pager at `RIDE-CARD.md`.
+
+Design points worth keeping:
+- **Cues are data annotations.** Every on-screen cue (zero-reset moment, power-block boundaries, the 30 s coast) is recorded with planned offset + actual wall-clock time into an auto-generated `<capture>-notes.md` — this *is* the timestamp annotation the Session C/A docs require, produced as a side effect of guiding the rider.
+- **Session A block design is protocol-driven, not training-driven**: warmup→200→260→330 W (≈90% Stages FTP 367), a 400+ W surge (exercises power MSB), a full 30 s coast (zero-power/zero-cadence event-count behaviour), then low-cadence (~60) and high-cadence (~95+) blocks for cadence byte spread. Targets stated in Stages watts since that's what the bike/app displays while riding.
+- **C-0 verdict is computed by the wizard** (scan for page-0x01 records) immediately after the dry run, with PASS / INVESTIGATE messaging; INVESTIGATE does not block Session A.
+- **Live remote analysis**: Claude (Windows session) reads the WSL captures via `\wsl.localhost\Ubuntu-24.04\...` while they're being written — proven earlier today against the smoke capture. The wizard's wrap-up directs the owner to just say "sessions done" in chat.
+- **BLE survey auto-launch** uses WSL→Windows interop (`cmd.exe /c start <win-venv-python> 06_capture_ble.py --adv-only ...`), with a manual-fallback command on the ride card. Interop confirmed available in the owner's distro.
+
+Two Python gotchas fixed during in-WSL shakeout (both would have crashed on ride morning; found by executing in the real environment, not by review):
+1. `importlib`-loading a module containing `@dataclass` requires `sys.modules[name] = mod` *before* `exec_module` on Python 3.12 (`dataclasses._is_type` does `sys.modules.get(cls.__module__).__dict__`). Note `02_capture_assioma.py` gets away without this only because `01` has no dataclasses.
+2. Don't name a `threading.Thread` subclass attribute `_stop` — it shadows the internal `Thread._stop()` that `join()` calls ("'Event' object is not callable").
+
+Verified in the owner's WSL (Ubuntu-24.04, py3.12 venv): compile, module-loads, validator round-trip against the real smoke capture (REVIEW as expected), and a full `--preview` run of both cue schedules (exit 0).

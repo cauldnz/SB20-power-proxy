@@ -23,10 +23,10 @@ Stretch goals: configurable input source (not just Assioma), single-binary insta
 
 **Do not start writing the proxy.** The first task is diagnostic capture.
 
-In many cases the project owner runs the captures themselves before kicking off Claude Code — see [`START-HERE.md`](START-HERE.md) for the user-facing walkthrough. By the time you read this, there may already be JSONL captures committed under `findings/captures/` and a notes file or two. Check first:
+In many cases the project owner runs the captures themselves before kicking off Claude Code — see [`START-HERE.md`](START-HERE.md) for the user-facing walkthrough. By the time you read this, there may already be JSONL captures committed under `code/findings/captures/` and a notes file or two. Check first:
 
 ```bash
-ls findings/captures/   # any *.jsonl files? any *-notes.md files?
+ls code/findings/captures/   # any *.jsonl files? any *-notes.md files?
 ```
 
 If captures exist, your first task is analysis — start at step 5 below and use the existing data. If they don't exist or are incomplete, your task includes the capture work too.
@@ -37,10 +37,10 @@ The full sequence:
 1. Set up the dev environment per `07-hardware-and-environment.md`. Verify openant works against the user's Assioma and against a working Stages crank. Quick smoke test: `openant scan` should find both when they're awake. Optionally bring up the InfluxDB+Grafana stack via `code/docker/docker-compose.yml` (see `09-exploring-captures.md` for the workflow — strongly recommended for analysis).
 2. Implement / refine `code/scripts/01_capture_stages.py` — an ANT+ traffic capture that logs every packet from the SB20's left and right cranks during (a) idle, (b) the SB20 pairing flow including zero-reset, (c) steady-state pedalling. Output: timestamped JSONL with full raw payloads and decoded data pages.
 3. Implement / refine `code/scripts/02_capture_assioma.py` — same idea but capturing the Assioma broadcast in isolation.
-4. Run all capture sessions per `03-central-hypothesis-and-phase-zero.md`.
+4. Run all capture sessions per `03-central-hypothesis-and-phase-zero.md`. **After Session A, run `code/scripts/00_validate_capture.py --input <jsonl>` and confirm a PASS/REVIEW verdict before continuing** — it gates whether the capture mechanism works at all. **Before Session C, run the Session C-0 ACK dry run** (also in `03-...md`) to confirm inbound/acknowledged traffic is actually captured; if it isn't, hardening the capture script's extended-message support is the first coding task.
 5. For each capture, run `04_summarize_capture.py` to produce a markdown summary, and ingest into InfluxDB via `03_ingest_jsonl_to_influx.py` for visual exploration in Grafana.
 6. Run `05_diff_captures.py` to produce side-by-side comparisons (Stages L vs Assioma is the headline diff).
-7. Synthesise everything into `findings/phase-0-report.md`. The diff and summary outputs are committed alongside as supporting evidence; the report is your written analysis on top.
+7. Synthesise everything into `code/findings/phase-0-report.md`. The diff and summary outputs are committed alongside as supporting evidence; the report is your written analysis on top.
 
 Only after that report exists do we move to Phase 1 (build a static replay) and Phase 2 (build the live proxy).
 
@@ -68,7 +68,7 @@ Only after that report exists do we move to Phase 1 (build a static replay) and 
 ## Style/working notes
 
 - The owner is technical and wants a workable hobby/open-source tool, not a polished product. Optimise for clarity over cleverness.
-- Capture artefacts (JSONL logs, diff reports, hypothesis updates) belong under `findings/` — committed, time-stamped, never deleted. Future debugging will rely on them.
+- Capture artefacts (JSONL logs, diff reports, hypothesis updates) belong under `code/findings/` — committed, time-stamped, never deleted. Future debugging will rely on them.
 - When something doesn't work, don't paper over it. Document the failure and propose hypotheses. The owner wants to learn from this, not just have a result.
 - Eventual delivery target: a small Raspberry Pi image / Github repo other SB20 owners can use. Keep external dependencies and platform-specific code minimal from day one.
 

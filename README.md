@@ -6,7 +6,12 @@ A man-in-the-middle ANT+ proxy that lets a [Stages SB20 smart bike](https://stag
 
 ## Why this exists
 
-Stages Cycling went bankrupt. The SB20 is otherwise an excellent piece of equipment, but its onboard L/R crank power meters use proprietary CR2032-powered electronics with a limited spares supply. When (not if) those cranks fail, the bike loses erg-mode resistance control and becomes a dumb spin bike. This project builds a software replacement for those cranks using any standard ANT+ power meter as the actual sensor — Favero Assioma DUO pedals as the reference implementation.
+Stages Cycling ceased operations in 2024; its brand and assets were later acquired by Giant Group (via subsidiary SPIA Cycling), which now offers a discretionary, time-limited "Rider Support Program" for existing owners. Long-term availability of replacement SB20 crank power meters remains uncertain. The SB20 is otherwise an excellent piece of equipment, but its onboard L/R crank power meters use proprietary CR2032-powered electronics with a limited and aging spares supply. If those cranks fail and can't be replaced, the bike loses erg-mode resistance control and becomes a dumb spin bike.
+
+This project builds a software replacement for those cranks using any standard ANT+ power meter as the actual sensor — Favero Assioma DUO pedals as the reference implementation. There are two distinct motivations:
+
+1. **Resilience / backstop.** A software path that keeps the SB20 fully functional if (when) the native cranks fail, independent of vendor support.
+2. **Power-source consistency.** Many owners ride the same Assioma pedals both outdoors and on the SB20 (recording to a head unit or watch), but the SB20's *erg control* still runs off the Stages cranks — which often read several percent different from the Assiomas. The practical result: you set a 350 W erg target, the bike drives you to 350 W *by its own cranks*, but your Assiomas (your training reference) record ~320 W. Power-zone target sessions are then calibrated against a meter you don't use for anything else. Driving the SB20's erg loop from your standard power meter makes indoor targets directly comparable to outdoor efforts.
 
 The result is a small Python application (target: Raspberry Pi or laptop with one or two ANT+ USB sticks) that:
 - Subscribes to your real power meter as a slave
@@ -48,11 +53,13 @@ The result is a small Python application (target: Raspberry Pi or laptop with on
 └── code/
     ├── pyproject.toml              ← openant + optional [dev], [ble], [analysis]
     ├── scripts/
+    │   ├── 00_validate_capture.py  ← Phase 0: sanity-check a capture (run after Session A)
     │   ├── 01_capture_stages.py    ← Phase 0: forensic ANT+ capture (any Bike Power device)
     │   ├── 02_capture_assioma.py   ← thin wrapper around 01
     │   ├── 03_ingest_jsonl_to_influx.py   ← JSONL → InfluxDB
     │   ├── 04_summarize_capture.py        ← JSONL → markdown summary
-    │   └── 05_diff_captures.py            ← two JSONLs → side-by-side markdown diff
+    │   ├── 05_diff_captures.py            ← two JSONLs → side-by-side markdown diff
+    │   └── 06_capture_ble.py              ← optional parallel BLE (CPS) capture — runs on native Windows
     ├── src/sb20proxy/              ← library code (mostly stubs pre-Phase-1)
     │   ├── reading.py              ← the PowerReading dataclass — the seam between
     │   │                             input sources and output targets
@@ -84,4 +91,4 @@ MIT — see [`LICENSE`](LICENSE). Note that several prior-art projects (notably 
 - The maintainers of [openant](https://github.com/Tigge/openant) — the Python ANT+ library this project is built on.
 - [dhague/vpower](https://github.com/dhague/vpower) — closest architectural prior art for "rebroadcast as an ANT+ Bike Power master from Python".
 - [cagnulein/qdomyos-zwift](https://github.com/cagnulein/qdomyos-zwift) — the most substantial open-source project in the indoor-fitness bridging space; studied for patterns and conventions even though we don't share code (license-incompatible).
-- The SB20 owner community who keeps these bikes alive after Stages's bankruptcy.
+- The SB20 owner community who keeps these bikes alive as vendor support winds down.

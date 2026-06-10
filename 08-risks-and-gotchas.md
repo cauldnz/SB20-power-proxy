@@ -96,13 +96,12 @@ Assioma's auto-calibration kicks in periodically while pedalling, which can caus
 
 ### Spoofing manufacturer ID
 
-If Phase 0 reveals that we need to present as Stages's manufacturer ID to make the SB20 accept us, we are technically misrepresenting Stages-Cycling-the-company on-air. In practice:
+If Phase 0 reveals that we need to present as Stages's manufacturer ID to make the SB20 accept us, we are technically misrepresenting a manufacturer on-air. In practice:
 
-- Stages is bankrupt; there is no commercial harm.
-- ANT+ device-type fields are not regulated identities — spoofing them is universally considered acceptable for personal/research use.
-- We are not selling anything that claims to be Stages.
-
-But: if this project is published, the README should be honest about what's being spoofed and why. No need to be cagey; transparency is fine.
+- The on-air identity is presented only to one's own bike, for personal interoperability and to keep owned hardware working — not to any third party or marketplace.
+- ANT+ device-type/manufacturer fields are not regulated legal identities — spoofing them on a private network for personal/research use is universally considered acceptable.
+- We are not selling anything, and nothing claims to *be* a Stages product.
+- Note that the Stages brand and IP now belong to Giant Group (SPIA Cycling) — i.e. an active company, not a defunct one — so "no one is harmed because the maker is gone" is no longer the right framing. The better framing is the one above: private interoperability with hardware you own. If the project is published, the README should state plainly what's being spoofed and why, and avoid any implication of affiliation or endorsement.
 
 ### Liability
 

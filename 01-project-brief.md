@@ -6,29 +6,29 @@ A software bridge that lets a Stages SB20 smart bike consume real-time power dat
 
 ## Why
 
-1. Stages Cycling went bankrupt; replacement Stages cranks are increasingly hard to source and the supply will run out.
-2. The SB20 is otherwise a high-quality bike (quiet, solid, electronically controlled flywheel).
-3. The owner already has and trusts Favero Assioma pedals as their reference power source — using them indoors and outdoors. Having one consistent meter for both contexts means training data is directly comparable.
+1. Stages Cycling ceased operations in 2024; its assets were acquired by Giant Group (SPIA Cycling), which offers a discretionary, time-limited support program for existing owners. Long-term availability of replacement SB20 cranks is uncertain, and the existing units use aging, proprietary CR2032-powered electronics.
+2. The SB20 is otherwise a high-quality bike (quiet, solid, electronically controlled flywheel) worth keeping in service.
+3. The owner already has and trusts Favero Assioma pedals as their reference power source — used both indoors and outdoors. But while the Assiomas can *record* indoor rides (to a watch/head unit), the SB20's *erg control loop* still runs off the Stages cranks, which read several percent differently. This makes power-zone target sessions imprecise: an erg target of 350 W (driven by the Stages cranks) might correspond to only ~320 W on the Assiomas, the meter the owner actually trains against. Driving erg control from the Assiomas makes indoor targets directly comparable to outdoor efforts.
 4. There is no commercial product solving this. Existing workarounds (TrainerRoad PowerMatch, QZ/qdomyos-zwift) substitute the *training app's* view of power but do not change what the *bike itself* uses for erg control. They are app-level bridges, not bike-level ones.
 
 ## Use cases (in priority order)
 
-### Use case 1 — Primary power source replacement (current priority)
+### Use case 1 — Consistent erg control from a standard power meter (current priority)
 
-The owner wants the SB20 to use Assioma data as its primary power source, so that:
-- All training apps connected to the SB20 (Zwift via FE-C, Stages app, etc.) report Assioma-derived numbers
-- Erg mode targets and adjustments are based on Assioma-derived power
-- Indoor and outdoor training data come from the same physical sensor
+The owner wants the SB20 to use Assioma data as its primary power source — not just for *display* in connected apps, but for the bike's own **erg/resistance control loop**. The payoff:
+- Erg-mode targets are driven by Assioma-derived power, so a 350 W target produces 350 W *as measured by the meter the owner actually trains with* — not by the Stages cranks, which read several percent differently.
+- Power-zone and structured target sessions indoors become directly comparable to outdoor efforts recorded on the same Assiomas.
+- All training apps connected to the SB20 (Zwift via FE-C, the Stages app, etc.) report Assioma-derived numbers, so there is a single source of truth.
 
-The Stages cranks may still be physically present and functional during this phase, but their data is not used.
+The Stages cranks may still be physically present and functional during this phase, but their data is not used for control.
 
 ### Use case 2 — Failure-mode backstop
 
-If the Stages cranks fail (battery contact issues, electronics failure, loss of pairing), the proxy keeps the SB20 fully functional. This is the "insurance" use case — a value the owner gets even before any Stages hardware actually breaks.
+If the Stages cranks fail (battery contact issues, electronics failure, loss of pairing), the proxy keeps the SB20 fully functional. This is the "insurance" use case — a value the owner gets even before any Stages hardware actually breaks, made more pertinent by uncertain long-term spares availability after the brand's change of ownership.
 
 ### Use case 3 — Distributable to other SB20 owners
 
-A clean Github repository with installation instructions, ideally a Raspberry Pi image, that another SB20 owner can pick up and use with minimal technical work. The intended audience is the broader SB20 community facing the same Stages bankruptcy problem.
+A clean Github repository with installation instructions, ideally a Raspberry Pi image, that another SB20 owner can pick up and use with minimal technical work. The intended audience is the broader SB20 community — both those facing crank-availability risk and those wanting consistent power between their outdoor meter and indoor erg control.
 
 ### Use case 4 — Foundation for future projects
 
@@ -84,3 +84,4 @@ These shape the architecture and must be answered before significant code is wri
 4. What transmission type byte do the Stages cranks use, and does the SB20 validate it?
 5. Does the SB20 accept an ANT+ device ID in any range, or does it whitelist specific Stages-issued IDs? (Plausibly: no whitelist; the field is a free 5-digit number.)
 6. Does removing the batteries from the actual Stages cranks cause the SB20 to display a fault, or does it gracefully wait for re-broadcast? (Affects the "remove the cranks during testing" approach.)
+7. Does the SB20 apply any internal scaling/calibration factor to crank power before using it for erg control and display? (Relevant to use case 1: if the bike scales what the cranks report, feeding it raw Assioma watts may not produce Assioma-accurate erg targets — we may need to characterise and compensate for that factor. Session A vs the bike's own displayed/app-reported power answers this.)
