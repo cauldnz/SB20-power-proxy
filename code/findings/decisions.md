@@ -208,3 +208,13 @@ Two Python gotchas fixed during in-WSL shakeout (both would have crashed on ride
 2. Don't name a `threading.Thread` subclass attribute `_stop` — it shadows the internal `Thread._stop()` that `join()` calls ("'Event' object is not callable").
 
 Verified in the owner's WSL (Ubuntu-24.04, py3.12 venv): compile, module-loads, validator round-trip against the real smoke capture (REVIEW as expected), and a full `--preview` run of both cue schedules (exit 0).
+
+## 2026-06-10 — Calibration-model direction: guided "protocol rides" to fit a meter-vs-meter regression
+
+Owner direction (evening before the first full session): the power-source-consistency use case likely needs more than a constant scale factor, and the ride-wizard pattern just prototyped is the delivery mechanism for fitting whatever it does need.
+
+- **Why a model, not a constant.** P = τ·ω. Strain-gauge slope error lives in the torque domain, so at a fixed power the Stages↔Assioma delta is expected to vary with cadence (different torque). The eventual mapping is anticipated to be a regression over features like power level, cadence, and torque (τ ∝ P/ω), possibly with drift/temperature terms — fitted, not assumed. This generalises open question #7: even if the SB20 applies no internal scaling, the meters' own disagreement may be load-shaped.
+- **Mechanism: the calibration ride.** Reuse the guided-ride pattern as a designed experiment — a wizard-led grid sweep (sketch: 3 powers × 3 cadences, e.g. ~150/250/330 W × 60/85/100 rpm, 60–90 s per cell, coast separators between cells) generating clean torque spread. The cue timestamps double as cell labels, exactly as in the Phase-0 wizard.
+- **Productisation angle (use case 3):** every SB20 owner's meter pair differs; the guided calibration ride becomes the onboarding flow — ride 12 minutes, the tool fits *your* pair's model, the fitted parameters become proxy config.
+- **Data capture for the model:** the proper version is dual ANT+ capture — two sticks, one slave per meter, same ride, perfectly time-aligned JSONL on both sides (the owner has two sticks). Tomorrow's cheap first pass: a watch records the Assioma side while Session A captures the Stages side; the **30 s coast block at t=10:30 is the cross-correlation sync marker** between the FIT file and the JSONL (a distinctive zero-power notch in both streams).
+- **Discipline:** no regression code and no grid-ride session design freeze until dual-meter data exists. Analyse tomorrow's first-pass deltas first; design the calibration ride from what they show.

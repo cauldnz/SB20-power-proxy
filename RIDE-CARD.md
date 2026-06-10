@@ -103,9 +103,17 @@ code\.venv-win\Scripts\python.exe code\scripts\06_capture_ble.py `
     --output code\findings\captures\ble-adv-survey-$(Get-Date -Format yyyyMMdd-HHmm).jsonl
 ```
 
-## Bonus (optional, zero effort): the scaling question
+## Bonus (optional, ~1 min of effort): dual-meter data
 
 If your Assiomas are mounted on the SB20 and you have a watch/head unit
 handy, record the **Assioma side on the watch during Session A**. Same ride,
-both meters → direct data for open question #7 (does the bike scale crank
-power?). Skip without guilt if it's a faff.
+both meters → first data for the calibration-model idea (and open question
+#7: does the bike scale crank power?).
+
+- Start the watch recording **just before** you press ENTER to start Session A.
+- Don't worry about exact sync: the **30 s coast at 10:30** puts a distinctive
+  zero-power notch in both recordings — that's our alignment marker.
+- Afterwards, export/sync the ride (FIT file) wherever you normally do;
+  tell Claude where it lives.
+
+Skip without guilt if it's a faff.
