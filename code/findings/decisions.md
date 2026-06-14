@@ -324,6 +324,30 @@ Owner flagged that the SB20 has adjustable cranks (165–175 mm pedal holes) and
 - **Pre-ride control:** make physical holes = SB20-app length = Favero-app length, all three equal, before session 2. Added to `CALIBRATION-RIDE-CARD.md` bike-setup (step 1). Worth capturing the three current values first — a current mismatch is itself a finding.
 - **Proxy implication:** once spoofing, the Stages crank leaves the loop, so the SB20's crank-length setting becomes moot. Only the **Favero/Assioma** crank-length config must be correct (so the Assioma watts we feed are accurate). Crank length is therefore a *measurement* confound, not a proxy problem. (Note: the SB20 may push a crank-length config to the crank during pairing — our spoof can capture and ignore it.)
 
+## 2026-06-14 — Stages app UI findings: BLE-source option + editable meter IDs (screenshots)
+
+Owner captured screenshots of the Stages app's POWER METERS tab for the SB20
+(*Stages Bike 0105*). Filed under `code/findings/screenshots/stages-app/` with a
+README documenting each. Three findings with architectural weight:
+
+1. **BLE can be the power-meter source, not just ANT+.** The app has a "Pair with
+   Bluetooth — use the power meter Bluetooth connection with the Stages Bike"
+   toggle. So the SB20↔meter link is not ANT+-only → opens a **pure-BLE proxy on
+   an ESP32** (no ANT+ stick / no Pi). Aligns with the ESP32 BLE-CPS prior art
+   just added to `06-prior-art-and-references.md`. Open: does the bike's BLE pair
+   accept *any* CPS peripheral or only Stages-branded? Hardware test needed.
+2. **The bike stores the meter IDs it listens for** (`Stages 62144 : 4963`,
+   crank length 165 mm). A spoof can target chosen IDs → possibly **keep the real
+   Stages meters' batteries in** and still inject. Try different IDs once spoof is real.
+3. **Refuted shortcut:** owner already tried pointing the bike at the **Assioma's
+   native ANT+ IDs** — **did not work**. ID-matching alone is insufficient; need a
+   full spoof (correct manufacturer ID, page formats, whole Bike Power contract),
+   not just channel/device IDs. Reinforces Phase-0-capture-first.
+
+Recorded values (don't treat as fixed — zero-offset drifts per calibration):
+meter `Stages 62144 : 4963`, crank 165 mm, zero-offset Left 903 / Right 951.
+Owner action: print physical stickers with the meter ID(s) so they aren't lost.
+
 ## 2026-06-14 — Crank-length settings on ride day + a testable prediction for session 2
 
 Owner reported the day-1 crank-length config:
