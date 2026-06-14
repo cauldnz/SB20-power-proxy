@@ -116,4 +116,9 @@ The capture/analysis tooling and this report are current. A few front-door docs 
 - **README** status line updated to point here; **HANDOFF** carries a "Phase 0 largely done — read this report + decisions.md" banner.
 - **Append-only `decisions.md` self-corrections** (the latest entry always wins): `Stages 4963` is the **right crank** (early "= bike CPS" is stale); the crank **IS** BLE-reachable in ANT+ mode; the "crank-length prediction confirmed" was **retracted** (now open, §5); the 165 mm setting was a **deliberate** gain hack. When in doubt, trust this report and the newest `decisions.md` entry over older ones.
 - A `captures/README.md` index now lists the real capture files (names had drifted; `G-stagesL-ble-recon` is actually the **bike** FTMS device, not the L crank).
-- Still stale (lower priority, flagged not fixed): `CLAUDE-CODE-PROMPT.md` (primes an already-done task); the `[HYPOTHESIS]/[UNKNOWN]` tags in `02` and the open-question lists in `01`/`04` (answers are in §1 here); the two ride-cards vs the agent-driven model in the runbook; the `src/sb20proxy/` library is stubs only (`pyproject` declares a `cli:main` entry point that doesn't exist yet — fine until Phase 1 starts).
+- **Cleanup completed (Rev 13):** status banners added to `01`/`02`/`03`/`04`/`05`/
+  `CLAUDE-CODE-PROMPT` pointing here; `01`/`04` open-question lists annotated with their
+  answers; `code/README` status + script list corrected; `09` mentions 07/08/06;
+  `findings/README` points here; `RIDE-CARD` flags the agent-driven default; and
+  `src/sb20proxy/cli.py` added so the declared `sb20proxy` command resolves (real CLI in
+  Phase 1). Remaining known stub: `src/sb20proxy/` is otherwise skeletal — built out in Phase 1.
