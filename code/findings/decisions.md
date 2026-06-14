@@ -383,3 +383,23 @@ Why erg is the better design here:
 - `08_analyze_grid.py` is unchanged — it bins continuously by (power, cadence), so erg-clustered cells analyse the same.
 
 Protocol: 3 erg setpoints (~150/250/330 W, actuals reported) × cadence sweep (60→80→100 rpm, ~60 s each, allow a couple seconds to re-stabilise after each cadence change). **Sprints switch to LEVEL/resistance mode** (erg caps at the setpoint, can't sprint): firm resistance, 4× ~12 s all-out (800–1000 W+), 90 s easy between. CALIBRATION-RIDE-CARD.md updated accordingly. Open: confirm the bike's erg step size near 150/250/330 so Claude cues hittable numbers.
+
+## 2026-06-14 — BLE/ESP32 path planned; huge reuse from cauldnz/raedian-probe
+
+Owner pointed at their `cauldnz/raedian-probe` project (a BLE recon toolkit + ESP32 bridge for a Raedian/Zeekr EVSE). Reviewing it: ~80% of the SB20 BLE/ESP32 substrate already exists and is directly reusable. The SB20 proxy is essentially a second instance of the same pattern.
+
+Reusable assets identified:
+- **`esp32_bridge_spec.md`** — ESP32-C3 + OLED + **NimBLE BLE-client** bridge, decoupled control loop, OTA, OLED/QR onboarding, hero-SKU costing. Our proxy maps onto it 1:1 (their "charger half = BLE client to the wallbox" → our "crank-peripheral + Assioma-central half"; their control loop → relay Assioma watts + answer calibration). Reuse the firmware scaffold wholesale.
+- **`sniffer_setup_runbook.md` + `pcap_analyze.py`** — a working nRF52840 → Wireshark → JSON passive sniffer pipeline. This is the gold-standard Session G capture (bike↔crank link + bonding); already solved. (Supersedes my "go buy a sniffer" suggestion.)
+- **Staged recon toolkit** (`scan`/`enumerate`/`listen`/`correlate`/`probe_write`) — a more complete version of our `06_capture_ble.py`, same "observe exhaustively before writing" philosophy. Mirror its structure; port `probe_write` for the guarded Control-Point calibration write.
+
+Technical confirmations:
+- **Dual-role BLE feasible:** NimBLE on ESP32 supports concurrent central+peripheral (~9 connections). The proxy = central→Assioma + peripheral→bike simultaneously.
+- **Board strategy:** Waveshare ESP32-C6-LCD-1.47 (~A$18) for dev + on-device calibration UX; ESP32-C3 + 0.96/1.3" OLED hero SKU (the bridge-spec recipe; owner already has C3+OLED boards).
+- **Assioma exclusivity is fine:** its BLE goes to the ESP32, its ANT+ stays free for the owner's watch (dual-broadcast, confirmed day-1).
+
+Deliverables: `11-ble-and-esp32-path.md` (A: strategy/architecture/reuse) and `code/findings/session-G-ble-capture-spec.md` (B: the capture checklist, active + passive + the erg-works gate), each item mapped to the ESP32 build need.
+
+Next-session BLE plan (after the ANT+ #7 + grid): (1) active BLE recon of the crank while still ANT+-paired — needs a guarded Control-Point write added to `06_capture_ble.py` (the one tooling prep item); (2) the erg-works-on-BLE-cranks GATE (flip to "Pair with Bluetooth", test erg — no sniffer needed, this is the go/no-go); (3) passive sniff IF the nRF dongle is flashed & ready (else a focused follow-up). Sequencing is mode-exclusive: ANT+/active-recon first (crank BLE-free), then BLE-crank mode for the gate + sniff.
+
+Open prep items before the BLE session: (a) add the guarded Control-Point write to 06_capture_ble.py; (b) confirm whether the nRF sniffer dongle is flashed per the raedian-probe runbook.

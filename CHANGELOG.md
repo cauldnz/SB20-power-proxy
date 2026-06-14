@@ -1,5 +1,35 @@
 # Changelog
 
+## Revision 12 — BLE/ESP32 path planned; Session G capture spec (reuses raedian-probe)
+
+Plans the productisation path (cheap, distributable BLE proxy on ESP32) and specs the
+capture that gates it. Key realisation from reviewing the owner's `cauldnz/raedian-probe`
+EVSE project: ~80% of the BLE/ESP32 substrate already exists and is directly reusable.
+
+### New
+- **`11-ble-and-esp32-path.md`** — strategy + architecture for the ESP32 BLE proxy.
+  Dual-role BLE (central→Assioma, peripheral→bike) confirmed feasible on NimBLE. Maps
+  the proxy onto `raedian-probe/esp32_bridge_spec.md` (same ESP32-C3 + OLED + NimBLE +
+  OTA + onboarding scaffold), and the BLE recon onto its `scan/enumerate/listen/
+  probe_write` toolkit + `sniffer_setup_runbook.md` (nRF52840 → Wireshark → pcap_analyze).
+  Board strategy: C6-LCD for dev/on-device calibration UX, C3+OLED hero SKU.
+- **`code/findings/session-G-ble-capture-spec.md`** — exactly what to capture to evaluate
+  and build the BLE path: active recon (crank advert/GATT/reads/CPS/calibration, while
+  ANT+-paired) + passive sniff (bonding + the bike's calibration write, in BLE-crank mode)
+  + the erg-works-on-BLE-cranks **gate**. Each item mapped to what the ESP32 impersonation
+  needs.
+
+### Changed
+- `CALIBRATION-RIDE-CARD.md` gains a "→ then BLE evaluation" section: after the ANT+
+  work, attempt active BLE recon + the erg-works gate (and the sniff if the nRF dongle
+  is ready).
+
+### Why
+ESP32 can't do ANT+, so productisation runs on BLE — and the owner has already built the
+hard parts (NimBLE client, OTA/observability, OLED onboarding, an nRF sniffer pipeline)
+for a parallel EVSE project. The SB20 ESP32 proxy is a second instance of that pattern,
+gated only on Session G confirming the SB20's BLE crank mode gives full erg and is spoofable.
+
 ## Revision 11 — Session-2 toolkit: multi-source capture, grid analysis, calibration run sheet
 
 De-scopes the calibration model from the critical path (the proxy feeds Assioma

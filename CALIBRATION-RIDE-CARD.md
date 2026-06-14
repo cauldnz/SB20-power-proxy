@@ -109,6 +109,22 @@ actually need). Then commit the capture + write up.
 
 ---
 
+## → Then (same session if time/kit allow): BLE evaluation (Session G)
+
+Once the ANT+ work is done, we evaluate the BLE/ESP32 path. Full spec:
+`code/findings/session-G-ble-capture-spec.md`. Sequence (mode-exclusive):
+1. **While still on ANT+ cranks** — *active BLE recon*: connect to the Stages crank
+   over BLE (it advertises even while ANT+-paired) and dump advert + GATT + reads +
+   CPS notifications + a guarded calibration write. (Needs the small Control-Point
+   write added to `06_capture_ble.py`.)
+2. **Flip the bike to "Pair with Bluetooth"** — the **GATE**: does erg still work with
+   BLE-paired cranks? Set an erg target, confirm the bike holds power. This is the
+   go/no-go for the entire ESP32 direction — no sniffer needed.
+3. **If the nRF sniffer is flashed & ready** (`raedian-probe/docs/sniffer_setup_runbook.md`)
+   — passively capture the bike↔crank pairing/bonding + the bike's calibration write.
+   If not ready, defer to a focused follow-up; steps 1–2 already give go/no-go + most
+   of the impersonation surface.
+
 ## If something goes wrong
 - Stick stuck / "Resource busy" / wrong-state → runbook §3/§2 (kill exact PID via
   `fuser`, relaunch). Claude handles it; you keep spinning.

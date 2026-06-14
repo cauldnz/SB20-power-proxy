@@ -49,6 +49,7 @@ The result is a small Python application (target: Raspberry Pi or laptop with on
 ├── 08-risks-and-gotchas.md         ← things that will hurt
 ├── 09-exploring-captures.md        ← the capture analysis workflow
 ├── 10-relationship-to-QZ.md        ← whether this should eventually live in QZ
+├── 11-ble-and-esp32-path.md        ← BLE/ESP32 productisation plan (reuses cauldnz/raedian-probe)
 │
 └── code/
     ├── pyproject.toml              ← openant + optional [dev], [ble], [analysis]
