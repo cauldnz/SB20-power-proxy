@@ -297,3 +297,19 @@ Implemented as `code/scripts/07_capture_dual.py` (reuses 01's decode_page; tags 
 — shake out on the next ride via the run_capture/runbook procedure. The guided **calibration ride**
 (power×cadence grid) now becomes fully self-contained on one stick: ride the grid, fit f(power,cadence),
 done — and the same flow is the onboarding step for other owners (use case 3).
+
+## 2026-06-14 — De-scope: the calibration model is OFF the critical path for the core goal
+
+Goal, stated crisply by the owner: "Stages erg mode runs correctly using my Assiomas (or another pedal meter) as the source" — i.e. erg target X W => I produce X W *as measured by my Assiomas*.
+
+Key architectural clarification (prevents over-building):
+- The proxy **replaces** the crank power the SB20's erg loop reads with **live Assioma watts**. The erg loop then closes on the Assioma number by construction: set erg to 350 -> bike adds resistance until the number it sees (= Assioma) reads 350 -> you produce 350 Assioma watts. The Stages cranks leave the loop entirely.
+- Therefore the **Stages-vs-Assioma calibration model is NOT needed** for the goal. Today's torque-dependent offset (1.134@60rpm vs 1.053@100rpm) is the *diagnosis* of why the current cranks-in-the-loop setup mis-trains and why the dual-FTP patch can't work (it constant-corrects a torque-shaped gap). The proxy *eliminates* that gap rather than modelling it. The power×cadence grid ride is now **optional / research**, not required for delivery.
+- The model would only be needed for the inferior "keep Stages as source, correct it to read like Assioma" approach. Not our path.
+
+The ONE thing that could complicate the direct feed — **open question #7: does the SB20 internally rescale crank power before erg/display?** Prior is "no" (Stages docs: the bike "rebroadcasts the same information as the left power meter" => pass-through). If it does scale, it's a single bike-specific factor to compensate, NOT a per-meter model. **Test:** capture the bike's own FE-C power broadcast alongside the crank, same clock; if bike_fec_power == crank_power instant-by-instant, #7 is closed.
+
+Next-session objectives (one structured ride, one same-clock multi-source capture):
+1. **#7 verification** — capture Stages crank (62144, 0x0B) + Assioma (17039, 0x0B) + bike FE-C (0x11, wildcard) together; compare FE-C vs crank power.
+2. **Calibration grid (research/optional)** — power×cadence cells to map the offset surface and find empirically how few cells are needed (likely collapses to ~1-D in torque P/cadence). Include a **sprint** corner (owner's 800-1000W+ range) to probe the high-torque/high-power extreme.
+Tooling built for it: `07_capture_multi.py` (multi-source incl. FE-C), `08_analyze_grid.py` (ratio surface + torque-vs-cadence-vs-power fit + cell-count guidance), `CALIBRATION-RIDE-CARD.md` (run sheet, agent-driven per the runbook).

@@ -1,5 +1,38 @@
 # Changelog
 
+## Revision 11 — Session-2 toolkit: multi-source capture, grid analysis, calibration run sheet
+
+De-scopes the calibration model from the critical path (the proxy feeds Assioma
+watts directly; the erg loop closes on them — no per-meter model needed; see
+`decisions.md`), and builds the tooling for the next on-bike session.
+
+### New
+- **`code/scripts/07_capture_multi.py`** — multi-source capture, several ANT+
+  devices on one stick into one same-clock JSONL (replaces the dual-only
+  `07_capture_dual.py`). Adds an **FE-C decoder** (device type 0x11, page 0x19
+  instantaneous power, verified against openant) so we can record the **bike's
+  own power output** alongside the crank — the clean test for open-question #7
+  (does the SB20 rescale crank power?). Carries the `os._exit`-on-setup-failure
+  hardening.
+- **`code/scripts/08_analyze_grid.py`** — analyses a multi-source capture: the
+  **#7 verdict** (bike-FEC vs crank ratio → pass-through or a factor), the
+  Stages/Assioma **ratio surface** (power × cadence), a regression showing
+  **which dimension drives the offset** (cadence / power / torque R²), and
+  **grid-design guidance** (whether a short torque sweep suffices or a full 2-D
+  grid is needed — "how many cells"). Verified on a synthetic torque-dependent
+  fixture.
+- **`CALIBRATION-RIDE-CARD.md`** — run sheet for session 2: one multi-source
+  capture covering the #7 check + a power×cadence grid + sprints (the owner's
+  800–1000 W+ range), agent-driven per the runbook.
+
+### Why
+Session 1 proved the offset is torque-shaped but also that the proxy *eliminates*
+the offset (Assiomas go straight into the erg loop) rather than needing to model
+it. So the next ride's real deliverable is **closing #7** — confirming the bike
+passes crank power through unscaled, which makes "feed Assioma → erg targets are
+Assioma watts" literally true. The grid is now optional research, instrumented so
+one ride tells us how cheap a real calibration would be.
+
 ## Revision 10 — First live ride: results + WSL/USB operations hardening
 
 The first guided ride succeeded — captured the calibration handshake and a clean

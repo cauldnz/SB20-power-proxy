@@ -59,7 +59,11 @@ The result is a small Python application (target: Raspberry Pi or laptop with on
     │   ├── 03_ingest_jsonl_to_influx.py   ← JSONL → InfluxDB
     │   ├── 04_summarize_capture.py        ← JSONL → markdown summary
     │   ├── 05_diff_captures.py            ← two JSONLs → side-by-side markdown diff
-    │   └── 06_capture_ble.py              ← optional parallel BLE (CPS) capture — runs on native Windows
+    │   ├── 06_capture_ble.py              ← optional parallel BLE (CPS) capture — runs on native Windows
+    │   ├── 07_capture_multi.py            ← multi-source ANT+ capture (crank + Assioma + bike FE-C) on one stick
+    │   ├── 08_analyze_grid.py             ← calibration analysis: #7 check, ratio surface, grid sizing
+    │   ├── run_capture.sh                 ← robust launcher (release stick, detached, retry) — see runbook
+    │   └── ride_wizard.py                 ← solo guided-ride wizard (assisted rides are agent-driven instead)
     ├── src/sb20proxy/              ← library code (mostly stubs pre-Phase-1)
     │   ├── reading.py              ← the PowerReading dataclass — the seam between
     │   │                             input sources and output targets
