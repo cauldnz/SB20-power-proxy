@@ -1,5 +1,13 @@
 # 02 — Technical Context
 
+> **Status note (2026-06-15):** Phase 0 capture is largely complete. Several
+> **[HYPOTHESIS]/[UNKNOWN]** items below are now **confirmed** and not re-tagged
+> inline — for the resolved values (manufacturer_id **69**, emitted pages
+> **0x10/0x12/0x13 + commons**, channel period **8182**, calibration response
+> **page 0x01 / 0xAC / offset**, single-sided Unified-channel-L source, BLE
+> topology), read **[`code/findings/phase-0-report.md`](code/findings/phase-0-report.md)**
+> §1–§4. This doc is retained as the original background.
+
 This document collects what we currently believe about the systems involved. Items marked **[CONFIRMED]** are from official documentation or direct inspection. Items marked **[HYPOTHESIS]** are inferences requiring validation in Phase 0. Items marked **[UNKNOWN]** are gaps to fill.
 
 ## SB20 architecture

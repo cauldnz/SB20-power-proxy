@@ -2,23 +2,26 @@
 
 This directory holds capture artefacts, analysis reports, and decision logs from project work. Treat it as **append-only history** — never delete or rewrite. When something breaks in Phase 4 that wasn't broken in Phase 1, the answer is often in here.
 
+> **Start here:** **[`phase-0-report.md`](phase-0-report.md)** is the current source of
+> truth (synthesis of what's proven, the spoof spec, device IDs, open items, plan).
+> **`decisions.md`** is the full chronological log. **[`captures/README.md`](captures/README.md)**
+> indexes the actual capture files. **`screenshots/`** holds app-UI references.
+
 ## Structure
+
+The block below is the *idealised* layout from project setup — the real Phase-0 sessions
+diverged from these placeholder names. Use `captures/README.md` for the authoritative
+capture inventory.
 
 ```
 findings/
 ├── README.md                    ← this file
-├── captures/                    ← raw JSONL captures from openant
-│   ├── A-stagesL-steady-*.jsonl
-│   ├── B-stagesR-steady-*.jsonl
-│   ├── C-stagesL-pairing-*.jsonl
-│   ├── D-assioma-steady-*.jsonl
-│   ├── E-assioma-calibration-*.jsonl
-│   └── F-failure-mode-*.jsonl
-├── decisions.md                 ← running log of "we decided X because Y" with dates
-├── phase-0-report.md            ← written after Phase 0 captures are complete
-├── phase-1-demo/                ← evidence that Phase 1 worked
-├── phase-2-report.md
-└── proxy-runs/                  ← rolling logs from Phase 3+ deployment runs
+├── phase-0-report.md            ← ★ current source of truth (synthesis)
+├── decisions.md                 ← running chronological log
+├── captures/                    ← raw JSONL/FIT captures (+ captures/README.md index)
+├── screenshots/                 ← app-UI screenshots (stages-app, stages-power-app, favero-assioma-app)
+├── phase-1-demo/                ← (future) evidence that Phase 1 replay worked
+└── proxy-runs/                  ← (future) rolling logs from Phase 3+ deployment
 ```
 
 ## Naming conventions

@@ -1,5 +1,12 @@
 # 🚴 Morning Ride Card — Phase 0 capture sessions
 
+> **Note (2026-06-15):** on the actual ride days, `ride_wizard.py`'s interactive prompts
+> proved unreliable (a WSL terminal stdin issue), so the sessions were run **agent-driven** —
+> Claude launches the captures from outside the terminal and calls the cues in chat. That
+> is now the default for assisted rides; see `code/findings/wsl-capture-runbook.md` §0. This
+> solo card + wizard still work at a normal keyboard, but if anything sticks, switch to the
+> agent-driven flow. (Also: Session A here is done — see `code/findings/phase-0-report.md`.)
+
 One page. The wizard talks you through everything once it's running — this
 card is just to get you started and as a backup reference.
 

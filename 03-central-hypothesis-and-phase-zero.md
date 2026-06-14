@@ -1,5 +1,14 @@
 # 03 — Central Hypothesis and Phase 0
 
+> **Status note (2026-06-15):** Phase 0 has now largely run. **Results:** H2 fired
+> (Stages `manufacturer_id = 69` vs Favero — entering Assioma IDs failed, so a full
+> Stages spoof is required, not just ID-matching); Session C-0 PASSED (calibration
+> handshake captured); the SB20 does **not** rescale crank power. Read this doc for the
+> *plan/reasoning*, but for *what was found* see
+> **[`code/findings/phase-0-report.md`](code/findings/phase-0-report.md)**. (Capture
+> filenames below use an old `stages-L-steady-NNNN` form; actual files are
+> `A-stagesL-steady-…` — see `code/findings/captures/README.md`.)
+
 This is the most important document in the package. Every architectural choice depends on Phase 0 confirming or refuting what's below.
 
 ## The central hypothesis

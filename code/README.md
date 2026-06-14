@@ -15,12 +15,17 @@ code/
 │   ├── provisioning/
 │   └── dashboards/
 ├── scripts/                   ← runnable entry points per phase
-│   ├── 01_capture_stages.py        Phase 0 — capture Stages crank
-│   ├── 02_capture_assioma.py       Phase 0 — capture Assioma
+│   ├── 00_validate_capture.py      Phase 0 — sanity-check a capture (PASS/REVIEW/FAIL)
+│   ├── 01_capture_stages.py        Phase 0 — capture Stages crank (ANT+)
+│   ├── 02_capture_assioma.py       Phase 0 — capture Assioma (wraps 01)
 │   ├── 03_ingest_jsonl_to_influx.py  Analysis — JSONL → InfluxDB
 │   ├── 04_summarize_capture.py     Analysis — JSONL → markdown summary
 │   ├── 05_diff_captures.py         Analysis — diff two JSONLs
-│   └── 06_capture_ble.py           Optional parallel BLE (CPS) capture — native Windows, see START-HERE
+│   ├── 06_capture_ble.py           BLE (CPS) capture + guarded control-point — native Windows
+│   ├── 07_capture_multi.py         Multi-source ANT+ (crank+Assioma+bike FE-C) on one stick
+│   ├── 08_analyze_grid.py          Calibration analysis: #7 check, ratio surface, grid sizing
+│   ├── run_capture.sh              Robust WSL launcher (release stick, detached, retry)
+│   └── ride_wizard.py              Solo guided-ride wizard (assisted rides are agent-driven)
 └── src/sb20proxy/
     ├── __init__.py
     ├── reading.py             ← canonical PowerReading event
@@ -102,8 +107,8 @@ See `../03-central-hypothesis-and-phase-zero.md` for the full Phase 0 capture pl
 
 | Phase | Status |
 |-------|--------|
-| 0 — capture & analysis | scripts in place, not yet run |
-| 1 — replay | not started |
+| 0 — capture & analysis | **substantially complete** — 5 on-bike sessions; see `findings/phase-0-report.md` |
+| 1 — replay | not started (the next milestone) |
 | 2 — live proxy | not started |
 | 3 — robustness | not started |
 | 4 — distributable | not started |

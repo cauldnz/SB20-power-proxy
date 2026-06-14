@@ -4,6 +4,13 @@ Five phases. Each has explicit entry criteria, exit criteria, and an artefact th
 
 ## Phase 0 — Diagnostic capture
 
+> **Status (2026-06-15): substantially COMPLETE.** Exit criteria met — capture tooling
+> built and hardware-proven across 5 sessions, central hypothesis resolved (H2/H1
+> confirmed; SB20 is pass-through), and the synthesis is written:
+> [`code/findings/phase-0-report.md`](code/findings/phase-0-report.md). Sessions ran as
+> A / C-0 / multi-source / BLE recon (not the literal A–F list below). **Phase 1 (replay)
+> is the next milestone.**
+
 **Entry criteria**
 - Hardware acquired (one ANT+ stick minimum, two preferred — see `07-hardware-and-environment.md`)
 - Dev environment working: `openant scan` finds the SB20's L crank when active

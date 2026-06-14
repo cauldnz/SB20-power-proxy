@@ -203,6 +203,14 @@ When the BLE target work eventually happens, the strongest reference is `cagnule
 
 ## Open architectural questions
 
+> **Status (2026-06-15):** this architecture is the v0 proposal; Phase 0 has since
+> answered the headline questions — **#1 single-sided** (read Assioma L 17039 combined →
+> spoof one master, Stages L 62144), **#2 present as Stages** (`manufacturer_id = 69`;
+> Favero/any-ID was tried and failed). The proxy needs **no calibration model** (the SB20
+> is pass-through). See [`code/findings/phase-0-report.md`](code/findings/phase-0-report.md)
+> §2 (spoof spec) and §3 (architecture decision). The module layout below is still
+> aspirational — `src/sb20proxy/` is stubs until Phase 1.
+
 These flow back into Phase 0 / Phase 1 priorities:
 
 1. **Single-sided vs dual-sided**: do we need to spoof one device or two? See `02-technical-context.md` §"Single-sided mode".

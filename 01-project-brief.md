@@ -76,6 +76,16 @@ To keep scope honest, the following are explicitly out of scope for v1:
 
 ## Open questions (to be resolved during Phase 0)
 
+> **Status (2026-06-15):** most of these are now ANSWERED — see
+> [`code/findings/phase-0-report.md`](code/findings/phase-0-report.md) §1/§5. In brief:
+> **#1** single-sided is fine (Assioma Unified-channel-L → spoof one master); **#2**
+> the only extra handshake is the calibration request, and its response is captured;
+> **#3** period **8182** (4 Hz); **#4** transmission type **5**; **#5** the bike needs the
+> full Stages contract (manufacturer_id **69**), not just any ID (proven — Assioma IDs
+> failed); **#7 NO — the SB20 is pass-through** (FE-C/crank = 0.997), so a direct
+> Assioma feed lands erg targets on Assioma watts, and the #7 "calibration model"
+> extension below is **de-scoped** (research-only). #6 (battery-out behaviour) still open.
+
 These shape the architecture and must be answered before significant code is written:
 
 1. Does the SB20 require both L and R crank broadcasts, or will it accept a single-sided source? (Stages docs suggest a "single-sided" mode exists, see `02-technical-context.md` §SB20 architecture, but it's unclear whether this is the bike's preferred mode or a degraded mode.)

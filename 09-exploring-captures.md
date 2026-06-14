@@ -81,6 +81,12 @@ Each tool has a different audience:
 - **`04_summarize_capture.py`** → for **discussion with Claude**. The output is markdown, copy-pasteable into chat, and surfaces the things that matter most: page mix, common-page values, calibration events, ack messages, statistical sanity.
 - **`05_diff_captures.py`** → for **the Phase 0 report itself** and for collaborative diagnosis. The diff between Stages and Assioma is the central artefact of Phase 0.
 
+Two later additions (not shown above) round out the toolset: **`07_capture_multi.py`**
+records several ANT+ sources on one stick into one same-clock JSONL (Stages + Assioma +
+bike FE-C), and **`08_analyze_grid.py`** consumes that for the calibration analysis (the
+#7 pass-through check, the Stages/Assioma ratio surface, and grid sizing). Plus
+**`06_capture_ble.py`** for the BLE side. See `code/findings/phase-0-report.md`.
+
 Claude can read text but not Grafana screenshots. The summary and diff tools exist so we can have substantive conversations about what the captures actually contain, without having to retype field values from a dashboard.
 
 ## What to share with Claude

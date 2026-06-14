@@ -1,5 +1,12 @@
 # Suggested Claude Code Prompt
 
+> **Outdated (2026-06-15):** the "first task" this primes — hardening the capture
+> script before the first session — is long done, and the capture-API questions it
+> poses are answered. Phase 0 is largely complete. For a current opening prompt,
+> point a new session at **[`code/findings/phase-0-report.md`](code/findings/phase-0-report.md)**
+> (state + spoof spec + next-steps plan) and `code/findings/decisions.md` (chronology).
+> Kept below for historical reference.
+
 Drop this in as the opening message of a Claude Code session. It primes the model with project context and a concrete first task.
 
 ---
