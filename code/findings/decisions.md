@@ -313,3 +313,13 @@ Next-session objectives (one structured ride, one same-clock multi-source captur
 1. **#7 verification** — capture Stages crank (62144, 0x0B) + Assioma (17039, 0x0B) + bike FE-C (0x11, wildcard) together; compare FE-C vs crank power.
 2. **Calibration grid (research/optional)** — power×cadence cells to map the offset surface and find empirically how few cells are needed (likely collapses to ~1-D in torque P/cadence). Include a **sprint** corner (owner's 800-1000W+ range) to probe the high-torque/high-power extreme.
 Tooling built for it: `07_capture_multi.py` (multi-source incl. FE-C), `08_analyze_grid.py` (ratio surface + torque-vs-cadence-vs-power fit + cell-count guidance), `CALIBRATION-RIDE-CARD.md` (run sheet, agent-driven per the runbook).
+
+## 2026-06-14 — Crank length is a measurement confound (must control before the calibration ride)
+
+Owner flagged that the SB20 has adjustable cranks (165–175 mm pedal holes) and the app is told the length. This is load-bearing for the calibration comparison:
+
+- Both meters compute power as **P = F·ω·L**, each applying its OWN configured crank length: the **Stages crank** uses the length set in the **SB20 app**; the **Assiomas** use the length set in the **Favero app**. The pedals thread into the SB20's adjustable arms, so the *actual* length is whatever holes are in use.
+- **The Stages/Assioma ratio ≈ ratio of the two configured lengths** (actual length cancels in the ratio). So a config mismatch directly multiplies the measured ratio: 172.5 vs 170 → ~1.5%; 175 vs 170 → ~2.9%. Part of day-1's overall 1.085 could be pure config artifact, not meter behaviour.
+- It's a **constant** scaling, so it does NOT explain the torque-dependence (1.134@60 vs 1.053@100 — real strain-gauge-slope difference). But it can shift the overall ratio.
+- **Pre-ride control:** make physical holes = SB20-app length = Favero-app length, all three equal, before session 2. Added to `CALIBRATION-RIDE-CARD.md` bike-setup (step 1). Worth capturing the three current values first — a current mismatch is itself a finding.
+- **Proxy implication:** once spoofing, the Stages crank leaves the loop, so the SB20's crank-length setting becomes moot. Only the **Favero/Assioma** crank-length config must be correct (so the Assioma watts we feed are accurate). Crank length is therefore a *measurement* confound, not a proxy problem. (Note: the SB20 may push a crank-length config to the crank during pairing — our spoof can capture and ignore it.)

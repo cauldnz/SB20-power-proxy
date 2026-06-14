@@ -18,6 +18,16 @@ Assioma + the bike's own FE-C output, all on one stick. **No watch this time.**
 
 ## Bike setup (important)
 
+- **⚠️ CRANK LENGTH — do this first, it's a direct multiplicative confound.**
+  Both meters compute power as F × ω × L, each using its *own* configured crank
+  length, and the SB20 cranks are adjustable (165–175 mm). The Stages/Assioma
+  ratio ≈ ratio of the two configured lengths, so a mismatch fakes up to several
+  percent of "offset". Make all three agree **before** riding:
+  1. Note the **physical hole** the pedals are actually in (mm).
+  2. **SB20 app** → crank length = that value.
+  3. **Favero Assioma app** → crank length = the *same* value.
+  (Tell Claude the three values — a current mismatch may explain part of day-1's
+  1.085 ratio.)
 - Put the bike in **LEVEL / resistance mode, NOT erg.** We want *you* freely
   choosing power and cadence; erg would fight the cadence targets.
 - Make sure your **power and cadence are visible** (bike app / head unit) — you'll
