@@ -422,3 +422,21 @@ Prep item (a) done. `06_capture_ble.py` now has an opt-in `--control-point <ops>
 Notable: the decoder reads back **request-crank-length (0x05)** in mm — so on the BLE recon we can directly read what the Stages BLE side reports as its configured crank length, a clean cross-check of the deliberate 165-vs-172.5 fudge. Verified (Windows venv, no hardware): compile clean; CP decoder unit-tested on offset 903 (matches ANT+), offset −950, crank length 172.5 & 165, sensor locations, unsupported-op; adv-only lifecycle still frames clean (no regression). offset-compensation prints a "keep cranks still" warning and needs a stationary crank for a valid result; an auth/encryption failure on the write is itself a finding (bonding required).
 
 Remaining BLE prep item: (b) the ESP32 impersonation firmware for Part B (raedian-probe#1) — or a replacement nRF dongle. Not a blocker for next session's A+C.
+
+## 2026-06-15 — Quick session: #7 ANSWERED (pass-through), calibration ~1.13, BLE topology mapped
+
+Owner tired post-training-ride → a short two-capture session instead of the full grid. High value:
+
+**Capture A** (`QUICK-multi-20260615-064037.jsonl`, ~5 min, Stages 62144 + Assioma 17039 + bike FE-C **105**, cadence 47–109):
+- **Open-question #7 RESOLVED → pass-through.** `bike_FEC / crank power = 0.997` mean over 149 matched seconds (sd 0.11 is per-second timing jitter from varied riding, not a real factor). **The SB20 does NOT rescale crank power.** => feeding the bike Assioma watts makes erg targets land on true Assioma watts, with no bike-scaling compensation. The biggest open risk for the proxy is cleared. (A steady-state hold next time would tighten the sd, but the mean is decisive.)
+- **Calibration spot-check:** Stages/Assioma ≈ **1.124 mean / 1.134 median** (sd 0.19 — noisy, varied ride not held cells). This is ~the **172.5 prediction** (day-1@165 was 1.085; predicted @172.5 ≈ 1.134). Strongly suggests the crank length is now 172.5 — **confirm the app setting** to lock it in. Drivers this ride: power/torque R²≈0.42, cadence R²≈0.00 (small/noisy sample; don't over-read vs day-1's cadence signal — needs the held grid).
+
+**Capture B** (`G-stagesL-ble-recon-20260615-064641.jsonl`): connected to the SB20 over BLE and mapped the topology. **Correction to the plan:** the two "Stages" BLE advertisers are BOTH the bike, not the crank:
+- `Stages 4963` = bike CPS power broadcast (0x1818 + Stages custom svc d445fe01-…).
+- `Stages Bike 0105` = bike FTMS trainer (0x1826: control point 0x2AD9, indoor-bike-data 0x2AD2, feature 0x2ACC…) + CSC (0x1816). ← this is what `--name Stages` connected to (higher RSSI).
+- Device Info: manufacturer "Stages Cycling", model "SB20", fw 1.1 / sw 1.12.4+3792, serial H0512210105.
+- Two Stages custom services on the trainer (0c46be5f-…, 0c46beaf-…) + **Nordic DFU (0xfe59)** → the SB20's BLE runs on a Nordic nRF chip (relevant to the ESP32 path).
+- **The real crank's BLE does NOT advertise in ANT+ mode.** So crank-impersonation recon (Session G Part A) requires the bike in "Pair with Bluetooth" mode after all — earlier assumption ("Stages 4963 = the crank, reachable while ANT+-paired") was WRONG. The `--control-point` crank-length read failed here because we were on the bike's FTMS device, not a power-meter/crank. Update session-G spec accordingly.
+- Bonus surface captured for free: the bike's FTMS trainer GATT (its OUTPUT/control interface) + Nordic DFU.
+
+Files committed: QUICK-multi (A) + G-stagesL-ble-recon (B). Next: confirm crank-length app setting; fix the session-G spec's "Part A while ANT+-paired" assumption; the proxy approach is validated by #7.
