@@ -513,3 +513,15 @@ Favero app), each with a README. Cross-cutting insights:
    17039 / R 22428, fw 06.24; B (spare): L 29064. Assioma power scale factor is
    0%/factory (Assioma = ground truth, no source-side correction). HR strap 56954-1.
    Recorded so the spare IDs aren't lost.
+
+## 2026-06-15 — Reconciling the screenshots with today's BLE reads (corrections + the crank-length experiment)
+
+After merging the app-screenshot survey (`code/findings/screenshots/`), three reconciliations:
+
+1. **CORRECTION to my 2026-06-15 BLE-recon entry: "Stages 4963" is the RIGHT CRANK, not "the bike's CPS power broadcast".** The StagesPower discovery + device-details screenshots show the crankset is **L 62144 / R 4963** (linked pair, device type STAGES SMART). So the BLE advertisers are: `Stages Bike 0105` = the bike (FTMS trainer, also seen by the power-meter app), `Stages 62144` = left crank, `Stages 4963` = right crank. The proxy still spoofs only the **left (62144)** combined master.
+
+2. **Crank-length authority — new data point sharpens the open question.** The branch correctly flagged: StagesPower stores the meter's own crank length = **165 mm** (06-14), while the bike app shows **172.5 mm**. My BLE `request-crank-length` read of the crank **today returned 172.5 mm** (`20055901` → 0x0159 → 172.5). So either (a) the meter's firmware crank length was changed 165→172.5 since 06-14 (consistent with the owner's "changed to 172.5", and then the 1.085→1.13 shift IS the crank-length change), or (b) the BLE Control-Point crank length is a different field from the StagesPower "Crank Length" parameter (which sits beside slope/DPOT as the power-computation constant). **These give opposite conclusions about whether today's 1.13 confirms the prediction.** My earlier "prediction confirmed" was premature. **Resolve by the experiment the branch proposed:** change one length at a time and watch whether the crank's broadcast watts move (capture crank 0x10 power before/after). That definitively identifies which knob drives consumed power. (Moot once spoofing — crank leaves the loop — but it's the difference between "1.085→1.13 is the crank-length fix" and "something else moved".)
+
+3. **"Pair with Bluetooth" toggle located + state confirmed:** in the bike app's Power Meters tab (`stages-app/power-meters-tab-172mm.png`), currently **OFF** (= ANT+ crank mode). Flipping it ON is the Session G Part C step (BLE-crank mode for the erg-works gate). Good to know exactly where it is and that the crank's BLE is reachable even with it OFF (today's recon).
+
+Net: the screenshots are high-value — they captured the full crank spoof-identity, confirmed the single-channel source→target mapping (Assioma Unified-channel-L 17039 → Stages L 62144), inventoried the spare hardware, and surfaced the two-crank-length subtlety that makes the calibration history a hypothesis-to-test rather than settled.
