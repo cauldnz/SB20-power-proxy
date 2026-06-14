@@ -362,3 +362,13 @@ Direction/magnitude: a force-based crank meter computes P ∝ force × length ×
 Action before session 2: SB20 app Stages crank length 165 → 172.5 (Assioma already correct). Reinforces "Assiomas are the trustworthy reference; the old Stages cranks read high."
 
 Opened for the #7 capture: determine whether the SB20 consumes the crank's **power** (watts, length-independent — then the SB20 length setting is moot for the spoof) or computes power from crank **torque** × its configured length (length-dependent — then the SB20 length setting would scale a torque-based spoof). The multi-source capture (crank 0x10 power vs 0x12 torque vs bike FE-C output) should disambiguate.
+
+## 2026-06-14 — Correction: the Stages 165mm setting was DELIBERATE (a manual gain hack)
+
+Correcting the prior entry's guess ("likely never updated"): the owner had set the Stages crank length to 165 (vs physical 172.5) **on purpose** — using crank length as a manual gain knob to make the over-reading Stages under-report and drop toward the Assioma. It's the same class of correction as the dual-FTP hack, one layer lower (at the crank-power computation instead of the zone/FTP layer). The owner has effectively been stacking TWO constant-gain corrections (crank-length fudge ~−4.3% + dual-FTP) to approximate the gap.
+
+Implications:
+- The day-1 measured 1.085 is the *partially-corrected* Stages (the 165 fudge already removed ~4.3%); the honest-length gap underneath is ~13% (cadence-varying 10–19%).
+- A constant crank-length gain can only be exact at one cadence — it over/under-corrects across the cadence range, the same wall as dual-FTP. Confirms (from the owner's lived experience) that the correction is torque-shaped and can't be closed with constants at the app layer.
+- Session-2 design unchanged: set crank length to the honest 172.5 on both meters to measure the true difference; day-1@165 (1.085) vs session-2@172.5 (predicted ~1.13) is the clean A/B that validates the crank-length-as-gain model.
+- Strongest case yet for the proxy: it retires BOTH manual hacks at once (crank-length fudge AND dual-FTP), because the Assiomas drive the erg loop directly with nothing left to hand-tune. (Good blog material — "I'd been hand-fitting a constant to a torque-shaped curve, in two places at once.")
