@@ -323,3 +323,18 @@ Owner flagged that the SB20 has adjustable cranks (165–175 mm pedal holes) and
 - It's a **constant** scaling, so it does NOT explain the torque-dependence (1.134@60 vs 1.053@100 — real strain-gauge-slope difference). But it can shift the overall ratio.
 - **Pre-ride control:** make physical holes = SB20-app length = Favero-app length, all three equal, before session 2. Added to `CALIBRATION-RIDE-CARD.md` bike-setup (step 1). Worth capturing the three current values first — a current mismatch is itself a finding.
 - **Proxy implication:** once spoofing, the Stages crank leaves the loop, so the SB20's crank-length setting becomes moot. Only the **Favero/Assioma** crank-length config must be correct (so the Assioma watts we feed are accurate). Crank length is therefore a *measurement* confound, not a proxy problem. (Note: the SB20 may push a crank-length config to the crank during pairing — our spoof can capture and ignore it.)
+
+## 2026-06-14 — Crank-length settings on ride day + a testable prediction for session 2
+
+Owner reported the day-1 crank-length config:
+- Physical pedal holes: **172.5 mm**
+- Assioma (Favero app): **172.5 mm** — correct, matches physical.
+- Stages (SB20 app): **165 mm** — WRONG, 7.5 mm too short (165 is a common default, likely never updated).
+
+Direction/magnitude: a force-based crank meter computes P ∝ force × length × cadence, so a too-short configured length makes it **under-report**. Stages at 165 vs actual 172.5 under-reports by 165/172.5 = 0.957 (~4.3%) relative to a correctly-configured Stages. This *deflated* the day-1 measurement.
+
+**Prediction for session 2 (after setting SB20 Stages length 165→172.5):** the overall Stages/Assioma ratio should rise from the measured **1.085** to **~1.134** (= 1.085 × 172.5/165). Applying the same constant ×1.045 to the torque test: 60 rpm 1.134→~1.19, 100 rpm 1.053→~1.10 — i.e. Stages reads ~10–19% high vs Assioma once lengths match, cadence-dependent. The length fix is a constant scale: it shifts the level but preserves the torque-dependence shape. **This is a clean experiment** — confirming ~1.13 validates the crank-length model and cleanly separates config artifact (~4.5%) from the real meter-slope difference (~13%).
+
+Action before session 2: SB20 app Stages crank length 165 → 172.5 (Assioma already correct). Reinforces "Assiomas are the trustworthy reference; the old Stages cranks read high."
+
+Opened for the #7 capture: determine whether the SB20 consumes the crank's **power** (watts, length-independent — then the SB20 length setting is moot for the spoof) or computes power from crank **torque** × its configured length (length-dependent — then the SB20 length setting would scale a torque-based spoof). The multi-source capture (crank 0x10 power vs 0x12 torque vs bike FE-C output) should disambiguate.
