@@ -72,11 +72,13 @@ and **tell Claude the actual number** (it becomes the cell label — exact value
 doesn't matter, just knowing it does). Then the bike holds that power while you
 change cadence on Claude's call. You only manage **cadence**; erg holds the power.
 
-| Erg setpoint (≈; report the actual) | Cadence sweep — hold each ~60 s |
+Bike erg ≈ **10 W steps**, so these targets land exactly (confirm each as you set it):
+
+| Erg setpoint (report the actual) | Cadence sweep — hold each ~60 s |
 |---|---|
-| **~150 W** | 60 → 80 → 100 rpm |
-| **~250 W** | 60 → 80 → 100 rpm |
-| **~330 W** | 60 → 80 → 100 rpm |
+| **150 W** | 60 → 80 → 100 rpm |
+| **250 W** | 60 → 80 → 100 rpm |
+| **330 W** | 60 → 80 → 100 rpm |
 
 9 cells. Constant power × swept cadence is the cleanest torque test — it isolates
 the cadence-dependence directly (Stages pinned at the setpoint, Assioma floats to
