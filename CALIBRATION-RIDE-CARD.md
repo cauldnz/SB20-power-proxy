@@ -28,10 +28,12 @@ Assioma + the bike's own FE-C output, all on one stick. **No watch this time.**
   3. **Favero Assioma app** → crank length = the *same* value.
   (Tell Claude the three values — a current mismatch may explain part of day-1's
   1.085 ratio.)
-- Put the bike in **LEVEL / resistance mode, NOT erg.** We want *you* freely
-  choosing power and cadence; erg would fight the cadence targets.
-- Make sure your **power and cadence are visible** (bike app / head unit) — you'll
-  hold a target cadence and adjust resistance to hit a power.
+- **Mode: ERG for the grid, LEVEL/resistance for the sprints.** (Revised from an
+  earlier draft.) In erg the bike *pins* the power so you only manage cadence —
+  a cleaner constant-power cadence sweep, and less to juggle. Sprints need
+  resistance mode because erg caps you at the setpoint.
+- Make sure your **power and cadence are visible** (bike app / head unit). For the
+  grid you watch **cadence**; the bike holds the power.
 - Cranks fresh-ish batteries (the crank read ~2.6 V last time — fine, but a fresh
   CR2032 removes a variable).
 
@@ -63,28 +65,31 @@ python code/scripts/07_capture_multi.py \
 Settle in. This also lets Claude confirm all three streams (Stages / Assioma /
 bike-FEC) are flowing before the real work.
 
-### Grid — hold each cell ~60–75 s, steady. Organised by cadence.
+### Grid — ERG mode: 3 power setpoints, sweep cadence within each
 
-You hold the **cadence**; Claude calls a **resistance level** to land roughly the
-target power, and watches your live numbers. Exact watts don't matter — spanning
-the space and holding steady does. Brief soft-pedal between cells is fine.
+For each setpoint: Claude says "set ~X W"; you set the **nearest your bike allows**
+and **tell Claude the actual number** (it becomes the cell label — exact value
+doesn't matter, just knowing it does). Then the bike holds that power while you
+change cadence on Claude's call. You only manage **cadence**; erg holds the power.
 
-| Cadence | Cell A (easy) | Cell B (mod) | Cell C (hard) |
-|---|---|---|---|
-| **~60 rpm** (grind) | ~150 W | ~250 W | ~330 W |
-| **~80 rpm** | ~150 W | ~250 W | ~330 W |
-| **~100 rpm** (spin) | ~150 W | ~250 W | ~330 W |
+| Erg setpoint (≈; report the actual) | Cadence sweep — hold each ~60 s |
+|---|---|
+| **~150 W** | 60 → 80 → 100 rpm |
+| **~250 W** | 60 → 80 → 100 rpm |
+| **~330 W** | 60 → 80 → 100 rpm |
 
-That's 9 cells. The same ~150/250/330 W at three cadences is exactly the contrast
-that reveals whether the offset is torque-shaped — and lets `08_analyze_grid.py`
-tell us if a future calibration can be a short cadence/torque sweep instead of a
-full grid.
+9 cells. Constant power × swept cadence is the cleanest torque test — it isolates
+the cadence-dependence directly (Stages pinned at the setpoint, Assioma floats to
+setpoint ÷ ratio). `08_analyze_grid.py` then says whether a future calibration can
+be a short cadence/torque sweep instead of a full grid. Give the bike a couple of
+seconds to re-stabilise after each cadence change before the cell "counts".
 
-### Sprints — the high-power corner (your 800–1000 W+ range)
-Big gear, **~12 s all-out**, then ~90 s easy recovery. **×4.**
-- This probes the extreme top corner the grid can't reach, and stress-tests the
-  decoders (12-bit FE-C power field, high crank torque values).
-- Don't worry about cadence here — just maximum watts. Claude logs the peak each time.
+### Sprints — switch to LEVEL / resistance mode (the 800–1000 W+ corner)
+Erg caps you at the setpoint, so flip to resistance mode and set a firm level.
+Then **~12 s all-out, ×4**, with ~90 s easy between.
+- Probes the extreme top corner the grid can't reach, and stress-tests the decoders
+  (12-bit FE-C power field, high crank torque values).
+- Don't worry about cadence — just maximum watts. Claude logs the peak each time.
 
 ### Cool-down — 2 min easy, then stop. Done.
 

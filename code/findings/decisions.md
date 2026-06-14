@@ -372,3 +372,14 @@ Implications:
 - A constant crank-length gain can only be exact at one cadence — it over/under-corrects across the cadence range, the same wall as dual-FTP. Confirms (from the owner's lived experience) that the correction is torque-shaped and can't be closed with constants at the app layer.
 - Session-2 design unchanged: set crank length to the honest 172.5 on both meters to measure the true difference; day-1@165 (1.085) vs session-2@172.5 (predicted ~1.13) is the clean A/B that validates the crank-length-as-gain model.
 - Strongest case yet for the proxy: it retires BOTH manual hacks at once (crank-length fudge AND dual-FTP), because the Assiomas drive the erg loop directly with nothing left to hand-tune. (Good blog material — "I'd been hand-fitting a constant to a torque-shaped curve, in two places at once.")
+
+## 2026-06-14 — Calibration ride uses ERG mode (owner's workflow), not level mode
+
+Revising the earlier "level mode" plan. Owner will run the grid in **ERG**: set a power setpoint per interval and report the actual value in chat (the bike's erg doesn't do 1 W steps, so they set the nearest and tell Claude the setpoint, which becomes the cell label).
+
+Why erg is the better design here:
+- Erg **pins power** (bike controls resistance to hold the setpoint as measured by the Stages cranks), so within a cell power is rock-steady and the rider only manages **cadence**. Cleaner constant-power cadence sweep = the cleanest possible torque test; less rider variance than holding power+cadence by feel in level mode.
+- Data structure: at a fixed setpoint the Stages sits ≈ setpoint, the **Assioma floats to setpoint ÷ ratio**; sweeping cadence makes ratio(cadence) show up directly in the Assioma reading.
+- `08_analyze_grid.py` is unchanged — it bins continuously by (power, cadence), so erg-clustered cells analyse the same.
+
+Protocol: 3 erg setpoints (~150/250/330 W, actuals reported) × cadence sweep (60→80→100 rpm, ~60 s each, allow a couple seconds to re-stabilise after each cadence change). **Sprints switch to LEVEL/resistance mode** (erg caps at the setpoint, can't sprint): firm resistance, 4× ~12 s all-out (800–1000 W+), 90 s easy between. CALIBRATION-RIDE-CARD.md updated accordingly. Open: confirm the bike's erg step size near 150/250/330 so Claude cues hittable numbers.
