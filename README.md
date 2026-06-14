@@ -2,7 +2,7 @@
 
 A man-in-the-middle ANT+ proxy that lets a [Stages SB20 smart bike](https://stagescycling.com/) consume power data from a Favero Assioma (or any standard ANT+) power meter as if it were the bike's native Stages cranks — preserving erg-mode resistance control and providing a backstop when the original Stages cranks fail.
 
-> **Status: pre-implementation.** This repository is currently a planning and briefing package, plus diagnostic-capture tooling. The proxy itself does not yet exist. Phase 0 (diagnostic capture) is the immediate work item.
+> **Status: Phase 0 substantially complete; proxy not yet built.** Five on-bike capture sessions have validated and de-risked the approach — the SB20 doesn't rescale crank power (direct Assioma feed will work), the calibration handshake and the exact bytes to spoof are captured, and `manufacturer_id = 69` is confirmed. **Start at [`code/findings/phase-0-report.md`](code/findings/phase-0-report.md)** for the current state of knowledge, the spoof spec, and the next-steps plan; `code/findings/decisions.md` is the full chronological log. The next engineering milestone is Phase 1 (static replay). Several front-door docs below still describe the pre-capture project — the report supersedes them.
 
 ## Why this exists
 

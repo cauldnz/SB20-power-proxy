@@ -1,5 +1,40 @@
 # Changelog
 
+## Revision 13 — Phase 0 consolidation: report written, front-door docs refreshed
+
+A take-stock pass after 5 on-bike sessions. Two read-only audits (decisions-log
+consistency + repo staleness/gaps) confirmed the engineering is solid and the
+risks retired, but the top-layer docs still describe a pre-capture project.
+
+### New
+- **`code/findings/phase-0-report.md`** — the missing keystone: the single
+  current source of truth. Synthesises 30+ `decisions.md` entries into what's
+  PROVEN (incl. #7 pass-through, the calibration bytes, manufacturer_id 69,
+  single-source mapping, BLE no-bonding), the **spoof spec** (ANT+ + BLE protocol
+  contract), the device-identity inventory, what's OPEN, the architecture
+  decision, and a phased **next-steps plan**.
+- **`code/findings/captures/README.md`** — authoritative index of the 11 capture
+  files (names had drifted; flags the one misnamed file — `G-stagesL-ble-recon`
+  is actually the bike's FTMS device).
+
+### Changed
+- `README.md` status line and `HANDOFF.md` banner now point at the Phase-0 report
+  and flag that the open-questions/hypotheses in the early numbered docs are
+  answered there.
+
+### Findings status (per the audit)
+- **Retired risks:** SB20 is pass-through (no rescaling); calibration handshake
+  captured (`01 AC FF FF FF FF <offset>`); manufacturer_id 69; single-source
+  (Assioma L 17039 → Stages L 62144); BLE calibration needs no bonding; crank
+  reachable over BLE in ANT+ mode.
+- **Open:** crank-length authority (measurement-history only); Session G Part C
+  erg-on-BLE gate; ESP32 impersonation firmware (Part B); ANT-vs-BLE offset
+  semantics. Operational: crank battery at 14% — replace before next ride.
+- Lower-priority doc-debt (CLAUDE-CODE-PROMPT, the `[HYPOTHESIS]` tags in 02, the
+  open-question lists in 01/04, the two ride-cards vs agent-driven model, the
+  stub `src/sb20proxy/` with a declared-but-absent `cli:main`) is flagged in the
+  report §7, not yet fixed.
+
 ## Revision 12 — BLE/ESP32 path planned; Session G capture spec (reuses raedian-probe)
 
 Plans the productisation path (cheap, distributable BLE proxy on ESP32) and specs the

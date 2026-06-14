@@ -1,8 +1,15 @@
 # Handoff — Start Here
 
+> **⚠️ This doc describes the project's *original* starting point. As of 2026-06-15, Phase 0
+> is largely DONE** (5 on-bike sessions; the approach is validated and de-risked). For the
+> *current* state, read **[`code/findings/phase-0-report.md`](code/findings/phase-0-report.md)**
+> first (synthesis: what's proven, the spoof spec, device IDs, open items, next-steps plan),
+> with **`code/findings/decisions.md`** as the full chronological log. The rest of this file is
+> historical context for how the project was framed before any captures existed.
+
 You are picking up a research/engineering project to build an ANT+ power-meter proxy for a Stages SB20 spin bike. The goal: feed Favero Assioma pedal data into the bike as if it came from the bike's native (failing/discontinued) Stages crank power meters, so erg-mode resistance control keeps working.
 
-Read this file. Then read `01-project-brief.md` and `03-central-hypothesis-and-phase-zero.md` before doing anything else.
+Read this file (for framing). Then `01-project-brief.md` for goals — but treat the open-questions/hypotheses in `01`–`03` as *answered in the Phase 0 report*, not still-open.
 
 ## The one-paragraph summary
 
