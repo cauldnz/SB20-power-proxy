@@ -10,9 +10,13 @@ Intended use during Phase 0: run this in a SECOND terminal (PowerShell on
 Windows) while 01_capture_stages.py runs in WSL. Both machines share the same
 wall clock, so iso_time aligns the two JSONL streams.
 
-PASSIVE BY DESIGN: this script never writes to any characteristic. The
-Cycling Power Control Point (0x2A66) is logged as present but not touched —
-do not add calibration pokes during Session A/D captures.
+PASSIVE BY DEFAULT: with no --control-point flag this script only reads and
+subscribes; it never writes. The opt-in --control-point mode performs explicit,
+single, logged Cycling Power Control Point (0x2A66) writes for calibration recon
+(Session G Part A) — e.g. offset-compensation (the BLE analogue of the ANT+
+zero-reset) or read-only requests like request-crank-length. Guarded, one op at
+a time (mirrors raedian-probe/probe_write.py); never during adv-survey / plain
+connect captures.
 
 Usage (PowerShell, from the repo root):
     python code\\scripts\\06_capture_ble.py --name Stages --duration 900 \\
@@ -21,6 +25,12 @@ Usage (PowerShell, from the repo root):
     # Advertisement survey only (no connection):
     python code\\scripts\\06_capture_ble.py --adv-only --duration 60 \\
         --output code\\findings\\captures\\ble-adv-survey.jsonl
+
+    # Session G Part A — characterise the crank + read its config + zero-reset.
+    # Read-only first; add offset-compensation only with the cranks held STILL:
+    python code\\scripts\\06_capture_ble.py --name Stages --duration 120 \\
+        --control-point request-crank-length,request-sensor-locations,offset-compensation \\
+        --output code\\findings\\captures\\G-stagesL-ble-recon.jsonl
 
 References:
 - BLE Cycling Power Service 0x1818, Measurement 0x2A63 (GATT spec field order)
@@ -61,6 +71,24 @@ CHR_CP_CONTROL_POINT = sig_uuid(0x2A66)
 CHR_SENSOR_LOCATION = sig_uuid(0x2A5D)
 CHR_CSC_MEASUREMENT = sig_uuid(0x2A5B)
 CHR_BATTERY_LEVEL = sig_uuid(0x2A19)
+
+# Cycling Power Control Point (0x2A66) op codes — for the guarded calibration
+# recon (Session G Part A). It's Write + Indicate: enable indications, write one
+# op, read the indication. Codes per the BLE Cycling Power Service spec.
+CP_OPS = {
+    "request-sensor-locations": 0x03,
+    "request-crank-length": 0x05,      # returns configured crank length (uint16, 1/2 mm)
+    "request-chain-length": 0x07,
+    "request-chain-weight": 0x09,
+    "request-span-length": 0x0B,
+    "offset-compensation": 0x0C,       # the zero-reset; indication carries offset (sint16)
+    "request-sampling-rate": 0x0E,
+    "request-factory-cal-date": 0x0F,
+    "enhanced-offset-compensation": 0x10,
+}
+CP_RESPONSE_OPCODE = 0x20
+CP_RESULT = {0x01: "success", 0x02: "op_code_not_supported",
+             0x03: "invalid_parameter", 0x04: "operation_failed"}
 
 # Device Information Service strings worth reading once
 DIS_STRING_CHARS = {
@@ -184,22 +212,55 @@ def decode_csc_measurement(data: bytes) -> dict[str, Any]:
     return out
 
 
+def decode_cp_response(data: bytes) -> dict[str, Any]:
+    """Decode a Cycling Power Control Point indication (response opcode 0x20)."""
+    out: dict[str, Any] = {"raw_hex": data.hex()}
+    if len(data) < 3:
+        out["error"] = "short payload"
+        return out
+    out["response_opcode"] = data[0]           # expect 0x20
+    out["request_opcode"] = data[1]
+    out["result"] = data[2]
+    out["result_name"] = CP_RESULT.get(data[2], f"0x{data[2]:02X}")
+    params = data[3:]
+    if params:
+        out["params_hex"] = params.hex()
+    req = data[1]
+    try:
+        if req in (0x0C, 0x10) and len(params) >= 2:   # (enhanced) offset compensation
+            out["offset"] = int.from_bytes(params[0:2], "little", signed=True)
+        elif req == 0x05 and len(params) >= 2:         # crank length, units of 1/2 mm
+            out["crank_length_mm"] = int.from_bytes(params[0:2], "little") / 2.0
+        elif req == 0x03:                              # supported sensor locations
+            out["sensor_locations"] = [SENSOR_LOCATIONS.get(b, b) for b in params]
+        elif req == 0x0E and len(params) >= 1:         # sampling rate (Hz)
+            out["sampling_rate_hz"] = params[0]
+        elif req == 0x0F and len(params) >= 7:         # factory calibration date
+            out["factory_cal_date_hex"] = params[0:7].hex()
+    except Exception as e:
+        out["decode_error"] = str(e)
+    return out
+
+
 class BleCaptureRunner:
     """Scan, optionally connect, subscribe, and log everything to JSONL."""
 
     def __init__(self, *, output_path: Path, name_filter: str,
-                 address: str | None, adv_only: bool, scan_time: float):
+                 address: str | None, adv_only: bool, scan_time: float,
+                 control_point_ops: list[str] | None = None):
         self.output_path = output_path
         self.name_filter = name_filter.lower()
         self.address = address
         self.adv_only = adv_only
         self.scan_time = scan_time
+        self.control_point_ops = control_point_ops or []
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         self._fp = open(self.output_path, "w", buffering=1, encoding="utf-8")
         self._t0 = time.monotonic()
         self._records = 0
         self._seen_advs: dict[str, int] = {}
         self._notif_count = 0
+        self._cp_done = False
 
     def _log(self, kind: str, **fields: Any) -> None:
         record = {
@@ -279,6 +340,8 @@ class BleCaptureRunner:
                     self._log("ble_connect", address=address)
                     await self._dump_gatt(client)
                     await self._read_static_chars(client)
+                    if self.control_point_ops and not self._cp_done:
+                        await self._control_point(client)
                     await self._subscribe(client)
                     # Hold the connection until the deadline; notifications
                     # arrive via callbacks while we sleep.
@@ -367,6 +430,50 @@ class BleCaptureRunner:
             except Exception:
                 pass  # optional characteristics
 
+    async def _control_point(self, client: BleakClient) -> None:
+        """Guarded Cycling Power Control Point recon (Session G Part A).
+
+        Mirrors raedian-probe/probe_write.py: explicit single ops, each logged,
+        no blind loops. Enables CP indications, then for each requested op writes
+        it once and lets the indication arrive (logged via the callback).
+        offset-compensation is the BLE analogue of the ANT+ zero-reset — its
+        indication carries the offset, like the 0xAC/903 we saw on ANT+.
+        """
+        def on_cp_indication(_char, data: bytearray) -> None:
+            self._log("ble_cp_indication", char="cycling_power_control_point",
+                      data=decode_cp_response(bytes(data)))
+
+        try:
+            await client.start_notify(CHR_CP_CONTROL_POINT, on_cp_indication)
+            self._log("ble_cp_subscribed", char="cycling_power_control_point")
+        except Exception as e:
+            self._log("ble_error", phase="cp_subscribe", error=str(e))
+            print(f"  control-point indications unavailable: {e}")
+            self._cp_done = True
+            return
+
+        for op_name in self.control_point_ops:
+            opcode = CP_OPS.get(op_name)
+            if opcode is None:
+                self._log("ble_cp_skip", op=op_name, reason="unknown op-code name")
+                print(f"  skipping unknown op '{op_name}'")
+                continue
+            if op_name in ("offset-compensation", "enhanced-offset-compensation"):
+                print("  >>> KEEP THE CRANKS STILL AND UNLOADED for offset compensation <<<")
+            self._log("ble_cp_write", op=op_name, opcode=opcode)
+            print(f"  control-point write: {op_name} (0x{opcode:02X})")
+            try:
+                await client.write_gatt_char(
+                    CHR_CP_CONTROL_POINT, bytes([opcode]), response=True)
+            except Exception as e:
+                # An auth/insufficient-encryption error here is itself a finding
+                # (the bike may need bonding before control-point writes).
+                self._log("ble_error", phase=f"cp_write:{op_name}", error=str(e))
+                print(f"    write failed: {e}")
+                continue
+            await asyncio.sleep(3.0)  # indication arrives via the callback
+        self._cp_done = True
+
     # --- lifecycle ----------------------------------------------------------
 
     async def run(self, duration_s: float) -> None:
@@ -416,16 +523,32 @@ def main() -> int:
                         "Use this for a first survey of what's on the air.")
     p.add_argument("--scan-time", type=float, default=15.0,
                    help="Seconds to scan before connecting (default 15)")
+    p.add_argument("--control-point", default=None,
+                   help="Comma-separated Cycling Power Control Point ops to run once "
+                        "after connecting (Session G Part A). Read-only requests are "
+                        "safe; 'offset-compensation' is the zero-reset (keep cranks "
+                        "STILL). Known ops: " + ", ".join(CP_OPS))
     args = p.parse_args()
+
+    cp_ops = None
+    if args.control_point:
+        cp_ops = [s.strip() for s in args.control_point.split(",") if s.strip()]
+        unknown = [o for o in cp_ops if o not in CP_OPS]
+        if unknown:
+            print(f"Unknown control-point op(s): {unknown}\nKnown: {', '.join(CP_OPS)}",
+                  file=sys.stderr)
+            return 2
 
     # ASCII-only console output: this script's primary platform is Windows
     # PowerShell, whose default code page chokes on unicode arrows etc.
     print(f"BLE capture: filter '{args.name}', {args.duration:.0f}s -> {args.output}")
     print("Wake the meter (rotate cranks). Ctrl-C stops early and finalises the file.")
 
+    if cp_ops:
+        print(f"control-point ops queued (Session G Part A): {cp_ops}")
     runner = BleCaptureRunner(output_path=args.output, name_filter=args.name,
                               address=args.address, adv_only=args.adv_only,
-                              scan_time=args.scan_time)
+                              scan_time=args.scan_time, control_point_ops=cp_ops)
     try:
         asyncio.run(runner.run(args.duration))
     except KeyboardInterrupt:

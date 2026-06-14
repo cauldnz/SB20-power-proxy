@@ -113,10 +113,15 @@ actually need). Then commit the capture + write up.
 
 Once the ANT+ work is done, we evaluate the BLE/ESP32 path. Full spec:
 `code/findings/session-G-ble-capture-spec.md`. Sequence (mode-exclusive):
-1. **While still on ANT+ cranks** — *active BLE recon*: connect to the Stages crank
-   over BLE (it advertises even while ANT+-paired) and dump advert + GATT + reads +
-   CPS notifications + a guarded calibration write. (Needs the small Control-Point
-   write added to `06_capture_ble.py`.)
+1. **While still on ANT+ cranks** — *active BLE recon* (tooling ready):
+   ```powershell
+   code\.venv-win\Scripts\python.exe code\scripts\06_capture_ble.py --name Stages `
+       --duration 120 --control-point request-crank-length,request-sensor-locations,offset-compensation `
+       --output code\findings\captures\G-stagesL-ble-recon-$(Get-Date -Format yyyyMMdd-HHmm).jsonl
+   ```
+   Dumps advert + GATT + reads + CPS notifications, reads the **configured crank length**
+   off the BLE side (cross-checks the 165-vs-172.5 fudge!), and does a guarded BLE
+   zero-reset (keep cranks STILL for that op).
 2. **Flip the bike to "Pair with Bluetooth"** — the **GATE**: does erg still work with
    BLE-paired cranks? Set an erg target, confirm the bike holds power. This is the
    go/no-go for the entire ESP32 direction — no sniffer needed.

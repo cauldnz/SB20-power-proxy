@@ -46,8 +46,11 @@ consumes the other):
    back. → *the response the ESP32 must produce when the bike calibrates.* Also probe the
    Stages custom-service characteristics for any calibration/config there.
 
-Tooling note: add a guarded Control-Point write to `06_capture_ble.py` (mirror
-`raedian-probe/probe_write.py`) — one explicit op, log the indication, never a blind loop.
+Tooling: **built** — `06_capture_ble.py --control-point <ops>` does this (guarded single
+ops, mirrors `raedian-probe/probe_write.py`). Read-only requests are safe; run
+`offset-compensation` with the cranks held still. The decoder reads back the configured
+**crank length** (op 0x05) too — a direct BLE cross-check of the 165-vs-172.5 setting. E.g.:
+`--control-point request-crank-length,request-sensor-locations,offset-compensation`
 
 ## Part B — The bike's behaviour: impersonation capture (preferred) or nRF sniff
 
@@ -113,9 +116,9 @@ capture a full pairing → zero-reset → pedal cycle and record:
 ## Readiness / what's doable when
 
 - **Part A (active recon)** + **Part C (erg-works gate)** are doable **next session** with
-  current kit — Part A needs only a guarded Control-Point write added to `06_capture_ble.py`;
-  Part C needs no special hardware (flip "Pair with Bluetooth", test erg). Together they give
-  the **go/no-go** plus most of the impersonation surface.
+  current kit — Part A's tooling is **built** (`06_capture_ble.py --control-point`); Part C
+  needs no special hardware (flip "Pair with Bluetooth", test erg). Together they give the
+  **go/no-go** plus most of the impersonation surface.
 - **Part B (the bike's pairing/calibration/bonding)** waits on the **ESP32 impersonation
   firmware** (`raedian-probe#1`) or a replacement nRF dongle. Not a blocker for the go/no-go.
 

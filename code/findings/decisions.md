@@ -414,3 +414,11 @@ Consequences for Session G:
 - **Part B reframed** from "passive nRF sniff" to "ESP32 impersonation capture (preferred) / nRF sniff (fallback)". Same captured items (bonding, conn params, bike's calibration write, custom-service behaviour); different method.
 - **Next-session BLE scope = Part A (active recon) + Part C (erg-works gate)** — both doable with current kit; together they give the go/no-go and most of the impersonation surface. **Part B waits on the impersonation firmware** (raedian-probe#1) or a new nRF dongle; not a blocker for go/no-go.
 - Shared infra: the impersonation firmware benefits both projects and seeds each one's device firmware.
+
+## 2026-06-14 — Built: guarded Control-Point write in 06_capture_ble.py (Session G Part A ready)
+
+Prep item (a) done. `06_capture_ble.py` now has an opt-in `--control-point <ops>` mode (passive by default otherwise): after connecting + GATT dump + static reads, it enables Cycling Power Control Point (0x2A66) indications and runs the requested ops once each — guarded single writes, each logged, no blind loops (mirrors raedian-probe/probe_write.py). Op map covers offset-compensation (0x0C, the BLE zero-reset → offset in the indication, the analogue of the ANT+ 0xAC/903), the read-only requests (sensor locations, crank length, sampling rate, factory cal date), and enhanced offset comp.
+
+Notable: the decoder reads back **request-crank-length (0x05)** in mm — so on the BLE recon we can directly read what the Stages BLE side reports as its configured crank length, a clean cross-check of the deliberate 165-vs-172.5 fudge. Verified (Windows venv, no hardware): compile clean; CP decoder unit-tested on offset 903 (matches ANT+), offset −950, crank length 172.5 & 165, sensor locations, unsupported-op; adv-only lifecycle still frames clean (no regression). offset-compensation prints a "keep cranks still" warning and needs a stationary crank for a valid result; an auth/encryption failure on the write is itself a finding (bonding required).
+
+Remaining BLE prep item: (b) the ESP32 impersonation firmware for Part B (raedian-probe#1) — or a replacement nRF dongle. Not a blocker for next session's A+C.
