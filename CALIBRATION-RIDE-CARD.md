@@ -120,10 +120,11 @@ Once the ANT+ work is done, we evaluate the BLE/ESP32 path. Full spec:
 2. **Flip the bike to "Pair with Bluetooth"** — the **GATE**: does erg still work with
    BLE-paired cranks? Set an erg target, confirm the bike holds power. This is the
    go/no-go for the entire ESP32 direction — no sniffer needed.
-3. **If the nRF sniffer is flashed & ready** (`raedian-probe/docs/sniffer_setup_runbook.md`)
-   — passively capture the bike↔crank pairing/bonding + the bike's calibration write.
-   If not ready, defer to a focused follow-up; steps 1–2 already give go/no-go + most
-   of the impersonation surface.
+3. **The bike's pairing/calibration/bonding** needs either the ESP32 **impersonation
+   firmware** (`raedian-probe#1` — nRF dongle is MIA, and ESP32 can't do true passive
+   connection sniffing) or a replacement nRF dongle. **Defer to a follow-up** — steps
+   1–2 already give the go/no-go plus most of the impersonation surface, and step 3 is
+   really the first build step of the actual proxy.
 
 ## If something goes wrong
 - Stick stuck / "Resource busy" / wrong-state → runbook §3/§2 (kill exact PID via

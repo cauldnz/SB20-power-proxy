@@ -49,10 +49,25 @@ consumes the other):
 Tooling note: add a guarded Control-Point write to `06_capture_ble.py` (mirror
 `raedian-probe/probe_write.py`) — one explicit op, log the indication, never a blind loop.
 
-## Part B — Passive sniff (bike BLE-paired to crank; nRF dongle)
+## Part B — The bike's behaviour: impersonation capture (preferred) or nRF sniff
 
-With the bike's **"Pair with Bluetooth" ON** and the nRF sniffer running on the
-SB20↔crank link, capture a full pairing → zero-reset → pedal → (optional) erg cycle:
+The nRF52840 dongle is currently misplaced, and **ESP32 can't reliably do true passive
+connection sniffing** (following a live connection's channel hops/timing is exactly what
+the nRF firmware is purpose-built for; the ESP32 radio doesn't expose it). So the primary
+method is **capture by impersonation** — the ESP32 *is* the fake crank, the bike connects
+to it, and we log everything the bike does. This needs the impersonation firmware tracked
+in **`cauldnz/raedian-probe#1`** (it's shared infra and also the proxy's first milestone).
+
+- **Impersonation capture (preferred, ESP32):** remove the real crank from play (battery
+  out / unpaired) so the bike connects to the ESP32 instead. ESP32 advertises the crank's
+  GATT (from Part A), the SB20 app pairs to it, and the ESP32 logs the bike's every move.
+  Bonus: this *is* the start of the actual proxy peripheral.
+- **Passive sniff (fallback):** if an nRF52840 turns up, `sniffer_setup_runbook.md` +
+  `pcap_analyze.py` capture the genuine bike↔real-crank link without inserting ourselves
+  (useful to cross-check that impersonation doesn't change the bike's behaviour).
+
+Either way, with the bike attempting to BLE-pair to the (real or impersonated) crank,
+capture a full pairing → zero-reset → pedal cycle and record:
 
 6. **Pairing / bonding (SMP)** — does the bike initiate pairing? Just-Works vs LE Secure
    Connections, bonding (key storage), identity/MAC binding? → *the single biggest BLE
@@ -95,5 +110,14 @@ SB20↔crank link, capture a full pairing → zero-reset → pedal → (optional
 - A clear bonding/security answer from the sniffer.
 - A definitive **erg-works-on-BLE-cranks** yes/no.
 
-If we only get Part A + C in one session, that's already a go/no-go plus most of the
-impersonation surface; Part B (the sniff) can be a focused follow-up.
+## Readiness / what's doable when
+
+- **Part A (active recon)** + **Part C (erg-works gate)** are doable **next session** with
+  current kit — Part A needs only a guarded Control-Point write added to `06_capture_ble.py`;
+  Part C needs no special hardware (flip "Pair with Bluetooth", test erg). Together they give
+  the **go/no-go** plus most of the impersonation surface.
+- **Part B (the bike's pairing/calibration/bonding)** waits on the **ESP32 impersonation
+  firmware** (`raedian-probe#1`) or a replacement nRF dongle. Not a blocker for the go/no-go.
+
+So the realistic next-session BLE scope is **A + C**; B follows once the impersonation
+firmware exists (and it's the proxy's first real build step, so it's not a detour).

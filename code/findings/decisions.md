@@ -403,3 +403,14 @@ Deliverables: `11-ble-and-esp32-path.md` (A: strategy/architecture/reuse) and `c
 Next-session BLE plan (after the ANT+ #7 + grid): (1) active BLE recon of the crank while still ANT+-paired — needs a guarded Control-Point write added to `06_capture_ble.py` (the one tooling prep item); (2) the erg-works-on-BLE-cranks GATE (flip to "Pair with Bluetooth", test erg — no sniffer needed, this is the go/no-go); (3) passive sniff IF the nRF dongle is flashed & ready (else a focused follow-up). Sequencing is mode-exclusive: ANT+/active-recon first (crank BLE-free), then BLE-crank mode for the gate + sniff.
 
 Open prep items before the BLE session: (a) add the guarded Control-Point write to 06_capture_ble.py; (b) confirm whether the nRF sniffer dongle is flashed per the raedian-probe runbook.
+
+## 2026-06-14 — nRF dongle MIA → Session G Part B becomes ESP32 impersonation capture
+
+The owner's nRF52840 sniffer is misplaced. Considered building an ESP32 passive sniffer, but **true passive connection sniffing on ESP32 is not realistic** — following an established connection's channel-hop/timing/whitening is what the nRF firmware is purpose-built for; the ESP32 radio can sniff advertising but not reliably reconstruct a live connection.
+
+Better path (filed as `cauldnz/raedian-probe#1`): **capture by impersonation**. The ESP32 *is* the fake peripheral (Stages crank / EVSE charger); the real central (SB20 bike / phone app) connects to it; the ESP32 logs the central's service discovery, CCCD subscribes, characteristic writes (calibration/control-point), SMP/bonding, and connection params. This gets the central's exact behaviour (the hard-to-get half), and crucially **it is the proxy's first real build step** (the peripheral side of esp32_bridge_spec.md) — not a detour. The real peripheral's responses still come from Part A active recon. nRF passive sniff kept as a fallback/cross-check if a dongle turns up.
+
+Consequences for Session G:
+- **Part B reframed** from "passive nRF sniff" to "ESP32 impersonation capture (preferred) / nRF sniff (fallback)". Same captured items (bonding, conn params, bike's calibration write, custom-service behaviour); different method.
+- **Next-session BLE scope = Part A (active recon) + Part C (erg-works gate)** — both doable with current kit; together they give the go/no-go and most of the impersonation surface. **Part B waits on the impersonation firmware** (raedian-probe#1) or a new nRF dongle; not a blocker for go/no-go.
+- Shared infra: the impersonation firmware benefits both projects and seeds each one's device firmware.
