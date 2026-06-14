@@ -440,3 +440,26 @@ Owner tired post-training-ride → a short two-capture session instead of the fu
 - Bonus surface captured for free: the bike's FTMS trainer GATT (its OUTPUT/control interface) + Nordic DFU.
 
 Files committed: QUICK-multi (A) + G-stagesL-ble-recon (B). Next: confirm crank-length app setting; fix the session-G spec's "Part A while ANT+-paired" assumption; the proxy approach is validated by #7.
+
+## 2026-06-15 — BLE recon of BOTH meters: crank reachable in ANT+ mode; both at 172.5; digital-twin vision
+
+While the devices were awake post-ride, connected to each over BLE by address. Big findings:
+
+**Crank length confirmed at 172.5 on BOTH meters, read directly off the hardware over BLE:**
+- Assioma (req-crank-length): `2005015901` → 172.5 mm, success.
+- Stages crank (req-crank-length): `20055901` → 172.5 mm (the crank omits the result byte — a non-standard CP framing; decoder updated to use the trailing 2 bytes, robust to both). The owner's 165→172.5 app change is verified on the crank itself. **So today's ~1.13 ratio is the honest meter difference at matched length; the fudge is fully removed.**
+
+**The Stages crank IS reachable over BLE in ANT+ mode — corrects the prior wrong conclusion.** Last session I'd connected to the bike's FTMS device ("Stages Bike 0105") by name-filter and wrongly concluded the crank BLE needs BLE-crank mode. Targeting by address shows the crank advertises as **"Stages 62144"** with full CPS:
+- Device Info: Stages Cycling / model **SPM2** / serial 11821518 (matches ANT+) / fw 1.8.2.
+- Services: GAP, GATT, **fe01** (Stages custom: char d445fe02 write+notify, d445fe03 notify), **1818 CPS**, 180f battery, 180a DIS, **fe59 Nordic DFU** (crank runs on a Nordic chip).
+- CPS Feature 525067; CPS Measurement flags 0x2F (balance + torque + crank revs), e.g. power 135 W.
+- Control point: crank-length read works (non-standard framing); sensor-locations & factory-cal-date = op_code_not_supported.
+- **Battery 14% — LOW. Put a fresh CR2032 in the crank before the next real session** (could die mid-ride; low battery can also skew power).
+
+**Assioma BLE:** Favero Electronics / model Assioma / serial 17039.013.118 / fw 06.24 / hw 04.01; CPS Feature 1118729; battery **73%** (healthy); custom service 0x0001. **Both pedals advertise separately** — `ASSIOMA17039L` (left, combined L+R — the proxy's input target) and `ASSIOMA22428R` (right). So crank recon (Session G Part A) is doable in ANT+ mode after all — just target by address/name, not the generic "Stages" filter.
+
+**Both crank and Assioma run on Nordic nRF (DFU service)** — as does the SB20 bike — relevant to the ESP32/BLE path.
+
+Captures: `G-crank62144-ble-*.jsonl`, `G-assioma17039-ble-*.jsonl` (+ the earlier `G-stagesL-ble-recon` = the bike FTMS device). These are the first **digital-twin** source material.
+
+**Strategic ideas recorded (owner) → `12-digital-twins-and-capture.md`:** (1) digital twins of the bike/meters to develop+test the proxy without riding, and an open twin library for other devs; (2) a structured capture-and-upload mode so beta testers with other gear grow the twin + calibration libraries (multi-brand support). Key insight: these are one pipeline — capture (structured) → twin (replay) → test — and the `raedian-probe#1` impersonation firmware is both the capture tool and the embedded twin. Future work, not a detour: same captures/format/firmware serve the proxy and the twins.

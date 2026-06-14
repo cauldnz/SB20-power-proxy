@@ -226,14 +226,19 @@ def decode_cp_response(data: bytes) -> dict[str, Any]:
     if params:
         out["params_hex"] = params.hex()
     req = data[1]
+    not_supported = (data[2] == 0x02 and len(data) == 3)
+    # Value-returning ops carry their 16-bit value in the LAST two bytes. Some
+    # meters include the 0x01 "success" result byte (Assioma: 20 05 01 59 01),
+    # others omit it (Stages SPM2 crank: 20 05 59 01) — trailing-bytes handles both.
+    val16 = data[-2:] if (len(data) >= 4 and not not_supported) else None
     try:
-        if req in (0x0C, 0x10) and len(params) >= 2:   # (enhanced) offset compensation
-            out["offset"] = int.from_bytes(params[0:2], "little", signed=True)
-        elif req == 0x05 and len(params) >= 2:         # crank length, units of 1/2 mm
-            out["crank_length_mm"] = int.from_bytes(params[0:2], "little") / 2.0
-        elif req == 0x03:                              # supported sensor locations
+        if req in (0x0C, 0x10) and val16:              # (enhanced) offset compensation
+            out["offset"] = int.from_bytes(val16, "little", signed=True)
+        elif req == 0x05 and val16:                    # crank length, units of 1/2 mm
+            out["crank_length_mm"] = int.from_bytes(val16, "little") / 2.0
+        elif req == 0x03 and not not_supported:        # supported sensor locations
             out["sensor_locations"] = [SENSOR_LOCATIONS.get(b, b) for b in params]
-        elif req == 0x0E and len(params) >= 1:         # sampling rate (Hz)
+        elif req == 0x0E and params:                   # sampling rate (Hz)
             out["sampling_rate_hz"] = params[0]
         elif req == 0x0F and len(params) >= 7:         # factory calibration date
             out["factory_cal_date_hex"] = params[0:7].hex()
