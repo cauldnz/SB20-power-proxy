@@ -98,6 +98,13 @@ The most architecturally relevant references are the ones that **broadcast** as 
 - https://teaandtechtime.com/arduino-ble-cycling-power-service/
 - Walk-through of building a BLE Cycling Power peripheral on an Arduino Nano 33 BLE. Useful reference for Cycling Power Measurement (0x2A63) byte layout.
 
+### mau-lima/ESP32-Bike-Powermeter
+- https://github.com/mau-lima/ESP32-Bike-Powermeter
+- License: **MIT** — permissively licensed, so we can borrow/adapt directly (unlike GPL prior art like QZ), with attribution.
+- C++ / PlatformIO (VS Code) proof-of-concept that emulates a BLE bicycle power meter on a bare ESP32, broadcasting the standard Cycling Power Service so off-the-shelf cycling apps accept it as a real power meter. Small (≈6 commits), no sensors yet — it transmits **fabricated** power/cadence values to demonstrate the BLE-peripheral side.
+- **Why it's worth keeping**: it's the minimal end of the "be a convincing BLE CPS peripheral on an ESP32" spectrum — relevant if we ever pursue the ESP32 BLE-only deployment target noted under the QZ `QZ_ESP32/` entry above (much smaller/cheaper than a Pi; ANT+ on ESP32 is impractical, so it'd be BLE-side spoofing only). The PlatformIO project layout and the CPS GATT-server/advertising setup are the useful parts to study; the synthetic-value generation is a stand-in for what would become our source→transform stage.
+- Caveat: proof-of-concept maturity (no calibration, no real measurement, low commit count). Treat as a starting skeleton for the BLE-peripheral mechanics, not a robustness reference — for that, OpenRowingMonitor / pm5-emulator / QZ are stronger.
+
 ### PeloMon (ihaque)
 - https://ihaque.org/posts/2021/01/04/pelomon-part-iv-software/
 - A Peloton-to-BLE-Cycling-Power bridge. Not directly applicable but the writing about CPS gotchas (Garmin requiring CSCS too, etc.) is good.
