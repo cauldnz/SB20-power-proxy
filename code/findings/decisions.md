@@ -256,3 +256,44 @@ The data wins from the first live ride (device 62144 = Stages combined/left cran
 - **New protocol detail:** when the rider stops, the Stages crank **latches its last instantaneous power (~416 W) rather than reporting 0 W** — held for >60 s. Relevant to how the proxy should behave on coast, and means "zero-power samples" need the *Assioma* (watch) side, which does zero.
 
 Pending: rider's watch FIT (Assioma side, lap-marked at ride end) for the dual-meter calibration comparison — the coast notch + end lap are the sync markers. Files to commit: C0-ack-dryrun-20260614-164426 (the one with the 8 cal pages), A-stagesL-steady-20260614-165737, and the BLE adv survey(s).
+
+## 2026-06-14 — CALIBRATION RESULT: the meter offset is torque/cadence-dependent (not constant)
+
+First dual-meter analysis, aligning Session A (Stages, device 62144) against the
+Assioma watch FIT (`A-assioma-watch-20260614.fit`), 585 matched active seconds.
+The coast notch confirmed sync; ~10 s watch/PC clock skew noted (doesn't bias the
+steady blocks). Stages = 62144, Assioma reference.
+
+- **Overall Stages/Assioma ratio ≈ 1.085** (Stages reads ~8.5% high). The owner's
+  dual-FTP workaround assumes 367/330 = 1.112, i.e. it slightly over-corrects on average.
+- **Flat across power** (0.95–0.44 kW bands all ~1.07–1.12) — no strong power dependence.
+- **Strongly cadence-dependent at fixed power (the headline).** Matched on Assioma 170–260 W:
+  - 60 rpm (high torque): ratio **1.134** (n=83)
+  - 70–85 rpm: 1.063 (n=15)
+  - 100 rpm (low torque): ratio **1.053** (n=137)
+  So at the same power the disagreement is ~13% grinding vs ~5% spinning. This is exactly
+  the P=τ·ω strain-gauge-slope signature predicted in the calibration-model entry. **Confirms
+  the correction must be f(power, cadence)/torque, not a constant** — a single ratio is right
+  at one cadence and wrong elsewhere, which is why the dual-FTP hack only ever felt "roughly" right.
+- Caveat: one ride, blocks at different times (minor drift confound, but 8 points >> 3-min thermal
+  drift and moves in the predicted direction). Needs a dedicated power×cadence grid ride to fit f cleanly.
+
+## 2026-06-14 — Drop the watch: capture both meters directly over ANT+ (one stick, two channels)
+
+Decision: future dual-meter / calibration captures use **two slave channels on one ANT+ stick**
+(openant Node supports 8 channels; ANTUSB2 confirms 8), not a watch FIT export. Owner's call —
+"our app can listen to both."
+
+Why it's strictly better than the watch:
+- One machine clock for both streams → sample-aligned, no UTC/AEST conversion, no ~10 s skew,
+  no coast-notch hunting. Removes the biggest source of noise in the calibration regression.
+- No export step (no Garmin Connect / FIT round-trip).
+- The Assioma's cycling dynamics (TE/PS/balance, page 0x13) come over ANT+ anyway.
+- **It IS the proxy's input path** — Phase 2 is "listen to the Assioma (channel 1) and re-broadcast
+  as the Stages crank", so this is real architecture progress, not throwaway capture tooling.
+
+Implemented as `code/scripts/07_capture_dual.py` (reuses 01's decode_page; tags each record with
+`source`; carries the os._exit-on-setup-failure hardening from the runbook). Not yet hardware-tested
+— shake out on the next ride via the run_capture/runbook procedure. The guided **calibration ride**
+(power×cadence grid) now becomes fully self-contained on one stick: ride the grid, fit f(power,cadence),
+done — and the same flow is the onboarding step for other owners (use case 3).
