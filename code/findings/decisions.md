@@ -478,3 +478,38 @@ Key findings:
 - Side effect (benign): the crank & Assioma are now **freshly zero-offset calibrated** — a normal, safe operation (same as the app's zero-reset, done unloaded & still).
 
 Captures: `G-crank62144-ble-zero-*.jsonl`, `G-assioma17039-ble-zero-*.jsonl` — added to the digital-twin source material (now we have advert + GATT + reads + CPS measurement + calibration response for both meters over BLE).
+
+## 2026-06-14 — App-survey screenshots: source→target mapping confirmed; crank-length authority is an open question
+
+Filed a screenshot survey of the three relevant apps under
+`code/findings/screenshots/` (`stages-app/` = Stages Cycling bike app,
+`stages-power-app/` = StagesPower crank-meter app, `favero-assioma-app/` =
+Favero app), each with a README. Cross-cutting insights:
+
+1. **Source→target mapping is now concrete (single ANT+ channel).** The Favero
+   app's *Compatibility with other apps* offers **Unified channel L** (both
+   pedals' data combined, sent from the **left** pedal, only L paired) vs **Dual
+   L/R**. Owner runs **Unified channel L**. The SB20's Stages left crank likewise
+   combines+rebroadcasts L+R. So the proxy reads **one** channel — Assioma **L
+   17039** (combined watts) — and spoofs **one** master — Stages left crank
+   **62144**. No need to read/emit the right side. Confirms the single-source design.
+
+2. **The Stages crank meters' full identity is captured** (the spoof target):
+   ANT+ IDs **L 62144 / R 4963**, device type **STAGES SMART**, firmware 1.8.2,
+   per-meter slope/temp-slope/DPOT. We inject finished watts so we don't need the
+   calibration constants, but the IDs + device type + page contract are the clone target.
+
+3. **Crank-length authority is an OPEN QUESTION (extends the crank-length thread).**
+   The StagesPower crank-meter app stores **crank length = 165.0 mm** *in the
+   meter*, while the Stages Cycling bike app now shows **172.5 mm**. These are two
+   distinct settings. Unknown which governs the watts the SB20 actually consumes.
+   This bears directly on the day-1 (1.085) vs session-2 (~1.134) ratio
+   prediction — if the meter's own 165 is authoritative, the bike-app change to
+   172.5 may not move the consumed watts at all. **Test:** change one length at a
+   time and watch whether the broadcast/consumed watts shift. (Moot once spoofing
+   — the crank leaves the loop — but it explains the measurement history.)
+
+4. **Hardware inventory:** owner has **two** Assioma DUO pairs — A (in use): L
+   17039 / R 22428, fw 06.24; B (spare): L 29064. Assioma power scale factor is
+   0%/factory (Assioma = ground truth, no source-side correction). HR strap 56954-1.
+   Recorded so the spare IDs aren't lost.
