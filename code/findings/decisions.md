@@ -463,3 +463,18 @@ While the devices were awake post-ride, connected to each over BLE by address. B
 Captures: `G-crank62144-ble-*.jsonl`, `G-assioma17039-ble-*.jsonl` (+ the earlier `G-stagesL-ble-recon` = the bike FTMS device). These are the first **digital-twin** source material.
 
 **Strategic ideas recorded (owner) → `12-digital-twins-and-capture.md`:** (1) digital twins of the bike/meters to develop+test the proxy without riding, and an open twin library for other devs; (2) a structured capture-and-upload mode so beta testers with other gear grow the twin + calibration libraries (multi-brand support). Key insight: these are one pipeline — capture (structured) → twin (replay) → test — and the `raedian-probe#1` impersonation firmware is both the capture tool and the embedded twin. Future work, not a detour: same captures/format/firmware serve the proxy and the twins.
+
+## 2026-06-15 — BLE zero-reset captured on both meters (no bonding needed; ~0 offset)
+
+Owner offered a zero-reset; triggered it over BLE via `06_capture_ble.py --control-point offset-compensation` and captured the response directly (cranks/pedals held still & unloaded).
+
+- **Stages crank (BLE):** `200c010000` → Start Offset Compensation, **success, offset 0**.
+- **Assioma 17039L (BLE):** `200c01ffff` → **success, offset -1** (essentially perfectly zeroed — typical Favero stability).
+
+Key findings:
+- **Neither meter requires bonding/pairing for a control-point write** — the calibration write succeeded straight up on both. Big positive for the ESP32 impersonator/twin and for any tool that calibrates over BLE: no SMP/bonding handling needed (at least for calibration).
+- **BLE response format for the zero-reset:** `20 0C 01 <offset_sint16_LE>` (success). This is the BLE analogue the impersonator must reproduce when the bike issues a BLE zero-reset.
+- **ANT+ vs BLE offset semantics differ:** ANT+ page-0x01 calibration_data was 903 (crank) this morning; BLE Start Offset Compensation returns ~0. Likely different fields/representations (ANT+ = stored raw zero-offset; BLE = residual/result of compensation ≈ 0). Worth confirming against the Stages/CPS spec for the twin, but not blocking.
+- Side effect (benign): the crank & Assioma are now **freshly zero-offset calibrated** — a normal, safe operation (same as the app's zero-reset, done unloaded & still).
+
+Captures: `G-crank62144-ble-zero-*.jsonl`, `G-assioma17039-ble-zero-*.jsonl` — added to the digital-twin source material (now we have advert + GATT + reads + CPS measurement + calibration response for both meters over BLE).
