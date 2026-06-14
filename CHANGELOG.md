@@ -1,5 +1,37 @@
 # Changelog
 
+## Revision 10 — First live ride: results + WSL/USB operations hardening
+
+The first guided ride succeeded — captured the calibration handshake and a clean
+Session A — but burned ~25 min of bike time on avoidable WSL/USB/process issues.
+This revision banks the results and makes sure those issues never recur.
+
+### Results (detail in `code/findings/decisions.md`, 2026-06-14)
+- **C-0 PASS:** calibration reply captured on air as broadcast page 0x01,
+  `0xAC` success + offsets 903 / −950 matching the app. The proxy's exact
+  spoof bytes are now known. Biggest Phase-0 de-risk to date.
+- **Session A: validator PASS** — 2,575 broadcasts, power 0→569 W, full
+  cadence sweep; `manufacturer_id=69` re-confirmed.
+- Device IDs resolved (via BLE survey): **62144 = Stages crank, 17039 =
+  Assioma**. Stages BLE advertises Cycling Power even while ANT+-paired.
+- New protocol detail: Stages crank **latches last power (~416 W) when
+  stopped** instead of zeroing.
+
+### Operations hardening (so the next ride is smooth)
+- **`01_capture_stages.py`: force-exit on setup failure.** openant's worker
+  thread is non-daemon, so a capture that failed mid-setup used to **hang and
+  keep the USB stick claimed**, blocking every retry with "Resource busy".
+  `main()` now `os._exit(2)`s on a setup exception, releasing the device
+  immediately. This was the single worst time-sink of the day.
+- **`code/findings/wsl-capture-runbook.md`** — symptom→cause→fix catalog for
+  every problem hit (root-only USB perms, CHANNEL_IN_WRONG_STATE, zombie
+  holders, the `pkill -f` self-kill footgun, `pyusb reset` being harmful, the
+  broken terminal stdin), plus the agent-drives-captures model and a 60-second
+  pre-ride checklist.
+- **`code/scripts/run_capture.sh`** — robust launcher: releases the stick from
+  any zombie holder (by exact PID, never a name pattern), launches detached,
+  retries the transient wrong-state, and prints a live data check.
+
 ## Revision 9 — Guided ride wizard for the Phase-0 sessions
 
 Makes the capture sessions a single-command, talked-through experience so the

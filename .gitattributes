@@ -1,0 +1,3 @@
+# Capture JSONL is the canonical lossless record — never convert line endings.
+code/findings/captures/*.jsonl -text
+*.jsonl -text

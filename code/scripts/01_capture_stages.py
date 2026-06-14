@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import signal
 import sys
 import time
@@ -425,7 +426,27 @@ def main() -> int:
         channel_period=args.channel_period,
         log_channel_events=args.log_channel_events,
     )
-    runner.setup()
+    try:
+        runner.setup()
+    except Exception as e:
+        # CRITICAL (learned the hard way, 2026-06-14 — see
+        # code/findings/wsl-capture-runbook.md): if setup() fails *after*
+        # openant's Node() has started its background worker thread (e.g. the
+        # ANT chip returns CHANNEL_IN_WRONG_STATE at channel assign), a normal
+        # exception does NOT end the process — that non-daemon thread keeps
+        # running and the process HANGS, still holding the ANT stick's USB
+        # handle open. Every subsequent capture then dies with "Resource busy"
+        # until someone hunts down and kills the zombie. Force-exit instead so
+        # the kernel releases the USB device immediately; the next launch (with
+        # a fresh Node + reset_system) can then succeed, optionally after a
+        # retry for the transient wrong-state.
+        print(f"setup failed: {e}", file=sys.stderr)
+        try:
+            runner._log("setup_error", error=str(e))
+            runner._fp.flush()
+        except Exception:
+            pass
+        os._exit(2)
     runner.run(args.duration)
     print(f"Done. {runner._messages_logged} records written to {args.output}")
     return 0

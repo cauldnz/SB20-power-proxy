@@ -230,3 +230,29 @@ Why it frays (and why the proxy + calibration model is a different class of solu
 4. It cannot touch anything that reads raw watts from the bike's broadcasts.
 
 The proxy collapses this to one FTP / one currency (bike's erg loop runs on Assioma-derived watts), and the per-pair fitted calibration replaces the constant with a function. Keep this story for the README / phase-0 report framing: "what owners do today, and why it can't be fixed at the app layer."
+
+## 2026-06-14 — First live ride: SUCCESS, plus a hard-won WSL/USB/process operations lesson
+
+Outcome (the wins are in the next entry): the morning's guided ride captured the calibration handshake and a full Session A. But it cost ~25 min of bike time to WSL/USB/process gremlins that should never recur. Full operational write-up: `code/findings/wsl-capture-runbook.md`. Summary of root causes + fixes:
+
+1. **Zombie capture held the stick → "Resource busy" on every retry (the big one).** openant's worker thread is non-daemon, so when a capture failed *after* Node() started (at channel assign), the process HUNG instead of exiting, keeping the USB device open. Diagnosed with `fuser`/`lsof` on the device node; fixed by killing the exact PID. **Permanent fix applied:** `01_capture_stages.py main()` now wraps `setup()` and `os._exit(2)`s on failure, so a setup error force-releases the USB device immediately.
+2. **`CHANNEL_IN_WRONG_STATE` (err 21) at session boundaries.** openant's teardown in WSL doesn't cleanly reset the chip (the cosmetic `node_stop_error: Entity not found` = libusb attach_kernel_driver failing). Clears on a fresh-process retry; the new `run_capture.sh` retries automatically.
+3. **USB perms root-only after `usbipd attach`** (udev rule doesn't fire on the cross-distro shared attach) → one `sudo chmod 666 /dev/bus/usb/BBB/DDD`. Delivered via clipboard so the rider just pastes.
+4. **`pyusb dev.reset()` is harmful here** — re-enumerates the FTDI-based stick and causes transient busy/driver-claim churn. Don't. Kill zombies + retry instead; or usbipd detach/reattach for a hard reset.
+5. **Self-kill footgun:** `pkill -f`/`pgrep -f` with an unanchored pattern matches the controlling `bash -c` shell (its argv contains the pattern string). Killed our own shell twice (exit 15). **Rule:** kill by exact PID, or anchor the pattern (`'ride_wizard\.py$'`), or `grep -v $$`.
+6. **Interactive terminal input was unusable** (`read failed 5: I/O error`; focus bounced to the chat window) → the wizard's `input()` prompts never fired. **The working model:** agent drives captures from outside via `wsl.exe -e bash -c`, launches detached (`nohup setsid ... </dev/null &`), polls the JSONL, and guides the rider through chat. This is now the documented default for assisted rides.
+7. **Reading WSL files from Windows:** PowerShell `\wsl.localhost\<distro>\...` works; git-bash `//wsl.localhost/...` does not. Console Unicode crashes cp1252 → `PYTHONIOENCODING=utf-8` or ASCII-only output.
+
+Artefacts added: `wsl-capture-runbook.md` (symptom→cause→fix catalog + pre-ride checklist + golden-path launch), `code/scripts/run_capture.sh` (robust launcher: release-stick + detached + retry, no self-kill), and the `os._exit` hardening in the capture script. Net: a 60-second pre-flight + the launcher would have avoided essentially the entire mess.
+
+## 2026-06-14 — Ride RESULTS: calibration handshake captured, Session A PASS, device IDs resolved
+
+The data wins from the first live ride (device 62144 = Stages combined/left crank):
+
+- **C-0 PASS — the calibration handshake is captured on air.** The crank broadcasts its zero-reset reply as page 0x01, `kind="broadcast"` (NOT acknowledged — confirms the reframed C-0 model). Captured `calibration_id=0xAC` (manual-zero success) with offsets **903** (raw `01acffffffff8703...`) and **-950** (raw `01acffffffff4afc...`), exactly matching the app's displayed 903 / 950. The single L-crank ID alternates BOTH crank offsets (left +903, right -950; app shows right as magnitude). **This de-risks the whole proxy: passive ANT+ sniffing sees the calibration exchange, and we now have the exact bytes to emit: `01 AC FF FF FF FF <offset_LE_signed>`.** First two C-0 attempts missed it purely on timing (rider still pedalling at window end); third attempt with the reset done early caught all 8 records.
+- **Session A — validator VERDICT: PASS.** 2,575 broadcasts over 898 s, clean session_end, ext-messages enabled. Page mix 0x12×1360 / 0x10×681 / 0x13×449 / commons. Power 0→**569 W** peak; full guided sweep incl. the calibration-critical low-vs-high cadence pair (~210 W @ 60 rpm vs ~230 W @ 100 rpm). `manufacturer_id=69` re-confirmed.
+- **Device identity resolved (via the BLE survey):** BLE advertised `ASSIOMA17039L` at addr E6:20:90:8C:F3:FE → **17039 = Assioma left pedal**; therefore **62144 = the Stages crank** (the one we captured). Also saw `Stages 4963` advertising Cycling Power (0x1818) + a Stages custom service.
+- **BLE finding for the ESP32 path:** the Stages crank's BLE side **advertises Cycling Power while the bike is ANT+-paired** — promising for a future BLE-server spoof. (Survey was adv-only/passive; connection-level CPS is a later ride.)
+- **New protocol detail:** when the rider stops, the Stages crank **latches its last instantaneous power (~416 W) rather than reporting 0 W** — held for >60 s. Relevant to how the proxy should behave on coast, and means "zero-power samples" need the *Assioma* (watch) side, which does zero.
+
+Pending: rider's watch FIT (Assioma side, lap-marked at ride end) for the dual-meter calibration comparison — the coast notch + end lap are the sync markers. Files to commit: C0-ack-dryrun-20260614-164426 (the one with the 8 cal pages), A-stagesL-steady-20260614-165737, and the BLE adv survey(s).
