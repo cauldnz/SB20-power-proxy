@@ -8,8 +8,9 @@ Layout + conventions follow `cauldnz/raedian-probe`'s firmware: the **platform-a
 `lib/proxy/`** is host-unit-tested with **no hardware**; `src/main.cpp` + `src/ble/` are the only
 Arduino/NimBLE files.
 
-> **Status: initial scaffold.** The pure core (CPS codec, correction, the ProxyCore relay) is
-> **host-tested green** (`pio test -e native`); the BLE impls build for the C3/S3. The
+> **Status: initial scaffold, verified.** The pure core (CPS codec, correction, the ProxyCore
+> relay) is **host-tested green** (`pio test -e native`, 7/7), and the full firmware **compiles
+> clean for the ESP32-C3** (NimBLE 2.2.0; 37% flash, 7% RAM — lots of headroom). The
 > SB20-specific bits — matching the real Stages CPS flags, the exact calibration handshake,
 > bonding — are gated on **Session G** (`../11-ble-and-esp32-path.md`). Erg won't work on the bike
 > until that's captured.
