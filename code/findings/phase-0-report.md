@@ -84,6 +84,12 @@ Crank lengths: physical holes **172.5** · Assioma (Favero app) **172.5** · SB2
 
 ## 6. Next-steps plan
 
+> **The detailed, operational version of this section now lives in
+> [`forward-plan.md`](forward-plan.md)** (desk/bike lanes, the Phase 1A build order with a
+> hardware-verified openant master path, dependency graph, and a take-to-the-bike card at
+> [`../../NEXT-BIKE-SESSION.md`](../../NEXT-BIKE-SESSION.md)). The summary below remains the
+> at-a-glance map.
+
 Phase 0 has answered the feasibility questions; the work now forks into a build track and a
 cheap on-bike track that can run in parallel.
 
