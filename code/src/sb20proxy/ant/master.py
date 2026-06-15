@@ -91,6 +91,12 @@ class LoopbackMaster(AntMaster):
         if self._ack_handler is not None:
             self._ack_handler(bytes(data))
 
+    def inject_broadcast(self, data: bytes) -> None:
+        """Deliver one broadcast page to all listeners now (test / utility hook)."""
+        self._broadcasts += 1
+        for listener in self._listeners:
+            listener(bytes(data))
+
     @property
     def broadcasts(self) -> int:
         return self._broadcasts

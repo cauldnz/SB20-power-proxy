@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from sb20proxy.twins.base import DeviceTwin
 from sb20proxy.twins.bike import BikeTwin
+from sb20proxy.twins.meter import PowerMeterTwin
 from sb20proxy.twins.transport import (
     AntSlaveTransport,
     LoopbackTransport,
@@ -20,6 +21,7 @@ from sb20proxy.twins.transport import (
 __all__ = [
     "DeviceTwin",
     "BikeTwin",
+    "PowerMeterTwin",
     "TwinTransport",
     "LoopbackTransport",
     "AntSlaveTransport",
