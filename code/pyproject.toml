@@ -29,6 +29,9 @@ analysis = [
     # For ingesting captures into InfluxDB so they can be explored in Grafana
     # (or shared with Claude via the summary/diff scripts that work on JSONL).
     "influxdb-client>=1.40",
+    # For 12_compare_fit.py — read a head unit's recorded FIT to validate the
+    # broadcast -> radio -> Garmin -> FIT path.
+    "fitparse>=1.2",
 ]
 
 [project.scripts]
