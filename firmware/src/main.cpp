@@ -18,11 +18,20 @@
   static sb20proxy::BleMeterClient meter;
 #endif
 
+#if USE_WIFI
+  #include <WiFi.h>
+  #include "net/WifiLink.h"
+#endif
+
 using namespace sb20proxy;
 
 static BleCrankPeripheral crank;
 static ProxyCore proxy(meter, crank,
                        Correction{Config::CORRECTION_SCALE, Config::CORRECTION_OFFSET});
+
+#if USE_WIFI
+static WifiLink wifi;
+#endif
 
 void setup() {
     Serial.begin(115200);
@@ -34,10 +43,35 @@ void setup() {
 
     Serial.printf("[sb20proxy] advertising as '%s'; source=%s\n",
                   Config::SPOOF_NAME, USE_MOCK_METER ? "MOCK" : Config::METER_NAME_FILTER);
+
+#if USE_WIFI
+    // Join WiFi + bring up OTA and the status HTTP server. The provider renders live state
+    // from the ProxyCore each request (curl http://<ip>/ — the reliable window into the C3).
+    wifi.begin("sb20proxy", []() {
+        ProxyStatus s;
+#if USE_MOCK_METER
+        s.mock = true;
+#endif
+        s.forwarded = proxy.forwarded();
+        s.lastPowerW = proxy.lastOutput().power_w;
+        s.lastCadenceRpm = proxy.lastOutput().cadence_rpm;
+        s.rssi = WiFi.RSSI();
+        s.freeHeap = ESP.getFreeHeap();
+        s.uptimeMs = millis();
+        return s;
+    });
+    Serial.printf("[sb20proxy] WiFi %s; status at http://%s/\n",
+                  WiFi.status() == WL_CONNECTED ? "connected" : "DOWN",
+                  WiFi.localIP().toString().c_str());
+#endif
 }
 
 void loop() {
     proxy.loop();
+
+#if USE_WIFI
+    wifi.handle();  // service HTTP + OTA, promote to healthy
+#endif
 
 #if USE_MOCK_METER
     // Drive the mock source at 1 Hz with a gentle 100..300..100 W ramp so the spoofed
