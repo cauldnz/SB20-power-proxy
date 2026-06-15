@@ -62,6 +62,21 @@ cd ..
 
 See `../09-exploring-captures.md` for the full capture-to-analysis workflow.
 
+## Tests
+
+```bash
+pip install -e ".[dev]"
+pytest              # run from code/ — hermetic, no ANT+ stick or SB20 needed
+ruff check src tests
+```
+
+Unit tests are **required** for any logic that doesn't need hardware (codecs, parsers, replay
+sources, `ProxyCore` wiring) and ship in the **same commit** as the code. Fixtures are built from
+the real captures in `findings/captures/` (round-trip / golden-vector), never invented bytes.
+Hardware-bound radio I/O is isolated behind a seam and tested with a fake; the on-air / pairing
+checks are manual (see `../NEXT-BIKE-SESSION.md`). CI (`.github/workflows/tests.yml`) runs `pytest`
++ `ruff` on every push. Full policy: `../CLAUDE.md` §Validation.
+
 ## Phase 0 usage
 
 ```bash

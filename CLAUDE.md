@@ -56,12 +56,30 @@ A few invariants that this project's success depends on:
 - **JSONL is the canonical lossless record.** Summaries, diffs, and InfluxDB rows are derived. Never edit a capture; produce a new analysis.
 - **Document protocol bytes, not Python idioms.** When findings resolve into a "what we need to spoof" specification, write it as a protocol doc (page formats, byte layouts, calibration response shape) — not as code. The doc ports across languages; the code may not.
 - **`findings/decisions.md` is append-only.** Record every numeric value chosen, every hypothesis refuted, every "it works now" moment. Future debugging will rely on it.
+- **Test the desk-testable, in the same change.** Any logic that runs without the ANT+ stick or the SB20 — page encode/decode, capture parsing, file replay, `ProxyCore` wiring, calibration-byte construction — ships with `pytest` unit tests in the **same commit** as the code (no "tests later"). Hardware-bound behaviour (radio TX, real pairing) is isolated behind a seam — e.g. an injectable radio — so its logic is still unit-tested with a fake; only the final on-air / pairing check is left to the bench. Build fixtures from the **real committed captures**, never invented bytes (see *Capture before code* and real-data-first). The suite stays hermetic (no hardware, no network) and green; CI runs it on every push. Details in §Validation.
 - **MIT-licensed.** Don't copy code from GPL-3.0 prior art (qdomyos-zwift especially). Read, understand, reimplement clean-room.
 
 ## Validation
+
+**Unit tests are the standing rule.** They live in `code/tests/`, run with `pytest` from
+`code/` (after `pip install -e ".[dev]"`), and are **hermetic** — no ANT+ stick, no SB20, no
+network — so they run in CI on every push (`.github/workflows/tests.yml`) and on any laptop.
+The conventions:
+
+- **Cover the desk-testable surface in the same commit as the code** — codecs, parsers, sources
+  that read files, `ProxyCore` wiring, byte construction (see the *Test the desk-testable*
+  discipline above). A change that adds such logic without tests is incomplete.
+- **Fixtures come from the real committed captures** in `findings/captures/` (round-trip /
+  golden-vector style), not invented bytes. `tests/conftest.py` exposes a `capture_pages` helper
+  that iterates the real pages of a capture; reserved/edge byte values were confirmed against the
+  captures, not guessed.
+- **Isolate hardware behind a seam.** The radio / BLE I/O is the only thing that needs the stick;
+  the page-scheduling, calibration, and encode/decode logic must be unit-testable with a fake
+  (e.g. a `FakeRadio`). Only the final on-air check is manual.
+- **Keep it green and lint-clean.** `pytest` and `ruff check src tests` both pass before a commit.
 
 For changes to capture / analysis scripts: smoke-test against a synthetic JSONL fixture (the diff and summarize tools have been tested this way; see `code/findings/decisions.md` for the manufacturer-ID-69-vs-263 reference fixture).
 
 For changes touching openant API usage: verify against the installed openant version (`pip show openant`) and the actual openant source on disk before assuming an API exists.
 
-For changes to the proxy itself: nothing replaces hardware testing against a real SB20. CI tests can only cover replay-against-fixtures.
+For changes to the proxy itself: nothing replaces hardware testing against a real SB20. The bench loopback and SB20 pairing are **manual** steps (documented in `NEXT-BIKE-SESSION.md` and `code/findings/forward-plan.md`); CI covers only the replay-against-fixtures / codec / wiring layer.

@@ -1,0 +1,40 @@
+name: tests
+
+# Hermetic unit tests for the sb20proxy library: codec round-trips against the
+# committed real captures, replay source, and ProxyCore wiring. No ANT+ stick or
+# SB20 is involved — hardware behaviour is verified manually at the bench (see
+# NEXT-BIKE-SESSION.md). Policy: CLAUDE.md §Validation.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    defaults:
+      run:
+        working-directory: code
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: code/pyproject.toml
+
+      - name: Install (dev extras)
+        run: pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check src tests
+
+      - name: Test
+        run: pytest -q

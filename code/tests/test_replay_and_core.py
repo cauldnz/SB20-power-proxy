@@ -2,15 +2,14 @@
 
 ReplayFileSource is exercised against a REAL committed capture (timing verified
 via an injected sleeper, no wall-clock waiting). ProxyCore is exercised with
-fakes. The loop-mode test uses a tiny synthetic file that mirrors the real JSONL
-schema exactly (synthetic values, observed schema).
+fakes. Synthetic files used here mirror the real JSONL schema exactly (synthetic
+values, observed schema).
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
 
 import pytest
 
@@ -20,22 +19,27 @@ from sb20proxy.sources import PowerSource
 from sb20proxy.sources.replay import ReplayFileSource
 from sb20proxy.targets import PowerTarget
 
-CAPTURE = (
-    Path(__file__).resolve().parents[1]
-    / "findings" / "captures" / "A-stagesL-steady-20260614-165737.jsonl"
-)
+STEADY = "A-stagesL-steady-20260614-165737.jsonl"
+
+
+def _recording_sleeper(into: list[float]):
+    async def _sleep(d: float) -> None:
+        into.append(d)
+    return _sleep
+
+
+async def _drain(src: ReplayFileSource) -> None:
+    src.on_reading(lambda r: None)
+    await src.start()
+    await src.wait()
 
 
 # --------------------------- ReplayFileSource ---------------------------
 
 @pytest.mark.asyncio
-async def test_replay_emits_power_readings_in_capture_order():
+async def test_replay_emits_power_readings_in_capture_order(captures_dir):
     delays: list[float] = []
-
-    async def fake_sleep(d: float) -> None:
-        delays.append(d)
-
-    src = ReplayFileSource(CAPTURE, sleep=fake_sleep)
+    src = ReplayFileSource(captures_dir / STEADY, sleep=_recording_sleeper(delays))
     got: list[PowerReading] = []
     src.on_reading(got.append)
 
@@ -53,25 +57,46 @@ async def test_replay_emits_power_readings_in_capture_order():
     assert abs(sum(delays) - (got[-1].timestamp - got[0].timestamp)) < 1e-6
 
 
-def _recording_sleeper(into: list[float]):
-    async def _sleep(d: float) -> None:
-        into.append(d)
-    return _sleep
-
-
-async def _drain(src: ReplayFileSource) -> None:
-    src.on_reading(lambda r: None)
-    await src.start()
-    await src.wait()
+@pytest.mark.asyncio
+async def test_replay_speed_scales_delays(captures_dir):
+    base: list[float] = []
+    fast: list[float] = []
+    await _drain(ReplayFileSource(captures_dir / STEADY, sleep=_recording_sleeper(base)))
+    fast_src = ReplayFileSource(
+        captures_dir / STEADY, speed=10.0, sleep=_recording_sleeper(fast)
+    )
+    await _drain(fast_src)
+    assert abs(sum(base) / 10.0 - sum(fast)) < 1e-6
 
 
 @pytest.mark.asyncio
-async def test_replay_speed_scales_delays():
-    base: list[float] = []
-    fast: list[float] = []
-    await _drain(ReplayFileSource(CAPTURE, sleep=_recording_sleeper(base)))
-    await _drain(ReplayFileSource(CAPTURE, speed=10.0, sleep=_recording_sleeper(fast)))
-    assert abs(sum(base) / 10.0 - sum(fast)) < 1e-6
+async def test_replay_maps_power_only_fields_exactly(tmp_path):
+    """A 0x10 record's decoded fields map onto PowerReading field-for-field."""
+    rec = {
+        "kind": "broadcast", "monotonic_s": 2.5,
+        "data": {
+            "page": 0x10, "instantaneous_power_w": 237, "instantaneous_cadence_rpm": 92,
+            "event_count": 40, "accumulated_power": 12345, "pedal_power_balance": 48,
+        },
+    }
+    f = tmp_path / "one.jsonl"
+    f.write_text(json.dumps(rec))
+
+    src = ReplayFileSource(f, sleep=lambda d: asyncio.sleep(0))
+    got: list[PowerReading] = []
+    src.on_reading(got.append)
+    await src.start()
+    await src.wait()
+
+    assert len(got) == 1
+    r = got[0]
+    assert r.power_w == 237
+    assert r.cadence_rpm == 92
+    assert r.crank_event_count == 40
+    assert r.accumulated_power == 12345
+    assert r.left_balance == 48
+    assert r.timestamp == 2.5
+    assert r.source_id.startswith("replay:")
 
 
 def test_replay_rejects_file_without_power_pages(tmp_path):
@@ -121,12 +146,15 @@ class _FakeSource(PowerSource):
     def __init__(self, readings: list[PowerReading]) -> None:
         self._readings = readings
         self._cbs: list = []
+
     def on_reading(self, cb) -> None:
         self._cbs.append(cb)
+
     async def start(self) -> None:
         for r in self._readings:
             for cb in self._cbs:
                 cb(r)
+
     async def stop(self) -> None:
         pass
 
@@ -137,10 +165,13 @@ class _FakeTarget(PowerTarget):
         self.started = False
         self.stopped = False
         self.started_before_first_reading: bool | None = None
+
     async def start(self) -> None:
         self.started = True
+
     async def stop(self) -> None:
         self.stopped = True
+
     def push_reading(self, r: PowerReading) -> None:
         if not self.received:
             self.started_before_first_reading = self.started
