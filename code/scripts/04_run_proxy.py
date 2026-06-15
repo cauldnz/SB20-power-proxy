@@ -41,6 +41,9 @@ from sb20proxy.twins import BikeTwin, LoopbackTransport, PowerMeterTwin  # noqa:
 
 
 def build_transform(args):
+    if args.profile:
+        from sb20proxy.calibration import load_transform
+        return load_transform(args.profile)
     if args.scale != 1.0 or args.offset != 0.0:
         return ScaleOffsetTransform(scale=args.scale, offset=args.offset)
     return IdentityTransform()
@@ -117,6 +120,7 @@ def main() -> int:
     p.add_argument("--spoof-id", type=int, default=62145, help="crank id to broadcast as")
     p.add_argument("--scale", type=float, default=1.0, help="linear correction scale")
     p.add_argument("--offset", type=float, default=0.0, help="linear correction offset (W)")
+    p.add_argument("--profile", type=Path, help="calibration profile JSON (09_fit_calibration.py)")
     p.add_argument("--meter-error-pct", type=float, default=0.0,
                    help="(loopback) inject a %% error into the meter twin to test correction")
     p.add_argument("--duration", type=float, default=8.0)
