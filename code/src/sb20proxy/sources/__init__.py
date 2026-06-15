@@ -12,7 +12,7 @@ via on_reading() callback.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Callable
+from collections.abc import Callable
 
 from sb20proxy.reading import PowerReading
 
