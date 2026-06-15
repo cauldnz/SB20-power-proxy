@@ -34,6 +34,42 @@ void test_correction_clamps_at_zero() {
     TEST_ASSERT_EQUAL_INT(0, c.apply(r).power_w);
 }
 
+// --- non-linear correction curve (GridTransform port) -------------------------
+
+void test_curve_empty_is_unity() {
+    CorrectionCurve curve;
+    TEST_ASSERT_TRUE(curve.empty());
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, curve.factorAt(200));
+}
+
+void test_curve_interpolates_and_holds_flat() {
+    CorrectionCurve curve;
+    curve.add(300, 0.91f);  // added out of order — add() keeps it sorted
+    curve.add(100, 0.95f);
+    TEST_ASSERT_EQUAL_FLOAT(0.95f, curve.factorAt(50));    // flat-held below first bp
+    TEST_ASSERT_EQUAL_FLOAT(0.95f, curve.factorAt(100));   // at first bp
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.93f, curve.factorAt(200));  // midpoint interpolation
+    TEST_ASSERT_EQUAL_FLOAT(0.91f, curve.factorAt(300));   // at last bp
+    TEST_ASSERT_EQUAL_FLOAT(0.91f, curve.factorAt(400));   // flat-held above last bp
+}
+
+void test_curve_correction_takes_precedence() {
+    // A populated curve wins; scale/offset are ignored. Golden integers match the Python
+    // GridTransform: round(reported * factor), factor interpolated on the curve.
+    Correction c;
+    c.scale = 9.9f;   // absurd on purpose — proves it is NOT used when the curve is set
+    c.offset = 9.9f;
+    c.curve.add(100, 0.95f);
+    c.curve.add(300, 0.91f);
+    PowerReading r;
+    r.power_w = 200;
+    TEST_ASSERT_EQUAL_INT(186, c.apply(r).power_w);  // round(200 * 0.93)
+    r.power_w = 100;
+    TEST_ASSERT_EQUAL_INT(95, c.apply(r).power_w);   // round(100 * 0.95)
+    r.power_w = 300;
+    TEST_ASSERT_EQUAL_INT(273, c.apply(r).power_w);  // round(300 * 0.91)
+}
+
 // --- CPS measurement codec ----------------------------------------------------
 
 void test_cps_measurement_roundtrip() {
@@ -86,6 +122,9 @@ int runUnityTests() {
     UNITY_BEGIN();
     RUN_TEST(test_correction_scale_offset);
     RUN_TEST(test_correction_clamps_at_zero);
+    RUN_TEST(test_curve_empty_is_unity);
+    RUN_TEST(test_curve_interpolates_and_holds_flat);
+    RUN_TEST(test_curve_correction_takes_precedence);
     RUN_TEST(test_cps_measurement_roundtrip);
     RUN_TEST(test_cps_decode_short_frame_is_safe);
     RUN_TEST(test_calibration_response_bytes);
