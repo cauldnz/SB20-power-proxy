@@ -570,3 +570,26 @@ First proxy code written (after the forward plan + the unit-testing rule). Phase
 
 **Left for hardware:** `OpenAntMaster` on a real stick (hardware loopback — `--radio ant`, witness
 with a 2nd stick or a phone/Garmin), then the SB20 pairing test (Phase 1B, `NEXT-BIKE-SESSION.md` §7).
+
+## 2026-06-15 — Twin library foundation + radio loopback (the transport seam)
+
+Generalised the digital twins into a small library and built the real-radio loopback path.
+
+1. **Transport seam** (`twins/transport.py`): a `TwinTransport` ABC decouples a twin's logic from
+   what's on the other side — `LoopbackTransport` (in-process, CI, no openant), `AntSlaveTransport`
+   (a real ANT+ slave on a stick), later a BLE transport. `DeviceTwin` (base) + `BikeTwin` now sit
+   on this seam, so the SAME twin runs as a pure software twin, over a real radio, or opposite a real
+   device — no logic change. `twins.py` → `twins/` package (import path unchanged).
+
+2. **A single ANT+ stick can't loopback to itself** — it's a half-duplex radio with no internal
+   TX→RX path, so a real on-air loopback needs a **second receiver**: a 2nd ANT+ stick (scriptable via
+   `10_bike_twin.py`, which runs a `BikeTwin` over `AntSlaveTransport`), or a phone ANT+ app / Garmin
+   paired to the spoofed id, or a real meter / the SB20. A single stick still verifies the TX binding
+   opens (`pytest --run-hardware` → `OpenAntMaster` smoke test).
+
+3. **Hardware tests are gated** (`conftest.py`): `@pytest.mark.hardware` tests are skipped unless
+   `pytest --run-hardware`, so CI and a plain `pytest` stay hermetic (still 35 passed, 1 skipped).
+
+4. **Roadmap** (production twin library): a `PowerMeterTwin` source twin, an FE-C/trainer twin, and a
+   BLE display twin — each pure-software in CI, real-radio on a stick, and able to face a real device.
+   This is the bench-test harness for Phase 2+ (live proxy) without riding.

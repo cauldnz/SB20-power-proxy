@@ -133,12 +133,27 @@ loopback below), then the SB20 pairing test (Phase 1B, `NEXT-BIKE-SESSION.md` §
   scheduling, identity, and calibration handshake end-to-end with no hardware — run any time via
   `pytest` or `03_static_replay.py --radio loopback`. This is the primary regression net and the
   digital-twin foundation.
-- **Hardware loopback (remaining):** the same `03_static_replay.py --radio ant` on a real stick,
-  to confirm `OpenAntMaster`'s on-air runtime. Witness it with **either** a second ANT+ stick
-  running `01_capture_stages.py --device-id 62145` (then `00_validate_capture.py` must PASS on our
-  own TX), **or** a phone ANT+ app / Garmin head unit paired to the spoofed id showing live watts.
-  (Single-stick self-RX is unreliable — half-duplex; prefer a second stick or a phone/Garmin
-  witness.) This catches any remaining radio-binding bug at the desk, before the bike.
+- **Hardware loopback (built, needs a stick to run):** `03_static_replay.py --radio ant` transmits
+  as the spoofed crank on stick A; `10_bike_twin.py --device-id <id>` runs a **`BikeTwin` over a
+  real ANT+ slave** on stick B and prints what it sees (including the zero-reset handshake) — the
+  software loopback, now over the air. **A single stick can't hear its own TX** (half-duplex, no
+  internal loopback), so a true on-air RX needs a **second receiver**: a 2nd ANT+ stick (scriptable,
+  via `10_bike_twin.py`), or a phone ANT+ app / Garmin paired to the id (manual witness), or — for
+  a single-stick sanity check — `pytest --run-hardware` (OpenAntMaster TX-opens smoke test). This
+  is the last desk step before the SB20 (Phase 1B).
+
+### The twin library (the bench-testing foundation)
+
+`twins/` is built on a **transport seam** so one twin runs three ways without changing its logic:
+- `LoopbackTransport` — pure software, in CI (no openant);
+- `AntSlaveTransport` — a real ANT+ stick (on-air loopback, or vs a real device);
+- (later) a BLE transport for the ESP32/BLE path.
+
+`DeviceTwin` (base) + `BikeTwin` (the SB20/display consumer) are the first members. **Roadmap:** a
+`PowerMeterTwin` source twin (feed the proxy synthetic or real meter data and assert what the bike
+consumes), a trainer/FE-C twin, and a BLE display twin — each pure-software in CI, real-radio on a
+stick, and able to sit opposite a real device. This is what lets us bench-test Phase 2+ as digital
+twins without riding.
 
 **Phase 1A exit:** ✅ reached — 35 unit tests pass, ruff clean, and the software loopback runs the
 whole pipeline (codec → replay → core → target → loopback → twin) green, including the calibration

@@ -77,6 +77,30 @@ Hardware-bound radio I/O is isolated behind a seam and tested with a fake; the o
 checks are manual (see `../NEXT-BIKE-SESSION.md`). CI (`.github/workflows/tests.yml`) runs `pytest`
 + `ruff` on every push. Full policy: `../CLAUDE.md` §Validation.
 
+### Software loopback (no hardware) — digital twins
+
+```bash
+python scripts/03_static_replay.py \
+    --input findings/captures/A-stagesL-steady-20260614-165737.jsonl --request-zero
+```
+Replays a real capture through the whole pipeline into a `BikeTwin` (a software SB20) and prints
+what it sees, including the zero-reset handshake. The `sb20proxy.twins` package runs the same twin
+over a `LoopbackTransport` (here / CI), an `AntSlaveTransport` (a real stick), or against a real
+device — no code change.
+
+### Hardware loopback (needs an ANT+ stick)
+
+```bash
+# One stick — sanity-check the real radio binding (skipped in CI):
+pytest --run-hardware
+
+# On-air loopback — needs a SECOND receiver (a stick can't hear its own TX):
+#   stick A: broadcast a spoofed crank
+python scripts/03_static_replay.py --radio ant --input <capture.jsonl> --spoof-id 62145
+#   stick B: receive it as a BikeTwin (or use a phone ANT+ app / Garmin paired to 62145)
+python scripts/10_bike_twin.py --device-id 62145 --request-zero
+```
+
 ## Phase 0 usage
 
 ```bash
