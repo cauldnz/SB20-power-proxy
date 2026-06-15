@@ -236,14 +236,19 @@ power with the XCadey alone. The pieces are mostly already in hand:
    power × cadence space; the old `RIDE-CARD` grid).
 2. **Analyze** — `08_analyze_grid.py` already computes the ratio surface / regression across
    power × cadence.
-3. **Fit** *(small new tool)* — turn the grid into a correction profile: a `ScaleOffsetTransform`
-   if the error is ~linear, or a **`GridTransform`** (piecewise-linear power→factor, already built)
-   if it's non-linear across the curve. Serialise to a profile file.
-4. **Apply** — load the profile as the `ProxyCore` transform (`04_run_proxy.py --scale/--offset`
-   today; `--profile <file>` once the fitter lands). Verified in software by injecting the measured
-   error into a `PowerMeterTwin` and asserting recovery.
+3. **Fit** ✅ **done** — `09_fit_calibration.py` (+ `src/sb20proxy/calibration.py`) turns the
+   dual-meter capture into a JSON correction profile: `fit_scale_offset` (linear) or `fit_grid`
+   (piecewise power→factor), auto-picking grid only if it beats linear, with residual reporting and
+   a meter-glitch filter. *Verified on real data:* stages reads ~9% high vs assioma on QUICK-multi.
+4. **Apply** ✅ **done** — `04_run_proxy.py --profile <file>` loads the profile as the `ProxyCore`
+   transform. Verified in software: inject a known non-linear error into a `PowerMeterTwin`, fit,
+   and the correction recovers true power to <4 W mean.
 5. **Deploy** — the same transform runs on the **ESP32 jersey-pocket bridge** (Track C / BLE):
-   XCadey → corrected power → bike computer, in real time.
+   XCadey → corrected power → bike computer, in real time. *(The remaining track.)*
+
+So 4 of the 5 steps are built and tested; only the ESP32 deployment remains. A real velodrome
+calibration would just need a **proper power-grid ride** (longer steady holds → cleaner curve than
+the 149 s QUICK-multi sample).
 
 This is also why the power-grid stays interesting even though the SB20 path doesn't need it: it's the
 calibration **product** for any meter pair, testable end-to-end as digital twins before a single ride.
