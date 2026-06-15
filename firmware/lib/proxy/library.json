@@ -1,0 +1,9 @@
+{
+  "name": "proxy",
+  "version": "0.1.0",
+  "description": "SB20 BLE power-meter proxy core (platform-agnostic): CPS codec, correction, the ProxyCore relay, interfaces + mocks. Host-testable; no Arduino dependency.",
+  "build": {
+    "flags": ["-I."],
+    "srcFilter": ["+<**/*.c>", "+<**/*.cpp>"]
+  }
+}
