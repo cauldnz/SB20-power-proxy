@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -125,11 +126,14 @@ def main() -> int:
     args = p.parse_args()
 
     if args.radio == "ant":
-        return asyncio.run(run_ant(args))
-    if not args.input:
-        p.error("--input is required for --radio loopback")
-    return asyncio.run(run_loopback(args))
+        rc = asyncio.run(run_ant(args))
+    else:
+        if not args.input:
+            p.error("--input is required for --radio loopback")
+        rc = asyncio.run(run_loopback(args))
+    sys.stdout.flush()
+    os._exit(rc)  # terminate past openant's non-daemon worker threads
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

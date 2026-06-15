@@ -67,10 +67,13 @@ class OpenAntMaster(AntMaster):
             except Exception:
                 pass
         if self._node is not None:
-            try:
-                self._node.stop()
-            except Exception:
-                pass
+            # node.stop() joins an internal worker with NO timeout and can block
+            # forever if the ANT chip wedged (CHANNEL_IN_WRONG_STATE). Bound it in a
+            # daemon thread so close() always returns; a CLI should then os._exit()
+            # to terminate past any non-daemon openant thread left behind.
+            stopper = threading.Thread(target=self._node.stop, daemon=True)
+            stopper.start()
+            stopper.join(timeout=2.0)
         self._node = None
         self._channel = None
         self._thread = None

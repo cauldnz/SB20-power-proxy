@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -78,7 +79,7 @@ async def run(args: argparse.Namespace) -> int:
         target = StagesAntTarget(master, mode="verbatim", verbatim_pages=load_pages(args.input))
     else:
         source = ReplayFileSource(args.input, loop=args.loop, speed=args.speed)
-        target = StagesAntTarget(master, mode="decoded")
+        target = StagesAntTarget(master, mode="decoded", commons_every=args.commons_every)
 
     print(f"[replay] mode={args.mode} radio={args.radio} spoof-id={args.spoof_id} "
           f"input={Path(args.input).name}")
@@ -129,6 +130,8 @@ def main() -> int:
                    help="loopback = software BikeTwin (no hardware); ant = real stick")
     p.add_argument("--usb-index", type=int, default=0,
                    help="which ANT+ stick to transmit on (0=first), for multi-stick hosts")
+    p.add_argument("--commons-every", type=int, default=120,
+                   help="pages between identity commons bursts (120≈30s @ 4Hz; lower = faster ID)")
     p.add_argument("--duration", type=float, default=8.0, help="seconds to run (loopback demo)")
     p.add_argument("--speed", type=float, default=1.0, help="replay speed multiplier (decoded)")
     p.add_argument("--period", type=float, default=0.25, help="loopback broadcast period (s)")
@@ -136,8 +139,12 @@ def main() -> int:
     p.add_argument("--request-zero", action="store_true",
                    help="(loopback) have the BikeTwin request a zero-reset mid-run")
     args = p.parse_args()
-    return asyncio.run(run(args))
+    rc = asyncio.run(run(args))
+    # Force-exit: openant leaves non-daemon worker threads that can hang interpreter
+    # shutdown after a wedged channel. We're done here, so terminate now.
+    sys.stdout.flush()
+    os._exit(rc)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -69,8 +70,10 @@ def main() -> int:
     p.add_argument("--request-zero", action="store_true",
                    help="request a zero-reset once power is seen")
     args = p.parse_args()
-    return asyncio.run(run(args))
+    rc = asyncio.run(run(args))
+    sys.stdout.flush()
+    os._exit(rc)  # terminate past openant's non-daemon worker threads
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

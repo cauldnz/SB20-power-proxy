@@ -115,16 +115,19 @@ class AntSlaveTransport(TwinTransport):
         self._thread.start()
 
     async def close(self) -> None:
+        import threading
+
         if self._channel is not None:
             try:
                 self._channel.close()
             except Exception:
                 pass
         if self._node is not None:
-            try:
-                self._node.stop()
-            except Exception:
-                pass
+            # node.stop()'s join() can block forever if the chip wedged; bound it.
+            # The CLI then os._exit()s past any non-daemon openant thread left behind.
+            stopper = threading.Thread(target=self._node.stop, daemon=True)
+            stopper.start()
+            stopper.join(timeout=2.0)
         self._node = None
         self._channel = None
         self._thread = None
