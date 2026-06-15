@@ -22,9 +22,10 @@ from sb20proxy.ant.master import ANTPLUS_NETWORK_KEY, AntMaster, ChannelParams
 class OpenAntMaster(AntMaster):
     """Broadcast as an ANT+ Bike Power master on a real stick via openant."""
 
-    def __init__(self, params: ChannelParams) -> None:
+    def __init__(self, params: ChannelParams, *, usb_device=None) -> None:
         super().__init__()
         self._params = params
+        self._usb_device = usb_device  # pin a specific stick (multi-stick hosts)
         self._node = None
         self._channel = None
         self._thread: threading.Thread | None = None
@@ -34,7 +35,10 @@ class OpenAntMaster(AntMaster):
         from openant.easy.channel import Channel
         from openant.easy.node import Node
 
-        node = Node()
+        from sb20proxy.ant.usb_select import pinned_stick
+
+        with pinned_stick(self._usb_device):
+            node = Node()  # openant claims the USB device synchronously here
         node.set_network_key(0x00, list(ANTPLUS_NETWORK_KEY))
         channel = node.new_channel(Channel.Type.BIDIRECTIONAL_TRANSMIT)
         channel.set_id(

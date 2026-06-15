@@ -63,7 +63,9 @@ async def run(args: argparse.Namespace) -> int:
 
     if args.radio == "ant":
         from sb20proxy.ant.openant_master import OpenAntMaster
-        master = OpenAntMaster(params)
+        from sb20proxy.ant.usb_select import describe_sticks, select_ant_stick
+        print(f"[replay] ANT+ sticks: {describe_sticks()}")
+        master = OpenAntMaster(params, usb_device=select_ant_stick(args.usb_index))
         twin = None
     else:
         master = LoopbackMaster(period_s=args.period)
@@ -125,6 +127,8 @@ def main() -> int:
     p.add_argument("--mode", choices=["decoded", "verbatim"], default="decoded")
     p.add_argument("--radio", choices=["loopback", "ant"], default="loopback",
                    help="loopback = software BikeTwin (no hardware); ant = real stick")
+    p.add_argument("--usb-index", type=int, default=0,
+                   help="which ANT+ stick to transmit on (0=first), for multi-stick hosts")
     p.add_argument("--duration", type=float, default=8.0, help="seconds to run (loopback demo)")
     p.add_argument("--speed", type=float, default=1.0, help="replay speed multiplier (decoded)")
     p.add_argument("--period", type=float, default=0.25, help="loopback broadcast period (s)")

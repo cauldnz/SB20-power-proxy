@@ -73,10 +73,13 @@ class AntSlaveTransport(TwinTransport):
     real device). openant is imported lazily so the software path never needs it.
     """
 
-    def __init__(self, params: ChannelParams, *, search_timeout: int = 0xFF) -> None:
+    def __init__(
+        self, params: ChannelParams, *, search_timeout: int = 0xFF, usb_device=None
+    ) -> None:
         super().__init__()
         self._params = params
         self._search_timeout = search_timeout
+        self._usb_device = usb_device  # pin a specific stick (multi-stick hosts)
         self._node = None
         self._channel = None
         self._thread = None
@@ -88,8 +91,10 @@ class AntSlaveTransport(TwinTransport):
         from openant.easy.node import Node
 
         from sb20proxy.ant.master import ANTPLUS_NETWORK_KEY
+        from sb20proxy.ant.usb_select import pinned_stick
 
-        node = Node()
+        with pinned_stick(self._usb_device):
+            node = Node()  # openant claims the USB device synchronously here
         node.set_network_key(0x00, list(ANTPLUS_NETWORK_KEY))
         channel = node.new_channel(Channel.Type.BIDIRECTIONAL_RECEIVE)
         channel.set_id(
