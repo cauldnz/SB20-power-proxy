@@ -150,5 +150,5 @@ See `../03-central-hypothesis-and-phase-zero.md` for the full Phase 0 capture pl
 | 1 — replay | **code-complete; software loopback passes** — codec + replay + `StagesAntTarget` + digital-twin loopback (`03_static_replay.py --radio loopback`). Remaining: real-stick hardware loopback + SB20 pairing (Phase 1B). |
 | 2 — live proxy | **code-complete; software loop passes** — generic `AntPowerSource` + `PowerMeterTwin` + correction transform; full meter→proxy→bike loop tested (`04_run_proxy.py --radio loopback`). Remaining: run live on a stick + latency/endurance. |
 | 2a — meter calibration | **fitter done** — `09_fit_calibration.py` turns a dual-meter capture into a JSON profile (`04_run_proxy.py --profile`); `transform.py` scale/offset + non-linear `GridTransform`. Capture→analyze→fit→apply all built; ESP32 deploy remains. See `findings/forward-plan.md` §4a. |
-| 3 — robustness | not started |
+| 3 — robustness | **started** — TOML config + real `sb20proxy` CLI (`config.py`, `--validate-config`). Next: dropout/stale handling, run-logging, systemd. |
 | 4 — distributable | generic ANT+ source **already done** (Phase 2) |
