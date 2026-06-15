@@ -35,10 +35,11 @@ class OpenAntMaster(AntMaster):
         from openant.easy.channel import Channel
         from openant.easy.node import Node
 
-        from sb20proxy.ant.usb_select import pinned_stick
+        from sb20proxy.ant.usb_select import pinned_stick, reset_node
 
         with pinned_stick(self._usb_device):
             node = Node()  # openant claims the USB device synchronously here
+        reset_node(node)  # self-heal a chip wedged by a prior ungraceful exit
         node.set_network_key(0x00, list(ANTPLUS_NETWORK_KEY))
         channel = node.new_channel(Channel.Type.BIDIRECTIONAL_TRANSMIT)
         channel.set_id(

@@ -70,9 +70,14 @@ def main() -> int:
     p.add_argument("--request-zero", action="store_true",
                    help="request a zero-reset once power is seen")
     args = p.parse_args()
-    rc = asyncio.run(run(args))
+    rc = 2
+    try:
+        rc = asyncio.run(run(args))
+    except BaseException as exc:
+        print(f"[bike-twin] error: {exc}", file=sys.stderr)
     sys.stdout.flush()
-    os._exit(rc)  # terminate past openant's non-daemon worker threads
+    sys.stderr.flush()
+    os._exit(rc)  # terminate past openant's non-daemon worker threads (even on failure)
 
 
 if __name__ == "__main__":

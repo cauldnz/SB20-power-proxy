@@ -14,6 +14,7 @@ the software / CI path never touches it.
 from __future__ import annotations
 
 import contextlib
+import time
 
 import usb.core  # pyusb (an openant dependency)
 
@@ -47,6 +48,21 @@ def select_ant_stick(index: int = 0):
     if index >= len(sticks):
         raise RuntimeError(f"requested stick index {index} but only {len(sticks)} attached")
     return sticks[index]
+
+
+def reset_node(node) -> None:
+    """Clear stale ANT channel state before assigning a channel.
+
+    openant resets once in its constructor, but a channel left ASSIGNED by a
+    process that was killed (kill -9, a crash) survives on the chip and makes the
+    next `new_channel` fail with CHANNEL_IN_WRONG_STATE. An explicit reset_system
+    here makes open() self-heal from that.
+    """
+    try:
+        node.ant.reset_system()
+        time.sleep(0.6)
+    except Exception:
+        pass
 
 
 @contextlib.contextmanager

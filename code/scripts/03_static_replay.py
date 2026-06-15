@@ -139,10 +139,15 @@ def main() -> int:
     p.add_argument("--request-zero", action="store_true",
                    help="(loopback) have the BikeTwin request a zero-reset mid-run")
     args = p.parse_args()
-    rc = asyncio.run(run(args))
-    # Force-exit: openant leaves non-daemon worker threads that can hang interpreter
-    # shutdown after a wedged channel. We're done here, so terminate now.
+    rc = 2
+    try:
+        rc = asyncio.run(run(args))
+    except BaseException as exc:
+        print(f"[replay] error: {exc}", file=sys.stderr)
+    # Force-exit even on a startup failure: openant leaves non-daemon worker threads
+    # that hang interpreter shutdown after a wedged channel. Terminate now.
     sys.stdout.flush()
+    sys.stderr.flush()
     os._exit(rc)
 
 

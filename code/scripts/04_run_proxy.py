@@ -125,14 +125,19 @@ def main() -> int:
     p.add_argument("--loop", action="store_true")
     args = p.parse_args()
 
-    if args.radio == "ant":
-        rc = asyncio.run(run_ant(args))
-    else:
-        if not args.input:
-            p.error("--input is required for --radio loopback")
-        rc = asyncio.run(run_loopback(args))
+    if args.radio == "loopback" and not args.input:
+        p.error("--input is required for --radio loopback")
+    rc = 2
+    try:
+        if args.radio == "ant":
+            rc = asyncio.run(run_ant(args))
+        else:
+            rc = asyncio.run(run_loopback(args))
+    except BaseException as exc:
+        print(f"[proxy] error: {exc}", file=sys.stderr)
     sys.stdout.flush()
-    os._exit(rc)  # terminate past openant's non-daemon worker threads
+    sys.stderr.flush()
+    os._exit(rc)  # terminate past openant's non-daemon worker threads (even on failure)
 
 
 if __name__ == "__main__":
