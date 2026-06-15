@@ -99,6 +99,24 @@ channel as acknowledged data via `on_acknowledge_data` (verified method present)
 the encoders) to exercise the `PowerReading` path that Phase 2 depends on. This separates "is the
 TX valid?" from "is the encoder correct?" — two failure modes you don't want tangled at the bike.
 
+### Progress (2026-06-15 desk session)
+
+The **radio-free half is built, verified against real captures, and committed:**
+- ✅ **Step 1+2 — codec** (`src/sb20proxy/ant/pages.py`): `encode_page`/`decode_page`
+  for all 7 pages. *Consolidated the planned two files into one* (decode+encode
+  together, no split/divergence risk). Round-trip gate green over **all 3,209 real
+  captured pages** (`tests/test_ant_pages.py`, 14 tests).
+- ✅ **Step 3 — `ReplayFileSource`** + ✅ **Step 5 — `ProxyCore`**: the decoded
+  replay path, 6 tests (real-capture replay, pacing, loop, wiring).
+- ⏳ **Step 4 — `StagesAntTarget`** + **Step 6 — `03_static_replay.py`**: the TX /
+  radio side — **bench-bound** (needs the ANT+ stick to verify). Design note from
+  the build: a *decoded* 0x12 (crank-torque) page needs simulated accumulators
+  (torque / crank-period / event counts), which is really Phase 2 work — so
+  **Phase 1's TX proof should use the *verbatim* page-replay path** (re-broadcast
+  the captured `raw_hex` pages exactly), with the openant master + the 0x01
+  calibration injection as the only new TX code. This makes verbatim-first not just
+  faster but the clean Phase-1 boundary.
+
 ### Bench loopback (optional but recommended — needs the built TX stack + an ANT+ stick, NOT the bike)
 
 Once steps 1–6 are built, prove the broadcast is well-formed by **receiving our own transmission**
