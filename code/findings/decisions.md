@@ -698,3 +698,41 @@ was away). 75 tests, all green.
 
 5. **Calibration profile-fitter** + **TOML config / real `sb20proxy` CLI** also landed earlier
    today (see prior entries / git log).
+
+## 2026-06-15 — ESP32 firmware branch + non-bike desk backlog (autonomous, owner at golf)
+
+Kicked off the ESP32 productisation on branch **`esp32-proxy`** (a dual-role BLE proxy that
+mirrors both the Python proxy and the `cauldnz/raedian-probe` firmware conventions: a pure
+`lib/proxy/` core host-tested with no hardware, NimBLE 2.2.0, `src/` the only Arduino files),
+then cleared a three-item non-bike backlog. Each item shipped with host tests in the same
+commit and an ESP32-C3 compile check. **Firmware host tests 7 → 17, all green; both the
+default BLE build and the WiFi/OTA build link clean.** All of it stays gated on **Session G**
+(does the SB20's BLE-crank mode give full erg + is it spoofable) before it matters on the bike.
+
+1. **GridTransform → C++ `CorrectionCurve`.** The non-linear power→factor curve (the XCadey
+   case) ported into `Correction` so it takes precedence when populated; `ProxyCore`/`main`
+   unchanged (the `Correction{scale,offset}` aggregate still works, curve defaults empty).
+   `factorAt()` interpolates between breakpoints, flat-held outside — **golden values identical
+   to the Python `GridTransform`** (e.g. `round(200*0.93)=186`), so firmware and Python agree.
+
+2. **CPS cadence (Crank Revolution Data).** The spoofed crank now emits cadence, not just power.
+   Key decision in the `CrankCadence` model: advance the *last crank event time* by exactly one
+   revolution-period (**`61440/rpm` ticks**, i.e. `60*1024/rpm`) per completed revolution, so a
+   head unit recovers the input rpm **exactly, with no quantization jitter** (the naive "stamp
+   event time = now at 1 Hz" approach makes integer revs against a 1 s window read 60/120/60…).
+   Tested at 96 rpm (period = exact 640 ticks). CP Feature advertises Crank-Rev-Supported (`0x08`);
+   the **full Stages `0x2F`** (pedal balance + accumulated torque too) is deferred to Session G.
+
+3. **WiFi + OTA + HTTP observability (`WifiLink`).** Mirrors the raedian-probe failsafe idiom:
+   join WiFi (creds from gitignored `wifi_secret.h`), serve status JSON at `GET /` + OTA at
+   `/update`, **boot-guard** `esp_timer` self-reset if never healthy, plus
+   `esp_ota_mark_app_valid_cancel_rollback()` on healthy. Decisions: **`USE_WIFI=0` by default**
+   so the normal build needs no creds (the `.cpp` body is wholly `#if USE_WIFI`); new
+   **`esp32c3-ota`** env (`espota`, `min_spiffs.csv` for two OTA app slots); the served JSON is
+   the pure host-tested `Status.h`. Compile-verified with a throwaway gitignored `wifi_secret.h`
+   (deleted after) — **Flash 50.5% of the 1.9 MB OTA slot** with WiFi + dual-role BLE + OTA all
+   coexisting on the C3.
+
+   **Gotcha:** any `src/` file is compiled in the ESP32 build (only `native` filters `src/` out),
+   so a WiFi-only `.cpp` must guard its *entire* body (incl. the `wifi_secret.h` include) behind
+   `#if USE_WIFI`, or the creds-free default build breaks.
