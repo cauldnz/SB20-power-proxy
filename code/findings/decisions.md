@@ -626,3 +626,39 @@ generic source means the Phase 4 "any meter" goal is delivered early. 45 tests, 
    (a head unit pairs to the spoofed crank id and shows watts, and can trigger a real zero-reset), so
    the hardware loopback needs no second ANT+ stick purchase. The extra meters generalise the source
    + give real `PowerMeterTwin` fixtures; the Neo is a real FE-C device for a future trainer twin.
+
+## 2026-06-15 — ON-AIR LOOPBACK WORKS (two sticks, real radios) + shutdown hardening
+
+The owner found a second ANT+ stick, so the full radio stack is now validated on real hardware —
+the last desk milestone before the SB20 itself.
+
+1. **Two-stick on-air loopback PASSES.** Both sticks are ANTUSB2 (`0fcf:1008`) on one WSL host. The
+   new `usb_select` shim pinned each process to a different stick (TX `--usb-index 0`, RX
+   `--usb-index 1`) — necessary because openant always grabs the first `0fcf` device. `03_static_replay
+   --radio ant` broadcast the spoofed crank **62145** (decoded replay of A-steady); `10_bike_twin
+   --usb-index 1` received it as a `BikeTwin`: real power tracked the capture (117→…→548 W surge),
+   cadence, and (with `--commons-every 12`) the Stages identity **mfr 69 / serial 11821518** over the air.
+
+2. **The bidirectional calibration handshake works over the air** — the slave (BikeTwin) sent a
+   manual-zero request (acknowledged data, page 0x01 0xAA) up to the master; the master answered with a
+   broadcast **0x01 0xAC offset 903**, which the slave received. This ack-uplink was the part we were
+   least sure about. Validates `OpenAntMaster` (TX), `AntSlaveTransport` (RX), the pinning shim, and the
+   calibration contract — all on real radios.
+
+3. **Shutdown bug found & fixed (hardware-only).** A second run HUNG: openant's `node.stop()` join()s an
+   internal worker with no timeout and blocks forever if the channel wedged (CHANNEL_IN_WRONG_STATE),
+   and the proxy CLIs lacked the `os._exit` hardening the capture scripts have → two processes hung
+   holding both sticks (killed by exact PID). Fix: `close()` runs `node.stop()` in a daemon thread with a
+   2 s join timeout; `03/04/10` `os._exit(rc)` at the end of `main()`. Re-verified: clean exit (rc 0, no
+   zombies). The software loopback could never have caught this (no real openant threads) — exactly why
+   the hardware loopback matters.
+
+4. **Identity-cadence finding.** The commons (0x50/0x51/0x52) go out at start + every ~30 s (matching the
+   real crank), so a late-joining receiver waits up to 30 s for identity. `--commons-every` now tunes
+   this; **watch at SB20 pairing (Phase 1B)** — if pairing is slow, front-load commons.
+
+5. **WSL multi-stick setup notes:** `usbipd bind` needs admin; usbipd-attached nodes are root-only →
+   `chmod 666 /dev/bus/usb/.../...` per attach (the udev rule isn't firing). openant claims the device
+   synchronously in `Node()`, so per-construction USB pinning works.
+
+**Left:** Phase 1B — pair the real SB20 (and the live-proxy-on-air test once a real meter is broadcasting).

@@ -133,14 +133,15 @@ loopback below), then the SB20 pairing test (Phase 1B, `NEXT-BIKE-SESSION.md` §
   scheduling, identity, and calibration handshake end-to-end with no hardware — run any time via
   `pytest` or `03_static_replay.py --radio loopback`. This is the primary regression net and the
   digital-twin foundation.
-- **Hardware loopback (built, needs a stick to run):** `03_static_replay.py --radio ant` transmits
-  as the spoofed crank on stick A; `10_bike_twin.py --device-id <id>` runs a **`BikeTwin` over a
-  real ANT+ slave** on stick B and prints what it sees (including the zero-reset handshake) — the
-  software loopback, now over the air. **A single stick can't hear its own TX** (half-duplex, no
-  internal loopback), so a true on-air RX needs a **second receiver**: a 2nd ANT+ stick (scriptable,
-  via `10_bike_twin.py`), or a phone ANT+ app / Garmin paired to the id (manual witness), or — for
-  a single-stick sanity check — `pytest --run-hardware` (OpenAntMaster TX-opens smoke test). This
-  is the last desk step before the SB20 (Phase 1B).
+- **Hardware loopback — ✅ PASSED (two sticks, 2026-06-15):** `03_static_replay.py --radio ant
+  --usb-index 0 --spoof-id 62145` transmitted the spoofed crank; `10_bike_twin.py --usb-index 1
+  --device-id 62145` received it as a **`BikeTwin` over a real ANT+ slave** — real power, the Stages
+  identity (mfr 69, with `--commons-every` tuned), and the **zero-reset handshake over the air**.
+  The `usb_select` shim pins each Node to a specific stick (openant grabs the first otherwise). **A
+  single stick can't hear its own TX** (half-duplex), so the on-air RX needs a second receiver: a 2nd
+  stick (used here), a phone ANT+ app / Garmin, or `pytest --run-hardware` for a single-stick TX
+  smoke. Shutdown is hardened (openant's `node.stop()` could hang). **The whole radio stack is now
+  hardware-validated — the only thing left is the SB20 itself (Phase 1B).**
 
 ### The twin library (the bench-testing foundation)
 
