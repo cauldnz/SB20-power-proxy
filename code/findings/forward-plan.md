@@ -204,18 +204,48 @@ chat ("started length test", "flipped BLE on", "pairing now").
 
 ---
 
-## 4. Phase 2 — Live Assioma proxy (mostly desk; one bike test)
+## 4. Phase 2 — Live generic-meter proxy ✅ built in software; needs a stick to go live
 
-Entry: Phase 1B passed. Swap the replay source for live Assioma.
+**Built and proven in software (no hardware), 45 tests green.** The source is **generic** — any
+standard ANT+ Bike Power meter (Assioma / Rotor InPower / XCadey / …), not Assioma-specific (the
+Phase 4 goal, delivered early).
 
-- **Desk (pre-buildable in parallel with Phase 1B):** `src/sb20proxy/sources/assioma.py`
-  `AssiomaAntSource` — an openant **slave** on Assioma-L (17039), decoding 0x10/0x12 → `PowerReading`.
-  Reuse the proven decode from `07_capture_multi.py`. This is RX, the well-trodden Phase 0 path.
-- **Wire:** `AssiomaAntSource → ProxyCore → StagesAntTarget`; add `scripts/04_run_proxy.py`.
-- **Bike test:** pedal; confirm SB20-proxied watts match the Assioma's own broadcast (witness on a
-  Garmin/2nd app); measure end-to-end latency (Assioma RX timestamp → Stages TX timestamp);
-  1-hour endurance ride for dropouts/desync/drift.
+- ✅ `sources/ant_power.py` **`AntPowerSource`** — page 0x10 → `PowerReading` over the receiver
+  transport (`AntSlaveTransport` real / `LoopbackTransport` CI). The live analogue of `ReplayFileSource`.
+- ✅ `twins/meter.py` **`PowerMeterTwin`** — the producer twin; broadcasts power with an optional
+  `error(power, cadence)` model so a meter discrepancy can be injected and a correction *verified in
+  software*.
+- ✅ `transform.py` — `PowerTransform` seam in `ProxyCore` (default pass-through); see §4a.
+- ✅ `scripts/04_run_proxy.py` — `--radio loopback` runs rider→meter→proxy→bike-twin in software;
+  `--radio ant` runs it live (`--meter-id` → `--spoof-id`).
+- **Full software loop tested:** `PowerMeterTwin → AntPowerSource → ProxyCore → StagesAntTarget →
+  BikeTwin` relays power, and a +10 % meter error is recovered to true power by the correction.
+- **To go live (hardware):** `--radio ant` with a real meter + stick into the SB20; measure
+  end-to-end latency (meter RX → crank TX) and run a 1-hour endurance ride.
 - **Exit:** within ±2 W / 1%; latency <250 ms (target <100 ms); 1 h unattended; `phase-2-report.md`.
+
+### 4a. Meter-to-meter calibration & the jersey-pocket bridge (the XCadey use case)
+
+Goal: replace the XCadey app's "swag" offset with a **quantitative, power-dependent** correction,
+and (if the error is non-linear) carry it on a small ESP32 bridge so the velodrome bike reads true
+power with the XCadey alone. The pieces are mostly already in hand:
+
+1. **Capture** both meters on one clock — `07_capture_multi.py` (XCadey as DUT + a reference, e.g.
+   the Assiomas mounted temporarily, or the SB20). Ride a **power-grid** (steady holds across the
+   power × cadence space; the old `RIDE-CARD` grid).
+2. **Analyze** — `08_analyze_grid.py` already computes the ratio surface / regression across
+   power × cadence.
+3. **Fit** *(small new tool)* — turn the grid into a correction profile: a `ScaleOffsetTransform`
+   if the error is ~linear, or a **`GridTransform`** (piecewise-linear power→factor, already built)
+   if it's non-linear across the curve. Serialise to a profile file.
+4. **Apply** — load the profile as the `ProxyCore` transform (`04_run_proxy.py --scale/--offset`
+   today; `--profile <file>` once the fitter lands). Verified in software by injecting the measured
+   error into a `PowerMeterTwin` and asserting recovery.
+5. **Deploy** — the same transform runs on the **ESP32 jersey-pocket bridge** (Track C / BLE):
+   XCadey → corrected power → bike computer, in real time.
+
+This is also why the power-grid stays interesting even though the SB20 path doesn't need it: it's the
+calibration **product** for any meter pair, testable end-to-end as digital twins before a single ride.
 
 Note: because the SB20 is pass-through (proven), **erg target = Assioma watts by construction** —
 no calibration model on the delivery path. The power×cadence grid stays research-only.

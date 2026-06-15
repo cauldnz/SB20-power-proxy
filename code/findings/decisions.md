@@ -593,3 +593,36 @@ Generalised the digital twins into a small library and built the real-radio loop
 4. **Roadmap** (production twin library): a `PowerMeterTwin` source twin, an FE-C/trainer twin, and a
    BLE display twin — each pure-software in CI, real-radio on a stick, and able to face a real device.
    This is the bench-test harness for Phase 2+ (live proxy) without riding.
+
+## 2026-06-15 — Phase 2 built in software + the meter-to-meter calibration seam
+
+Phase 2 (live proxy) is **code-complete and proven in software** via the digital-twin chain; the
+generic source means the Phase 4 "any meter" goal is delivered early. 45 tests, 1 hardware-skipped.
+
+1. **Generic source** (`sources/ant_power.py` `AntPowerSource`): decodes page 0x10 → `PowerReading`
+   over the receiver transport. Not Assioma-specific — Assioma / Rotor InPower / XCadey all broadcast
+   0x10, so only the device id differs. (Renamed the planned `AssiomaAntSource` to the generic
+   `AntPowerSource`.) The live analogue of `ReplayFileSource`.
+
+2. **`PowerMeterTwin`** (`twins/meter.py`): the producer twin — a master broadcasting power with an
+   optional `error(power, cadence)` model. This is what makes calibration **testable without
+   hardware**: inject a known error into the twin, assert the proxy's correction recovers true power.
+
+3. **Correction seam** (`transform.py` + `ProxyCore` transform arg): the quantitative replacement for
+   a "swag" offset. `ScaleOffsetTransform` (linear) and **`GridTransform`** (piecewise-linear
+   power→factor, for a NON-linear error across the curve) both verified. Default is pass-through
+   (the SB20 path needs no correction — it's the velodrome XCadey-vs-reference case that does).
+   Proven end-to-end: meter twin reports +10% high → `ScaleOffsetTransform(1/1.1)` → bike twin sees
+   true power.
+
+4. **Calibration product, fully designed** (forward-plan §4a): capture (`07_capture_multi`) → analyze
+   (`08_analyze_grid`) → **fit** (small new tool, the only missing piece) → apply (the transform) →
+   deploy (ESP32 jersey-pocket bridge). The power-grid stays valuable as the *calibration* artefact
+   for any meter pair, even though the SB20 proxy itself doesn't need it.
+
+5. **Hardware available for the next few days** (owner): TacX Neo (Gen-1, FE-C), Rotor InPower,
+   XCadey (on the velodrome bike — the calibration target), many HR straps, a Concept2 erg, a Garmin
+   footpod, and Garmin 520/540 + Epix 2. **Key:** the Garmins are the on-air loopback **witness/RX**
+   (a head unit pairs to the spoofed crank id and shows watts, and can trigger a real zero-reset), so
+   the hardware loopback needs no second ANT+ stick purchase. The extra meters generalise the source
+   + give real `PowerMeterTwin` fixtures; the Neo is a real FE-C device for a future trainer twin.
