@@ -662,3 +662,39 @@ the last desk milestone before the SB20 itself.
    synchronously in `Node()`, so per-construction USB pinning works.
 
 **Left:** Phase 1B — pair the real SB20 (and the live-proxy-on-air test once a real meter is broadcasting).
+
+## 2026-06-15 — Power-witness PASS on a real Garmin + FIT comparison + FE-C/TrainerTwin
+
+Validated the transmit chain against a real name-brand head unit, and built the
+FIT-comparison tool, the FE-C codec, and a TrainerTwin (a productive run while the owner
+was away). 75 tests, all green.
+
+1. **Power-witness test PASS.** Broadcast the A-steady capture on a stick (spoofed crank
+   62145); a **Garmin Fenix 2** (2014, ANT+) paired to it and recorded a ~24-min FIT. The
+   `12_compare_fit.py` overlay vs the broadcast capture: **correlation 0.9919**, mean abs
+   error **6.35 W**, 78.5% within ±10 W over 647 matched seconds, offset 43 s; FIT power
+   range 0–569 W (the surge + coast both landed). So a real Garmin faithfully recorded power
+   from a crank that doesn't exist — the whole `OpenAntMaster` TX path validated end to end.
+   The small residual is the Fenix's 1 Hz + smoothing vs our 4 Hz broadcast (transition lag),
+   not a fault. **Gotcha:** the Fenix's clock was years stale (box storage, no GPS), so the
+   activity is misdated `2019-07-12` — identify the new FIT by "newest not in the baseline",
+   not by date. WSL doesn't auto-mount removable drives, so copy the FIT off `F:` via Windows.
+   Evidence: `findings/fenix-witness-20260615.fit`.
+
+2. **FIT-comparison tool** (`fitcompare.py` + `12_compare_fit.py`): extract power from a
+   capture and from a Garmin FIT (fitparse), auto-align by best whole-second offset, report
+   correlation / mean error / %-within-tolerance. FIT field names confirmed against the real
+   Fenix file.
+
+3. **FE-C codec** (`ant/fec.py`): encode/decode pages 0x10 (general FE data) and 0x19 (trainer
+   data: power/cadence/accumulated) — round-trip verified over all 777 real SB20 FE-C records,
+   dropped bytes refilled with observed constants — plus the 0x31 Target Power control page.
+
+4. **TrainerTwin** (`twins/trainer.py`): a software FE-C smart trainer that broadcasts trainer
+   data and **obeys erg control** (a controller sends Target Power → the twin holds the rider
+   there). The control complement to the power twins; the "FIT workout drives a trainer twin"
+   path, testable in CI. (The Fenix 2 itself predates FE-C control — use an Edge 520/540 or
+   Epix for the real control side.)
+
+5. **Calibration profile-fitter** + **TOML config / real `sb20proxy` CLI** also landed earlier
+   today (see prior entries / git log).
