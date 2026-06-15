@@ -123,7 +123,7 @@ See `../03-central-hypothesis-and-phase-zero.md` for the full Phase 0 capture pl
 | Phase | Status |
 |-------|--------|
 | 0 — capture & analysis | **substantially complete** — 5 on-bike sessions; see `findings/phase-0-report.md` |
-| 1 — replay | not started (the next milestone) |
-| 2 — live proxy | not started |
+| 1 — replay | **code-complete; software loopback passes** — codec + replay + `StagesAntTarget` + digital-twin loopback (`03_static_replay.py --radio loopback`). Remaining: real-stick hardware loopback + SB20 pairing (Phase 1B). |
+| 2 — live proxy | not started (swap `ReplayFileSource` → `AssiomaAntSource`) |
 | 3 — robustness | not started |
 | 4 — distributable | not started |

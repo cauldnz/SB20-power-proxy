@@ -525,3 +525,48 @@ After merging the app-screenshot survey (`code/findings/screenshots/`), three re
 3. **"Pair with Bluetooth" toggle located + state confirmed:** in the bike app's Power Meters tab (`stages-app/power-meters-tab-172mm.png`), currently **OFF** (= ANT+ crank mode). Flipping it ON is the Session G Part C step (BLE-crank mode for the erg-works gate). Good to know exactly where it is and that the crank's BLE is reachable even with it OFF (today's recon).
 
 Net: the screenshots are high-value — they captured the full crank spoof-identity, confirmed the single-channel source→target mapping (Assioma Unified-channel-L 17039 → Stages L 62144), inventoried the spare hardware, and surfaced the two-crank-length subtlety that makes the calibration history a hypothesis-to-test rather than settled.
+
+## 2026-06-15 — Phase 1A built: TX side + software loopback works (digital twins)
+
+First proxy code written (after the forward plan + the unit-testing rule). Phase 1A is
+**code-complete and the software loopback passes** — the whole pipeline runs end-to-end with
+**no ANT+ stick and no bike**. 35 unit tests, ruff clean, CI on every push.
+
+1. **ANT+ page codec** (`src/sb20proxy/ant/pages.py`): `encode_page`/`decode_page`, exact inverse
+   pair over all 7 Bike Power pages. Reserved-byte fills (all 0xFF) were **verified against the real
+   captures** (3,209 records), not the spec — the decoder is lossy on reserved bytes so the encoder
+   refills them with what was on the wire. Round-trip gate: `encode_page(decode_page(raw)) == raw`
+   for every captured page. Consolidated the planned pages.py + common_pages.py into one codec module.
+
+2. **Decoded vs verbatim — a real finding:** a *decoded* page 0x12 (crank torque) would need
+   simulated accumulators (torque / crank-period / event counts) = Phase 2 work. But page **0x10
+   (Power-Only) needs none** — power, cadence, balance, accumulated-power are all it carries. So the
+   `StagesAntTarget` **decoded mode emits 0x10 + periodic 0x50/0x51/0x52 identity commons** (a valid
+   Bike Power meter, drives straight off a live Assioma in Phase 2), and **verbatim mode**
+   re-broadcasts captured pages byte-for-byte for the highest-fidelity hardware proof.
+
+3. **The radio seam + digital twins** (`ant/master.py`, `twins.py`) — the key enabler the owner
+   asked for: an `AntMaster` ABC with a pure-software **`LoopbackMaster`** (in-process "air") and a
+   **`BikeTwin`** (software SB20/display). The real-stick adapter `OpenAntMaster`
+   (`ant/openant_master.py`) is the ONLY piece left for the bench — verified by API surface against
+   openant 1.3.4, runtime not unit-testable. This means **we can bench-test the proxy as digital
+   twins of bike + meter + (later) other devices with zero hardware**, in CI.
+
+4. **Loopback verified** (`tests/test_loopback.py` + a live `03_static_replay.py --radio loopback`
+   run): `ReplayFileSource → ProxyCore → StagesAntTarget → LoopbackMaster → BikeTwin`. The twin sees
+   real replayed power (123→86→141→193→180 W across the run), the Stages identity (mfr **69**, serial
+   **11821518**), and a working **zero-reset handshake** — twin requests a manual zero (ack page 0x01
+   0xAA), target answers with broadcast **0x01 0xAC, offset 903**, exactly as the real crank did.
+
+5. **Calibration response is broadcast, not acknowledged-reply** — confirmed the Phase-0 finding in
+   the implementation: on the bike's zero-reset request the target injects the 0x01 0xAC response
+   into the next few broadcasts (matches how the real crank replied). `send_acknowledged_data` is the
+   documented fallback to try at the bench if the SB20 rejects the broadcast form.
+
+6. **Unit testing is now a project rule** (`CLAUDE.md` §Validation + CI `.github/workflows/tests.yml`):
+   desk-testable logic ships with tests in the same commit; fixtures come from the real captures;
+   hardware is isolated behind a seam and tested with a fake (the `LoopbackMaster`/`BikeTwin`
+   pattern); suite stays hermetic + green.
+
+**Left for hardware:** `OpenAntMaster` on a real stick (hardware loopback — `--radio ant`, witness
+with a 2nd stick or a phone/Garmin), then the SB20 pairing test (Phase 1B, `NEXT-BIKE-SESSION.md` §7).
