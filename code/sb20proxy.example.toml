@@ -1,0 +1,20 @@
+# sb20proxy configuration — copy to sb20proxy.toml and edit.
+# Validate with:  sb20proxy --config sb20proxy.toml --validate-config
+
+[proxy]
+meter_id      = 17039      # ANT+ id of YOUR power meter (the source to read)
+spoof_id      = 62144      # ANT+ id to broadcast as (the Stages L crank to replace)
+source_label  = "assioma"  # just a label for logs
+stale_timeout_s = 5.0      # stop relaying if the meter goes silent this long
+
+[radio]
+source_usb_index = 0       # which ANT+ stick listens to the meter
+target_usb_index = 1       # which ANT+ stick broadcasts the spoofed crank
+commons_every    = 120     # pages between identity bursts (120 ≈ 30 s @ 4 Hz; lower = faster pairing)
+
+[correction]
+# Optional meter-to-meter calibration. Use EITHER a fitted profile (from
+# 09_fit_calibration.py) OR a linear scale/offset — not both. Default = no correction.
+# profile = "findings/calibration-xcadey-vs-assioma.json"
+scale  = 1.0
+offset = 0.0
