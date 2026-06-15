@@ -333,6 +333,20 @@ def encode_calibration_response(
     })
 
 
+def encode_calibration_request(*, calibration_id: int = CAL_ID_MANUAL_ZERO_REQUEST) -> bytes:
+    """Page 0x01 manual-zero REQUEST (display -> meter, sent as acknowledged data).
+
+    This is what the SB20 (or the BikeTwin) sends up to the crank to trigger a
+    zero-reset; the crank answers with encode_calibration_response. -> 01 AA FF...FF.
+    """
+    return encode_page({
+        "page": PAGE_CALIBRATION,
+        "calibration_id": calibration_id,
+        "auto_zero_status": RESERVED,
+        "calibration_data": -1,  # 0xFFFF — no data in a request
+    })
+
+
 # ---------------------------------------------------------------------------
 # decode_page — mirrored verbatim from code/scripts/01_capture_stages.py (the
 # Phase 0-validated decoder). Keep the two in sync; the byte offsets are correct
