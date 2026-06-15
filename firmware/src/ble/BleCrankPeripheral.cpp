@@ -36,7 +36,8 @@ void BleCrankPeripheral::begin() {
     meas_ = cps->createCharacteristic(UUID_CP_MEAS, NIMBLE_PROPERTY::NOTIFY);
 
     NimBLECharacteristic* feat = cps->createCharacteristic(UUID_CP_FEATURE, NIMBLE_PROPERTY::READ);
-    uint32_t features = 0;  // TODO: advertise the real Stages CPS feature set
+    // Crank Revolution Data Supported (for cadence). TODO: the full Stages feature set (Session G).
+    uint32_t features = CP_FEATURE_CRANK_REV_SUPPORTED;
     feat->setValue((uint8_t*)&features, sizeof(features));
 
     NimBLECharacteristic* loc = cps->createCharacteristic(UUID_CP_SENSORLOC, NIMBLE_PROPERTY::READ);
@@ -65,7 +66,18 @@ void BleCrankPeripheral::begin() {
 
 void BleCrankPeripheral::publishPower(const PowerReading& r) {
     if (!meas_) return;
-    std::vector<uint8_t> frame = encodeCpsMeasurement(r.power_w);
+    std::vector<uint8_t> frame;
+    if (r.cadence_rpm >= 0) {
+        // Advance the crank-revolution state by the time since the last reading and emit
+        // power + cadence. dt is 0 on the first reading (no event yet).
+        uint32_t dt = haveLastT_ ? (r.t_ms - lastT_) : 0;
+        lastT_ = r.t_ms;
+        haveLastT_ = true;
+        cadence_.advance((float)r.cadence_rpm, dt);
+        frame = encodeCpsMeasurement(r.power_w, cadence_.cumulativeRevs, cadence_.lastEventTime);
+    } else {
+        frame = encodeCpsMeasurement(r.power_w);  // power-only when cadence is unknown
+    }
     meas_->setValue(frame.data(), frame.size());
     meas_->notify();
 }

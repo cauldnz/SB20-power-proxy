@@ -92,6 +92,38 @@ void test_calibration_response_bytes() {
     TEST_ASSERT_EQUAL_UINT8(0x03, r[4]);
 }
 
+// --- CPS cadence (Crank Revolution Data) --------------------------------------
+
+void test_cps_cadence_frame() {
+    std::vector<uint8_t> f = encodeCpsMeasurement(250, 8, 5120);  // power, revs, eventTime
+    TEST_ASSERT_EQUAL_INT(8, f.size());
+    TEST_ASSERT_EQUAL_HEX16(CPM_CRANK_REV_DATA_PRESENT, decodeCpsFlags(f.data(), f.size()));
+    TEST_ASSERT_EQUAL_INT(250, decodeCpsPower(f.data(), f.size()));
+    TEST_ASSERT_EQUAL_INT(8, decodeCrankRevs(f.data(), f.size()));
+    TEST_ASSERT_EQUAL_INT(5120, decodeCrankEventTime(f.data(), f.size()));
+}
+
+void test_crank_cadence_roundtrips_rpm() {
+    // 96 rpm is chosen so the revolution period is an exact tick count (61440/96 = 640),
+    // making the recovered cadence exact. Drive at 1 Hz for 5 s -> 1.6 rev/s * 5 = 8 revs.
+    CrankCadence c;
+    for (int i = 0; i < 5; ++i) c.advance(96.0f, 1000);
+    TEST_ASSERT_EQUAL_INT(8, c.cumulativeRevs);
+    TEST_ASSERT_EQUAL_INT(5120, c.lastEventTime);  // 8 * 640
+    TEST_ASSERT_FLOAT_WITHIN(
+        0.05f, 96.0f, cadenceRpmFromCrank(0, 0, c.cumulativeRevs, c.lastEventTime));
+}
+
+void test_crank_cadence_coasting_no_events() {
+    CrankCadence c;
+    c.advance(90.0f, 1000);  // pedalling
+    uint16_t revs = c.cumulativeRevs, t = c.lastEventTime;
+    TEST_ASSERT_TRUE(revs > 0);
+    c.advance(0.0f, 5000);  // coasting: neither revs nor event time may advance
+    TEST_ASSERT_EQUAL_INT(revs, c.cumulativeRevs);
+    TEST_ASSERT_EQUAL_INT(t, c.lastEventTime);
+}
+
 // --- ProxyCore relay (the loopback, in firmware) ------------------------------
 
 void test_proxy_relays_power() {
@@ -116,6 +148,16 @@ void test_proxy_applies_correction() {
     TEST_ASSERT_INT_WITHIN(1, 200, crank.last.power_w);
 }
 
+void test_proxy_preserves_cadence() {
+    MockMeter meter;
+    MockCrank crank;
+    ProxyCore proxy(meter, crank, Correction{0.5f, 0.0f});  // correction touches power only
+    proxy.begin();
+    meter.emit(200, 90);                                 // power 200, cadence 90
+    TEST_ASSERT_EQUAL_INT(100, crank.last.power_w);      // power corrected
+    TEST_ASSERT_EQUAL_INT(90, crank.last.cadence_rpm);   // cadence passes through untouched
+}
+
 // --- runner -------------------------------------------------------------------
 
 int runUnityTests() {
@@ -128,8 +170,12 @@ int runUnityTests() {
     RUN_TEST(test_cps_measurement_roundtrip);
     RUN_TEST(test_cps_decode_short_frame_is_safe);
     RUN_TEST(test_calibration_response_bytes);
+    RUN_TEST(test_cps_cadence_frame);
+    RUN_TEST(test_crank_cadence_roundtrips_rpm);
+    RUN_TEST(test_crank_cadence_coasting_no_events);
     RUN_TEST(test_proxy_relays_power);
     RUN_TEST(test_proxy_applies_correction);
+    RUN_TEST(test_proxy_preserves_cadence);
     return UNITY_END();
 }
 
