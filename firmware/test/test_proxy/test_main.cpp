@@ -12,6 +12,7 @@
 #include "MockCrank.h"
 #include "MockMeter.h"
 #include "ProxyCore.h"
+#include "Status.h"
 
 using namespace sb20proxy;
 
@@ -158,6 +159,35 @@ void test_proxy_preserves_cadence() {
     TEST_ASSERT_EQUAL_INT(90, crank.last.cadence_rpm);   // cadence passes through untouched
 }
 
+// --- status JSON (the HTTP observability model) -------------------------------
+
+void test_status_json_mock() {
+    ProxyStatus s;
+    s.mock = true;
+    s.forwarded = 5;
+    s.lastPowerW = 200;
+    s.lastCadenceRpm = 90;
+    s.uptimeMs = 12345;
+    std::string j = renderStatusJson(s);
+    TEST_ASSERT_TRUE(j.find("\"source\":\"mock\"") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"forwarded\":5") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"power_w\":200") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"cadence_rpm\":90") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"ms\":12345") != std::string::npos);
+}
+
+void test_status_json_source_state() {
+    ProxyStatus s;  // real source (mock=false), not yet linked
+    TEST_ASSERT_TRUE(renderStatusJson(s).find("\"source\":\"searching\"") != std::string::npos);
+    s.sourceConnected = true;
+    TEST_ASSERT_TRUE(renderStatusJson(s).find("\"source\":\"connected\"") != std::string::npos);
+}
+
+void test_status_json_unknown_cadence() {
+    ProxyStatus s;  // default cadence -1
+    TEST_ASSERT_TRUE(renderStatusJson(s).find("\"cadence_rpm\":-1") != std::string::npos);
+}
+
 // --- runner -------------------------------------------------------------------
 
 int runUnityTests() {
@@ -176,6 +206,9 @@ int runUnityTests() {
     RUN_TEST(test_proxy_relays_power);
     RUN_TEST(test_proxy_applies_correction);
     RUN_TEST(test_proxy_preserves_cadence);
+    RUN_TEST(test_status_json_mock);
+    RUN_TEST(test_status_json_source_state);
+    RUN_TEST(test_status_json_unknown_cadence);
     return UNITY_END();
 }
 
