@@ -57,3 +57,29 @@ def captures_dir() -> Path:
 def capture_pages():
     """Return the iter_capture_pages helper (call it with a capture filename)."""
     return iter_capture_pages
+
+
+# --- hardware tests: need a real ANT+ stick, so they are skipped by default ---
+# (so CI and a plain `pytest` stay hermetic). Run them with `pytest --run-hardware`
+# on a machine with a stick attached.
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-hardware", action="store_true", default=False,
+        help="run @pytest.mark.hardware tests (need a real ANT+ stick)",
+    )
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "hardware: needs a real ANT+ stick; skipped unless --run-hardware",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--run-hardware"):
+        return
+    skip = pytest.mark.skip(reason="needs --run-hardware (real ANT+ stick)")
+    for item in items:
+        if "hardware" in item.keywords:
+            item.add_marker(skip)

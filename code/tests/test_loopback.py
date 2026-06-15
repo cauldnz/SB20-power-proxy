@@ -39,8 +39,8 @@ async def test_decoded_loopback_twin_sees_spoofed_power(captures_dir):
     src = ReplayFileSource(captures_dir / STEADY, speed=1e9, sleep=_nowait)
     master = LoopbackMaster(period_s=0.0, sleep=_nowait)
     target = StagesAntTarget(master, mode="decoded", commons_every=4)
-    twin = BikeTwin()
-    twin.attach(master)
+    twin = BikeTwin.over_loopback(master)
+    await twin.start()
     core = ProxyCore(src, target)
 
     await core.start()
@@ -60,8 +60,8 @@ async def test_decoded_loopback_calibration_handshake(captures_dir):
     src = ReplayFileSource(captures_dir / STEADY, loop=True, speed=1e9, sleep=_nowait)
     master = LoopbackMaster(period_s=0.0, sleep=_nowait)
     target = StagesAntTarget(master, mode="decoded", commons_every=8)
-    twin = BikeTwin()
-    twin.attach(master)
+    twin = BikeTwin.over_loopback(master)
+    await twin.start()
     core = ProxyCore(src, target)
 
     await core.start()
@@ -80,8 +80,8 @@ async def test_verbatim_loopback_replays_real_pages(captures_dir, capture_pages)
     pages = [raw for _decoded, raw in capture_pages(STEADY)][:200]
     master = LoopbackMaster(period_s=0.0, sleep=_nowait)
     target = StagesAntTarget(master, mode="verbatim", verbatim_pages=pages)
-    twin = BikeTwin()
-    twin.attach(master)
+    twin = BikeTwin.over_loopback(master)
+    await twin.start()
 
     await target.start()
     ok = await _pump(lambda: twin.pages_received >= len(pages))

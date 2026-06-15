@@ -67,8 +67,8 @@ async def run(args: argparse.Namespace) -> int:
         twin = None
     else:
         master = LoopbackMaster(period_s=args.period)
-        twin = BikeTwin()
-        twin.attach(master)
+        twin = BikeTwin.over_loopback(master)
+        await twin.start()
 
     # Build the target (+ source for decoded mode).
     source = None

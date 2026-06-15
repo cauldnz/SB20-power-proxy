@@ -1,13 +1,8 @@
-"""Digital twins — software stand-ins for the real ANT+ devices, so the proxy can
-be bench-tested end to end without a stick or a bike.
+"""BikeTwin — a software SB20/display (the consumer side of a power-meter link).
 
-`BikeTwin` is the consumer twin: it plays the role of the SB20 (or any ANT+ Bike
-Power display) receiving from a spoofed crank. It decodes the pages the master
-broadcasts, tracks what it 'sees' (power, cadence, identity, calibration), and can
-send a manual-zero request back up — exercising the full calibration handshake.
-
-Moving forward, the same pattern extends to other twins (a meter twin that feeds
-the proxy as a source, a BLE display twin, etc.).
+Decodes the pages a crank (real or spoofed) broadcasts, tracks what it 'sees', and
+can send a manual-zero request back. Runs over any transport: in-process loopback
+(CI), a real ANT+ stick (on-air loopback / vs a real meter), etc.
 """
 
 from __future__ import annotations
@@ -22,14 +17,14 @@ from sb20proxy.ant import (
     decode_page,
     encode_calibration_request,
 )
-from sb20proxy.ant.master import LoopbackMaster
+from sb20proxy.twins.base import DeviceTwin
+from sb20proxy.twins.transport import LoopbackTransport, TwinTransport
 
 
-class BikeTwin:
-    """A software SB20/display: receives broadcast pages and tracks what it sees."""
+class BikeTwin(DeviceTwin):
+    """A software SB20/display: tracks the power, identity and calibration it sees."""
 
-    def __init__(self, name: str = "SB20-twin") -> None:
-        self.name = name
+    def __init__(self, transport: TwinTransport | None = None, name: str = "SB20-twin") -> None:
         self.pages_received = 0
         self.page_counts: Counter[int] = Counter()
         self.last_power: int | None = None
@@ -37,15 +32,14 @@ class BikeTwin:
         self.manufacturer_id: int | None = None
         self.serial_number: int | None = None
         self.calibration_response: dict | None = None
-        self._master: LoopbackMaster | None = None
+        super().__init__(transport, name)
 
-    def attach(self, master: LoopbackMaster) -> None:
-        """Connect to a loopback master so its broadcasts arrive at receive()."""
-        self._master = master
-        master.connect(self.receive)
+    @classmethod
+    def over_loopback(cls, master, name: str = "SB20-twin") -> BikeTwin:
+        """Convenience: a BikeTwin bound to an in-process LoopbackMaster."""
+        return cls(LoopbackTransport(master), name)
 
-    def receive(self, page: bytes) -> None:
-        """Listener entry point — called for each broadcast page."""
+    def _receive(self, page: bytes) -> None:
         self.pages_received += 1
         decoded = decode_page(bytes(page))
         pm = (decoded.get("page") or 0) & 0x7F
@@ -61,10 +55,8 @@ class BikeTwin:
             self.calibration_response = decoded
 
     def request_zero(self) -> None:
-        """Send a manual-zero (calibration) request up to the master."""
-        if self._master is None:
-            raise RuntimeError("BikeTwin not attached to a master")
-        self._master.inject_ack(encode_calibration_request())
+        """Send a manual-zero (calibration) request up to the meter."""
+        self._send_ack(encode_calibration_request())
 
     @property
     def saw_power(self) -> bool:
