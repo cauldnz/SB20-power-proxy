@@ -175,11 +175,18 @@ iteration (see `forward-plan.md` §3 failure modes).
    Device replies "Saved … restart" and reboots.
 4. **Joins as station.** Serial prints `connected; status at http://<ip>/`. Confirm
    `curl http://<ip>/` returns the status JSON (unchanged behaviour).
-5. **Re-provision path.** `curl http://<ip>/forget` → device wipes creds and reboots back into the
+5. **Survives OTA** (the important one). With the device joined from step 4, flash a *new* build
+   over the air — `pio run -e esp32c3-ota -t upload --upload-port <ip>` — and confirm it **reboots
+   and rejoins the same network with no re-provisioning** (serial shows `joining '<your-ssid>'`,
+   not the `SB20-Setup` portal). This proves the `nvs` creds survive an OTA app-slot swap.
+   *(Bonus: reflash the BLE-only `esp32c3-supermini` over USB and back — creds should still be
+   there, since both partition tables keep `nvs` at 0x9000.)*
+6. **Re-provision path.** `curl http://<ip>/forget` → device wipes creds and reboots back into the
    portal. (Same fallback fires automatically if the saved network is unreachable.)
 
-**✅ Pass:** portal auto-pops, creds persist across reboot, `/` serves status, `/forget` returns to
-setup. **If the page doesn't auto-pop** on Android, opening any `http://` URL should 302 to setup.
+**✅ Pass:** portal auto-pops, creds persist across reboot **and OTA**, `/` serves status, `/forget`
+returns to setup. **If the page doesn't auto-pop** on Android, opening any `http://` URL should 302
+to setup.
 
 ---
 

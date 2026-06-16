@@ -764,3 +764,13 @@ default BLE build and the WiFi/OTA build link clean.** All of it stays gated on 
      `+`/`%XX`, WPA/open validation) — 7 new Unity cases (`pio test -e native`, 24/24). The
      SoftAP/DNS/WebServer wiring is bench-tested (see `NEXT-BIKE-SESSION.md`). A **`firmware` CI job**
      (`.github/workflows/tests.yml`) now runs `pio test -e native` on every push, alongside pytest.
+   - **Persists through OTA — by design.** Creds live in the `nvs` partition; an OTA update
+     (`ArduinoOTA` / the `/update` form, both via `Update`) writes only the inactive app slot
+     (`ota_0`/`ota_1`) and flips `otadata` — it never touches `nvs`. Both partition tables in use put
+     `nvs` at the **same** offset (`0x9000`, size `0x5000`): the BLE-only `default.csv` and the OTA
+     `min_spiffs.csv`, so creds even survive switching between those builds. The only NVS erase is
+     `WifiCreds::clear()` from `/forget` (explicit). **Invariant to hold:** do not relocate/resize the
+     `nvs` partition — OTA does not rewrite the partition table, so a moved `nvs` would orphan the
+     stored creds (and `esptool erase_flash` / `pio run -t erase` wipes them). Worst case is graceful:
+     lost creds just drop the device back into the setup portal. Verify on hardware via
+     `NEXT-BIKE-SESSION.md` §8 (provision → OTA-flash a new build → confirm it rejoins, no re-setup).
