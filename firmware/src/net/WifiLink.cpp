@@ -18,6 +18,7 @@
 #include <esp_timer.h>
 
 #include "Provisioning.h"      // pure page render + form parse + validation (host-tested)
+#include "WebApp.h"            // static streaming dashboard served at GET /ui (renders in the phone)
 #include "net/DebugLog.h"      // recent-log ring served at GET /log (serial is flaky on the C3)
 #include "net/WifiCreds.h"     // NVS-backed credential storage
 
@@ -149,6 +150,9 @@ void WifiLink::startStationServer_() {
     server_->on("/", HTTP_GET, [this]() {
         std::string j = provider_ ? renderStatusJson(provider_()) : std::string("{}");
         server_->send(200, "application/json", j.c_str());
+    });
+    server_->on("/ui", HTTP_GET, [this]() {  // streaming dashboard; polls / from the browser
+        server_->send(200, "text/html", appPageHtml());
     });
     server_->on("/update", HTTP_GET, [this]() {
         server_->send(200, "text/html",

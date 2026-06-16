@@ -17,6 +17,7 @@
 #include "Status.h"
 #include "StatusLed.h"
 #include "OledScreen.h"
+#include "WebApp.h"
 
 using namespace sb20proxy;
 
@@ -425,6 +426,16 @@ void test_saved_page_escapes_ssid() {
     TEST_ASSERT_TRUE(p.find("&lt;script&gt;") != std::string::npos);
 }
 
+// --- web dashboard (the /ui page) ---------------------------------------------
+
+void test_app_page_essentials() {
+    std::string p = appPageHtml();
+    TEST_ASSERT_TRUE(p.find("SB20 Proxy") != std::string::npos);   // titled
+    TEST_ASSERT_TRUE(p.find("fetch(") != std::string::npos);       // polls the device
+    TEST_ASSERT_TRUE(p.find("<canvas") != std::string::npos);      // the live chart
+    TEST_ASSERT_TRUE(p.find("power_w") != std::string::npos);      // reads the power field
+}
+
 // --- runner -------------------------------------------------------------------
 
 int runUnityTests() {
@@ -473,6 +484,7 @@ int runUnityTests() {
     RUN_TEST(test_oled_connected_unknown_cadence_blank);
     RUN_TEST(test_saved_page_has_ssid_and_hints);
     RUN_TEST(test_saved_page_escapes_ssid);
+    RUN_TEST(test_app_page_essentials);
     return UNITY_END();
 }
 
