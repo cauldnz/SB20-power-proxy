@@ -16,6 +16,7 @@
 #include "ProxyCore.h"
 #include "Status.h"
 #include "StatusLed.h"
+#include "OledScreen.h"
 
 using namespace sb20proxy;
 
@@ -359,6 +360,29 @@ void test_status_led_searching_blinks_faster_than_connected() {
     TEST_ASSERT_TRUE(StatusLed::CONNECTED_HALF_MS > StatusLed::SEARCHING_HALF_MS);
 }
 
+// --- OLED screen --------------------------------------------------------------
+
+void test_oled_portal_lines() {
+    auto l = formatOledLines(OledMode::Portal, std::string(), 0, 0);
+    TEST_ASSERT_EQUAL_STRING("SB20 SETUP", l[0].c_str());
+    TEST_ASSERT_EQUAL_STRING("SB20-Setup", l[2].c_str());
+    TEST_ASSERT_EQUAL_STRING("192.168.4.1", l[3].c_str());
+}
+
+void test_oled_connected_lines() {
+    auto l = formatOledLines(OledMode::Connected, "192.168.1.82", 230, 85);
+    TEST_ASSERT_EQUAL_STRING("SB20 PROXY", l[0].c_str());
+    TEST_ASSERT_EQUAL_STRING("192.168.1.82", l[1].c_str());  // the IP — the thing you came for
+    TEST_ASSERT_EQUAL_STRING("230W", l[2].c_str());
+    TEST_ASSERT_EQUAL_STRING("85 rpm", l[3].c_str());
+}
+
+void test_oled_connected_unknown_cadence_blank() {
+    auto l = formatOledLines(OledMode::Connected, "10.0.0.5", 120, -1);
+    TEST_ASSERT_EQUAL_STRING("120W", l[2].c_str());
+    TEST_ASSERT_EQUAL_STRING("", l[3].c_str());  // cadence < 0 (unknown) -> blank row
+}
+
 // --- runner -------------------------------------------------------------------
 
 int runUnityTests() {
@@ -401,6 +425,9 @@ int runUnityTests() {
     RUN_TEST(test_status_led_searching_fast_blink);
     RUN_TEST(test_status_led_connected_slow_pulse);
     RUN_TEST(test_status_led_searching_blinks_faster_than_connected);
+    RUN_TEST(test_oled_portal_lines);
+    RUN_TEST(test_oled_connected_lines);
+    RUN_TEST(test_oled_connected_unknown_cadence_blank);
     return UNITY_END();
 }
 

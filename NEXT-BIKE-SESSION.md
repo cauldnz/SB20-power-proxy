@@ -47,7 +47,7 @@ python scripts/03_static_replay.py --radio loopback --duration 3 \
 If you'll flash / observe the **ESP32** this session (WiFi setup, OTA, `/log`, or the BLE path):
 ```bash
 cd firmware
-pio test -e native      # expect: 38/38
+pio test -e native      # expect: 41/41
 pio run -e esp32c3-wifi # builds with NO wifi_secret.h — creds come from the captive portal
 ```
 

@@ -24,6 +24,10 @@
   #include "net/WifiLink.h"
 #endif
 
+#if USE_OLED
+  #include "disp/OledDisplay.h"
+#endif
+
 using namespace sb20proxy;
 
 static BleCrankPeripheral crank;
@@ -34,10 +38,19 @@ static ProxyCore proxy(meter, crank,
 static WifiLink wifi;
 #endif
 
+#if USE_OLED
+static OledDisplay oled;
+#endif
+
 void setup() {
     Serial.begin(115200);
+    Serial.setTxTimeoutMs(0);  // never block on USB-serial if no host is reading (raedian gotcha)
     delay(200);
     Serial.println("[sb20proxy] BLE crank proxy starting");
+
+#if USE_OLED
+    oled.begin();  // bring the panel up early so it can show portal / connecting
+#endif
 
     NimBLEDevice::init(Config::SPOOF_NAME);
     proxy.begin();  // crank advertises; source begins (scan, or nothing for mock)
@@ -81,6 +94,18 @@ void loop() {
     // Onboard status LED: fast blink = setup portal / joining, slow pulse = connected.
     const LinkState ls = wifi.isUp() ? LinkState::Connected : LinkState::Searching;
     digitalWrite(Config::STATUS_LED_PIN, StatusLed::lit(ls, millis()) ? LOW : HIGH);  // active-low
+#endif
+
+#if USE_OLED
+    // Refresh the OLED at ~2 Hz (the 50 kHz I2C panel is slow; no need to redraw every loop).
+    static uint32_t lastOled = 0;
+    if (millis() - lastOled >= 500) {
+        lastOled = millis();
+        const OledMode m = wifi.inPortal() ? OledMode::Portal
+                         : (wifi.isUp() ? OledMode::Connected : OledMode::Connecting);
+        oled.render(m, WiFi.localIP().toString(), proxy.lastOutput().power_w,
+                    proxy.lastOutput().cadence_rpm);
+    }
 #endif
 
 #if USE_MOCK_METER
