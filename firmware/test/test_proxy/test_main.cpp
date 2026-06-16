@@ -383,6 +383,22 @@ void test_oled_connected_unknown_cadence_blank() {
     TEST_ASSERT_EQUAL_STRING("", l[3].c_str());  // cadence < 0 (unknown) -> blank row
 }
 
+// --- saved page ---------------------------------------------------------------
+
+void test_saved_page_has_ssid_and_hints() {
+    std::string p = renderSavedPage("Donnie Boon");
+    TEST_ASSERT_TRUE(p.find("Donnie Boon") != std::string::npos);  // shows the chosen network
+    TEST_ASSERT_TRUE(p.find("LED") != std::string::npos);          // LED hint present
+    TEST_ASSERT_TRUE(p.find("OLED") != std::string::npos);         // OLED / IP hint present
+    TEST_ASSERT_TRUE(p.find("restart") != std::string::npos);      // tells the user it reboots
+}
+
+void test_saved_page_escapes_ssid() {
+    std::string p = renderSavedPage("<script>");
+    TEST_ASSERT_TRUE(p.find("<script>") == std::string::npos);     // never injected raw
+    TEST_ASSERT_TRUE(p.find("&lt;script&gt;") != std::string::npos);
+}
+
 // --- runner -------------------------------------------------------------------
 
 int runUnityTests() {
@@ -428,6 +444,8 @@ int runUnityTests() {
     RUN_TEST(test_oled_portal_lines);
     RUN_TEST(test_oled_connected_lines);
     RUN_TEST(test_oled_connected_unknown_cadence_blank);
+    RUN_TEST(test_saved_page_has_ssid_and_hints);
+    RUN_TEST(test_saved_page_escapes_ssid);
     return UNITY_END();
 }
 

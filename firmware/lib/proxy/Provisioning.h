@@ -249,4 +249,30 @@ inline std::string renderProvisioningPage(const std::vector<ScannedNet>& network
     return h;
 }
 
+// The page shown right after the user saves credentials. Same look as the setup page; confirms the
+// save and tells the user how to know it worked (the status-LED pulse and the IP on the OLED) —
+// the device reboots immediately, so this page can't poll for the result itself. Pure/host-tested.
+inline std::string renderSavedPage(const std::string& ssid) {
+    return
+        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>SB20 Proxy &mdash; Saved</title>"
+        "<style>"
+        "body{font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;"
+        "padding:16px;color:#111;background:#fafafa}"
+        "h1{font-size:1.3rem}"
+        ".ok{background:#e7f5ec;border:1px solid #b7e0c4;color:#1d6b34;padding:10px 14px;"
+        "border-radius:8px}"
+        "li{margin:6px 0}"
+        "</style></head><body>"
+        "<h1>Saved &#10003;</h1>"
+        "<p class='ok'>Connecting to <b>" + htmlEscape(ssid) +
+        "</b> &mdash; the device is restarting now.</p>"
+        "<p>You can close this page. To confirm it joined your network:</p>"
+        "<ul>"
+        "<li>the onboard <b>status LED</b> settles into a slow, steady pulse, and</li>"
+        "<li>the <b>OLED</b> shows the device&rsquo;s IP address.</li>"
+        "</ul></body></html>";
+}
+
 }  // namespace sb20proxy

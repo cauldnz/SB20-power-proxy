@@ -274,8 +274,7 @@ void WifiLink::startPortal_() {
             return;
         }
         WifiCreds::save(c);
-        std::string ok = "<!DOCTYPE html><html><body><h1>Saved</h1><p>Connecting to '" +
-                         htmlEscape(c.ssid) + "'. This device will restart now.</p></body></html>";
+        std::string ok = renderSavedPage(c.ssid);
         server_->send(200, "text/html", ok.c_str());
         delay(500);
         esp_restart();

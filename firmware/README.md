@@ -10,7 +10,7 @@ Arduino/NimBLE files.
 
 > **Status: initial scaffold, verified.** The pure core — CPS codec (power **and cadence**),
 > linear + **non-linear (GridTransform) correction**, the ProxyCore relay, the HTTP status model —
-> is **host-tested green** (`pio test -e native`, 41/41). The full firmware **compiles clean for
+> is **host-tested green** (`pio test -e native`, 43/43). The full firmware **compiles clean for
 > the ESP32-C3** (NimBLE 2.2.0): the default BLE build at 37% flash, and the WiFi+OTA+HTTP build
 > (`esp32c3-ota`) at 50% of a 1.9 MB OTA slot. The SB20-specific bits — matching the real Stages
 > CPS flags, the exact calibration handshake, bonding — are gated on **Session G**
@@ -48,7 +48,7 @@ Arduino/NimBLE files.
 ## Build / test / flash
 
 ```bash
-pio test -e native                          # host tests of the pure core — no hardware (41/41)
+pio test -e native                          # host tests of the pure core — no hardware (43/43)
 pio run  -e esp32c3-supermini -t upload     # your ESP32 Super Mini (BLE only, no creds needed)
 pio device monitor                          # watch the [proxy] log
 
