@@ -316,6 +316,19 @@ From `phase-0-report.md` §5 — track, don't block on:
   toolchain, but the test TU type-checks clean under GCC and the firmware build is green). Firmware
   build `esp32c3-ota` ✅. Files: `firmware/src/net/WifiLink.{h,cpp}` (scan + `/rescan`),
   `firmware/lib/proxy/Provisioning.h` (model + render), `firmware/test/test_proxy/test_main.cpp`.
+- **Captive-portal password field — suppress the "strong password" overlay** — ✅ **done
+  (2026-06-16).** The key the rider types is an *existing* WiFi credential, but a `type=password`
+  field made iOS Safari (and the Captive Network Assistant webview) pop the "Use Strong Password"
+  generator + save prompt over it (`autocomplete='off'` is ignored for password fields). *Decision:*
+  render a **masked TEXT field** (`type='text'` + CSS `-webkit-text-security:disc` +
+  `autocomplete='off' autocapitalize='off' autocorrect='off' spellcheck='false'`) rather than rely
+  on `autocomplete='current-password'` — a non-password field is never classified as a credential,
+  so no overlay can fire, and `-webkit-text-security` is supported by WebKit + Blink (every
+  captive-portal browser: iOS Safari, iOS CNA webview, Android Chrome). A **Show/Hide toggle**
+  (`revealPass()`) replaces the missing native reveal. Covered by a new
+  `test_portal_page_password_not_a_credential_field` host test (full reasoning in
+  `decisions.md` 2026-06-16). On-device behaviour across the three browsers is a bench check.
+  Files: `firmware/lib/proxy/Provisioning.h`, `firmware/test/test_proxy/test_main.cpp`.
 
 ---
 

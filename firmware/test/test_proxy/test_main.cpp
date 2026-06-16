@@ -292,6 +292,32 @@ void test_portal_page_scanning_state() {
     TEST_ASSERT_TRUE(html.find("Scanning") != std::string::npos);
 }
 
+// The WiFi key is an EXISTING credential the rider already knows. A native type=password field
+// makes iOS Safari (and the Captive Network Assistant webview) pop the "Use Strong Password"
+// generator + a save prompt, which is useless here and gets in the way. The page must therefore
+// render a MASKED TEXT field (never classified as a credential) instead of type=password, with a
+// Show/Hide reveal toggle. See forward-plan §8.
+void test_portal_page_password_not_a_credential_field() {
+    std::string html = renderProvisioningPage({{"AlphaNet", -45, true}});
+    // No native password field, and nothing that signals a *new* password (the generator trigger).
+    TEST_ASSERT_TRUE(html.find("type='password'") == std::string::npos);
+    TEST_ASSERT_TRUE(html.find("new-password") == std::string::npos);
+    // The dot-mask is CSS (-webkit-text-security), honoured by WebKit + Blink (all captive browsers).
+    TEST_ASSERT_TRUE(html.find("-webkit-text-security:disc") != std::string::npos);
+    // The pass input carries the credential-suppressing attributes (text + autocomplete off, etc.).
+    size_t pass = html.find("id='pass' name='pass'");
+    TEST_ASSERT_TRUE(pass != std::string::npos);
+    std::string tag = html.substr(pass, html.find('>', pass) - pass);
+    TEST_ASSERT_TRUE(tag.find("type='text'") != std::string::npos);
+    TEST_ASSERT_TRUE(tag.find("autocomplete='off'") != std::string::npos);
+    TEST_ASSERT_TRUE(tag.find("autocapitalize='off'") != std::string::npos);
+    TEST_ASSERT_TRUE(tag.find("autocorrect='off'") != std::string::npos);
+    TEST_ASSERT_TRUE(tag.find("spellcheck='false'") != std::string::npos);
+    // A Show/Hide toggle replaces the native password reveal (field is no longer type=password).
+    TEST_ASSERT_TRUE(html.find("revealPass(this)") != std::string::npos);
+    TEST_ASSERT_TRUE(html.find("class='reveal'") != std::string::npos);
+}
+
 // --- diagnostic log endpoint (ring buffer + /log toggle footer) ---------------
 
 void test_logbuffer_keeps_recent_in_order() {
@@ -365,6 +391,7 @@ int runUnityTests() {
     RUN_TEST(test_portal_page_marks_secured_and_open);
     RUN_TEST(test_portal_page_has_rescan_and_manual_entry);
     RUN_TEST(test_portal_page_scanning_state);
+    RUN_TEST(test_portal_page_password_not_a_credential_field);
     RUN_TEST(test_logbuffer_keeps_recent_in_order);
     RUN_TEST(test_logbuffer_drops_oldest_past_capacity);
     RUN_TEST(test_logbuffer_caps_line_length);

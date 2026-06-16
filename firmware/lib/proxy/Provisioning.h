@@ -194,6 +194,12 @@ inline std::string renderProvisioningPage(const std::vector<ScannedNet>& network
          ".sig i.on{background:#2a8a3e}"
          "input{width:100%;box-sizing:border-box;padding:10px;font-size:1rem;"
          "border:1px solid #ccc;border-radius:8px;margin:4px 0 12px}"
+         // The password field is a masked TEXT input (see the form below for why): WebKit/Blink
+         // mask it with -webkit-text-security; .show clears the mask for the Show/Hide toggle.
+         "#pass{-webkit-text-security:disc}"
+         "#pass.show{-webkit-text-security:none}"
+         ".reveal{padding:4px 10px;font-size:.85rem;background:#fff;border:1px solid #ccc;"
+         "border-radius:6px;cursor:pointer;color:#2a6df4}"
          "label{font-weight:600;font-size:.9rem}"
          "button.go{width:100%;padding:12px;font-size:1rem;font-weight:600;color:#fff;"
          "background:#2a6df4;border:0;border-radius:8px;cursor:pointer}"
@@ -237,12 +243,23 @@ inline std::string renderProvisioningPage(const std::vector<ScannedNet>& network
          "<label for='ssid'>Network name</label>"
          "<input id='ssid' name='ssid' autocomplete='off' autocapitalize='none' "
          "autocorrect='off' spellcheck='false' required>"
-         "<label for='pass'>Password</label>"
-         "<input id='pass' name='pass' type='password' autocomplete='off' "
+         "<div class='row'><label for='pass'>Password</label>"
+         "<button type='button' class='reveal' onclick='revealPass(this)'>Show</button></div>"
+         // The WiFi key is an EXISTING credential the rider already knows, not a new login. A
+         // native type=password field makes iOS Safari (and the Captive Network Assistant
+         // webview) pop "Use Strong Password" + a save prompt, and autocomplete='off' is ignored
+         // for password fields. So this is a MASKED TEXT field: never classified as a credential,
+         // so no overlay/save prompt fires; -webkit-text-security (WebKit + Blink, i.e. every
+         // captive-portal browser) draws the dots, and the Show/Hide button above replaces the
+         // native reveal. autocomplete='off' IS honoured for text fields. See forward-plan §8.
+         "<input id='pass' name='pass' type='text' autocomplete='off' "
+         "autocapitalize='off' autocorrect='off' spellcheck='false' "
          "placeholder='Leave blank if the network is open'>"
          "<button class='go' type='submit'>Save &amp; Connect</button></form>"
          "<script>function pick(b){var f=document.forms[0];"
-         "f.ssid.value=b.getAttribute('data-ssid');f.pass.focus();}</script>";
+         "f.ssid.value=b.getAttribute('data-ssid');f.pass.focus();}"
+         "function revealPass(b){var p=document.getElementById('pass');"
+         "b.textContent=p.classList.toggle('show')?'Hide':'Show';}</script>";
 
     h += renderLogToggleFooter(logState);
     h += "</body></html>";
