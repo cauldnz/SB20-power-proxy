@@ -15,6 +15,7 @@
 #include "Provisioning.h"
 #include "ProxyCore.h"
 #include "Status.h"
+#include "StatusLed.h"
 
 using namespace sb20proxy;
 
@@ -331,6 +332,33 @@ void test_portal_page_shows_log_toggle_when_requested() {
     TEST_ASSERT_TRUE(renderProvisioningPage({}, "").find("/log") == std::string::npos);
 }
 
+// --- status LED ---------------------------------------------------------------
+
+void test_status_led_searching_fast_blink() {
+    // Searching toggles every SEARCHING_HALF_MS (120 ms): on [0,120), off [120,240), on [240,…).
+    TEST_ASSERT_TRUE(StatusLed::lit(LinkState::Searching, 0));
+    TEST_ASSERT_TRUE(StatusLed::lit(LinkState::Searching, 119));
+    TEST_ASSERT_FALSE(StatusLed::lit(LinkState::Searching, 120));
+    TEST_ASSERT_FALSE(StatusLed::lit(LinkState::Searching, 239));
+    TEST_ASSERT_TRUE(StatusLed::lit(LinkState::Searching, 240));
+}
+
+void test_status_led_connected_slow_pulse() {
+    // Connected toggles every CONNECTED_HALF_MS (1000 ms).
+    TEST_ASSERT_TRUE(StatusLed::lit(LinkState::Connected, 0));
+    TEST_ASSERT_TRUE(StatusLed::lit(LinkState::Connected, 999));
+    TEST_ASSERT_FALSE(StatusLed::lit(LinkState::Connected, 1000));
+    TEST_ASSERT_TRUE(StatusLed::lit(LinkState::Connected, 2000));
+}
+
+void test_status_led_searching_blinks_faster_than_connected() {
+    // At 120 ms the fast (searching) LED has already toggled off while the slow (connected) one is
+    // still in its first ON — the periods differ in the expected direction.
+    TEST_ASSERT_FALSE(StatusLed::lit(LinkState::Searching, 120));
+    TEST_ASSERT_TRUE(StatusLed::lit(LinkState::Connected, 120));
+    TEST_ASSERT_TRUE(StatusLed::CONNECTED_HALF_MS > StatusLed::SEARCHING_HALF_MS);
+}
+
 // --- runner -------------------------------------------------------------------
 
 int runUnityTests() {
@@ -370,6 +398,9 @@ int runUnityTests() {
     RUN_TEST(test_logbuffer_caps_line_length);
     RUN_TEST(test_log_toggle_footer_states);
     RUN_TEST(test_portal_page_shows_log_toggle_when_requested);
+    RUN_TEST(test_status_led_searching_fast_blink);
+    RUN_TEST(test_status_led_connected_slow_pulse);
+    RUN_TEST(test_status_led_searching_blinks_faster_than_connected);
     return UNITY_END();
 }
 

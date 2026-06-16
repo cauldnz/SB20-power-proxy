@@ -17,6 +17,9 @@ struct Config {
     // --- meter-to-meter correction (linear; a fitted grid lands later) ---
     static constexpr float CORRECTION_SCALE  = 1.0f;
     static constexpr float CORRECTION_OFFSET = 0.0f;
+
+    // --- board (ESP32-C3 Super Mini) ---
+    static constexpr int STATUS_LED_PIN = 8;  // onboard LED, active-low (LOW = lit)
 };
 
 }  // namespace sb20proxy
