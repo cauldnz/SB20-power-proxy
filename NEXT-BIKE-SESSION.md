@@ -47,8 +47,8 @@ python scripts/03_static_replay.py --radio loopback --duration 3 \
 If you'll flash / observe the **ESP32** this session (WiFi setup, OTA, `/log`, or the BLE path):
 ```bash
 cd firmware
-pio test -e native      # expect: 29/29
-pio run -e esp32c3-ota  # builds with NO wifi_secret.h — creds come from the captive portal
+pio test -e native      # expect: 35/35
+pio run -e esp32c3-wifi # builds with NO wifi_secret.h — creds come from the captive portal
 ```
 
 **Gotchas confirmed this session:** `06_capture_ble.py` exits immediately without **bleak**
@@ -215,7 +215,7 @@ iteration (see `forward-plan.md` §3 failure modes).
 > No SB20 or bike needed — just the ESP32-C3 + a phone. Verifies WiFi provisioning end-to-end
 > (the host-side logic is already CI-green; this is the on-air half).
 
-1. **Flash WiFi build with NVS empty.** `cd firmware && pio run -e esp32c3-ota -t upload` over USB.
+1. **Flash WiFi build with NVS empty.** `cd firmware && pio run -e esp32c3-wifi -t upload` over USB.
    (First time, or after a `GET /forget` / NVS erase.) No `wifi_secret.h` required.
 2. **Portal comes up.** Serial prints `SETUP: join WiFi network 'SB20-Setup' ...`. On a phone, join
    the open **`SB20-Setup`** AP — the setup page should **auto-pop** (captive-portal detection). If
