@@ -816,3 +816,36 @@ Three corrections from the owner while reviewing the `NEXT-BIKE-SESSION.md` plan
    captured/documented whatever Part C decides. This is fine because it's **independent of Part C** —
    the 2026-06-15 finding established the Stages crank is reachable over BLE *in ANT+ mode* (target
    `Stages 62144` by name). No BLE-crank mode required for the recon capture.
+
+## 2026-06-16 — Captive portal: suppress browser "strong password" overlay
+
+The portal's password input asks for an **existing** WiFi key the rider already knows, but iOS
+Safari (and the iOS Captive Network Assistant webview) treat any `type=password` field as a *new*
+login: they pop the "Use Strong Password" generator and a save-password prompt over the field, which
+is useless here and gets in the way. `autocomplete='off'` does **not** fix this — Safari ignores it
+for password fields specifically.
+
+Options considered:
+- **`autocomplete='current-password'`** — the documented signal that the field is an *existing*
+  credential (vs `new-password`, which is what *triggers* generation). It reduces the overlay but
+  doesn't reliably eliminate it: Safari may still offer to save, and behaviour in the CNA webview is
+  inconsistent. Reduces, doesn't guarantee.
+- **Masked TEXT field (chosen).** Render `<input type='text'>` (not `password`) with CSS
+  `-webkit-text-security:disc` for the dot-mask, plus `autocomplete='off' autocapitalize='off'
+  autocorrect='off' spellcheck='false'`. A non-password field is **never** classified as a
+  credential, so no generator/save overlay can fire — the only *guaranteed* fix across all three
+  targets. `-webkit-text-security` is supported by WebKit **and** Blink, i.e. every captive-portal
+  browser (iOS Safari, iOS CNA webview, Android Chrome). `autocomplete='off'` **is** honoured for
+  text fields. Note: `current-password` was deliberately **not** added — it's semantically wrong on
+  a text field and could re-trigger the credential heuristics we're avoiding.
+  - **Show/Hide toggle** added (`revealPass()` flips a `.show` class that clears
+    `-webkit-text-security`) since a text field has no native reveal control. Default state is
+    masked.
+  - Form still posts `name='pass'` exactly as before — `parseFormUrlEncoded` is unchanged.
+- Tested: 1 new host-Unity case `test_portal_page_password_not_a_credential_field` asserts no
+  `type='password'` / `new-password`, the `-webkit-text-security:disc` mask, the four
+  credential-suppressing attributes on the `#pass` input, and the reveal toggle. Verified locally by
+  compiling the full `test_main.cpp` TU under a Unity shim (no PlatformIO on this box) — green; the
+  real `pio test -e native` runs in CI. On-device behaviour across the three browsers is a bench
+  check (`NEXT-BIKE-SESSION.md`). Files: `firmware/lib/proxy/Provisioning.h`,
+  `firmware/test/test_proxy/test_main.cpp`. Tracked in `forward-plan.md` §8.
