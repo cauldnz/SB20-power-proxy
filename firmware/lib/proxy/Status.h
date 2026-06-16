@@ -14,7 +14,12 @@ struct ProxyStatus {
     bool sourceConnected = false;  // meter linked (always false in mock mode)
     bool mock = false;             // running the synthetic meter, no real source
     int32_t forwarded = 0;         // readings relayed to the crank
-    int16_t lastPowerW = 0;        // last corrected power published
+    // The proxy carries two power streams; the UI shows both so each direction is visible:
+    //   * src*  — what we RECEIVED from the meter (the BLE-central / goal-#1 side)
+    //   * last* — what we BROADCAST to the crank after correction (the peripheral / goal-#2 side)
+    int16_t srcPowerW = 0;         // last power received from the source meter
+    int16_t srcCadenceRpm = -1;    // -1 = unknown
+    int16_t lastPowerW = 0;        // last corrected power published to the crank
     int16_t lastCadenceRpm = -1;   // -1 = unknown
     int32_t rssi = 0;              // WiFi RSSI (0 when not applicable)
     uint32_t freeHeap = 0;         // ESP.getFreeHeap()
@@ -31,6 +36,9 @@ inline std::string renderStatusJson(const ProxyStatus& s) {
     j += "\",\"source\":\"";
     j += source;
     j += "\",\"forwarded\":" + std::to_string(s.forwarded);
+    // src_* = received from the meter (goal #1); power_w/cadence_rpm = broadcast to the crank (goal #2)
+    j += ",\"src_power_w\":" + std::to_string(s.srcPowerW);
+    j += ",\"src_cadence_rpm\":" + std::to_string(s.srcCadenceRpm);
     j += ",\"power_w\":" + std::to_string(s.lastPowerW);
     j += ",\"cadence_rpm\":" + std::to_string(s.lastCadenceRpm);
     j += ",\"rssi\":" + std::to_string(s.rssi);

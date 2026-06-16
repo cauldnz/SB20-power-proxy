@@ -66,9 +66,13 @@ void setup() {
         ProxyStatus s;
 #if USE_MOCK_METER
         s.mock = true;
+#else
+        s.sourceConnected = meter.connected();  // real BLE-central link to the meter (goal #1)
 #endif
         s.forwarded = proxy.forwarded();
-        s.lastPowerW = proxy.lastOutput().power_w;
+        s.srcPowerW = proxy.lastSource().power_w;        // received from the meter
+        s.srcCadenceRpm = proxy.lastSource().cadence_rpm;
+        s.lastPowerW = proxy.lastOutput().power_w;        // broadcast to the crank
         s.lastCadenceRpm = proxy.lastOutput().cadence_rpm;
         s.rssi = WiFi.RSSI();
         s.freeHeap = ESP.getFreeHeap();

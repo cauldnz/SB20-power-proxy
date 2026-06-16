@@ -25,6 +25,10 @@ constexpr uint8_t CP_RESPONSE_NOT_SUPPORTED = 0x02;
 // CPS Measurement flags (uint16). We set only Crank Revolution Data for now; the full
 // Stages set (0x2F: pedal balance + accumulated torque + crank rev) is gated on Session G.
 constexpr uint16_t CPM_CRANK_REV_DATA_PRESENT = 0x0020;  // flags bit 5
+// Data-bearing optional fields that sit BEFORE crank-rev on the wire (balance bit0, accumulated
+// torque bit2, wheel-rev bit4). When none are set, crank-rev data is at bytes 4-7 and the simple
+// decodeCrankRevs/decodeCrankEventTime offsets are valid (true for our meters' power+cadence frame).
+constexpr uint16_t CPM_PRECEDING_DATA_BITS = 0x0015;
 
 // CPS Feature bits (uint32). Crank Revolution Data Supported = bit 3.
 constexpr uint32_t CP_FEATURE_CRANK_REV_SUPPORTED = 0x00000008;

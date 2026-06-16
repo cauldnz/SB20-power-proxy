@@ -28,12 +28,15 @@ canvas{width:100%;height:120px;background:var(--card);border-radius:14px;margin-
 .stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .stat{background:var(--card);border-radius:10px;padding:10px 12px;font-size:.9rem}
 .stat b{display:block;color:var(--mut);font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+.flow{display:flex;align-items:center;justify-content:center;gap:14px;background:var(--card);border-radius:14px;padding:10px;margin-bottom:12px;font-size:1rem}
+.flow .io{color:var(--mut)}.flow .io b{color:var(--fg);font-size:1.3rem}.flow .arrow{color:#3b82f6;font-size:1.3rem}
 </style></head><body>
 <header><h1>SB20 Proxy <span id='dot' class='dot'></span></h1><span id='fw' style='color:var(--mut);font-size:.8rem'></span></header>
 <div class='big'>
 <div class='card'><div class='lbl'>Power</div><div class='val'><span id='pw'>--</span> <small>W</small></div></div>
 <div class='card'><div class='lbl'>Cadence</div><div class='val'><span id='cad'>--</span> <small>rpm</small></div></div>
 </div>
+<div class='flow'><span class='io'>METER IN <b id='in'>--</b> W</span><span class='arrow'>&#8594;</span><span class='io'>CRANK OUT <b id='out'>--</b> W</span></div>
 <canvas id='chart'></canvas>
 <div class='stats'>
 <div class='stat'><b>Source</b><span id='src'>--</span></div>
@@ -49,6 +52,7 @@ function draw(){var c=$('chart'),r=window.devicePixelRatio||1,w=c.clientWidth,h=
 function tick(){fetch('/',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
 $('dot').classList.add('on');
 $('pw').textContent=d.power_w;$('cad').textContent=(d.cadence_rpm<0?'--':d.cadence_rpm);
+$('in').textContent=(d.src_power_w===undefined?'--':d.src_power_w);$('out').textContent=d.power_w;
 $('src').textContent=d.source;$('rssi').textContent=d.rssi+' dBm';
 $('up').textContent=fmtUp(d.ms);$('fwd').textContent=d.forwarded;$('fw').textContent=d.fw;
 hist.push(d.power_w);if(hist.length>MAX){hist.shift();}draw();

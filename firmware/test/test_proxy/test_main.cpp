@@ -170,13 +170,17 @@ void test_status_json_mock() {
     ProxyStatus s;
     s.mock = true;
     s.forwarded = 5;
+    s.srcPowerW = 220;
+    s.srcCadenceRpm = 88;
     s.lastPowerW = 200;
     s.lastCadenceRpm = 90;
     s.uptimeMs = 12345;
     std::string j = renderStatusJson(s);
     TEST_ASSERT_TRUE(j.find("\"source\":\"mock\"") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"forwarded\":5") != std::string::npos);
-    TEST_ASSERT_TRUE(j.find("\"power_w\":200") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"src_power_w\":220") != std::string::npos);   // received from meter
+    TEST_ASSERT_TRUE(j.find("\"src_cadence_rpm\":88") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"power_w\":200") != std::string::npos);       // broadcast to crank
     TEST_ASSERT_TRUE(j.find("\"cadence_rpm\":90") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"ms\":12345") != std::string::npos);
 }
@@ -433,7 +437,10 @@ void test_app_page_essentials() {
     TEST_ASSERT_TRUE(p.find("SB20 Proxy") != std::string::npos);   // titled
     TEST_ASSERT_TRUE(p.find("fetch(") != std::string::npos);       // polls the device
     TEST_ASSERT_TRUE(p.find("<canvas") != std::string::npos);      // the live chart
-    TEST_ASSERT_TRUE(p.find("power_w") != std::string::npos);      // reads the power field
+    TEST_ASSERT_TRUE(p.find("power_w") != std::string::npos);      // reads the broadcast power field
+    TEST_ASSERT_TRUE(p.find("src_power_w") != std::string::npos);  // reads the received power field
+    TEST_ASSERT_TRUE(p.find("METER IN") != std::string::npos);     // shows the in->out flow
+    TEST_ASSERT_TRUE(p.find("CRANK OUT") != std::string::npos);
 }
 
 // --- runner -------------------------------------------------------------------
