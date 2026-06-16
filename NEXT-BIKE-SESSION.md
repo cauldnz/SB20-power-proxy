@@ -171,10 +171,16 @@ iteration (see `forward-plan.md` §3 failure modes).
 2. **Portal comes up.** Serial prints `SETUP: join WiFi network 'SB20-Setup' ...`. On a phone, join
    the open **`SB20-Setup`** AP — the setup page should **auto-pop** (captive-portal detection). If
    not, browse to `http://192.168.4.1/`.
+   - **Diagnostic log (the serial-flaky workaround):** the setup page links to `/log`; open
+     `http://192.168.4.1/log` to read the device's recent log lines over HTTP instead of serial.
+     Toggle with `/log/off` · `/log/on` (persisted). This is the reliable window into setup.
 3. **Provision.** Pick your 2.4 GHz network from the list, enter the password, **Save & Connect**.
    Device replies "Saved … restart" and reboots.
 4. **Joins as station.** Serial prints `connected; status at http://<ip>/`. Confirm
-   `curl http://<ip>/` returns the status JSON (unchanged behaviour).
+   `curl http://<ip>/` returns the status JSON, and `curl http://<ip>/log` shows this boot's join
+   log (`joining '<ssid>'` → `connected ...`). The ring buffer is RAM (fresh each boot); what
+   *persists* across the reboot is the on/off **toggle** (NVS, default on) — so `/log` is reachable
+   here without re-enabling it.
 5. **Survives OTA** (the important one). With the device joined from step 4, flash a *new* build
    over the air — `pio run -e esp32c3-ota -t upload --upload-port <ip>` — and confirm it **reboots
    and rejoins the same network with no re-provisioning** (serial shows `joining '<your-ssid>'`,

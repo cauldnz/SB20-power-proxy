@@ -101,11 +101,24 @@ inline std::string htmlEscape(const std::string& s) {
     return o;
 }
 
+// Footer linking to the diagnostic /log endpoint with an on/off toggle. `logState`: 1 = on,
+// 0 = off, -1 = hide entirely. Pure, host-tested.
+inline std::string renderLogToggleFooter(int logState) {
+    if (logState < 0) return std::string();
+    if (logState > 0) {
+        return "<hr><p>Diagnostic log: <a href='/log'>/log</a> (on) — "
+               "<a href='/log/off'>turn off</a></p>";
+    }
+    return "<hr><p>Diagnostic log: off — <a href='/log/on'>turn on</a></p>";
+}
+
 // Render the captive-portal setup page: an SSID field (with a datalist of any scanned
 // networks for convenience) and a password field, posting to /save. `message` surfaces a
-// validation error back to the user. Pure string-building, so it is host-tested.
+// validation error back to the user. `logState` adds the /log toggle footer (see
+// renderLogToggleFooter; -1 hides it). Pure string-building, so it is host-tested.
 inline std::string renderProvisioningPage(const std::vector<std::string>& networks = {},
-                                          const std::string& message = std::string()) {
+                                          const std::string& message = std::string(),
+                                          int logState = -1) {
     std::string h =
         "<!DOCTYPE html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
@@ -121,8 +134,9 @@ inline std::string renderProvisioningPage(const std::vector<std::string>& networ
     }
     h += "</datalist><br>"
          "<label>Password<br><input name='pass' type='password'></label><br>"
-         "<button type='submit'>Save &amp; Connect</button></form>"
-         "</body></html>";
+         "<button type='submit'>Save &amp; Connect</button></form>";
+    h += renderLogToggleFooter(logState);
+    h += "</body></html>";
     return h;
 }
 

@@ -18,6 +18,7 @@
 #include <esp_timer.h>
 
 #include "Provisioning.h"      // pure page render + form parse + validation (host-tested)
+#include "net/DebugLog.h"      // recent-log ring served at GET /log (serial is flaky on the C3)
 #include "net/WifiCreds.h"     // NVS-backed credential storage
 
 // wifi_secret.h is now OPTIONAL: NVS (the captive portal) is the source of truth. If the
@@ -71,6 +72,7 @@ void WifiLink::begin(const char* hostname, StatusProvider provider,
     provider_ = provider;
     hostname_ = hostname;
     display_ = display ? display : &s_defaultDisplay;
+    logEnabled_ = WifiCreds::logEnabled(/*dflt=*/true);  // persisted; on by default
 
     // Credentials: NVS (portal-provisioned) wins; wifi_secret.h, if present, seeds boot one.
     WifiCredentials creds;
@@ -91,6 +93,7 @@ void WifiLink::begin(const char* hostname, StatusProvider provider,
 
     // Arm the boot-guard before the (blocking) join — a bad image that can't rejoin resets.
     armBootGuard();
+    logf("[wifi] joining '%s'", creds.ssid.c_str());  // never log the password
     display_->showJoining(creds.ssid.c_str());
     WiFi.mode(WIFI_STA);
     WiFi.setHostname(hostname_);
@@ -103,13 +106,39 @@ void WifiLink::begin(const char* hostname, StatusProvider provider,
     if (WiFi.status() != WL_CONNECTED) {
         // Stored creds don't work (moved router, wrong password) — fall back to the portal so
         // the user can re-provision without a USB reflash.
+        logf("[wifi] join failed; falling back to setup portal");
         disarmBootGuard();
         startPortal_();
         return;
     }
 
     startStationServer_();
+    logf("[wifi] connected; status at http://%s/", WiFi.localIP().toString().c_str());
     display_->showConnected(WiFi.localIP().toString().c_str());
+}
+
+// GET /log -> recent log lines (text/plain) when enabled; /log/on + /log/off flip the toggle
+// and persist it to NVS. Shared by both station and portal servers. Logs never carry secrets,
+// so this is safe to expose over the open setup AP.
+void WifiLink::addLogRoutes_() {
+    server_->on("/log", HTTP_GET, [this]() {
+        if (!logEnabled_) {
+            server_->send(403, "text/plain", "log disabled - enable at /log/on\n");
+            return;
+        }
+        server_->send(200, "text/plain", debugLog().text().c_str());
+    });
+    server_->on("/log/on", HTTP_GET, [this]() {
+        logEnabled_ = true;
+        WifiCreds::setLogEnabled(true);
+        logf("[wifi] /log enabled");
+        server_->send(200, "text/plain", "log enabled\n");
+    });
+    server_->on("/log/off", HTTP_GET, [this]() {
+        logEnabled_ = false;
+        WifiCreds::setLogEnabled(false);
+        server_->send(200, "text/plain", "log disabled\n");
+    });
 }
 
 void WifiLink::startStationServer_() {
@@ -151,6 +180,7 @@ void WifiLink::startStationServer_() {
         delay(400);
         esp_restart();
     });
+    addLogRoutes_();
     server_->begin();
 }
 
@@ -179,7 +209,7 @@ void WifiLink::startPortal_() {
     server_ = new WebServer(80);
 
     auto renderRoot = [this](const std::string& message) {
-        std::string body = renderProvisioningPage(networks_, message);
+        std::string body = renderProvisioningPage(networks_, message, logEnabled_ ? 1 : 0);
         server_->send(200, "text/html", body.c_str());
     };
 
@@ -223,9 +253,12 @@ void WifiLink::startPortal_() {
     const char* probes[] = {"/generate_204", "/gen_204",      "/hotspot-detect.html",
                             "/ncsi.txt",     "/connecttest.txt", "/redirect"};
     for (const char* p : probes) server_->on(p, HTTP_GET, redirect);
+    addLogRoutes_();
     server_->onNotFound(redirect);
     server_->begin();
 
+    logf("[wifi] setup portal up: AP '%s' (%d networks scanned)", WIFI_AP_SSID,
+         (int)networks_.size());
     display_->showPortal(WIFI_AP_SSID, kPortalUrl);
 }
 

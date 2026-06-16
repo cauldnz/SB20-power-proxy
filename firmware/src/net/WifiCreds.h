@@ -18,6 +18,11 @@ public:
     static void clear();
     // True iff a non-empty SSID is stored.
     static bool has();
+
+    // Persisted on/off preference for the diagnostic /log endpoint (survives reboot + OTA,
+    // same nvs partition as the creds). `dflt` is returned when nothing has been stored.
+    static bool logEnabled(bool dflt);
+    static void setLogEnabled(bool on);
 };
 
 }  // namespace sb20proxy

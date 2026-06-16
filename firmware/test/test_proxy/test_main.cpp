@@ -9,6 +9,7 @@
 
 #include "Correction.h"
 #include "Cps.h"
+#include "LogBuffer.h"
 #include "MockCrank.h"
 #include "MockMeter.h"
 #include "Provisioning.h"
@@ -236,6 +237,45 @@ void test_portal_page_escapes_ssid() {
     TEST_ASSERT_TRUE(html.find("A&B<net>") == std::string::npos);  // raw form not present
 }
 
+// --- diagnostic log endpoint (ring buffer + /log toggle footer) ---------------
+
+void test_logbuffer_keeps_recent_in_order() {
+    LogBuffer log(3);
+    log.add("one");
+    log.add("two");
+    log.add("three");
+    TEST_ASSERT_EQUAL_UINT(3, log.count());
+    TEST_ASSERT_EQUAL_STRING("one\ntwo\nthree\n", log.text().c_str());  // oldest-first
+}
+
+void test_logbuffer_drops_oldest_past_capacity() {
+    LogBuffer log(2);
+    log.add("a");
+    log.add("b");
+    log.add("c");  // evicts "a"
+    TEST_ASSERT_EQUAL_UINT(2, log.count());
+    TEST_ASSERT_EQUAL_STRING("b\nc\n", log.text().c_str());
+}
+
+void test_logbuffer_caps_line_length() {
+    LogBuffer log(4);
+    log.add(std::string(LogBuffer::kMaxLine + 50, 'x'));
+    // stored line is truncated to kMaxLine (+1 for the trailing newline)
+    TEST_ASSERT_EQUAL_UINT(LogBuffer::kMaxLine + 1, log.text().size());
+}
+
+void test_log_toggle_footer_states() {
+    TEST_ASSERT_EQUAL_STRING("", renderLogToggleFooter(-1).c_str());  // hidden
+    TEST_ASSERT_TRUE(renderLogToggleFooter(1).find("/log/off") != std::string::npos);  // on
+    TEST_ASSERT_TRUE(renderLogToggleFooter(0).find("/log/on") != std::string::npos);   // off
+}
+
+void test_portal_page_shows_log_toggle_when_requested() {
+    TEST_ASSERT_TRUE(renderProvisioningPage({}, "", 1).find("/log/off") != std::string::npos);
+    // default (no logState arg) hides the footer entirely
+    TEST_ASSERT_TRUE(renderProvisioningPage({}, "").find("/log") == std::string::npos);
+}
+
 // --- runner -------------------------------------------------------------------
 
 int runUnityTests() {
@@ -264,6 +304,11 @@ int runUnityTests() {
     RUN_TEST(test_validate_rejects_bad_creds);
     RUN_TEST(test_portal_page_has_form_fields);
     RUN_TEST(test_portal_page_escapes_ssid);
+    RUN_TEST(test_logbuffer_keeps_recent_in_order);
+    RUN_TEST(test_logbuffer_drops_oldest_past_capacity);
+    RUN_TEST(test_logbuffer_caps_line_length);
+    RUN_TEST(test_log_toggle_footer_states);
+    RUN_TEST(test_portal_page_shows_log_toggle_when_requested);
     return UNITY_END();
 }
 

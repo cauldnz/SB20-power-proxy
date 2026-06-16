@@ -10,7 +10,7 @@ Arduino/NimBLE files.
 
 > **Status: initial scaffold, verified.** The pure core — CPS codec (power **and cadence**),
 > linear + **non-linear (GridTransform) correction**, the ProxyCore relay, the HTTP status model —
-> is **host-tested green** (`pio test -e native`, 24/24). The full firmware **compiles clean for
+> is **host-tested green** (`pio test -e native`, 29/29). The full firmware **compiles clean for
 > the ESP32-C3** (NimBLE 2.2.0): the default BLE build at 37% flash, and the WiFi+OTA+HTTP build
 > (`esp32c3-ota`) at 50% of a 1.9 MB OTA slot. The SB20-specific bits — matching the real Stages
 > CPS flags, the exact calibration handshake, bonding — are gated on **Session G**
@@ -33,9 +33,12 @@ Arduino/NimBLE files.
 - `src/ble/BleCrankPeripheral.*` — `ICrankOutput` over NimBLE: advertise CPS, notify power **+
   cadence** (Crank Revolution Data), answer the zero-reset control point with the captured offset.
 - `src/ble/BleMeterClient.*` — `IPowerSource` over NimBLE: scan → connect → subscribe → decode power.
-- `src/net/WifiLink.*` — WiFi + OTA + HTTP status + **captive-portal setup** (only when
-  `USE_WIFI`), mirroring the `raedian-probe` boot-guard / `/update` / `/` failsafe idiom.
-- `src/net/WifiCreds.*` — NVS storage for the provisioned WiFi credentials.
+- `src/net/WifiLink.*` — WiFi + OTA + HTTP status + **captive-portal setup** + a **diagnostic
+  `/log` endpoint** (only when `USE_WIFI`), mirroring the `raedian-probe` boot-guard / `/update`
+  / `/` failsafe idiom (incl. its serve-logs-over-HTTP trick, since C3 serial is flaky).
+- `src/net/DebugLog.*` + `lib/proxy/LogBuffer.h` — a recent-log ring (host-tested) mirrored from
+  Serial and served at `GET /log`; toggleable (`/log/on` · `/log/off`, persisted in NVS).
+- `src/net/WifiCreds.*` — NVS storage for the provisioned WiFi credentials (+ the /log toggle).
 - `src/net/ProvisioningDisplay.h` — injectable setup-UX seam (Serial default; an OLED/QR
   module drops in here later).
 - `lib/proxy/Provisioning.h` — the **pure** half of provisioning (setup-page render, form
@@ -45,7 +48,7 @@ Arduino/NimBLE files.
 ## Build / test / flash
 
 ```bash
-pio test -e native                          # host tests of the pure core — no hardware (24/24)
+pio test -e native                          # host tests of the pure core — no hardware (29/29)
 pio run  -e esp32c3-supermini -t upload     # your ESP32 Super Mini (BLE only, no creds needed)
 pio device monitor                          # watch the [proxy] log
 
@@ -55,8 +58,15 @@ pio run  -e esp32c3-ota -t upload                       # first time, over USB
 #   pick your network -> it saves to NVS and reboots onto WiFi.
 pio run  -e esp32c3-ota -t upload --upload-port <ip>    # thereafter, over the air
 curl http://<ip>/                                       # live status JSON
+curl http://<ip>/log                                    # recent log lines (serial-over-HTTP)
+curl http://<ip>/log/off                                # disable the log endpoint (persisted)
 curl http://<ip>/forget                                 # wipe creds -> reboots into setup
 ```
+
+The C3's native-USB serial is unreliable, so a **diagnostic `/log` endpoint** mirrors the log
+to RAM and serves it over HTTP — available in both the setup portal and normal operation. It's
+**on by default** (and linked from the setup page) and can be toggled at `/log/on` · `/log/off`;
+the choice persists in NVS. Secrets (the WiFi password) are never logged.
 
 WiFi setup is via a **captive portal**: there are no credentials to compile in. If the stored
 network later can't be joined (moved router, changed password) the device automatically falls

@@ -774,3 +774,24 @@ default BLE build and the WiFi/OTA build link clean.** All of it stays gated on 
      stored creds (and `esptool erase_flash` / `pio run -t erase` wipes them). Worst case is graceful:
      lost creds just drop the device back into the setup portal. Verify on hardware via
      `NEXT-BIKE-SESSION.md` §8 (provision → OTA-flash a new build → confirm it rejoins, no re-setup).
+
+5. **Diagnostic `/log` endpoint (serial-over-HTTP).** The C3 Super Mini's native-USB serial is
+   unreliable (the recurring pain on `raedian-probe`), so debugging WiFi setup over the cable is
+   flaky. Reusing that repo's "serve logs over a tiny HTTP endpoint" idiom (clean-room — its source
+   isn't in scope this session anyway): a RAM **ring buffer** (`lib/proxy/LogBuffer.h`, pure +
+   host-tested) is mirrored from Serial by `logf()` (`src/net/DebugLog.*`) and served at `GET /log`
+   as text/plain. Decisions:
+   - **Plain HTTP, not TLS.** Matches the existing `GET /` status endpoint and is light on a C3
+     sharing the radio with BLE (coex); HTTPS would need a cert + much more flash for no real gain
+     on a local setup network.
+   - **Available in both modes.** `addLogRoutes_()` registers `/log` on the *portal* server (so
+     first-time setup is observable, the whole point) and the *station* server (normal operation).
+   - **Toggle, on by default, persisted.** `/log/on` · `/log/off` flip a flag stored in NVS
+     (`WifiCreds::logEnabled`, default true) so it carries across reboot **and OTA** (same nvs
+     partition as the creds); the setup page shows the state + a toggle link
+     (`renderLogToggleFooter`, host-tested). When off, `/log` returns 403.
+   - **Never log secrets.** `logf` echoes to `/log` over the open setup AP, so the WiFi password is
+     never passed to it (join logs the SSID only). Lines are length-capped (`kMaxLine`) and the ring
+     holds ~60 lines, bounding RAM.
+   - Tested: 5 new Unity cases (ring ordering / eviction / line-cap, footer states, portal footer
+     wiring) — `pio test -e native` now 29/29. Bench step added to `NEXT-BIKE-SESSION.md` §8.

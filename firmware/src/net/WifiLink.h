@@ -42,6 +42,7 @@ public:
 private:
     void startStationServer_();  // OTA + status/update/forget routes (assumes WiFi joined)
     void startPortal_();         // SoftAP + captive DNS + setup routes
+    void addLogRoutes_();        // GET /log + /log/on + /log/off (shared by both modes)
 
     WebServer* server_ = nullptr;
     DNSServer* dns_ = nullptr;
@@ -51,6 +52,7 @@ private:
     std::vector<std::string> networks_;  // SSIDs scanned for the portal datalist
     bool healthy_ = false;
     bool portal_ = false;
+    bool logEnabled_ = true;  // serve GET /log? (persisted in NVS via WifiCreds)
 };
 
 }  // namespace sb20proxy

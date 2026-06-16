@@ -13,6 +13,7 @@ namespace {
 constexpr const char* kNamespace = "wifi";
 constexpr const char* kKeySsid = "ssid";
 constexpr const char* kKeyPass = "pass";
+constexpr const char* kKeyLog = "log";
 }  // namespace
 
 bool WifiCreds::load(WifiCredentials& out) {
@@ -42,6 +43,21 @@ void WifiCreds::clear() {
 bool WifiCreds::has() {
     WifiCredentials c;
     return load(c);
+}
+
+bool WifiCreds::logEnabled(bool dflt) {
+    Preferences p;
+    p.begin(kNamespace, /*readOnly=*/true);
+    bool v = p.getBool(kKeyLog, dflt);
+    p.end();
+    return v;
+}
+
+void WifiCreds::setLogEnabled(bool on) {
+    Preferences p;
+    p.begin(kNamespace, /*readOnly=*/false);
+    p.putBool(kKeyLog, on);
+    p.end();
 }
 
 #endif  // USE_WIFI
