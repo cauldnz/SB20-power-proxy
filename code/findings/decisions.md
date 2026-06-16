@@ -736,3 +736,31 @@ default BLE build and the WiFi/OTA build link clean.** All of it stays gated on 
    **Gotcha:** any `src/` file is compiled in the ESP32 build (only `native` filters `src/` out),
    so a WiFi-only `.cpp` must guard its *entire* body (incl. the `wifi_secret.h` include) behind
    `#if USE_WIFI`, or the creds-free default build breaks.
+
+4. **WiFi captive-portal provisioning (`WifiLink` + `WifiCreds` + `Provisioning.h`).** WiFi creds
+   are now set at **runtime** — no `wifi_secret.h` needed. Decisions made:
+   - **Custom portal, not a library.** `DNSServer` (wildcard → SoftAP IP, triggers the OS
+     captive popup) + the existing `WebServer`. Clean-room MIT — no GPL prior art, no extra dep
+     (`DNSServer`/`WebServer` ship with the Arduino-ESP32 core).
+   - **AP name `SB20-Setup`, open.** Open AP is the norm for setup; overridable via `-DWIFI_AP_SSID`.
+     Portal IP is the SoftAP default `192.168.4.1`.
+   - **NVS is the source of truth** (`Preferences` namespace `"wifi"`, keys `ssid`/`pass`).
+     `wifi_secret.h` is now **optional** (guarded by `#if __has_include(...)`) and only *seeds* the
+     first boot; the unedited `your-2.4GHz-ssid` placeholder is ignored so a stale template can't
+     block setup.
+   - **Auto-fallback to portal** if stored creds fail to join within `WIFI_CONNECT_TIMEOUT_MS`
+     (moved router / wrong password) — re-provision with no USB reflash. `GET /forget` (in both
+     portal and station modes) wipes creds and reboots into setup.
+   - **Boot-guard disarmed in portal mode.** Waiting for the user is a *stable* state, not a failed
+     flash — otherwise the `esp_timer` failsafe would reboot the device out of setup. The guard
+     still protects the station+OTA path (armed before the blocking join, cancelled on healthy).
+   - **Captive-probe endpoints** answered with a 302 to the portal: `/generate_204`, `/gen_204`,
+     `/hotspot-detect.html`, `/ncsi.txt`, `/connecttest.txt`, plus `onNotFound` catch-all — this is
+     what makes the setup page auto-pop on Android/iOS/Windows.
+   - **Headless now, display seam later.** `IProvisioningDisplay` (default `SerialProvisioningDisplay`
+     prints the AP SSID + URL); a future OLED/QR module implements the three calls and is injected
+     via `WifiLink::begin(..., display)` without touching portal logic.
+   - **Pure logic is host-tested** (`Provisioning.h`: page render, urlencoded form parse incl.
+     `+`/`%XX`, WPA/open validation) — 7 new Unity cases (`pio test -e native`, 24/24). The
+     SoftAP/DNS/WebServer wiring is bench-tested (see `NEXT-BIKE-SESSION.md`). A **`firmware` CI job**
+     (`.github/workflows/tests.yml`) now runs `pio test -e native` on every push, alongside pytest.

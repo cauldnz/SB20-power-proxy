@@ -161,6 +161,28 @@ iteration (see `forward-plan.md` §3 failure modes).
 
 ---
 
+## 8 · WiFi captive-portal bench test · ~10 min · *optional, desk-testable*
+
+> No SB20 or bike needed — just the ESP32-C3 + a phone. Verifies WiFi provisioning end-to-end
+> (the host-side logic is already CI-green; this is the on-air half).
+
+1. **Flash WiFi build with NVS empty.** `cd firmware && pio run -e esp32c3-ota -t upload` over USB.
+   (First time, or after a `GET /forget` / NVS erase.) No `wifi_secret.h` required.
+2. **Portal comes up.** Serial prints `SETUP: join WiFi network 'SB20-Setup' ...`. On a phone, join
+   the open **`SB20-Setup`** AP — the setup page should **auto-pop** (captive-portal detection). If
+   not, browse to `http://192.168.4.1/`.
+3. **Provision.** Pick your 2.4 GHz network from the list, enter the password, **Save & Connect**.
+   Device replies "Saved … restart" and reboots.
+4. **Joins as station.** Serial prints `connected; status at http://<ip>/`. Confirm
+   `curl http://<ip>/` returns the status JSON (unchanged behaviour).
+5. **Re-provision path.** `curl http://<ip>/forget` → device wipes creds and reboots back into the
+   portal. (Same fallback fires automatically if the saved network is unreachable.)
+
+**✅ Pass:** portal auto-pops, creds persist across reboot, `/` serves status, `/forget` returns to
+setup. **If the page doesn't auto-pop** on Android, opening any `http://` URL should 302 to setup.
+
+---
+
 ## If anything goes sideways
 
 - **No ANT+ stick visible** → re-run pre-flight `usbipd attach` (doesn't survive reboot).

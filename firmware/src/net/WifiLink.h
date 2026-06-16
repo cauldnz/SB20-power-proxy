@@ -1,36 +1,56 @@
 #pragma once
 #include <functional>
+#include <string>
+#include <vector>
 
-#include "Status.h"  // pure ProxyStatus + renderStatusJson (host-tested)
+#include "Status.h"                   // pure ProxyStatus + renderStatusJson (host-tested)
+#include "net/ProvisioningDisplay.h"  // injectable setup-UX seam (Serial default)
 
 class WebServer;  // ESP32 Arduino (global namespace); kept out of the header
+class DNSServer;
 
 namespace sb20proxy {
 
-// WiFi observability + OTA for the proxy, mirroring the raedian-probe failsafe idiom:
-// joins WiFi (creds from firmware/wifi_secret.h), serves the status JSON at GET / and an
-// OTA upload form at /update, and self-resets if it never becomes healthy (so a bad flash
-// that can't rejoin the network recovers on its own). Compiled only when USE_WIFI=1 (the
-// esp32c3-ota env); the default build leaves it out entirely, so no creds are needed to
-// build. Arduino-only — the status model it serves (Status.h) is host-tested.
+// WiFi connectivity + observability + OTA for the proxy, mirroring the raedian-probe failsafe
+// idiom. Credentials are provisioned at runtime via a captive portal (no rebuild needed) and
+// stored in NVS (WifiCreds); a compile-time wifi_secret.h, if present, only seeds the first
+// boot. Two modes:
+//   * STATION  — creds known & join succeeds: serves status JSON at GET /, an OTA upload form
+//                at /update, and self-resets if it never becomes healthy (boot-guard).
+//   * PORTAL   — no creds, or the join failed: raises a SoftAP + captive DNS and serves the
+//                setup page so the user can pick a network. The boot-guard is disarmed here —
+//                waiting for the user is a stable state, not a failed flash.
+// Compiled only when USE_WIFI=1 (the esp32c3-ota env); the default build leaves it out.
+// Arduino-only — the page/parse/validation logic it serves (Provisioning.h) is host-tested.
 class WifiLink {
 public:
     using StatusProvider = std::function<ProxyStatus()>;
 
-    // Arm the boot-guard, join WiFi, start OTA + the HTTP server. `provider` is called per
-    // request to render the live status JSON.
-    void begin(const char* hostname, StatusProvider provider);
+    // Join WiFi (or raise the setup portal), start OTA + the HTTP server. `provider` renders
+    // the live status JSON per request. `display` (optional) reports setup state; defaults to
+    // logging over Serial.
+    void begin(const char* hostname, StatusProvider provider,
+               IProvisioningDisplay* display = nullptr);
 
-    // Call from loop(): services HTTP + OTA and promotes to healthy (which cancels the
-    // boot-guard and validates the running OTA image).
+    // Call from loop(): services HTTP + OTA (station) or the captive DNS + portal (setup), and
+    // promotes to healthy (which cancels the boot-guard and validates the running OTA image).
     void handle();
 
     bool isUp() const { return healthy_; }
+    bool inPortal() const { return portal_; }
 
 private:
+    void startStationServer_();  // OTA + status/update/forget routes (assumes WiFi joined)
+    void startPortal_();         // SoftAP + captive DNS + setup routes
+
     WebServer* server_ = nullptr;
+    DNSServer* dns_ = nullptr;
     StatusProvider provider_;
+    IProvisioningDisplay* display_ = nullptr;
+    const char* hostname_ = "sb20proxy";
+    std::vector<std::string> networks_;  // SSIDs scanned for the portal datalist
     bool healthy_ = false;
+    bool portal_ = false;
 };
 
 }  // namespace sb20proxy

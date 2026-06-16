@@ -38,3 +38,26 @@ jobs:
 
       - name: Test
         run: pytest -q
+
+  firmware:
+    # Host-side Unity tests for the ESP32 firmware's platform-agnostic core (lib/proxy):
+    # CPS codec, correction, ProxyCore relay, status JSON, and the WiFi captive-portal pure
+    # logic (page render / form parse / validation). No hardware — the native env builds and
+    # runs on the runner. Radio/BLE/portal glue is bench-tested (see NEXT-BIKE-SESSION.md).
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: firmware
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Test (native)
+        run: pio test -e native

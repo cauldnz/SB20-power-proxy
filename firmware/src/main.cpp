@@ -60,9 +60,13 @@ void setup() {
         s.uptimeMs = millis();
         return s;
     });
-    Serial.printf("[sb20proxy] WiFi %s; status at http://%s/\n",
-                  WiFi.status() == WL_CONNECTED ? "connected" : "DOWN",
-                  WiFi.localIP().toString().c_str());
+    if (wifi.inPortal()) {
+        Serial.println("[sb20proxy] WiFi not configured; setup portal up on AP 'SB20-Setup' "
+                       "-> http://192.168.4.1/");
+    } else {
+        Serial.printf("[sb20proxy] WiFi connected; status at http://%s/\n",
+                      WiFi.localIP().toString().c_str());
+    }
 #endif
 }
 

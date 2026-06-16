@@ -11,6 +11,7 @@
 #include "Cps.h"
 #include "MockCrank.h"
 #include "MockMeter.h"
+#include "Provisioning.h"
 #include "ProxyCore.h"
 #include "Status.h"
 
@@ -188,6 +189,53 @@ void test_status_json_unknown_cadence() {
     TEST_ASSERT_TRUE(renderStatusJson(s).find("\"cadence_rpm\":-1") != std::string::npos);
 }
 
+// --- WiFi provisioning (the captive-portal pure logic) ------------------------
+
+void test_form_parse_basic() {
+    WifiCredentials c = parseFormUrlEncoded("ssid=HomeNet&pass=secret123");
+    TEST_ASSERT_EQUAL_STRING("HomeNet", c.ssid.c_str());
+    TEST_ASSERT_EQUAL_STRING("secret123", c.pass.c_str());
+}
+
+void test_form_parse_url_encoding() {
+    // '+' -> space, %XX -> byte; field order independent; 'password' alias accepted.
+    WifiCredentials c = parseFormUrlEncoded("password=p%40ss+word&ssid=My%20Wi-Fi");
+    TEST_ASSERT_EQUAL_STRING("My Wi-Fi", c.ssid.c_str());
+    TEST_ASSERT_EQUAL_STRING("p@ss word", c.pass.c_str());
+}
+
+void test_form_parse_empty_password() {
+    WifiCredentials c = parseFormUrlEncoded("ssid=OpenNet&pass=");
+    TEST_ASSERT_EQUAL_STRING("OpenNet", c.ssid.c_str());
+    TEST_ASSERT_TRUE(c.pass.empty());
+}
+
+void test_validate_accepts_wpa_and_open() {
+    TEST_ASSERT_NULL(credValidationError({"HomeNet", "secret123"}));  // WPA
+    TEST_ASSERT_NULL(credValidationError({"OpenNet", ""}));           // open network
+}
+
+void test_validate_rejects_bad_creds() {
+    TEST_ASSERT_NOT_NULL(credValidationError({"", "secret123"}));        // no SSID
+    TEST_ASSERT_NOT_NULL(credValidationError({"HomeNet", "short"}));     // pass < 8
+    TEST_ASSERT_NOT_NULL(credValidationError({std::string(33, 'x'), ""}));  // SSID > 32
+}
+
+void test_portal_page_has_form_fields() {
+    std::string html = renderProvisioningPage({"AlphaNet", "BetaNet"}, "Wrong password");
+    TEST_ASSERT_TRUE(html.find("action='/save'") != std::string::npos);
+    TEST_ASSERT_TRUE(html.find("name='ssid'") != std::string::npos);
+    TEST_ASSERT_TRUE(html.find("name='pass'") != std::string::npos);
+    TEST_ASSERT_TRUE(html.find("AlphaNet") != std::string::npos);   // scanned network listed
+    TEST_ASSERT_TRUE(html.find("Wrong password") != std::string::npos);  // error surfaced
+}
+
+void test_portal_page_escapes_ssid() {
+    std::string html = renderProvisioningPage({"A&B<net>"}, "");
+    TEST_ASSERT_TRUE(html.find("A&amp;B&lt;net&gt;") != std::string::npos);
+    TEST_ASSERT_TRUE(html.find("A&B<net>") == std::string::npos);  // raw form not present
+}
+
 // --- runner -------------------------------------------------------------------
 
 int runUnityTests() {
@@ -209,6 +257,13 @@ int runUnityTests() {
     RUN_TEST(test_status_json_mock);
     RUN_TEST(test_status_json_source_state);
     RUN_TEST(test_status_json_unknown_cadence);
+    RUN_TEST(test_form_parse_basic);
+    RUN_TEST(test_form_parse_url_encoding);
+    RUN_TEST(test_form_parse_empty_password);
+    RUN_TEST(test_validate_accepts_wpa_and_open);
+    RUN_TEST(test_validate_rejects_bad_creds);
+    RUN_TEST(test_portal_page_has_form_fields);
+    RUN_TEST(test_portal_page_escapes_ssid);
     return UNITY_END();
 }
 

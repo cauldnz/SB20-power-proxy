@@ -10,7 +10,7 @@ Arduino/NimBLE files.
 
 > **Status: initial scaffold, verified.** The pure core — CPS codec (power **and cadence**),
 > linear + **non-linear (GridTransform) correction**, the ProxyCore relay, the HTTP status model —
-> is **host-tested green** (`pio test -e native`, 17/17). The full firmware **compiles clean for
+> is **host-tested green** (`pio test -e native`, 24/24). The full firmware **compiles clean for
 > the ESP32-C3** (NimBLE 2.2.0): the default BLE build at 37% flash, and the WiFi+OTA+HTTP build
 > (`esp32c3-ota`) at 50% of a 1.9 MB OTA slot. The SB20-specific bits — matching the real Stages
 > CPS flags, the exact calibration handshake, bonding — are gated on **Session G**
@@ -33,22 +33,35 @@ Arduino/NimBLE files.
 - `src/ble/BleCrankPeripheral.*` — `ICrankOutput` over NimBLE: advertise CPS, notify power **+
   cadence** (Crank Revolution Data), answer the zero-reset control point with the captured offset.
 - `src/ble/BleMeterClient.*` — `IPowerSource` over NimBLE: scan → connect → subscribe → decode power.
-- `src/net/WifiLink.*` — WiFi + OTA + HTTP status (only when `USE_WIFI`), mirroring the
-  `raedian-probe` boot-guard / `/update` / `/` failsafe idiom.
+- `src/net/WifiLink.*` — WiFi + OTA + HTTP status + **captive-portal setup** (only when
+  `USE_WIFI`), mirroring the `raedian-probe` boot-guard / `/update` / `/` failsafe idiom.
+- `src/net/WifiCreds.*` — NVS storage for the provisioned WiFi credentials.
+- `src/net/ProvisioningDisplay.h` — injectable setup-UX seam (Serial default; an OLED/QR
+  module drops in here later).
+- `lib/proxy/Provisioning.h` — the **pure** half of provisioning (setup-page render, form
+  parse, credential validation), host-tested alongside the rest of `lib/proxy`.
 - `src/main.cpp` — wires them (or `MockMeter` when `USE_MOCK_METER`).
 
 ## Build / test / flash
 
 ```bash
-pio test -e native                          # host tests of the pure core — no hardware (17/17)
+pio test -e native                          # host tests of the pure core — no hardware (24/24)
 pio run  -e esp32c3-supermini -t upload     # your ESP32 Super Mini (BLE only, no creds needed)
 pio device monitor                          # watch the [proxy] log
 
-# WiFi observability + wireless flashing (copy wifi_secret.example.h -> wifi_secret.h first):
+# WiFi observability + wireless flashing — NO wifi_secret.h needed (set the network at runtime):
 pio run  -e esp32c3-ota -t upload                       # first time, over USB
+#   on boot the device raises the open AP 'SB20-Setup'; join it, open http://192.168.4.1/,
+#   pick your network -> it saves to NVS and reboots onto WiFi.
 pio run  -e esp32c3-ota -t upload --upload-port <ip>    # thereafter, over the air
 curl http://<ip>/                                       # live status JSON
+curl http://<ip>/forget                                 # wipe creds -> reboots into setup
 ```
+
+WiFi setup is via a **captive portal**: there are no credentials to compile in. If the stored
+network later can't be joined (moved router, changed password) the device automatically falls
+back into the portal so it can be re-provisioned without a USB reflash. `wifi_secret.h` is
+optional and only *seeds* the first boot (see `wifi_secret.example.h`).
 
 Envs: `esp32c3-supermini` (the Super Minis you have, BLE only) · `esp32c3-ota` (adds
 WiFi+OTA+HTTP) · `esp32s3-waveshare` (refine the board id + wire the touch display when it arrives).
