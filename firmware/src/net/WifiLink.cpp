@@ -184,6 +184,34 @@ void WifiLink::startStationServer_() {
     server_->begin();
 }
 
+// Turn a finished WiFi scan (n entries; n<0 = scan failed) into the portal's picker model: skip
+// hidden SSIDs, record signal (RSSI) and whether the AP is secured. Dedup/sort happen in the
+// host-tested renderer, so this stays a thin radio-read.
+void WifiLink::populateFromScan_(int n) {
+    networks_.clear();
+    for (int i = 0; i < n && (int)networks_.size() < 20; ++i) {
+        std::string ssid(WiFi.SSID(i).c_str());
+        if (ssid.empty()) continue;  // hidden network — nothing to tap
+        ScannedNet net;
+        net.ssid = std::move(ssid);
+        net.rssi = WiFi.RSSI(i);
+        net.secured = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+        networks_.push_back(std::move(net));
+    }
+}
+
+// Harvest a completed async rescan into networks_ (freeing the radio's copy). Returns true while
+// a scan is still running, so the page can show "Scanning..." and auto-refresh until it lands.
+bool WifiLink::collectScan_() {
+    int n = WiFi.scanComplete();
+    if (n == WIFI_SCAN_RUNNING) return true;  // -1: keep the current list, keep polling
+    if (n >= 0) {                             // results ready
+        populateFromScan_(n);
+        WiFi.scanDelete();
+    }
+    return false;  // idle or failed (-2): nothing in flight
+}
+
 void WifiLink::startPortal_() {
     portal_ = true;
     // Waiting for the user to enter creds is a stable state, not a failed flash — make sure
@@ -194,13 +222,11 @@ void WifiLink::startPortal_() {
     WiFi.softAP(WIFI_AP_SSID);
     IPAddress apIP = WiFi.softAPIP();
 
-    // Best-effort scan so the page can offer a pick-list; an empty list still renders fine.
-    networks_.clear();
-    int found = WiFi.scanNetworks();
-    for (int i = 0; i < found && (int)networks_.size() < 20; ++i) {
-        std::string s(WiFi.SSID(i).c_str());
-        if (!s.empty()) networks_.push_back(s);
-    }
+    // Best-effort initial scan so the first page already offers a picker. Synchronous (~2-4 s)
+    // is fine here — the web server and captive DNS aren't up yet, so nothing is stalled. The
+    // Rescan button later uses an async scan so it never blocks the portal.
+    populateFromScan_(WiFi.scanNetworks());
+    WiFi.scanDelete();
 
     // Wildcard DNS: every lookup resolves to us, which triggers the OS captive-portal popup.
     dns_ = new DNSServer();
@@ -208,12 +234,30 @@ void WifiLink::startPortal_() {
 
     server_ = new WebServer(80);
 
+    // 302 back to the setup page; reused by the OS captive-portal probes, the catch-all, and the
+    // Rescan button below.
+    auto redirect = [this]() {
+        server_->sendHeader("Location", kPortalUrl, true);
+        server_->send(302, "text/plain", "");
+    };
+
     auto renderRoot = [this](const std::string& message) {
-        std::string body = renderProvisioningPage(networks_, message, logEnabled_ ? 1 : 0);
+        // Pick up a finished async rescan (and learn if one is still running) before rendering.
+        bool scanning = collectScan_();
+        std::string body =
+            renderProvisioningPage(networks_, message, logEnabled_ ? 1 : 0, scanning);
         server_->send(200, "text/html", body.c_str());
     };
 
     server_->on("/", HTTP_GET, [renderRoot]() { renderRoot(std::string()); });
+
+    // Kick off a non-blocking rescan and bounce back to '/', which shows "Scanning..." and
+    // auto-refreshes until collectScan_ harvests the results (avoids stalling the captive DNS the
+    // way a synchronous in-handler scan would).
+    server_->on("/rescan", HTTP_GET, [this, redirect]() {
+        if (WiFi.scanComplete() != WIFI_SCAN_RUNNING) WiFi.scanNetworks(/*async=*/true);
+        redirect();
+    });
 
     server_->on("/save", HTTP_POST, [this, renderRoot]() {
         // WebServer parses urlencoded form fields itself; fall back to the raw body parser
@@ -246,10 +290,6 @@ void WifiLink::startPortal_() {
 
     // OS captive-portal probes -> redirect to the setup page (drives the auto-popup), and a
     // catch-all so any other URL the phone tries lands on setup too.
-    auto redirect = [this]() {
-        server_->sendHeader("Location", kPortalUrl, true);
-        server_->send(302, "text/plain", "");
-    };
     const char* probes[] = {"/generate_204", "/gen_204",      "/hotspot-detect.html",
                             "/ncsi.txt",     "/connecttest.txt", "/redirect"};
     for (const char* p : probes) server_->on(p, HTTP_GET, redirect);

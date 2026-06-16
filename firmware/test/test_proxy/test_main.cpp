@@ -223,7 +223,8 @@ void test_validate_rejects_bad_creds() {
 }
 
 void test_portal_page_has_form_fields() {
-    std::string html = renderProvisioningPage({"AlphaNet", "BetaNet"}, "Wrong password");
+    std::string html = renderProvisioningPage({{"AlphaNet", -45, true}, {"BetaNet", -70, true}},
+                                              "Wrong password");
     TEST_ASSERT_TRUE(html.find("action='/save'") != std::string::npos);
     TEST_ASSERT_TRUE(html.find("name='ssid'") != std::string::npos);
     TEST_ASSERT_TRUE(html.find("name='pass'") != std::string::npos);
@@ -232,9 +233,63 @@ void test_portal_page_has_form_fields() {
 }
 
 void test_portal_page_escapes_ssid() {
-    std::string html = renderProvisioningPage({"A&B<net>"}, "");
+    std::string html = renderProvisioningPage({{"A&B<net>", -50, true}}, "");
     TEST_ASSERT_TRUE(html.find("A&amp;B&lt;net&gt;") != std::string::npos);
     TEST_ASSERT_TRUE(html.find("A&B<net>") == std::string::npos);  // raw form not present
+}
+
+// --- the scanned-network picker (RSSI sort, mesh dedup, secured flag, rescan) --------------
+
+void test_rssi_bars_buckets() {
+    TEST_ASSERT_EQUAL_INT(4, rssiBars(-40));
+    TEST_ASSERT_EQUAL_INT(4, rssiBars(-55));   // boundary (>= -55)
+    TEST_ASSERT_EQUAL_INT(3, rssiBars(-60));
+    TEST_ASSERT_EQUAL_INT(2, rssiBars(-70));
+    TEST_ASSERT_EQUAL_INT(1, rssiBars(-80));
+    TEST_ASSERT_EQUAL_INT(0, rssiBars(-90));
+}
+
+void test_dedupe_and_sort_networks() {
+    // A blank SSID (hidden), a mesh name from two radios, and out-of-order signal strengths.
+    std::vector<ScannedNet> raw = {
+        {"Weak", -80, true}, {"", -30, false}, {"Mesh", -70, true},
+        {"Strong", -42, false}, {"Mesh", -55, true},  // 2nd Mesh AP is stronger -> wins
+    };
+    std::vector<ScannedNet> out = dedupeAndSortNetworks(raw);
+    TEST_ASSERT_EQUAL_INT(3, (int)out.size());     // hidden dropped, Mesh merged
+    TEST_ASSERT_EQUAL_STRING("Strong", out[0].ssid.c_str());  // strongest first
+    TEST_ASSERT_EQUAL_STRING("Mesh", out[1].ssid.c_str());
+    TEST_ASSERT_EQUAL_INT(-55, out[1].rssi);       // kept the stronger of the two Mesh APs
+    TEST_ASSERT_EQUAL_STRING("Weak", out[2].ssid.c_str());
+}
+
+void test_portal_page_lists_networks_strongest_first() {
+    // Supplied weakest-first; the page must render the stronger SSID earlier in the document.
+    std::string html = renderProvisioningPage({{"FarNet", -82, true}, {"NearNet", -38, true}});
+    TEST_ASSERT_TRUE(html.find("NearNet") < html.find("FarNet"));
+    // Tap-list, not a bare datalist: each row carries the SSID for the pick() handler.
+    TEST_ASSERT_TRUE(html.find("data-ssid='NearNet'") != std::string::npos);
+    TEST_ASSERT_TRUE(html.find("onclick='pick(this)'") != std::string::npos);
+    TEST_ASSERT_TRUE(html.find("<datalist") == std::string::npos);  // old approach is gone
+}
+
+void test_portal_page_marks_secured_and_open() {
+    std::string html = renderProvisioningPage({{"LockedNet", -50, true}, {"OpenNet", -52, false}});
+    TEST_ASSERT_TRUE(html.find("&#128274;") != std::string::npos);  // closed padlock (secured)
+    TEST_ASSERT_TRUE(html.find("&#128275;") != std::string::npos);  // open padlock (open AP)
+}
+
+void test_portal_page_has_rescan_and_manual_entry() {
+    std::string html = renderProvisioningPage({{"AlphaNet", -45, true}});
+    TEST_ASSERT_TRUE(html.find("href='/rescan'") != std::string::npos);   // rescan button
+    TEST_ASSERT_TRUE(html.find("id='ssid' name='ssid'") != std::string::npos);  // manual fallback
+    TEST_ASSERT_TRUE(html.find("http-equiv='refresh'") == std::string::npos);   // not scanning
+}
+
+void test_portal_page_scanning_state() {
+    std::string html = renderProvisioningPage({}, "", -1, /*scanning=*/true);
+    TEST_ASSERT_TRUE(html.find("http-equiv='refresh'") != std::string::npos);  // auto-polls
+    TEST_ASSERT_TRUE(html.find("Scanning") != std::string::npos);
 }
 
 // --- diagnostic log endpoint (ring buffer + /log toggle footer) ---------------
@@ -304,6 +359,12 @@ int runUnityTests() {
     RUN_TEST(test_validate_rejects_bad_creds);
     RUN_TEST(test_portal_page_has_form_fields);
     RUN_TEST(test_portal_page_escapes_ssid);
+    RUN_TEST(test_rssi_bars_buckets);
+    RUN_TEST(test_dedupe_and_sort_networks);
+    RUN_TEST(test_portal_page_lists_networks_strongest_first);
+    RUN_TEST(test_portal_page_marks_secured_and_open);
+    RUN_TEST(test_portal_page_has_rescan_and_manual_entry);
+    RUN_TEST(test_portal_page_scanning_state);
     RUN_TEST(test_logbuffer_keeps_recent_in_order);
     RUN_TEST(test_logbuffer_drops_oldest_past_capacity);
     RUN_TEST(test_logbuffer_caps_line_length);

@@ -1,7 +1,7 @@
 # Forward Plan — SB20 Power Proxy (post Phase 0)
 
 **Status: Phase 0 substantially complete and de-risked. This is the operational plan to get from
-"we know it will work" to a working proxy.** Last updated 2026-06-15.
+"we know it will work" to a working proxy.** Last updated 2026-06-16.
 
 This doc operationalises [`phase-0-report.md`](phase-0-report.md) §6 and
 [`05-implementation-phases.md`](../../05-implementation-phases.md). Read the report first for the
@@ -299,6 +299,23 @@ From `phase-0-report.md` §5 — track, don't block on:
 - ANT+ vs BLE offset semantics (903 vs ~0) — **both numbers already captured** (ANT+ from C-0, BLE from the G-* captures); this is a desk reconciliation of *why* they differ, not a new capture.
 - Does the SB20 BLE pair accept any CPS peripheral or only Stages-branded? — needs hardware after Part C.
 - Power×cadence calibration grid — research-only; the proxy eliminates the discrepancy without it.
+- **Captive-portal SSID picker UX (ESP32 firmware)** — ✅ **done (2026-06-16).** The portal now
+  renders a **tap-list picker** instead of the old `<input list=…>` + `<datalist>` (whose dropdown
+  is unreliable on iOS Safari, so it read as "type it blind"). *Decision:* tap-list over `<select>`
+  — `<select>` is native/reliable but can't show signal/lock and has no inline manual entry; a
+  tap-list of buttons shows rich rows and is what ESPHome/Tasmota/WLED portals use, and inline JS
+  runs fine in both the iOS Captive Network Assistant and the Android captive webview. Each scanned
+  network is a tappable row that JS drops into the SSID field and jumps to the password, with a
+  **visible SSID text field kept as the no-JS / hidden-network fallback**. The scan is enriched —
+  **RSSI** (sorted strongest-first), **mesh/multi-AP dedup** (keep the strongest per SSID), and an
+  **open/secured padlock** (`WiFi.encryptionType`) — and a **"Rescan"** link runs an **async**
+  `scanNetworks(true)` (no captive-DNS stall) with a meta-refresh that polls until results land.
+  Scan model widened `vector<string>` → `struct ScannedNet{ssid; rssi; secured}` flowing
+  `WifiLink` → `renderProvisioningPage`; dedup/sort/escape/render stay pure and are covered by
+  extended `test_portal_page_*` host tests (green in CI; this Windows box has no native x86
+  toolchain, but the test TU type-checks clean under GCC and the firmware build is green). Firmware
+  build `esp32c3-ota` ✅. Files: `firmware/src/net/WifiLink.{h,cpp}` (scan + `/rescan`),
+  `firmware/lib/proxy/Provisioning.h` (model + render), `firmware/test/test_proxy/test_main.cpp`.
 
 ---
 

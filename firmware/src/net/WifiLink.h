@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "Provisioning.h"             // pure ScannedNet + page render/parse/validate (host-tested)
 #include "Status.h"                   // pure ProxyStatus + renderStatusJson (host-tested)
 #include "net/ProvisioningDisplay.h"  // injectable setup-UX seam (Serial default)
 
@@ -43,13 +44,15 @@ private:
     void startStationServer_();  // OTA + status/update/forget routes (assumes WiFi joined)
     void startPortal_();         // SoftAP + captive DNS + setup routes
     void addLogRoutes_();        // GET /log + /log/on + /log/off (shared by both modes)
+    void populateFromScan_(int n);  // fill networks_ from a finished WiFi scan (Arduino WiFi.*)
+    bool collectScan_();            // harvest a completed async scan; true if one is still running
 
     WebServer* server_ = nullptr;
     DNSServer* dns_ = nullptr;
     StatusProvider provider_;
     IProvisioningDisplay* display_ = nullptr;
     const char* hostname_ = "sb20proxy";
-    std::vector<std::string> networks_;  // SSIDs scanned for the portal datalist
+    std::vector<ScannedNet> networks_;  // APs scanned for the portal picker (RSSI + secured)
     bool healthy_ = false;
     bool portal_ = false;
     bool logEnabled_ = true;  // serve GET /log? (persisted in NVS via WifiCreds)
