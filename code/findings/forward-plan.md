@@ -329,6 +329,15 @@ From `phase-0-report.md` §5 — track, don't block on:
   `test_portal_page_password_not_a_credential_field` host test (full reasoning in
   `decisions.md` 2026-06-16). On-device behaviour across the three browsers is a bench check.
   Files: `firmware/lib/proxy/Provisioning.h`, `firmware/test/test_proxy/test_main.cpp`.
+- **ESP32 perf + WiFi/BLE/OLED coex stability tuning** — backlog. The C3 runs WiFi + dual-role
+  NimBLE + the 0.42" OLED (I2C @ 50 kHz) on one radio/bus and intermittently hangs/crashes under
+  load (LED + screen freeze → boot-guard reboots → reconnects; heap stays flat, so a coex/blocking
+  stall, not a leak — the README's flagged "later tuning job"). *Tasks:* (1) lower the OLED refresh —
+  it renders every 500 ms in `src/main.cpp`'s loop; the screen is debug-only, so 1 Hz (or
+  render-on-change) is plenty and cuts the I2C/coex load; (2) capture a crash backtrace (serial /
+  persisted `/log`) to tell a task-watchdog block (likely the OLED I2C) from a coex panic;
+  (3) reduce contention — throttle BLE adv/notify, never let the OLED I2C block the loop, pause the
+  OLED during OTA. Shell hardening; does not block the core proxy work. (Chip filed.)
 
 ---
 
