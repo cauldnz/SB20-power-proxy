@@ -299,6 +299,28 @@ replay-based CI tests (no hardware). **Exit:** another SB20 owner installs from 
 - BLE peripheral spec is already in `phase-0-report.md` §2 (CPS 0x1818, measurement flags 0x2F,
   control-point 0x2A66, no bonding needed).
 
+### Progress (2026-06-17) — dual-role BLE proxy works on real hardware (both directions)
+
+The ESP32 BLE bring-up landed as an **initial cut**, ahead of the Part C gate — because it's
+validated against the **Python harness** (a WinRT CPS peripheral as the meter, a bleak central as
+the consumer), which needs no SB20. So this de-risks the firmware/codec/relay without spending the
+bike session. See `decisions.md` 2026-06-17 and `code/scripts/BLE-LOOP.md`.
+
+- **Firmware:** the dual-role proxy (`BleMeterClient` central → `ProxyCore` → `BleCrankPeripheral`)
+  now runs in a flashable build (`esp32c3-{wifi,oled}-live`, `USE_MOCK_METER=0`). Central matches
+  the meter by **CPS service UUID** (Windows advertises no name), **skips `SPOOF_NAME`** advertisers
+  (never read FROM the crank we impersonate — fixes latching onto a sibling board / the real
+  Stages crank), **relays cadence** (Crank Revolution Data → recovered rpm), and has a **staleness
+  watchdog** that drops a silent link and rescans (self-heal, callback-independent).
+- **Observability:** web UI `/ui` shows `METER IN → CRANK OUT`; `/` JSON carries `src_*` (received)
+  + `power_w`/`cadence_rpm` (broadcast). OLED shows live power/cadence/IP.
+- **Verified on hardware:** goal #1 (ESP32 received 177 W / 90 rpm from `fake_meter`), goal #2 +
+  full chain (Python `crank_reader` read the relayed 177 W / 90 rpm off the spoofed crank),
+  connect→meter-gone→reconnect lifecycle. Flashed by **OTA** (worked at RSSI −73).
+- **Still ahead:** **FTMS** (Indoor Bike Data receive + erg `Set Target Power`) is the next layer —
+  not in this cut (no FTMS in firmware yet). And the real test is still **Session G Part C** (does
+  the *SB20* accept our spoofed CPS crank for erg) — the harness proves the firmware, not the bike.
+
 ---
 
 ## 8. Open research items (not on any critical path)
@@ -347,6 +369,19 @@ From `phase-0-report.md` §5 — track, don't block on:
   persisted `/log`) to tell a task-watchdog block (likely the OLED I2C) from a coex panic;
   (3) reduce contention — throttle BLE adv/notify, never let the OLED I2C block the loop, pause the
   OLED during OTA. Shell hardening; does not block the core proxy work. (Chip filed.)
+- **FTMS layer ("fitness device data" + trainer erg control)** — backlog, the next BLE layer after
+  the 2026-06-17 CPS bring-up. Two halves: (a) the ESP32 central also subscribing **FTMS Indoor Bike
+  Data (0x2AD2)** so a trainer/fitness machine is a valid source, and (b) the **Set Target Power**
+  control-point op (0x2AD9 op 0x05) for erg control — the "actually control the trainer power" goal.
+  Mirror the CPS work: a pure FTMS codec in `firmware/lib/proxy` + `sb20proxy.ble`, host-tested, then
+  a `fake_trainer.py` harness peripheral. Gated for *erg* on Session G Part C.
+- **Zero stale `src_*`/`power_w` on meter disconnect (cosmetic)** — backlog. On disconnect the board
+  keeps the last received values while flipping `source` to `searching`; `source` is the
+  authoritative "no live meter" flag, but a consumer reading only `power_w` would see a stale number.
+  Zero them in `onDisconnected()` / the status provider. Tiny; not urgent.
+- **Distinct advertised identity for the live crank vs a mock/sibling board** — backlog. Two boards
+  both advertise `Stages 62144`, so `crank_reader` must target by `--address`. Optional: vary
+  `SPOOF_NAME` per board (or append a short id) so they're distinguishable by name on the bench.
 
 ---
 

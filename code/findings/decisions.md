@@ -849,3 +849,78 @@ Options considered:
   real `pio test -e native` runs in CI. On-device behaviour across the three browsers is a bench
   check (`NEXT-BIKE-SESSION.md`). Files: `firmware/lib/proxy/Provisioning.h`,
   `firmware/test/test_proxy/test_main.cpp`. Tracked in `forward-plan.md` §8.
+
+## 2026-06-17 — ESP32 BLE bring-up: real dual-role proxy, both directions, on hardware
+
+Goal for the day: an initial cut of the ESP32 BLE work — firmware on a real board that (1)
+**receives** power-meter data from the Python harness, (2) **broadcasts** spoofed power received
+by the Python harness, with (3) both visible in the web UI + OLED. All three met on hardware.
+
+**Python BLE *peripheral* via WinRT directly — NOT bless.** Goal #1 needs the harness to be a BLE
+peripheral (the ESP32 is the central). bleak is central-only, and **`bless` is incompatible with
+Python 3.13**: bless 0.3.0 pins `winrt-*==2.0.0b1` (requires-python `<3.13`), and bless 0.2.6
+imports the removed `bleak_winrt` module. Rather than fight an unmaintained dep (or downgrade
+Python), the harness drives the **WinRT `GattServiceProvider` API directly** — the same
+`winrt-windows-devices-bluetooth-genericattributeprofile` packages bleak 3.x already installs and
+uses. Spiked first: `BluetoothAdapter.is_peripheral_role_supported == True` on this host (Realtek),
+advertising settles to `GattServiceProviderAdvertisementStatus.STARTED` (the momentary `ABORTED`
+on start is a normal WinRT publisher transition), notify works. New module
+`code/src/sb20proxy/ble/winrt_peripheral.py` (`WinrtCpsPeripheral`) — Windows-only, kept OUT of
+`sb20proxy.ble.__init__` so the package import graph and the hermetic test suite never pull in
+WinRT (it's a hardware seam, like the firmware's OLED/radio).
+
+**WinRT advertises the service UUID but no custom local name** → the firmware `BleMeterClient` now
+matches the meter by **advertised CPS service UUID (0x1818)** first, name (`ASSIOMA`) second. A
+real Assioma advertises both, so this is strictly more permissive.
+
+**Never read FROM our own spoof identity.** With two boards on the bench, the freshly-flashed
+central immediately latched onto the *other* board (running the old mock firmware, advertising
+`SPOOF_NAME` = "Stages 62144" + CPS) and relayed its ramp. `BleMeterClient` now **skips any
+advertiser whose name == `Config::SPOOF_NAME`** — a correct rule beyond the bench: the meter we
+read is the Assioma, never another proxy / sibling board / the real Stages crank we replace.
+
+**Cadence pass-through.** `BleMeterClient` previously decoded only power (`decodeCpsPower`). It now
+decodes Crank Revolution Data and recovers cadence (the head-unit delta method) when the crank
+fields sit at the fixed 4–7 offset (no balance/torque/wheel field precedes them — true for our
+meters' power+cadence frame; `Cps.h` gained `CPM_PRECEDING_DATA_BITS = 0x0015` for the check).
+Received cadence now flows through to the spoofed crank, web UI and OLED.
+
+**Staleness watchdog + self-heal.** A connected meter notifies ~1 Hz even at zero power, so a
+≥6 s gap (`kMeterStaleMs`) means it's gone. Critically, an abruptly-vanished peer (a *killed* host
+process) can leave the controller link up with NimBLE's `onDisconnect` never firing — observed: the
+board wedged "connected" to a dead meter forever. So the watchdog resets state **proactively** in
+`loop()` (`onDisconnected()` directly, not waiting on the callback) and rescans. Verified the full
+lifecycle on hardware: connect → relay → meter-gone → `searching` → reconnect to a fresh meter.
+(A *clean* meter disappearance — power-off / out of range, the real-ride case — fires `onDisconnect`
+naturally; the watchdog is the backstop for the silent-but-linked case.)
+
+**Observability — both directions.** `ProxyStatus` gained `srcPowerW`/`srcCadenceRpm` (received
+from the meter) alongside `lastPowerW`/`lastCadenceRpm` (broadcast to the crank); `renderStatusJson`
+emits `src_power_w`/`src_cadence_rpm`; the `/ui` dashboard shows a `METER IN → CRANK OUT` flow row.
+OLED is unchanged (already shows live power/cadence/IP at 2 Hz — the "slow update").
+
+**Build envs.** Added `esp32c3-wifi-live` / `esp32c3-oled-live` (+ `-ota`) with `USE_MOCK_METER=0`
+so the *real* `BleMeterClient` is compiled into a flashable WiFi/OLED build (every prior WiFi/OLED
+env hardcoded the mock). Flashed via **OTA over WiFi** (`espota` → 192.168.1.165), which succeeded
+even at RSSI −73 at the desk — the USB-JTAG manual-bootloader dance was not needed this time.
+
+**Verified on hardware (board: ESP32-C3 OLED, `sb20proxy.local`):**
+- Goal #1: `fake_meter.py --watts 177 --cadence 90 --steady` → board status `source:connected,
+  src_power_w:177, src_cadence_rpm:90` (received power AND cadence from the Python app).
+- Goal #2 / full chain: `crank_reader.py --address 38:44:BE:45:E9:A6` → `177 W, 90 rpm`, frames
+  `2000b1…` — proving Python meter → ESP32 (receive+relay) → Python reader end-to-end over the radio.
+- Goal #3: `/ui` renders METER IN/CRANK OUT; `/` JSON carries both directions; OLED render path active.
+
+**Tested (CI / desk):** host pytest 121 passed (BLE codec/loopback unchanged + still green); ruff
+clean. The firmware host-Unity suite gained `src_*` JSON + `/ui` flow assertions but **can't run on
+this Windows box (no host gcc)** — it runs in CI (Linux). The full `esp32c3-oled-live` target
+**compiles clean** against the real toolchain (the local compile gate). The WinRT peripheral, the
+two harness scripts, and the NimBLE `BleMeterClient` paths are bench-tested (the hardware seam),
+consistent with the project's "isolate hardware, manual on-air check" discipline.
+
+**Scope / deferred (forward-plan §BLE):** FTMS ("fitness device data" — Indoor Bike Data + erg
+Set-Target-Power) is the next layer and was deliberately NOT in this cut (the firmware has no FTMS
+yet); CPS power+cadence both-ways is the committed deliverable. Also noted: stale src_* values are
+retained (not zeroed) on disconnect — `source:searching` is the authoritative "no live meter"
+signal; zeroing is cosmetic polish. Two same-named "Stages 62144" advertisers on the bench mean
+`crank_reader` should target board A by address (`--address`), not name.
