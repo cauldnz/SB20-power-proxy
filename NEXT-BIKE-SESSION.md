@@ -1,11 +1,12 @@
 # 🚴 Next Bike Session — open-item closure + Phase 1B pairing test
 
 > One trip to the bike clears every remaining on-bike open item.
-> **Do steps 1–6 regardless.** Step 7 (the Phase 1B pairing proof) is **only if the desk build
-> (Phase 1A) is already done** — if not, skip it and it rides along on a later visit.
+> **Plan to do 1, 2, 5, 6, 7.** The two gates are **5** (erg-on-BLE go/no-go) and **7** (Phase 1B
+> spoof-pairing proof, now in scope — the Phase 1A desk build is done). **6** (BLE recon) is a
+> do-regardless capture. **3** is optional/high-value; **4** is a known dead end (skip — see below).
 > Full rationale: [`code/findings/forward-plan.md`](code/findings/forward-plan.md) §3.
 
-**~90 min for everything (incl. Phase 1B); ~50 min for the must-dos (1, 2, 5).**
+**~90 min for everything; ~50 min for the core (1, 2, 5, then 7).**
 Bring: a **fresh CR2032**, a coin/screwdriver for the battery door, your phone with the
 **Stages Cycling** app *and* the **StagesPower** meter app, and the Claude chat open.
 
@@ -104,11 +105,17 @@ day-1 (165) → day-2 (172.5) change is what moved the Stages/Assioma ratio 1.08
 
 ---
 
-## 4 · External / Power-Erg probe · ~12 min · *optional*
+## 4 · External / Power-Erg probe · ~5 min · *low priority — already tried, didn't work*
 
-Could make Phase 1 far simpler if it works.
+> ⚠️ **Owner has already attempted this** — entering the **Assioma ANT+ id directly into the Stages
+> Cycling app** did **not** give external-meter erg. So the simple path is, as far as we know,
+> closed and the **crank spoof is confirmed necessary**. Only revisit if a Stages app update has
+> added a real "External Power Meter / Power-Erg" pairing option that's distinct from typing in an
+> id. If you do retry, look specifically for a *dedicated external-meter pairing UI*, not the normal
+> crank-id fields.
 
-1. Stages Cycling app → look for **External Power Meter** / **Power-Erg** / "Pair External Meter".
+1. Stages Cycling app → look for a **dedicated External Power Meter / Power-Erg / "Pair External
+   Meter"** option (distinct from the crank-id entry that already failed).
 2. If present, pair the bike to the **Assioma** and set an erg target (~250 W); pedal.
 3. Does the bike control resistance off the *Assioma* (no crank spoof)?
 
@@ -143,10 +150,13 @@ result is valuable — tell me which.)
 
 ---
 
-## 6 · Session G Part A — BLE recon · ~15 min · *only if Part C looked promising*
+## 6 · Session G Part A — BLE recon · ~15 min · *do regardless — capture it for the record*
 
-Captures the crank's BLE surface (the impersonator template). Runs on **native Windows**
-(WSL has no Bluetooth) in a normal **PowerShell** window:
+Captures the crank's BLE surface (the impersonator template) — **worth documenting whatever Part C
+decides**, and it's **independent of Part C**: a 2026-06-15 finding confirmed the **Stages crank is
+reachable over BLE while in ANT+ mode** (target it by name `Stages 62144`, not the generic "Stages"
+filter, which hits the bike's FTMS device). So no BLE-crank mode needed for this. Runs on **native
+Windows** (WSL has no Bluetooth) in a normal **PowerShell** window:
 ```powershell
 code\.venv-win\Scripts\python.exe code\scripts\06_capture_ble.py `
   --name 'Stages 62144' --duration 180 `
@@ -164,23 +174,34 @@ JSONL. *(We already have the ANT+ offset from C-0, so no ANT+ zero-reset needed 
 
 ## 7 · Phase 1B — pairing test
 
-> ⚠️ **Only if the desk build (Phase 1A) is done.** `03_static_replay.py` is built at the keyboard
-> first; if it doesn't exist yet, **skip this step** — it rides along on a later visit.
+> ⚠️ **Only if the desk build (Phase 1A) is done.** `03_static_replay.py` exists and its loopback
+> passes, so this is **in scope** for the session.
 
 **The keystone proof: does the SB20 accept our spoofed crank?**
 
-1. On the proxy machine (WSL, stick attached), run the static replay on a **distinct test id** —
-   this avoids any on-air collision with the live crank, so you keep the fresh battery in:
+> 🔁 **WRITE DOWN THE CURRENT PAIRING BEFORE YOU CHANGE ANYTHING — restore it afterward:**
+> **Stages `62144` (L) : `4963` (R)** · crank length **165 mm** · zero-offset **L 903 / R 951**.
+> The app pairs the crankset as a **linked L/R pair**, so it asks for *both* IDs; only the **L** id
+> changes for this test, **R stays `4963`** (the real right crank stays in and keeps broadcasting).
+
+1. On the proxy machine (WSL, stick attached), run the static replay on a **distinct test id** for
+   the **left** crank — this avoids any on-air collision with the live L crank, so you keep the
+   fresh battery in:
    ```bash
    python code/scripts/03_static_replay.py \
      --input code/findings/captures/A-stagesL-steady-20260614-165737.jsonl \
      --spoof-id 62145
    ```
-   *(Fallback if you'd rather test the real id 62144: pull the L-crank battery for the test, then
-   reinsert after.)*
-2. In the Stages app, pair the SB20 to the new power meter (**62145**).
+2. In the Stages app, set the crankset IDs to **L `62145` (our spoof) : R `4963` (unchanged)** and
+   pair. The bike now listens for our spoofed L master; the real L (`62144`) keeps broadcasting but
+   the bike ignores it.
+   - **If the app rejects an unmatched L id** (insists on a registered linked pair): fall back to
+     spoofing the **real** id — `--spoof-id 62144`, pull the **L-crank battery** for the test so the
+     real and spoof don't collide (R `4963` stays in), then reinsert + re-pair the real pair after.
 3. Trigger a **zero-reset** in the app — confirm it's accepted.
 4. Set an **erg target** and watch: does the SB20 show the replayed watts, and does **erg react**?
+5. **Restore** the pairing to **`62144` : `4963`** (length 165, offsets 903/951) and confirm normal
+   operation before you leave.
 
 **✅ Pass:** SB20 displays replayed power **and** erg responds → impersonation works → greenlight
 Phase 2. Capture a short screen video for `findings/phase-1-demo/`.

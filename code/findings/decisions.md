@@ -795,3 +795,24 @@ default BLE build and the WiFi/OTA build link clean.** All of it stays gated on 
      holds ~60 lines, bounding RAM.
    - Tested: 5 new Unity cases (ring ordering / eviction / line-cap, footer states, portal footer
      wiring) — `pio test -e native` now 29/29. Bench step added to `NEXT-BIKE-SESSION.md` §8.
+
+## 2026-06-16 — Next-bike-session plan refinements (owner feedback)
+
+Three corrections from the owner while reviewing the `NEXT-BIKE-SESSION.md` plan:
+
+1. **Phase 1B spoof-pairing needs BOTH crank ids.** The SB20/Stages app pairs the crankset as a
+   **linked L/R pair**, so it asks for both the left and right ids — not just one. Plan updated: for
+   the test, change **only the L id to the spoof `62145`** and leave **R = `4963`** (the real right
+   crank stays in and keeps broadcasting); the bike then listens for our spoofed L master and
+   ignores the real `62144`. **Restore-after values recorded prominently:** `Stages 62144 (L) :
+   4963 (R)`, crank length **165 mm**, zero-offset **L 903 / R 951**. Fallback if the app rejects an
+   unmatched L id: spoof the real `62144` with the L-crank battery pulled for the test.
+2. **External / Power-Erg via Assioma id is a REFUTED path.** Owner has already tried entering the
+   **Assioma ANT+ id directly into the Stages Cycling app** and got **no external-meter erg**. So
+   the "simple path" (bike ergs off the Assioma, no crank spoof) is, as far as we know, **closed** —
+   the crank spoof is confirmed necessary. Step 4 downgraded to "skip unless a Stages app update
+   adds a *dedicated* external-meter pairing UI distinct from the id field that already failed."
+3. **Session G Part A (BLE recon) promoted to do-regardless.** Owner wants the crank's BLE surface
+   captured/documented whatever Part C decides. This is fine because it's **independent of Part C** —
+   the 2026-06-15 finding established the Stages crank is reachable over BLE *in ANT+ mode* (target
+   `Stages 62144` by name). No BLE-crank mode required for the recon capture.
