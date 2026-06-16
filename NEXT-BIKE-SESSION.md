@@ -28,6 +28,34 @@ cd ~/local-repos/cauldnz/SB20-power-proxy && source .venv/bin/activate
 
 ---
 
+## Desk pre-flight (env + sanity — verified hardware-free, ~2 min)
+
+Run once on the bench machine. All of this passes with **no stick / SB20 / ESP32** — do it before
+you depend on any tool mid-session:
+
+```bash
+cd code && source .venv/bin/activate
+pip install -e ".[dev,analysis,ble]"   # [ble] (bleak) is REQUIRED for step 6's BLE capture
+pytest -q                              # expect: 75 passed, 1 skipped
+# keystone desk tool — software loopback proves the replay path end-to-end (no hardware):
+python scripts/03_static_replay.py --radio loopback --duration 3 \
+  --input findings/captures/A-stagesL-steady-20260614-165737.jsonl
+#   -> "[replay] PASS: twin saw spoofed Stages power"
+```
+
+If you'll flash / observe the **ESP32** this session (WiFi setup, OTA, `/log`, or the BLE path):
+```bash
+cd firmware
+pio test -e native      # expect: 29/29
+pio run -e esp32c3-ota  # builds with NO wifi_secret.h — creds come from the captive portal
+```
+
+**Gotchas confirmed this session:** `06_capture_ble.py` exits immediately without **bleak**
+(`pip install -e "code/.[ble]"`); the ANT+ stick (`--radio ant`) needs the udev rule from
+`CLAUDE.md`; PlatformIO needs network on first run to fetch the `native`/`espressif32` platforms.
+
+---
+
 ## 1 · Fresh CR2032 in the LEFT crank ⭐ must-do · ~8 min
 
 The L crank (#62144) is at **14%** — replace it before anything else; a dropout mid-capture

@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <deque>
 #include <string>
+#include <utility>  // std::move
 
 namespace sb20proxy {
 
