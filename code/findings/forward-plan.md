@@ -276,6 +276,15 @@ Entry: Phase 3 + 1 week of real training. Generic ANT+ source (any Bike Power me
 input/target; Pi image (`setup.sh`/packer); non-expert README (shopping list, install, FAQ);
 replay-based CI tests (no hardware). **Exit:** another SB20 owner installs from the README unaided.
 
+- **Firmware install for non-technical users / bare-ESP32 buyers — ESP Web Tools.** Flash from the
+  browser over Web Serial, no CLI/esptool: a static page with `<esp-web-install-button>` + a
+  per-chip `manifest.json` of the firmware `.bin`s. LTS Design *already runs one* for the Respooler
+  product (https://flash.lts-design.com/), so this is "replicate that page" for the proxy firmware —
+  optionally with Improv-Serial WiFi provisioning (pairs with our captive portal). Caveats:
+  Chrome/Edge/Opera desktop only (no Safari/Firefox/iOS), and it flashes via esptool-js (the same
+  Web-Serial reset that wedged the C3 USB-JTAG on 2026-06-16/17 — test on a real C3, consider
+  pre-flashed boards). For the production-deployment + sales review.
+
 ---
 
 ## 7. Track C — ESP32 / BLE / digital twins (PARALLEL, gated)
