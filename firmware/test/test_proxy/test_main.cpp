@@ -392,6 +392,12 @@ void test_logbuffer_caps_line_length() {
     TEST_ASSERT_EQUAL_UINT(LogBuffer::kMaxLine + 1, log.text().size());
 }
 
+void test_tohex_encodes_bytes() {
+    const uint8_t b[] = {0x2f, 0x00, 0xae, 0x0c};
+    TEST_ASSERT_EQUAL_STRING("2f00ae0c", toHex(b, sizeof(b)).c_str());
+    TEST_ASSERT_EQUAL_STRING("", toHex(b, 0).c_str());  // empty is safe
+}
+
 void test_log_toggle_footer_states() {
     TEST_ASSERT_EQUAL_STRING("", renderLogToggleFooter(-1).c_str());  // hidden
     TEST_ASSERT_TRUE(renderLogToggleFooter(1).find("/log/off") != std::string::npos);  // on
@@ -444,14 +450,14 @@ void test_oled_connected_lines() {
     auto l = formatOledLines(OledMode::Connected, "192.168.1.82", 230, 85);
     TEST_ASSERT_EQUAL_STRING("SB20 PROXY", l[0].c_str());
     TEST_ASSERT_EQUAL_STRING("192.168.1.82", l[1].c_str());  // the IP — the thing you came for
-    TEST_ASSERT_EQUAL_STRING("230W", l[2].c_str());
-    TEST_ASSERT_EQUAL_STRING("85 rpm", l[3].c_str());
+    TEST_ASSERT_EQUAL_STRING("230W 85rpm", l[2].c_str());    // power + cadence share row 3 (3-row panel)
+    TEST_ASSERT_EQUAL_STRING("", l[3].c_str());
 }
 
-void test_oled_connected_unknown_cadence_blank() {
+void test_oled_connected_unknown_cadence_omitted() {
     auto l = formatOledLines(OledMode::Connected, "10.0.0.5", 120, -1);
-    TEST_ASSERT_EQUAL_STRING("120W", l[2].c_str());
-    TEST_ASSERT_EQUAL_STRING("", l[3].c_str());  // cadence < 0 (unknown) -> blank row
+    TEST_ASSERT_EQUAL_STRING("120W", l[2].c_str());  // cadence unknown -> power only, no rpm suffix
+    TEST_ASSERT_EQUAL_STRING("", l[3].c_str());
 }
 
 // --- saved page ---------------------------------------------------------------
@@ -525,6 +531,7 @@ int runUnityTests() {
     RUN_TEST(test_logbuffer_keeps_recent_in_order);
     RUN_TEST(test_logbuffer_drops_oldest_past_capacity);
     RUN_TEST(test_logbuffer_caps_line_length);
+    RUN_TEST(test_tohex_encodes_bytes);
     RUN_TEST(test_log_toggle_footer_states);
     RUN_TEST(test_portal_page_shows_log_toggle_when_requested);
     RUN_TEST(test_status_led_searching_fast_blink);
@@ -532,7 +539,7 @@ int runUnityTests() {
     RUN_TEST(test_status_led_searching_blinks_faster_than_connected);
     RUN_TEST(test_oled_portal_lines);
     RUN_TEST(test_oled_connected_lines);
-    RUN_TEST(test_oled_connected_unknown_cadence_blank);
+    RUN_TEST(test_oled_connected_unknown_cadence_omitted);
     RUN_TEST(test_saved_page_has_ssid_and_hints);
     RUN_TEST(test_saved_page_escapes_ssid);
     RUN_TEST(test_app_page_essentials);

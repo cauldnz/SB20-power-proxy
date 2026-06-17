@@ -7,15 +7,20 @@
 
 #include "Config.h"
 #include "Cps.h"
+#include "LogBuffer.h"     // toHex
+#include "net/DebugLog.h"  // logf -> /log (learn the SB20's interactive protocol by observation)
 
 using namespace sb20proxy;
 
 // Cycling Power Control Point: answer a Start Offset Compensation (zero-reset) with
-// success + the captured offset — the BLE analogue of the ANT+ 0x01 0xAC reply.
+// success + the captured offset — the BLE analogue of the ANT+ 0x01 0xAC reply. Every write
+// is logged raw first: this is how we capture the SB20's calibration/erg handshake (which we
+// can't sniff any other way — our spoofed crank is the only thing that sees these writes).
 class ControlPointCallbacks : public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& /*info*/) override {
         NimBLEAttValue v = c->getValue();
         if (v.size() == 0) return;
+        logf("[cp] write %s", toHex(v.data(), v.size()).c_str());
         uint8_t op = v[0];
         std::vector<uint8_t> resp;
         if (op == CP_OP_START_OFFSET_COMP) {
@@ -28,8 +33,29 @@ class ControlPointCallbacks : public NimBLECharacteristicCallbacks {
     }
 };
 
+// The Stages proprietary control char (fe02) — opaque protocol. We don't yet know what the SB20
+// writes here (if anything); log it raw so tomorrow's session captures it for us to decode.
+class PropWriteCallbacks : public NimBLECharacteristicCallbacks {
+    void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& /*info*/) override {
+        NimBLEAttValue v = c->getValue();
+        logf("[prop fe02] write %s", toHex(v.data(), v.size()).c_str());
+    }
+};
+
+// Log connect/disconnect to study the SB20's bonding + reconnection behaviour (does it reconnect
+// cleanly after a drop, does it bond, what disconnect reasons appear).
+class CrankServerCallbacks : public NimBLEServerCallbacks {
+    void onConnect(NimBLEServer* /*s*/, NimBLEConnInfo& info) override {
+        logf("[srv] connect from %s", info.getAddress().toString().c_str());
+    }
+    void onDisconnect(NimBLEServer* /*s*/, NimBLEConnInfo& /*info*/, int reason) override {
+        logf("[srv] disconnect reason=%d", reason);
+    }
+};
+
 void BleCrankPeripheral::begin() {
     NimBLEServer* server = NimBLEDevice::createServer();
+    server->setCallbacks(new CrankServerCallbacks());
 
     // --- Cycling Power Service ---
     NimBLEService* cps = server->createService(UUID_CPS);
@@ -64,7 +90,8 @@ void BleCrankPeripheral::begin() {
     //     checks for it to confirm a genuine Stages). Contents opaque — presence is the point. ---
     NimBLEService* stages = server->createService(Config::STAGES_SVC);
     stages->createCharacteristic(Config::STAGES_CHAR_CTRL,
-                                 NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::WRITE);
+                                 NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::WRITE)
+        ->setCallbacks(new PropWriteCallbacks());
     stages->createCharacteristic(Config::STAGES_CHAR_DATA, NIMBLE_PROPERTY::NOTIFY);
     stages->start();
 
