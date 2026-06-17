@@ -65,19 +65,18 @@ void BleMeterClient::onMeasurement(const uint8_t* data, size_t len) {
     r.power_w = decodeCpsPower(data, len);  // sint16 at bytes 2-3, regardless of flags
     r.t_ms = millis();
 
-    // Recover cadence from Crank Revolution Data, the way a head unit does — but only when the
-    // crank fields are at the fixed 4-7 offset (no balance/torque/wheel field precedes them,
-    // which holds for our meters' power+cadence frame). Otherwise leave cadence unknown.
-    const uint16_t flags = decodeCpsFlags(data, len);
-    if ((flags & CPM_CRANK_REV_DATA_PRESENT) && !(flags & CPM_PRECEDING_DATA_BITS) && len >= 8) {
-        const uint16_t revs = decodeCrankRevs(data, len);
-        const uint16_t evt = decodeCrankEventTime(data, len);
+    // Recover cadence from Crank Revolution Data the way a head unit does. The generic decoder
+    // finds the crank-rev fields whatever optional fields precede them — the Assioma sends
+    // pedal-balance (+ maybe torque) first, which the old fixed-offset path couldn't handle.
+    const CpsCrankData ck = decodeCrankData(data, len);
+    if (ck.present) {
         if (havePrevCrank_) {
-            const float rpm = cadenceRpmFromCrank(prevRevs_, prevEventTime_, revs, evt);
+            const float rpm = cadenceRpmFromCrank(prevRevs_, prevEventTime_, ck.cumulativeRevs,
+                                                  ck.lastEventTime);
             if (rpm > 0.0f) r.cadence_rpm = (int16_t)(rpm + 0.5f);
         }
-        prevRevs_ = revs;
-        prevEventTime_ = evt;
+        prevRevs_ = ck.cumulativeRevs;
+        prevEventTime_ = ck.lastEventTime;
         havePrevCrank_ = true;
     }
     lastReadingMs_ = r.t_ms;  // feed the staleness watchdog

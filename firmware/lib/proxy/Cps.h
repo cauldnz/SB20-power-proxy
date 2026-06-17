@@ -14,6 +14,8 @@ constexpr const char* UUID_CP_SENSORLOC = "2A5D";  // Sensor Location (read)
 constexpr const char* UUID_CP_CONTROL   = "2A66";  // Cycling Power Control Point (write+indicate)
 constexpr const char* UUID_DIS          = "180A";
 constexpr const char* UUID_DIS_MANUF    = "2A29";
+constexpr const char* UUID_DIS_MODEL    = "2A24";
+constexpr const char* UUID_DIS_FW       = "2A26";
 constexpr const char* UUID_DIS_SERIAL   = "2A25";
 
 // CPS Control Point op codes we care about.
@@ -32,6 +34,21 @@ constexpr uint16_t CPM_PRECEDING_DATA_BITS = 0x0015;
 
 // CPS Feature bits (uint32). Crank Revolution Data Supported = bit 3.
 constexpr uint32_t CP_FEATURE_CRANK_REV_SUPPORTED = 0x00000008;
+
+// --- The REAL Stages SPM2 crank, captured 2026-06-17 (findings/captures/G-crankL-ble-recon).
+// The spoof must reproduce this byte-for-byte: a minimal 0x20 frame paired with the SB20 but
+// showed NO power, so the SB20 wants the full Stages frame shape. ---
+constexpr uint16_t CPM_PEDAL_BALANCE_PRESENT  = 0x0001;  // bit0
+constexpr uint16_t CPM_PEDAL_BALANCE_REF_LEFT = 0x0002;  // bit1 (1 = reference left)
+constexpr uint16_t CPM_ACCUM_TORQUE_PRESENT   = 0x0004;  // bit2
+constexpr uint16_t CPM_ACCUM_TORQUE_SRC_CRANK = 0x0008;  // bit3 (1 = crank-based)
+constexpr uint16_t CPM_WHEEL_REV_DATA_PRESENT = 0x0010;  // bit4
+// The captured measurement flags: balance + ref-left + torque + src-crank + crank-rev.
+constexpr uint16_t CPM_STAGES_FLAGS = 0x002F;
+// The captured CP Feature value (char 0x2A65, raw LE 0b 03 08 00).
+constexpr uint32_t CP_FEATURE_STAGES = 0x0008030B;
+// The crank reports Sensor Location 0 ("other") — NOT 5 (left crank), despite being a left crank.
+constexpr uint8_t SENSOR_LOCATION_OTHER = 0x00;
 
 // Encode a power-only Cycling Power Measurement: flags (uint16 LE) + instantaneous power
 // (sint16 LE). Power is ALWAYS the first field after flags, so flags = 0 is valid.
@@ -59,6 +76,25 @@ inline std::vector<uint8_t> encodeCpsMeasurement(int16_t power_w, uint16_t crank
     };
 }
 
+// Encode the REAL Stages SPM2 measurement (flags 0x2F), byte-identical to the capture:
+//   flags(2) | power sint16 | balance uint8 (1/2 %) | accum torque uint16 (1/32 Nm) |
+//   cumulative crank revs uint16 | last crank event time uint16 (1/1024 s)  = 11 bytes.
+// Field order is fixed by ascending flag bit, matching how the real crank lays it out on the
+// wire; the SB20 parses power from this exact shape. Golden-tested against the captured bytes.
+inline std::vector<uint8_t> encodeStagesCpsMeasurement(int16_t power_w, uint8_t balanceHalfPct,
+                                                       uint16_t accumTorque, uint16_t crankRevs,
+                                                       uint16_t lastCrankEventTime) {
+    const uint16_t flags = CPM_STAGES_FLAGS;
+    return {
+        (uint8_t)(flags & 0xFF),     (uint8_t)(flags >> 8),
+        (uint8_t)(power_w & 0xFF),   (uint8_t)((power_w >> 8) & 0xFF),
+        balanceHalfPct,
+        (uint8_t)(accumTorque & 0xFF), (uint8_t)((accumTorque >> 8) & 0xFF),
+        (uint8_t)(crankRevs & 0xFF),   (uint8_t)((crankRevs >> 8) & 0xFF),
+        (uint8_t)(lastCrankEventTime & 0xFF), (uint8_t)((lastCrankEventTime >> 8) & 0xFF),
+    };
+}
+
 // Instantaneous power lives at bytes 2-3 (sint16 LE) regardless of flags.
 inline int16_t decodeCpsPower(const uint8_t* d, size_t len) {
     if (len < 4) return 0;
@@ -79,6 +115,36 @@ inline uint16_t decodeCrankRevs(const uint8_t* d, size_t len) {
 inline uint16_t decodeCrankEventTime(const uint8_t* d, size_t len) {
     if (len < 8) return 0;
     return (uint16_t)(d[6] | (d[7] << 8));
+}
+
+// Byte offset of the Crank Revolution Data fields within a CPS Measurement of ARBITRARY flag
+// layout: they sit after any pedal-balance (bit0, 1B), accumulated-torque (bit2, 2B), and
+// wheel-rev (bit4, 6B) fields that precede them. 0 if crank-rev data isn't present. This lets
+// us read cadence from a real meter (e.g. the Assioma) whatever optional fields it includes —
+// the rigid decodeCrankRevs above only works when nothing precedes the crank-rev fields.
+inline size_t crankRevDataOffset(uint16_t flags) {
+    if (!(flags & CPM_CRANK_REV_DATA_PRESENT)) return 0;
+    size_t off = 4;  // flags(2) + instantaneous power(2)
+    if (flags & CPM_PEDAL_BALANCE_PRESENT) off += 1;
+    if (flags & CPM_ACCUM_TORQUE_PRESENT) off += 2;
+    if (flags & CPM_WHEEL_REV_DATA_PRESENT) off += 6;
+    return off;
+}
+
+// Crank Revolution Data extracted from a CPS Measurement of any flag layout.
+struct CpsCrankData {
+    bool present = false;
+    uint16_t cumulativeRevs = 0;
+    uint16_t lastEventTime = 0;  // 1/1024 s
+};
+inline CpsCrankData decodeCrankData(const uint8_t* d, size_t len) {
+    CpsCrankData c;
+    const size_t off = crankRevDataOffset(decodeCpsFlags(d, len));
+    if (off == 0 || off + 4 > len) return c;
+    c.present = true;
+    c.cumulativeRevs = (uint16_t)(d[off] | (d[off + 1] << 8));
+    c.lastEventTime = (uint16_t)(d[off + 2] | (d[off + 3] << 8));
+    return c;
 }
 
 // Recover cadence (rpm) from two Crank Revolution Data samples — what a head unit does.

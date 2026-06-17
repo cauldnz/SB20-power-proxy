@@ -130,6 +130,46 @@ void test_crank_cadence_coasting_no_events() {
     TEST_ASSERT_EQUAL_INT(t, c.lastEventTime);
 }
 
+// --- real Stages SPM2 frame (0x2F): golden vectors from the 2026-06-17 capture ------------
+// findings/captures/G-crankL-ble-recon-20260617.jsonl. A minimal 0x20 frame paired with the
+// SB20 but showed NO power; the spoof must emit THIS exact frame shape, so we pin it byte-wise.
+
+void test_stages_frame_golden_encode() {
+    // The exact bytes the real crank sent: flags 0x2F, power 174 W, balance 88 (44%), accum
+    // torque 63292, crank revs 230, last event 27838 -> "2f00ae00583cf7e600be6c".
+    std::vector<uint8_t> f = encodeStagesCpsMeasurement(174, 88, 63292, 230, 27838);
+    const uint8_t expected[] = {0x2f, 0x00, 0xae, 0x00, 0x58, 0x3c, 0xf7, 0xe6, 0x00, 0xbe, 0x6c};
+    TEST_ASSERT_EQUAL_INT(11, (int)f.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, f.data(), 11);
+}
+
+void test_stages_frame_flags_and_power() {
+    std::vector<uint8_t> f = encodeStagesCpsMeasurement(174, 88, 63292, 230, 27838);
+    TEST_ASSERT_EQUAL_HEX16(0x002F, decodeCpsFlags(f.data(), f.size()));
+    TEST_ASSERT_EQUAL_INT(174, decodeCpsPower(f.data(), f.size()));  // power still at bytes 2-3
+}
+
+void test_decode_crank_data_behind_preceding_fields() {
+    // The generic decoder must find crank-rev at offset 7 (after balance+torque), not a rigid 4.
+    const uint8_t frame[] = {0x2f, 0x00, 0xae, 0x00, 0x58, 0x3c, 0xf7, 0xe6, 0x00, 0xbe, 0x6c};
+    TEST_ASSERT_EQUAL_UINT(7, crankRevDataOffset(0x002F));
+    CpsCrankData c = decodeCrankData(frame, sizeof(frame));
+    TEST_ASSERT_TRUE(c.present);
+    TEST_ASSERT_EQUAL_INT(230, c.cumulativeRevs);
+    TEST_ASSERT_EQUAL_INT(27838, c.lastEventTime);
+}
+
+void test_cadence_from_two_real_stages_frames() {
+    // Two consecutive captured frames: revs 230->231 over 1127 event ticks (~1.10 s) ~= 54.5 rpm.
+    const uint8_t f1[] = {0x2f, 0x00, 0xae, 0x00, 0x58, 0x3c, 0xf7, 0xe6, 0x00, 0xbe, 0x6c};
+    const uint8_t f2[] = {0x2f, 0x00, 0xb0, 0x00, 0x5a, 0x16, 0xfb, 0xe7, 0x00, 0x25, 0x71};
+    CpsCrankData a = decodeCrankData(f1, sizeof(f1));
+    CpsCrankData b = decodeCrankData(f2, sizeof(f2));
+    float rpm = cadenceRpmFromCrank(a.cumulativeRevs, a.lastEventTime, b.cumulativeRevs,
+                                    b.lastEventTime);
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, 54.5f, rpm);
+}
+
 // --- ProxyCore relay (the loopback, in firmware) ------------------------------
 
 void test_proxy_relays_power() {
@@ -458,6 +498,10 @@ int runUnityTests() {
     RUN_TEST(test_cps_cadence_frame);
     RUN_TEST(test_crank_cadence_roundtrips_rpm);
     RUN_TEST(test_crank_cadence_coasting_no_events);
+    RUN_TEST(test_stages_frame_golden_encode);
+    RUN_TEST(test_stages_frame_flags_and_power);
+    RUN_TEST(test_decode_crank_data_behind_preceding_fields);
+    RUN_TEST(test_cadence_from_two_real_stages_frames);
     RUN_TEST(test_proxy_relays_power);
     RUN_TEST(test_proxy_applies_correction);
     RUN_TEST(test_proxy_preserves_cadence);

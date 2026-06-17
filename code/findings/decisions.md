@@ -924,3 +924,42 @@ yet); CPS power+cadence both-ways is the committed deliverable. Also noted: stal
 retained (not zeroed) on disconnect — `source:searching` is the authoritative "no live meter"
 signal; zeroing is cosmetic polish. Two same-named "Stages 62144" advertisers on the bench mean
 `crank_reader` should target board A by address (`--address`), not name.
+
+## 2026-06-17 — Session G Part B: real Stages crank BLE spec captured + firmware made byte-faithful
+
+On the bike: the SB20 **paired to our spoofed ESP32 crank over BLE but displayed NO power**. Root
+cause = our spoof was too minimal (a flags-`0x20`, power+crank-rev frame). Captured the REAL crank's
+full BLE surface to replicate exactly — `findings/captures/G-crankL-ble-recon-20260617.jsonl` (BLE
+recon worked once we targeted by address; the desk PowerShell *background* wrapper was broken, but
+foreground/Bash + `--address` is reliable). The spec the spoof must match:
+
+- **Device:** name `Stages 62144`, addr `E8:CF:D8:D9:3A:20`. DIS: manufacturer **"Stages Cycling"**,
+  model **"SPM2"**, serial **"11821518"**, FW **"1.8.2"**, + System ID. Battery 12%.
+- **CPS Measurement (0x2A63, notify) — flags `0x002F`, 11 bytes**, golden frame
+  `2f 00 ae 00 58 3c f7 e6 00 be 6c`:
+  `flags(2) | inst power sint16 | pedal balance uint8 (1/2 %) | accumulated torque uint16 (1/32 N·m)
+  | cumulative crank revs uint16 | last crank event time uint16 (1/1024 s)`. Decodes to 174 W,
+  balance 44% (ref left), torque 63292, revs 230, evt 27838. Two frames → ~54.5 rpm (low-cadence,
+  high-torque effort) — internally consistent, which validates the field decode.
+- **CP Feature (0x2A65):** `0x0008030B`. **Sensor Location (0x2A5D):** `0x00` ("other", *not* 5/left).
+- **Services:** CPS (1818), Battery (180f), DIS (180a), GAP/GATT, **Stages proprietary
+  `d445fe01-d139-9a5d-6707-1cc6a58b6303`** (chars `…fe02` notify+write, `…fe03` notify — advertised in
+  the scan response), and **Nordic Buttonless DFU `fe59`**. The proprietary service is the likely
+  "is this a genuine Stages?" check — strong suspect (with the frame shape) for the no-power result.
+- **Control point (0x2A66):** `request-crank-length` (0x05) → 165 mm; `request-sensor-locations`
+  (0x03) → `op_code_not_supported`. (Zero-reset not re-run — we have the ANT+ offset 903 from C-0.)
+
+**Firmware made byte-faithful (branch `ble-crank-fidelity`):**
+- `encodeStagesCpsMeasurement` → the exact `0x2F` frame; **4 golden-vector host tests built from the
+  captured bytes** prove byte-identity (suite 45 → **49/49**). Real-data-first: the fixtures ARE the
+  capture, not invented.
+- Generic `decodeCrankData`/`crankRevDataOffset` → finds crank-rev behind any preceding optional
+  fields, so `BleMeterClient` now reads the **Assioma's cadence** too (it sends balance first, which
+  the old fixed-offset path skipped → the `src_cadence:-1` we saw).
+- `BleCrankPeripheral`: CP Feature `0x0008030B`, Sensor Location `0`, DIS model `SPM2` + FW `1.8.2`,
+  **the `d445fe01` proprietary service advertised + exposed**, and emits the `0x2F` frame (balance
+  synthesized 50%, accumulated torque advanced per completed rev = P·60/(2π·rpm)·32).
+- **Deferred/uncertain:** the `…fe02/03` payloads are opaque (created empty — presence is the bet;
+  logging what the SB20 writes to them is the next capture). Balance is synthesized (single source has
+  no L/R split). Compile-green (`esp32c3-supermini` 37%); OTA-flashing `esp32c3-oled-live` + a desk
+  GATT re-capture confirm the identity surface — **SB20 power-acceptance is the next bike test.**
