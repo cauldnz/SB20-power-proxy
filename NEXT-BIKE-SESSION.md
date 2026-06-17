@@ -1,7 +1,11 @@
 # 🚴 Next Bike Session — open-item closure + Phase 1B pairing test
 
+> 🟢 **Readiness + device coordinates: [`BIKE-SESSION-READY.md`](BIKE-SESSION-READY.md)** — read it
+> first (the ESP32 is **already flashed** with current firmware and on WiFi at `sb20proxy.local`;
+> tooling smoke-tested 2026-06-17). This page is the step-by-step run sheet.
+
 > One trip to the bike clears every remaining on-bike open item.
-> **Plan to do 1, 2, 5, 6, 7 — and 9 if the ESP32 is flashed.** The gates are **5** (erg-on-BLE
+> **Plan to do 1, 2, 5, 6, 7 — and 9 (the ESP32 is flashed & verified).** The gates are **5** (erg-on-BLE
 > go/no-go) and **7** (Phase 1B spoof-pairing proof — Phase 1A desk build is done). **9** (ESP32 BLE
 > proxy → SB20) is **the product test**: exploratory, run it *after* 5. **6** (BLE recon) is a
 > do-regardless capture. **3** is optional/high-value; **4** is a known dead end (skip — see below).
@@ -38,7 +42,7 @@ you depend on any tool mid-session:
 ```bash
 cd code && source .venv/bin/activate
 pip install -e ".[dev,analysis,ble]"   # [ble] (bleak) is REQUIRED for step 6's BLE capture
-pytest -q                              # expect: 75 passed, 1 skipped
+pytest -q                              # expect: 121 passed, 1 skipped
 # keystone desk tool — software loopback proves the replay path end-to-end (no hardware):
 python scripts/03_static_replay.py --radio loopback --duration 3 \
   --input findings/captures/A-stagesL-steady-20260614-165737.jsonl
