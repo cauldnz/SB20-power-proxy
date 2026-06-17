@@ -24,7 +24,7 @@ public:
     bool connected() const { return connected_; }
 
     // called from NimBLE callbacks
-    void onFound(const char* addr, uint8_t addrType);
+    void onFound(const char* addr, uint8_t addrType, const char* name);
     void onMeasurement(const uint8_t* data, size_t len);  // decode power (+ cadence) and emit
     void onDisconnected();  // link dropped: clear state and rescan from loop()
 
@@ -35,6 +35,8 @@ private:
     bool connected_ = false;
     bool wantRescan_ = false;
     char addr_[24] = {0};
+    char name_[32] = {0};         // matched meter's advertised name (for /log field observation)
+    bool loggedFrame_ = false;    // log the raw CPS frame once per connection (learn the format)
     uint8_t addrType_ = 0;
     // Crank-revolution state, to recover the meter's cadence the way a head unit does.
     bool havePrevCrank_ = false;

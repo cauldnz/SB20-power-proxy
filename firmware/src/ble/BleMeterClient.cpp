@@ -8,6 +8,8 @@
 
 #include "Config.h"
 #include "Cps.h"
+#include "LogBuffer.h"     // toHex
+#include "net/DebugLog.h"  // logf -> /log (learn each meter's frame format by observation)
 
 using namespace sb20proxy;
 
@@ -47,20 +49,35 @@ class MeterScanCallbacks : public NimBLEScanCallbacks {
         }
         if (match) {
             NimBLEDevice::getScan()->stop();
-            g_meter->onFound(d->getAddress().toString().c_str(), d->getAddress().getType());
+            g_meter->onFound(d->getAddress().toString().c_str(), d->getAddress().getType(),
+                             name.c_str());
         }
     }
 };
 static MeterScanCallbacks g_scanCb;
 
-void BleMeterClient::onFound(const char* addr, uint8_t addrType) {
+void BleMeterClient::onFound(const char* addr, uint8_t addrType, const char* name) {
     strncpy(addr_, addr, sizeof(addr_) - 1);
+    strncpy(name_, name ? name : "", sizeof(name_) - 1);
     addrType_ = addrType;
-    haveTarget_ = true;  // connect from loop(), off the scan-callback context
+    haveTarget_ = true;     // connect from loop(), off the scan-callback context
+    loggedFrame_ = false;   // log this meter's first frame once connected
+    logf("[meter] found '%s' %s", name_, addr_);
 }
 
 void BleMeterClient::onMeasurement(const uint8_t* data, size_t len) {
     if (!cb_) return;
+
+    // Log the raw frame once per connection: this is how a field unit teaches us each meter's
+    // CPS format (Garmin/Wahoo/Assioma) — and it directly answers whether this meter carries
+    // cadence (the crank-rev flag) so the rebroadcast/OLED cadence is real, not assumed.
+    if (!loggedFrame_) {
+        loggedFrame_ = true;
+        const uint16_t flags = decodeCpsFlags(data, len);
+        logf("[meter] cps flags=0x%04x cadence=%s %s", flags,
+             (flags & CPM_CRANK_REV_DATA_PRESENT) ? "yes" : "no", toHex(data, len).c_str());
+    }
+
     PowerReading r;
     r.power_w = decodeCpsPower(data, len);  // sint16 at bytes 2-3, regardless of flags
     r.t_ms = millis();
@@ -87,8 +104,10 @@ void BleMeterClient::onDisconnected() {
     connected_ = false;
     haveTarget_ = false;
     havePrevCrank_ = false;  // don't carry crank deltas across a reconnect
+    loggedFrame_ = false;    // re-log the frame format on the next connection
     lastReadingMs_ = 0;
     wantRescan_ = true;  // restart the scan from loop() (off the callback context)
+    logf("[meter] disconnected");
 }
 
 void BleMeterClient::begin() {
