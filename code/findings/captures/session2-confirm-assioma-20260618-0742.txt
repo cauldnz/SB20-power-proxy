@@ -1,0 +1,7 @@
+[wifi] joining 'Donnie Boon'
+[meter] found 'ASSIOMA17039L' e6:20:90:8c:f3:fe
+[wifi] connected; status at http://192.168.1.165/
+[meter] cps flags=0x0023 cadence=yes 230000006475027eac
+[srv] connect from e4:aa:5a:d6:0e:d4
+[prop fe02] write bfda1853
+

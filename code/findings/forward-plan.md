@@ -390,6 +390,20 @@ From `phase-0-report.md` §5 — track, don't block on:
   for BLE notifications / a control- or HID-like characteristic that changes on a press. If a press
   emits a packet → decode it (a new capture-driven protocol doc) and expose/relay it. Button
   hardware context: PedalSmart.blog's shifter-button repair material (`06-prior-art-and-references.md`).
+- **Single surviving right-crank proxy** — promising use case (owner idea 2026-06-18, seen working
+  by accident in bike-session 2). On the SB20 the LEFT crank is the master; if it fails the rider
+  loses power entirely. The proxy can read the surviving RIGHT crank (`Stages 4963`,
+  `e3:25:39:38:92:71`) and rebroadcast it as the spoofed master (`Stages 62144`), restoring full
+  function on a single crank — tidier + more full-featured than the mechanical / re-pairing
+  workarounds (cf. PedalSmart.blog's single-failed-crank post). Depends on the meter-source pinning
+  item below; document as a first-class use case in `01-project-brief.md`. Single-sided caveat: a
+  right-only crank usually doubles right-leg power to estimate total.
+- **Meter-source pinning (choose which meter to READ)** — `BleMeterClient` matches too broadly:
+  with several meters in range it bounced between `ASSIOMA17039L` (`e6:20:90:8c:f3:fe`),
+  `ASSIOMA22428R` (`cc:d2:a0:d6:5c:9d`), and `Stages 4963` (`e3:25:39:38:92:71`) in bike-session 2,
+  so the relayed source was non-deterministic. Pin the source by address (or configured name) so the
+  relay is deterministic and the single-right-crank use case can target `4963` on purpose. (Distinct
+  from the spoof-side `--address` item above, which is about which crank we *impersonate*.)
 
 ---
 

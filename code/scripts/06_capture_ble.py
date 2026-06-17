@@ -252,13 +252,15 @@ class BleCaptureRunner:
 
     def __init__(self, *, output_path: Path, name_filter: str,
                  address: str | None, adv_only: bool, scan_time: float,
-                 control_point_ops: list[str] | None = None):
+                 control_point_ops: list[str] | None = None,
+                 subscribe_all: bool = False):
         self.output_path = output_path
         self.name_filter = name_filter.lower()
         self.address = address
         self.adv_only = adv_only
         self.scan_time = scan_time
         self.control_point_ops = control_point_ops or []
+        self.subscribe_all = subscribe_all
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
         self._fp = open(self.output_path, "w", buffering=1, encoding="utf-8")
         self._t0 = time.monotonic()
@@ -422,8 +424,10 @@ class BleCaptureRunner:
                       data={"value": data[0] if data else None,
                             "raw_hex": bytes(data).hex()})
 
+        subscribed: set[str] = set()
         try:
             await client.start_notify(CHR_CP_MEASUREMENT, on_cp)
+            subscribed.add(CHR_CP_MEASUREMENT.lower())
             self._log("ble_notify_subscribed", char="cycling_power_measurement")
         except Exception as e:
             self._log("ble_error", phase="subscribe_cp", error=str(e))
@@ -431,9 +435,56 @@ class BleCaptureRunner:
                                 (CHR_BATTERY_LEVEL, on_batt, "battery_level")):
             try:
                 await client.start_notify(uuid, cb)
+                subscribed.add(uuid.lower())
                 self._log("ble_notify_subscribed", char=label)
             except Exception:
                 pass  # optional characteristics
+        if self.subscribe_all:
+            await self._subscribe_all_other(client, subscribed)
+
+    async def _subscribe_all_other(self, client: BleakClient,
+                                   subscribed: set[str]) -> None:
+        """Subscribe to EVERY other notify/indicate characteristic.
+
+        For exploratory probes (e.g. "does pressing the SB20 shifter buttons emit
+        a BLE packet?") we can't know in advance which characteristic carries the
+        signal — it may be vendor-specific or on FTMS, not the power/CSC chars the
+        standard path hooks. So walk the GATT table and subscribe to every
+        notifiable/indicatable characteristic with a generic logger that prints
+        live (so the operator sees a press register) and records raw bytes.
+        """
+        for svc in client.services:
+            for ch in svc.characteristics:
+                props = set(ch.properties)
+                if not ({"notify", "indicate"} & props):
+                    continue
+                if ch.uuid.lower() in subscribed:
+                    continue
+
+                def make_cb(svc_uuid: str, char_uuid: str, desc: str):
+                    def on_any(_char, data: bytearray) -> None:
+                        self._notif_count += 1
+                        raw = bytes(data)
+                        self._log("ble_notification", char=desc or "unknown",
+                                  char_uuid=char_uuid, service_uuid=svc_uuid,
+                                  data={"raw_hex": raw.hex(),
+                                        "ascii": raw.decode("latin-1",
+                                                            errors="replace")})
+                        print(f"  [notify] {desc or char_uuid}: {raw.hex()}")
+                    return on_any
+
+                try:
+                    await client.start_notify(
+                        ch.uuid, make_cb(svc.uuid, ch.uuid, ch.description))
+                    subscribed.add(ch.uuid.lower())
+                    self._log("ble_notify_subscribed", char=ch.description,
+                              char_uuid=ch.uuid, service_uuid=svc.uuid,
+                              via="subscribe_all")
+                    print(f"  subscribed: {ch.description or ch.uuid} "
+                          f"({','.join(sorted(props))})")
+                except Exception as e:
+                    self._log("ble_error", phase="subscribe_all",
+                              char_uuid=ch.uuid, error=str(e))
 
     async def _control_point(self, client: BleakClient) -> None:
         """Guarded Cycling Power Control Point recon (Session G Part A).
@@ -528,6 +579,10 @@ def main() -> int:
                         "Use this for a first survey of what's on the air.")
     p.add_argument("--scan-time", type=float, default=15.0,
                    help="Seconds to scan before connecting (default 15)")
+    p.add_argument("--subscribe-all", action="store_true",
+                   help="Subscribe to EVERY notify/indicate characteristic, not just "
+                        "power/CSC/battery. Use for exploratory probes — e.g. do the "
+                        "SB20 shifter buttons emit BLE packets?")
     p.add_argument("--control-point", default=None,
                    help="Comma-separated Cycling Power Control Point ops to run once "
                         "after connecting (Session G Part A). Read-only requests are "
@@ -553,7 +608,8 @@ def main() -> int:
         print(f"control-point ops queued (Session G Part A): {cp_ops}")
     runner = BleCaptureRunner(output_path=args.output, name_filter=args.name,
                               address=args.address, adv_only=args.adv_only,
-                              scan_time=args.scan_time, control_point_ops=cp_ops)
+                              scan_time=args.scan_time, control_point_ops=cp_ops,
+                              subscribe_all=args.subscribe_all)
     try:
         asyncio.run(runner.run(args.duration))
     except KeyboardInterrupt:
