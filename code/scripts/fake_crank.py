@@ -66,8 +66,8 @@ async def run(seconds: int) -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Faithful Stages crank on the PC (WinRT) + write capture")
-    ap.add_argument("--seconds", type=int, default=600, help="how long to advertise + emit (default 600)")
+    ap = argparse.ArgumentParser(description="Faithful Stages crank on the PC (WinRT)")
+    ap.add_argument("--seconds", type=int, default=600, help="advertise + emit for this long")
     asyncio.run(run(ap.parse_args().seconds))
 
 
