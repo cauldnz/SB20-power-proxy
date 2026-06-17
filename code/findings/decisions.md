@@ -963,3 +963,35 @@ foreground/Bash + `--address` is reliable). The spec the spoof must match:
   logging what the SB20 writes to them is the next capture). Balance is synthesized (single source has
   no L/R split). Compile-green (`esp32c3-supermini` 37%); OTA-flashing `esp32c3-oled-live` + a desk
   GATT re-capture confirm the identity surface — **SB20 power-acceptance is the next bike test.**
+
+## 2026-06-18 — Overnight: observability + fast-iterate instruments (autonomous, PR #5)
+
+Built the instruments to make bike-session 2 maximally productive and to support shipping beta
+units. The principle: the SB20's INTERACTIVE protocol (control-point/zero-reset, reconnect/bonding,
+proprietary `fe02`) can't be sniffed — but our spoofed crank is the one thing that sees it, so it
+logs it. All on branch `ble-crank-fidelity` (PR #5).
+
+1. **ESP write-logging.** `logf` ungated from `USE_WIFI` (always compiled; only the `/log` endpoint
+   is WiFi-gated); ring 60→120. `BleCrankPeripheral` logs every control-point write (raw+opcode),
+   every proprietary `fe02` write, and connect/disconnect (reason) → `/log`. `BleMeterClient` logs
+   each connected meter's name + its raw CPS frame ONCE per connection (flags + `cadence=yes/no` +
+   hex) → a field unit teaches us each meter (Garmin/Wahoo/Assioma) and confirms whether it carries
+   cadence. `toHex` host-tested.
+2. **OLED cadence.** The 0.42″ panel shows only 3 rows, so a 4th (cadence) fell off; power + cadence
+   now SHARE row 3 (`"230W 85rpm"`) so the rebroadcast cadence is visible. Tests updated.
+3. **PC fast-iterate rig.** `WinrtCpsPeripheral` gained a control-point char that captures every
+   write (`.writes` + `on_write`); `scripts/fake_crank.py` stands up a faithful crank (0x2F frame
+   golden-matched to the capture) and decodes writes. **WinRT verdict (confirmed):**
+   `GattServiceProviderAdvertisingParameters` has **no name field** → it advertises under the PC's
+   system BT name, not `Stages 62144`; the SB20 pairs by name, so the PC rig isn't seen as the crank
+   unless the PC's BT name is renamed; also one-service-per-provider (no proprietary `d445fe01`). So
+   **the ESP `/log` is the reliable handshake-capture path**; the PC rig is the fast-iterate option
+   gated on the rename (`scripts/PC-CRANK.md`). A future ESP speedup: runtime-configurable
+   control-point responses (HTTP) to avoid reflashing per response experiment.
+4. **Beta log parser.** `logparse.parse_log()` turns a unit's `/log` dump into a meter frame spec +
+   the decoded consumer handshake + connect/disconnect events; host-tested (5 cases) against the real
+   firmware line formats. Run-sheet for session 2: `BIKE-SESSION-2.md`.
+
+Host suite 50/50; ESP builds clean + flashed; new Python ruff-clean + pytest green. **Still
+unverified (needs the bike): does the SB20 read the faithful frame, what it writes to the control
+point/`fe02`, and reconnect/bonding behaviour.**
