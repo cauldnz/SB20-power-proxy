@@ -9,6 +9,7 @@
 #include "Config.h"
 #include "Cps.h"
 #include "LogBuffer.h"     // toHex
+#include "MeterMatch.h"    // pure, host-tested meter-selection (which device to read)
 #include "net/DebugLog.h"  // logf -> /log (learn each meter's frame format by observation)
 
 using namespace sb20proxy;
@@ -36,22 +37,19 @@ static MeterClientCallbacks g_clientCb;
 class MeterScanCallbacks : public NimBLEScanCallbacks {
     void onResult(const NimBLEAdvertisedDevice* d) override {
         if (!g_meter) return;
-        std::string name = d->getName();
-        // Never read FROM a copy of the crank we impersonate — another proxy, a sibling test
-        // board, or the real Stages crank we're replacing all advertise SPOOF_NAME + CPS, and
-        // latching onto one would form a loop. The meter we want is the Assioma, not a "Stages".
-        if (name == Config::SPOOF_NAME) return;
-        // CPS service UUID first (a Windows winrt/bless peripheral advertises the UUID but no
-        // name); fall back to the name substring (a real Assioma advertises both).
-        bool match = d->isAdvertisingService(NimBLEUUID(UUID_CPS));
-        if (!match) {
-            match = !name.empty() && name.find(Config::METER_NAME_FILTER) != std::string::npos;
+        const std::string name = d->getName();
+        const std::string addr = d->getAddress().toString();
+        const bool cps = d->isAdvertisingService(NimBLEUUID(UUID_CPS));
+        // isTargetMeter (pure, host-tested) picks the source: a PINNED address wins; else a nameless
+        // WinRT rig matches by CPS UUID and a NAMED device must contain METER_NAME_FILTER — so a real
+        // "Stages NNNN" crank (also CPS-advertising) is NOT grabbed (the source-bouncing bug from
+        // bike-session 2), and we never read a copy of our own spoof (which would form a loop).
+        if (!isTargetMeter(name, cps, addr, Config::METER_ADDRESS, Config::SPOOF_NAME,
+                           Config::METER_NAME_FILTER)) {
+            return;
         }
-        if (match) {
-            NimBLEDevice::getScan()->stop();
-            g_meter->onFound(d->getAddress().toString().c_str(), d->getAddress().getType(),
-                             name.c_str());
-        }
+        NimBLEDevice::getScan()->stop();
+        g_meter->onFound(addr.c_str(), d->getAddress().getType(), name.c_str());
     }
 };
 static MeterScanCallbacks g_scanCb;

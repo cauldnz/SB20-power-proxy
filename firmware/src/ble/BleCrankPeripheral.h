@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 
+#include "Config.h"  // SPOOF_CRANK_LENGTH_HALFMM default
 #include "Cps.h"  // pure (no NimBLE): CrankCadence + the measurement codec
 #include "ICrankOutput.h"
 
@@ -23,6 +24,7 @@ private:
     uint16_t accumTorque_ = 0;    // accumulated torque (1/32 Nm), advanced per completed rev
     uint32_t lastT_ = 0;          // previous reading's t_ms, for the cadence dt
     bool haveLastT_ = false;
+    uint16_t crankLengthHalfMm_ = Config::SPOOF_CRANK_LENGTH_HALFMM;  // CP 0x04 set / 0x05 read
 };
 
 }  // namespace sb20proxy

@@ -12,25 +12,30 @@
 
 using namespace sb20proxy;
 
-// Cycling Power Control Point: answer a Start Offset Compensation (zero-reset) with
-// success + the captured offset — the BLE analogue of the ANT+ 0x01 0xAC reply. Every write
-// is logged raw first: this is how we capture the SB20's calibration/erg handshake (which we
-// can't sniff any other way — our spoofed crank is the only thing that sees these writes).
+// Cycling Power Control Point: answer EVERY write with an indication — the SB20 TERMINATES the link
+// if a procedure goes unanswered (bike-session 2: disconnect reason=531). handleControlPoint (pure,
+// host-tested) builds the reply: success+offset for the zero-reset (0x0C *or* the 0x10 the Stages app
+// actually sends), set/return crank length (0x04/0x05), "not supported" for the rest. Every write is
+// logged raw first — that's how we capture the SB20's calibration handshake (un-sniffable otherwise).
 class ControlPointCallbacks : public NimBLECharacteristicCallbacks {
+ public:
+    explicit ControlPointCallbacks(uint16_t* crankLenHalfMm) : crankLen_(crankLenHalfMm) {}
     void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& /*info*/) override {
         NimBLEAttValue v = c->getValue();
         if (v.size() == 0) return;
         logf("[cp] write %s", toHex(v.data(), v.size()).c_str());
-        uint8_t op = v[0];
-        std::vector<uint8_t> resp;
-        if (op == CP_OP_START_OFFSET_COMP) {
-            resp = encodeCalibrationResponse(Config::SPOOF_CAL_OFFSET);
-        } else {
-            resp = {CP_OP_RESPONSE, op, CP_RESPONSE_NOT_SUPPORTED};
+        CpResult r = handleControlPoint(v.data(), v.size(), *crankLen_,
+                                        (int16_t)Config::SPOOF_CAL_OFFSET);
+        if (r.crankLengthChanged) {
+            *crankLen_ = r.crankLengthHalfMm;
+            logf("[cp] crank length set = %u (1/2 mm)", (unsigned)*crankLen_);
         }
-        c->setValue(resp.data(), resp.size());
+        c->setValue(r.response.data(), r.response.size());
         c->indicate();
     }
+
+ private:
+    uint16_t* crankLen_;
 };
 
 // The Stages proprietary control char (fe02) — opaque protocol. We don't yet know what the SB20
@@ -56,6 +61,9 @@ class CrankServerCallbacks : public NimBLEServerCallbacks {
 void BleCrankPeripheral::begin() {
     NimBLEServer* server = NimBLEDevice::createServer();
     server->setCallbacks(new CrankServerCallbacks());
+    // Re-advertise after a disconnect so the SB20 reconnects without an ESP reboot (the NimBLE
+    // default is m_advertiseOnDisconnect=false, which left the SB20 stuck "searching" in session 2).
+    server->advertiseOnDisconnect(true);
 
     // --- Cycling Power Service ---
     NimBLEService* cps = server->createService(UUID_CPS);
@@ -71,7 +79,7 @@ void BleCrankPeripheral::begin() {
 
     NimBLECharacteristic* cp = cps->createCharacteristic(
         UUID_CP_CONTROL, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::INDICATE);
-    cp->setCallbacks(new ControlPointCallbacks());
+    cp->setCallbacks(new ControlPointCallbacks(&crankLengthHalfMm_));
     cps->start();
 
     // --- Device Information Service (present as the real Stages SPM2) ---

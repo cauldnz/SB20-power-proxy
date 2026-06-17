@@ -23,6 +23,10 @@ constexpr uint8_t CP_OP_START_OFFSET_COMP = 0x0C;
 constexpr uint8_t CP_OP_RESPONSE          = 0x20;
 constexpr uint8_t CP_RESPONSE_SUCCESS     = 0x01;
 constexpr uint8_t CP_RESPONSE_NOT_SUPPORTED = 0x02;
+constexpr uint8_t CP_RESPONSE_INVALID_PARAM = 0x03;
+constexpr uint8_t CP_OP_SET_CRANK_LENGTH     = 0x04;  // + uint16 LE crank length (1/2 mm)
+constexpr uint8_t CP_OP_REQUEST_CRANK_LENGTH = 0x05;
+constexpr uint8_t CP_OP_ENHANCED_OFFSET_COMP = 0x10;  // the op the SB20/Stages app sends for zero-reset
 
 // CPS Measurement flags (uint16). We set only Crank Revolution Data for now; the full
 // Stages set (0x2F: pedal balance + accumulated torque + crank rev) is gated on Session G.
@@ -156,12 +160,83 @@ inline float cadenceRpmFromCrank(uint16_t revs0, uint16_t t0, uint16_t revs1, ui
     return (float)dRevs * 60.0f * 1024.0f / (float)dT;
 }
 
-// The control-point reply to a Start Offset Compensation (zero-reset): success + offset.
-inline std::vector<uint8_t> encodeCalibrationResponse(int16_t offset) {
+// Offset-compensation reply for opcode `reqOp` (0x0C Start *or* 0x10 Enhanced): success + offset
+// (sint16 LE). The SB20 / Stages app sends 0x10; the real crank's exact Enhanced payload is
+// unconfirmed (we never had it reply to a 0x10), but this success+offset shape is a valid CP
+// indication, stops the SB20 terminating the link, and reads as a successful calibration. Verify
+// the precise bytes on the bike (BIKE-SESSION-3 §A).
+inline std::vector<uint8_t> encodeOffsetCompResponse(uint8_t reqOp, int16_t offset) {
     return {
-        CP_OP_RESPONSE, CP_OP_START_OFFSET_COMP, CP_RESPONSE_SUCCESS,
+        CP_OP_RESPONSE, reqOp, CP_RESPONSE_SUCCESS,
         (uint8_t)(offset & 0xFF), (uint8_t)((offset >> 8) & 0xFF),
     };
+}
+
+// Back-compat alias: the Start Offset Compensation (0x0C) reply.
+inline std::vector<uint8_t> encodeCalibrationResponse(int16_t offset) {
+    return encodeOffsetCompResponse(CP_OP_START_OFFSET_COMP, offset);
+}
+
+// Set Crank Length (0x04) ack: success, no value.
+inline std::vector<uint8_t> encodeSetCrankLengthResponse() {
+    return {CP_OP_RESPONSE, CP_OP_SET_CRANK_LENGTH, CP_RESPONSE_SUCCESS};
+}
+
+// Request Crank Length (0x05) reply — MIRRORS the real Stages SPM2 crank, which OMITS the success
+// byte: `20 05 <len:uint16 LE>` (captured `20 05 59 01` = 0x0159 = 345 half-mm = 172.5 mm), unlike
+// the standard `20 05 01 <len>` (e.g. Assioma). len is in 1/2 mm.
+inline std::vector<uint8_t> encodeRequestCrankLengthResponse(uint16_t halfMm) {
+    return {
+        CP_OP_RESPONSE, CP_OP_REQUEST_CRANK_LENGTH,
+        (uint8_t)(halfMm & 0xFF), (uint8_t)((halfMm >> 8) & 0xFF),
+    };
+}
+
+// Generic "op code not supported" reply.
+inline std::vector<uint8_t> encodeNotSupportedResponse(uint8_t reqOp) {
+    return {CP_OP_RESPONSE, reqOp, CP_RESPONSE_NOT_SUPPORTED};
+}
+
+// Pure dispatch for a Cycling Power Control Point write — the host-testable heart of the crank's
+// calibration/config handshake. The SB20 TERMINATES the link if a CP procedure goes unanswered
+// (bike-session 2: `disconnect reason=531`), so EVERY write gets an indication back. Returns the
+// bytes to indicate (never empty) and the (possibly updated) crank length to store.
+struct CpResult {
+    std::vector<uint8_t> response;
+    uint16_t crankLengthHalfMm;       // updated state to store back
+    bool crankLengthChanged = false;
+};
+inline CpResult handleControlPoint(const uint8_t* req, size_t len,
+                                   uint16_t curCrankLenHalfMm, int16_t calOffset) {
+    CpResult out;
+    out.crankLengthHalfMm = curCrankLenHalfMm;
+    if (req == nullptr || len == 0) {                 // malformed
+        out.response = encodeNotSupportedResponse(0x00);
+        return out;
+    }
+    const uint8_t op = req[0];
+    switch (op) {
+        case CP_OP_START_OFFSET_COMP:                 // 0x0C
+        case CP_OP_ENHANCED_OFFSET_COMP:              // 0x10 (what the Stages app sends)
+            out.response = encodeOffsetCompResponse(op, calOffset);
+            break;
+        case CP_OP_SET_CRANK_LENGTH:                  // 0x04 + uint16 LE (1/2 mm)
+            if (len >= 3) {
+                out.crankLengthHalfMm = (uint16_t)(req[1] | (req[2] << 8));
+                out.crankLengthChanged = true;
+                out.response = encodeSetCrankLengthResponse();
+            } else {
+                out.response = {CP_OP_RESPONSE, CP_OP_SET_CRANK_LENGTH, CP_RESPONSE_INVALID_PARAM};
+            }
+            break;
+        case CP_OP_REQUEST_CRANK_LENGTH:              // 0x05
+            out.response = encodeRequestCrankLengthResponse(out.crankLengthHalfMm);
+            break;
+        default:
+            out.response = encodeNotSupportedResponse(op);
+            break;
+    }
+    return out;
 }
 
 // Advancing crank-revolution state for the CPS Crank Revolution Data fields (cadence). A
