@@ -46,3 +46,19 @@ the one thing no sniffer can see. Two goals tonight, in order:
   Bluetooth — see `code/scripts/PC-CRANK.md`).
 - **Nothing in `/log` beyond connect** → the SB20 reads passively; the gap is elsewhere (frame/feature)
   and we compare the captured real-crank GATT again.
+
+## Bonus (only if there's time) — shifter-button BLE probe
+
+A 2-minute data-grab for a future idea: does the SB20 emit BLE packets when you press the **shifter
+buttons**? Connect to the **SB20 itself** (not the crank) and capture while pressing:
+
+```powershell
+code\.venv-win\Scripts\python.exe code\scripts\06_capture_ble.py `
+  --address E4:AA:5A:D6:0E:D4 --duration 120 `
+  --output code\findings\captures\SHIFTER-probe-$(Get-Date -Format yyyyMMdd-HHmm).jsonl
+```
+(`E4:AA:5A:D6:0E:D4` = `Stages Bike 0105` from the 2026-06-17 scan; services FTMS `0x1826` + CSC
+`0x1816`.) Once it connects + is logging, **press each shifter button a few times** (left up/down,
+right up/down), pausing between, and narrate which you pressed. We're looking for a notification or
+a characteristic that changes on a press. Send me the JSONL — if presses show up, that's a thread to
+pull (see `code/findings/forward-plan.md` §8). No worries if nothing appears; it's exploratory.

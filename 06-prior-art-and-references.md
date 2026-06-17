@@ -145,6 +145,16 @@ These are official Stages docs; they explain what we're working with. Cite them 
 - L power meter replacement: https://support.stagescycling.com/support/solutions/articles/11000131003-left-power-meter-replacement
 - R power meter replacement: https://support.stagescycling.com/support/solutions/articles/11000131050-right-power-meter-replacement
 
+### PedalSmart.blog (community / DIY — the best SB20-specific hardware resource we've found)
+- https://www.pedalsmart.blog/
+- A DIY maintenance & repair blog by "Craig", focused specifically on the **Stages SB20**: drive
+  belt tension/alignment, flywheel bearings, bottom bracket, crank smoothness, **shifter buttons**,
+  and power-meter / wireless-connectivity (Zwift + Stages app) troubleshooting — with video guides.
+- No protocol / reverse-engineering content (mechanical + standard troubleshooting only), but it's
+  invaluable for understanding the SB20's internals if we ever open one up, and the **shifter-button
+  repair** material is directly relevant to the future "read the SB20 shifters over BLE"
+  investigation (see `code/findings/forward-plan.md` → backlog).
+
 ## Favero Assioma documentation
 
 - Favero FAQ: https://cycling.favero.com/faq/
