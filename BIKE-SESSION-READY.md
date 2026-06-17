@@ -14,8 +14,11 @@ desk before this was written. The run sheet to work through is
 
 ## What's already done (verified on the desk, 2026-06-17)
 
-- **Repo is current & clean.** `main` == the work branch == `030055e`, pushed. Pull it on the bike
-  machine. Today's ESP32 dual-role BLE proxy is merged in.
+- **Repo:** all of today's work (including this doc) is on branch
+  **`claude/esp32-bike-powermeter-urnc0c`**. On the bike machine:
+  `git checkout claude/esp32-bike-powermeter-urnc0c && git pull`. *(`main` is at `030055e` — it has
+  all the firmware/harness code, but not these two readiness docs, which are one commit ahead on the
+  branch.)*
 - **Tooling smoke-tested (hardware-free):** `pytest` **121 passed, 1 skipped**; `ruff check src
   tests` clean; **openant 1.3.4** imports; the **ANT+ static-replay loopback PASSES**
   (`03_static_replay.py --radio loopback` → "twin saw spoofed Stages power"); the BLE harness
