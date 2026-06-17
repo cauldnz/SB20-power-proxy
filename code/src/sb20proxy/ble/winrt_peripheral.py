@@ -15,10 +15,11 @@ pull in WinRT.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 import winrt.windows.devices.bluetooth.genericattributeprofile as gatt
-from winrt.windows.storage.streams import DataWriter
+from winrt.windows.storage.streams import DataReader, DataWriter
 
 
 def _uuid16(short: int) -> uuid.UUID:
@@ -30,6 +31,7 @@ CPS = _uuid16(0x1818)
 CP_MEASUREMENT = _uuid16(0x2A63)      # notify
 CP_FEATURE = _uuid16(0x2A65)          # read
 CP_SENSOR_LOCATION = _uuid16(0x2A5D)  # read
+CP_CONTROL_POINT = _uuid16(0x2A66)    # write + indicate (the SB20's handshake lands here)
 
 
 def _buffer(data: bytes):
@@ -44,16 +46,22 @@ class WinrtCpsPeripheral:
     ``await notify(frame)``, and ``stop()`` to stop advertising. Sized for the bench: no
     pairing/bonding (a real Assioma streams power un-bonded, and so do we)."""
 
-    def __init__(self, *, feature_bits: int = 0x08, sensor_location: int = 5) -> None:
-        # feature_bits 0x08 = Crank Revolution Data Supported (we send cadence);
-        # sensor_location 5 = left crank.
+    def __init__(self, *, feature_bits: int = 0x08, sensor_location: int = 5, on_write=None):
+        # feature_bits 0x08 = Crank Revolution Data Supported. For a FAITHFUL Stages crank pass
+        # feature_bits=0x0008030B and sensor_location=0 (the captured values). on_write(bytes) is
+        # an optional per-write callback — how we capture the SB20's handshake (also in .writes).
         self._feature_bits = feature_bits
         self._sensor_location = sensor_location
+        self._on_write = on_write
         self._provider = None
         self._meas = None
+        self._cp = None
+        self._loop = None
         self.subscriber_count = 0
+        self.writes: list[bytes] = []  # every control-point write a central sent us
 
     async def start(self) -> None:
+        self._loop = asyncio.get_running_loop()  # write-requested fires on a WinRT thread
         result = await gatt.GattServiceProvider.create_async(CPS)
         if int(result.error) != 0:
             raise RuntimeError(f"GattServiceProvider create failed: error={int(result.error)}")
@@ -78,6 +86,19 @@ class WinrtCpsPeripheral:
         loc_params.static_value = _buffer(bytes([self._sensor_location & 0xFF]))
         await service.create_characteristic_async(CP_SENSOR_LOCATION, loc_params)
 
+        # Control Point (write + indicate): every write a central makes is logged to .writes (and
+        # the on_write callback). This is how we capture the SB20's calibration/erg handshake to
+        # iterate against in Python — the whole point of the PC rig.
+        cp_params = gatt.GattLocalCharacteristicParameters()
+        cp_params.characteristic_properties = (
+            gatt.GattCharacteristicProperties.WRITE | gatt.GattCharacteristicProperties.INDICATE
+        )
+        cp_res = await service.create_characteristic_async(CP_CONTROL_POINT, cp_params)
+        if int(cp_res.error) != 0:
+            raise RuntimeError(f"create control-point char failed: error={int(cp_res.error)}")
+        self._cp = cp_res.characteristic
+        self._cp.add_write_requested(self._on_cp_write_requested)
+
         adv = gatt.GattServiceProviderAdvertisingParameters()
         adv.is_connectable = True   # a central can connect (the ESP32 will)
         adv.is_discoverable = True  # include the CPS service UUID in the advertisement
@@ -88,6 +109,27 @@ class WinrtCpsPeripheral:
             self.subscriber_count = len(sender.subscribed_clients)
         except Exception:
             pass
+
+    def _on_cp_write_requested(self, _sender, args) -> None:
+        # Fires on a WinRT thread; the request is fetched async, so hop onto our event loop.
+        if self._loop is not None:
+            asyncio.run_coroutine_threadsafe(self._handle_cp_write(args), self._loop)
+
+    async def _handle_cp_write(self, args) -> None:
+        deferral = args.get_deferral()
+        try:
+            request = await args.get_request_async()
+            reader = DataReader.from_buffer(request.value)
+            n = int(reader.unconsumed_buffer_length)
+            data = bytes(reader.read_byte() for _ in range(n))  # read_byte avoids array-marshalling
+            self.writes.append(data)
+            if self._on_write is not None:
+                self._on_write(data)
+            # Acknowledge a write-with-response so the central isn't left waiting.
+            if int(request.option) == int(gatt.GattWriteOption.WRITE_WITH_RESPONSE):
+                request.respond()
+        finally:
+            deferral.complete()
 
     async def notify(self, frame: bytes) -> None:
         """Send one CPS Measurement notification to every subscribed central."""
