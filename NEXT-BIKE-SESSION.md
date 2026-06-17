@@ -1,12 +1,13 @@
 # 🚴 Next Bike Session — open-item closure + Phase 1B pairing test
 
 > One trip to the bike clears every remaining on-bike open item.
-> **Plan to do 1, 2, 5, 6, 7.** The two gates are **5** (erg-on-BLE go/no-go) and **7** (Phase 1B
-> spoof-pairing proof, now in scope — the Phase 1A desk build is done). **6** (BLE recon) is a
+> **Plan to do 1, 2, 5, 6, 7 — and 9 if the ESP32 is flashed.** The gates are **5** (erg-on-BLE
+> go/no-go) and **7** (Phase 1B spoof-pairing proof — Phase 1A desk build is done). **9** (ESP32 BLE
+> proxy → SB20) is **the product test**: exploratory, run it *after* 5. **6** (BLE recon) is a
 > do-regardless capture. **3** is optional/high-value; **4** is a known dead end (skip — see below).
 > Full rationale: [`code/findings/forward-plan.md`](code/findings/forward-plan.md) §3.
 
-**~90 min for everything; ~50 min for the core (1, 2, 5, then 7).**
+**~90 min for the must-dos + Phase 1B; +~20 min if you run the ESP32 product test (§9).**
 Bring: a **fresh CR2032**, a coin/screwdriver for the battery door, your phone with the
 **Stages Cycling** app *and* the **StagesPower** meter app, and the Claude chat open.
 
@@ -242,6 +243,58 @@ iteration (see `forward-plan.md` §3 failure modes).
 **✅ Pass:** portal auto-pops, creds persist across reboot **and OTA**, `/` serves status, `/forget`
 returns to setup. **If the page doesn't auto-pop** on Android, opening any `http://` URL should 302
 to setup.
+
+---
+
+## 9 · ESP32 BLE proxy → SB20 live test ⭐ *the product test · exploratory* · ~20 min
+
+> **Do this after §5 (Part C).** This is the on-bike, **BLE-via-ESP32** version of the Phase 1B
+> proof: the device built today reads the **Assioma** (BLE central) and re-presents it to the SB20
+> as a spoofed **"Stages 62144"** BLE crank (Cycling Power, power + cadence). First real test of
+> today's firmware against the actual bike. **Expect to iterate** — the exact Stages CPS framing /
+> calibration / bonding the SB20 may demand is still unknown (that's what Session G Part B capture is
+> for). Any rung you reach is useful data, not a failure. *(Gated for erg on Part C: if the SB20
+> won't erg off the **real** crank over BLE, it won't off ours either — but pairing/power-display is
+> still worth testing.)*
+
+**Prep — flash the LIVE build + provision WiFi (for observability):**
+```bash
+cd firmware
+pio run -e esp32c3-oled-live -t upload     # OLED board = at-a-glance readout; else esp32c3-wifi-live
+# first boot: join the 'SB20-Setup' AP and set your WiFi so /ui + /log work (see BENCH-FLASH.md)
+```
+Power the ESP32 near the bike; keep the **Assioma awake** (pedal). Full env/flash detail:
+`firmware/BENCH-FLASH.md`.
+
+**A · ESP32 reads the Assioma (central side).** On the OLED, or `curl http://<esp-ip>/` (or `/ui`):
+expect `source:connected` and `src_power_w` tracking your Assioma watts. `/log` shows the
+scan → connect. *(The firmware deliberately ignores any "Stages 62144" advertiser as a source, so
+it reads the Assioma, not a crank.)*
+
+**B · Pair the SB20 to the ESP32 crank (peripheral side).**
+> ⚠️ **Duplicate-advertiser gotcha:** pedaling also spins the **real** Stages L crank, which
+> advertises "Stages 62144" over BLE too — so there'd be **two**. To make the SB20 pair to the
+> **ESP32**, **pull the real L-crank battery** for this test (R `4963` stays). Restore after (see
+> below). If the SB20 BLE pairing asks for both L/R, point **L → the ESP32 (Stages 62144)**, leave
+> **R = `4963`** (real).
+- SB20 → **"Pair with Bluetooth"** → pair to **Stages 62144** (now only the ESP32).
+- Connected? Trigger a **zero-reset** — accepted? (firmware answers with the captured offset **903**.)
+
+**C · Power + erg.**
+- Pedal: does the SB20 display the **relayed Assioma watts**? (`/ui` shows `METER IN → CRANK OUT`;
+  compare to the SB20 readout — they should match, correction is pass-through.)
+- Set an **erg target** (200 → 300 → 250 W). Does resistance track? (erg = Assioma watts by
+  construction — the SB20 does its own erg off the power source it trusts.)
+
+**✅ Pass (each rung is a win):** (a) SB20 pairs the ESP32 crank · (b) shows the relayed watts ·
+(c) erg holds off it → the ESP32 product works end-to-end on the real bike.
+**If it stalls at any rung:** that's the **Session G Part B** signal — the SB20's writes to our
+crank are the spec we need to match. Watch `/log` for incoming control-point activity and tell me
+exactly what the SB20 UI showed at each rung; we refine the firmware's CPS framing / handshake from
+there.
+
+> 🔁 **Restore after:** reinsert the L-crank battery and re-pair the SB20 to the real
+> **`62144` (L) : `4963` (R)**, crank length **165 mm**, zero-offset **L 903 / R 951**.
 
 ---
 
