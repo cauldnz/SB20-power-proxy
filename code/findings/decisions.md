@@ -924,3 +924,143 @@ yet); CPS power+cadence both-ways is the committed deliverable. Also noted: stal
 retained (not zeroed) on disconnect — `source:searching` is the authoritative "no live meter"
 signal; zeroing is cosmetic polish. Two same-named "Stages 62144" advertisers on the bench mean
 `crank_reader` should target board A by address (`--address`), not name.
+
+## 2026-06-17 — Session G Part B: real Stages crank BLE spec captured + firmware made byte-faithful
+
+On the bike: the SB20 **paired to our spoofed ESP32 crank over BLE but displayed NO power**. Root
+cause = our spoof was too minimal (a flags-`0x20`, power+crank-rev frame). Captured the REAL crank's
+full BLE surface to replicate exactly — `findings/captures/G-crankL-ble-recon-20260617.jsonl` (BLE
+recon worked once we targeted by address; the desk PowerShell *background* wrapper was broken, but
+foreground/Bash + `--address` is reliable). The spec the spoof must match:
+
+- **Device:** name `Stages 62144`, addr `E8:CF:D8:D9:3A:20`. DIS: manufacturer **"Stages Cycling"**,
+  model **"SPM2"**, serial **"11821518"**, FW **"1.8.2"**, + System ID. Battery 12%.
+- **CPS Measurement (0x2A63, notify) — flags `0x002F`, 11 bytes**, golden frame
+  `2f 00 ae 00 58 3c f7 e6 00 be 6c`:
+  `flags(2) | inst power sint16 | pedal balance uint8 (1/2 %) | accumulated torque uint16 (1/32 N·m)
+  | cumulative crank revs uint16 | last crank event time uint16 (1/1024 s)`. Decodes to 174 W,
+  balance 44% (ref left), torque 63292, revs 230, evt 27838. Two frames → ~54.5 rpm (low-cadence,
+  high-torque effort) — internally consistent, which validates the field decode.
+- **CP Feature (0x2A65):** `0x0008030B`. **Sensor Location (0x2A5D):** `0x00` ("other", *not* 5/left).
+- **Services:** CPS (1818), Battery (180f), DIS (180a), GAP/GATT, **Stages proprietary
+  `d445fe01-d139-9a5d-6707-1cc6a58b6303`** (chars `…fe02` notify+write, `…fe03` notify — advertised in
+  the scan response), and **Nordic Buttonless DFU `fe59`**. The proprietary service is the likely
+  "is this a genuine Stages?" check — strong suspect (with the frame shape) for the no-power result.
+- **Control point (0x2A66):** `request-crank-length` (0x05) → 165 mm; `request-sensor-locations`
+  (0x03) → `op_code_not_supported`. (Zero-reset not re-run — we have the ANT+ offset 903 from C-0.)
+
+**Firmware made byte-faithful (branch `ble-crank-fidelity`):**
+- `encodeStagesCpsMeasurement` → the exact `0x2F` frame; **4 golden-vector host tests built from the
+  captured bytes** prove byte-identity (suite 45 → **49/49**). Real-data-first: the fixtures ARE the
+  capture, not invented.
+- Generic `decodeCrankData`/`crankRevDataOffset` → finds crank-rev behind any preceding optional
+  fields, so `BleMeterClient` now reads the **Assioma's cadence** too (it sends balance first, which
+  the old fixed-offset path skipped → the `src_cadence:-1` we saw).
+- `BleCrankPeripheral`: CP Feature `0x0008030B`, Sensor Location `0`, DIS model `SPM2` + FW `1.8.2`,
+  **the `d445fe01` proprietary service advertised + exposed**, and emits the `0x2F` frame (balance
+  synthesized 50%, accumulated torque advanced per completed rev = P·60/(2π·rpm)·32).
+- **Deferred/uncertain:** the `…fe02/03` payloads are opaque (created empty — presence is the bet;
+  logging what the SB20 writes to them is the next capture). Balance is synthesized (single source has
+  no L/R split). Compile-green (`esp32c3-supermini` 37%); OTA-flashing `esp32c3-oled-live` + a desk
+  GATT re-capture confirm the identity surface — **SB20 power-acceptance is the next bike test.**
+
+## 2026-06-18 — Overnight: observability + fast-iterate instruments (autonomous, PR #5)
+
+Built the instruments to make bike-session 2 maximally productive and to support shipping beta
+units. The principle: the SB20's INTERACTIVE protocol (control-point/zero-reset, reconnect/bonding,
+proprietary `fe02`) can't be sniffed — but our spoofed crank is the one thing that sees it, so it
+logs it. All on branch `ble-crank-fidelity` (PR #5).
+
+1. **ESP write-logging.** `logf` ungated from `USE_WIFI` (always compiled; only the `/log` endpoint
+   is WiFi-gated); ring 60→120. `BleCrankPeripheral` logs every control-point write (raw+opcode),
+   every proprietary `fe02` write, and connect/disconnect (reason) → `/log`. `BleMeterClient` logs
+   each connected meter's name + its raw CPS frame ONCE per connection (flags + `cadence=yes/no` +
+   hex) → a field unit teaches us each meter (Garmin/Wahoo/Assioma) and confirms whether it carries
+   cadence. `toHex` host-tested.
+2. **OLED cadence.** The 0.42″ panel shows only 3 rows, so a 4th (cadence) fell off; power + cadence
+   now SHARE row 3 (`"230W 85rpm"`) so the rebroadcast cadence is visible. Tests updated.
+3. **PC fast-iterate rig.** `WinrtCpsPeripheral` gained a control-point char that captures every
+   write (`.writes` + `on_write`); `scripts/fake_crank.py` stands up a faithful crank (0x2F frame
+   golden-matched to the capture) and decodes writes. **WinRT verdict (confirmed):**
+   `GattServiceProviderAdvertisingParameters` has **no name field** → it advertises under the PC's
+   system BT name, not `Stages 62144`; the SB20 pairs by name, so the PC rig isn't seen as the crank
+   unless the PC's BT name is renamed; also one-service-per-provider (no proprietary `d445fe01`). So
+   **the ESP `/log` is the reliable handshake-capture path**; the PC rig is the fast-iterate option
+   gated on the rename (`scripts/PC-CRANK.md`). A future ESP speedup: runtime-configurable
+   control-point responses (HTTP) to avoid reflashing per response experiment.
+4. **Beta log parser.** `logparse.parse_log()` turns a unit's `/log` dump into a meter frame spec +
+   the decoded consumer handshake + connect/disconnect events; host-tested (5 cases) against the real
+   firmware line formats. Run-sheet for session 2: `BIKE-SESSION-2.md`.
+
+Host suite 50/50; ESP builds clean + flashed; new Python ruff-clean + pytest green. **Still
+unverified (needs the bike): does the SB20 read the faithful frame, what it writes to the control
+point/`fe02`, and reconnect/bonding behaviour.**
+
+## 2026-06-18 — Bike session 2: SB20 power-acceptance PROVEN + interactive protocol captured + shifter-over-BLE found
+
+The fidelity fix works. With the byte-faithful `0x2F` crank (PR #5) the **SB20 reads, displays, and
+runs on the relayed Assioma power + cadence** — the core goal, proven on real hardware. We also
+captured the interactive protocol the firmware still has to answer, and (bonus) discovered the SB20
+broadcasts its shifter/gear state over BLE. Logs: `session2-log-20260618-0713.txt` (calibration /
+disconnect), `session2-confirm-assioma-20260618-0742.txt` (clean Assioma-only confirm),
+`SHIFTER-probe-20260618.jsonl` (GATT + shifter).
+
+**Core result — power-acceptance PASS.**
+- SB20 paired to the spoofed `Stages 62144` (ESP) showed **power AND cadence** in the Stages app and
+  on the OLED, tracking the Assioma with no scaling error. Cadence works because the SB20 derives it
+  from the crank-rev fields we forward (the ESP's own `cadence_rpm` status field is a separate,
+  occasionally `-1` derivation the SB20 does not use).
+- **Clean confirmation (no self-deception):** pulled BOTH crank batteries (L `62144`, R `4963`) → the
+  only source left is the Assioma → ESP locked onto `ASSIOMA17039L` (`e6:20:90:8c:f3:fe`) and the SB20
+  still showed power + cadence. Provably Assioma → ESP → SB20, zero real-crank involvement.
+
+**Assioma source facts.**
+- Sends cadence: CPS Measurement flags **0x0023** (pedal-balance + crank-rev data present) → answers
+  the long-open "does the Assioma carry cadence" = YES.
+- Presents as **two** BLE devices: `ASSIOMA17039L` (`e6:20:90:8c:f3:fe`) and `ASSIOMA22428R`
+  (`cc:d2:a0:d6:5c:9d`).
+
+**Interactive protocol captured (the firmware's to-do list).**
+- **Proprietary `fe02` handshake = `bfda1853`, CONSTANT.** The SB20 writes this 4-byte value to char
+  `fe02` (svc `d445fe01-…`) once on connect — **identical across 4 separate connections** → a fixed
+  init token, NOT a nonce. Power streams fine with just the `fe02` service present + this write logged;
+  no notify response is needed *for power*.
+- **Zero-reset = Cycling Power Control Point opcode `0x10`** (Enhanced Offset Compensation), written to
+  `0x2A66`. We logged it but sent no indication back → the app's calibration spun → user cancelled.
+- **Control-point writes MUST be answered or the SB20 terminates the link.** Every unanswered CP
+  procedure dropped us: **`disconnect reason=531`** = NimBLE `0x0213` = HCI `0x13` "remote user
+  terminated." Consequence: the **Set Crank Length (`0x04`) write never even landed** — the link
+  dropped before the procedure ran (172.5 mm set in-app showed "empty" on read-back). Power streaming
+  itself is stable as long as no CP procedure is invoked.
+- **Re-advertise on disconnect is required.** After an SB20-terminated drop the ESP did **not** resume
+  advertising → app stuck at "searching", could not reconnect; only an **ESP reboot** recovered it
+  (reboot re-advertises → SB20 auto-reconnects and re-sends `bfda1853`). The SB20 remembers the pairing
+  and reconnects on its own once we advertise.
+
+**Meter client is too promiscuous.** With several meters in range `BleMeterClient` bounced between
+`ASSIOMA17039L`, `ASSIOMA22428R`, and `Stages 4963` (`e3:25:39:38:92:71`), so the relayed source was
+non-deterministic — at one point it relayed the real right crank `4963` to the SB20. Needs source
+pinning by address/name. (Silver lining: that accidental relay of `4963` demonstrated the
+**single-right-crank use case** — forward-plan §8 + `single-right-crank-proxy-usecase` memory; cf.
+PedalSmart's single-failed-crank post.)
+
+**BONUS — shifter buttons broadcast over BLE.** Probing the SB20's own GATT
+(`06_capture_ble.py --address E4:AA:5A:D6:0E:D4 --subscribe-all`, a new mode that hooks every
+notify/indicate char) revealed two **Stages vendor services**: `0c46be5f-…` (chars `0c46be60` notify,
+`0c46be61` notify) and `0c46beaf-…` (`0c46beb0` notify, `0c46beb1` write-without-response). **Char
+`0c46be60` carries gear state** — dead silent at idle, fires on every shifter press:
+- `01 00 <gear:u16 LE>` — current-gear state (repeats)
+- `03 00 <gear> <gear>` — shift event (gear field twice; semantics TBD)
+- `04 00 <gear>` — shift-complete confirm
+- **Gear is a one-hot bitmask:** 6 presses mapped to `0x08/0x10/0x20` (right ①②③) and `0x01/0x02/0x04`
+  (left ①②③) = bits 0-5. Full range / per-button direction / the second vendor svc `0c46beaf` + write
+  channel `0c46beb1` are the controlled-probe targets next session. See `findings/shifter-ble-protocol.md`.
+- SB20 GATT also: DIS = "Stages Cycling" / model "SB20" / serial `H0512210105` / FW `1.1` / SW
+  `1.12.4+3792`; FTMS `0x1826` (Indoor Bike Data `2ad2`, Fitness Machine Status `2ada`, Control Point
+  `2ad9`); CSC `0x1816` (sensor location "rear_wheel"); Nordic Buttonless DFU `fe59`.
+
+**Next (all specced; desk work, on-air verification bike-gated — `BIKE-SESSION-3.md`):** (1) firmware
+control-point responder — ACK `0x10` with a synthetic success (the Assioma is the real calibrated
+meter; nothing to zero on the ESP), handle `0x04`/`0x05` crank length, generic `0x20 <op> 0x02` for
+unknowns; (2) re-advertise on disconnect; (3) meter-source pinning (also enables single-right-crank);
+(4) comprehensive controlled shifter probe + protocol write-up.

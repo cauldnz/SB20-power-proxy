@@ -9,6 +9,7 @@
 
 #include "Correction.h"
 #include "Cps.h"
+#include "MeterMatch.h"
 #include "LogBuffer.h"
 #include "MockCrank.h"
 #include "MockMeter.h"
@@ -98,6 +99,120 @@ void test_calibration_response_bytes() {
     TEST_ASSERT_EQUAL_UINT8(0x03, r[4]);
 }
 
+// --- control-point handshake: the SB20's calibration/config (must be ANSWERED) ----------------
+// The SB20 terminates the link if a CP procedure goes unanswered (bike-session 2: disconnect
+// reason=531), so handleControlPoint replies to EVERY write. Formats grounded in captures: the
+// Stages app sends the *Enhanced* offset-comp op 0x10 (not the basic 0x0C), and the Stages crank's
+// Request-Crank-Length reply OMITS the success byte (`20 05 <len>`, unlike the Assioma's `20 05 01 <len>`).
+
+void test_cp_offset_comp_enhanced_0x10() {
+    const uint8_t req[] = {CP_OP_ENHANCED_OFFSET_COMP};
+    CpResult r = handleControlPoint(req, sizeof(req), 345, 903);  // offset 903 = 0x0387 LE
+    const uint8_t expected[] = {0x20, 0x10, 0x01, 0x87, 0x03};
+    TEST_ASSERT_EQUAL_INT(5, (int)r.response.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, r.response.data(), 5);
+    TEST_ASSERT_FALSE(r.crankLengthChanged);
+}
+
+void test_cp_offset_comp_basic_0x0C() {
+    const uint8_t req[] = {CP_OP_START_OFFSET_COMP};
+    CpResult r = handleControlPoint(req, sizeof(req), 345, 903);
+    const uint8_t expected[] = {0x20, 0x0C, 0x01, 0x87, 0x03};
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, r.response.data(), 5);
+}
+
+void test_cp_set_crank_length_0x04() {
+    const uint8_t req[] = {CP_OP_SET_CRANK_LENGTH, 0x59, 0x01};   // 0x0159 = 345 = 172.5 mm
+    CpResult r = handleControlPoint(req, sizeof(req), 330, 903);  // was 330 = 165 mm
+    TEST_ASSERT_TRUE(r.crankLengthChanged);
+    TEST_ASSERT_EQUAL_UINT16(345, r.crankLengthHalfMm);
+    const uint8_t expected[] = {0x20, 0x04, 0x01};               // success
+    TEST_ASSERT_EQUAL_INT(3, (int)r.response.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, r.response.data(), 3);
+}
+
+void test_cp_request_crank_length_0x05_stages_format() {
+    const uint8_t req[] = {CP_OP_REQUEST_CRANK_LENGTH};
+    CpResult r = handleControlPoint(req, sizeof(req), 345, 903);
+    const uint8_t expected[] = {0x20, 0x05, 0x59, 0x01};         // 0x0159 = 345, NO success byte
+    TEST_ASSERT_EQUAL_INT(4, (int)r.response.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, r.response.data(), 4);
+}
+
+void test_cp_set_then_request_crank_length_roundtrip() {
+    const uint8_t setReq[] = {CP_OP_SET_CRANK_LENGTH, 0x54, 0x01};  // 0x0154 = 340 = 170 mm
+    CpResult set = handleControlPoint(setReq, sizeof(setReq), 345, 903);
+    const uint8_t getReq[] = {CP_OP_REQUEST_CRANK_LENGTH};
+    CpResult got = handleControlPoint(getReq, sizeof(getReq), set.crankLengthHalfMm, 903);
+    const uint8_t expected[] = {0x20, 0x05, 0x54, 0x01};         // reads back the value just set
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, got.response.data(), 4);
+}
+
+void test_cp_unknown_op_not_supported() {
+    const uint8_t req[] = {0x03};  // Request Supported Sensor Locations — not implemented
+    CpResult r = handleControlPoint(req, sizeof(req), 345, 903);
+    const uint8_t expected[] = {0x20, 0x03, 0x02};              // not supported
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, r.response.data(), 3);
+}
+
+void test_cp_malformed_is_safe() {
+    CpResult r = handleControlPoint(nullptr, 0, 345, 903);     // empty/no data: never silent, no crash
+    TEST_ASSERT_TRUE(r.response.size() >= 3);
+    TEST_ASSERT_EQUAL_UINT8(0x20, r.response[0]);
+    TEST_ASSERT_FALSE(r.crankLengthChanged);
+    TEST_ASSERT_EQUAL_UINT16(345, r.crankLengthHalfMm);        // state preserved
+}
+
+void test_cp_set_crank_length_missing_param_invalid() {
+    const uint8_t req[] = {CP_OP_SET_CRANK_LENGTH};            // opcode but no length param
+    CpResult r = handleControlPoint(req, sizeof(req), 345, 903);
+    const uint8_t expected[] = {0x20, 0x04, 0x03};            // invalid parameter
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, r.response.data(), 3);
+    TEST_ASSERT_FALSE(r.crankLengthChanged);
+}
+
+// --- meter selection: which device to READ (fixes the bike-session-2 source bouncing) ---------
+// All of the Assioma AND the real Stages cranks advertise the CPS service, so matching on the
+// service alone latched onto a real crank. isTargetMeter requires a NAMED device to match the
+// meter-name filter; a PINNED address overrides everything (deterministic source).
+
+void test_meter_match_assioma_by_name() {
+    TEST_ASSERT_TRUE(isTargetMeter("ASSIOMA17039L", true, "e6:20:90:8c:f3:fe", "",
+                                   "Stages 62144", "ASSIOMA"));
+}
+
+void test_meter_match_rejects_real_stages_crank() {
+    // The bug: 'Stages 4963' advertises CPS but is not "ASSIOMA" — must be rejected.
+    TEST_ASSERT_FALSE(isTargetMeter("Stages 4963", true, "e3:25:39:38:92:71", "",
+                                    "Stages 62144", "ASSIOMA"));
+}
+
+void test_meter_match_skips_our_own_spoof() {
+    TEST_ASSERT_FALSE(isTargetMeter("Stages 62144", true, "aa:bb:cc:dd:ee:ff", "",
+                                    "Stages 62144", "ASSIOMA"));
+}
+
+void test_meter_match_nameless_winrt_rig_by_cps() {
+    // The WinRT fake_meter rig advertises the CPS UUID with no name.
+    TEST_ASSERT_TRUE(isTargetMeter("", true, "12:34:56:78:9a:bc", "", "Stages 62144", "ASSIOMA"));
+    TEST_ASSERT_FALSE(isTargetMeter("", false, "12:34:56:78:9a:bc", "", "Stages 62144", "ASSIOMA"));
+}
+
+void test_meter_match_pinned_address_wins() {
+    // Pinned to the right crank's address -> matches it even though its name isn't "ASSIOMA"
+    // (the single-right-crank use case); a different address is rejected.
+    TEST_ASSERT_TRUE(isTargetMeter("Stages 4963", true, "e3:25:39:38:92:71", "e3:25:39:38:92:71",
+                                   "Stages 62144", "ASSIOMA"));
+    TEST_ASSERT_FALSE(isTargetMeter("ASSIOMA17039L", true, "e6:20:90:8c:f3:fe", "e3:25:39:38:92:71",
+                                    "Stages 62144", "ASSIOMA"));
+}
+
+void test_meter_match_pin_never_reads_own_spoof() {
+    // Even pinned, the loop guard wins: never latch onto our own spoof name.
+    TEST_ASSERT_FALSE(isTargetMeter("Stages 62144", true, "e3:25:39:38:92:71", "e3:25:39:38:92:71",
+                                    "Stages 62144", "ASSIOMA"));
+}
+
 // --- CPS cadence (Crank Revolution Data) --------------------------------------
 
 void test_cps_cadence_frame() {
@@ -128,6 +243,46 @@ void test_crank_cadence_coasting_no_events() {
     c.advance(0.0f, 5000);  // coasting: neither revs nor event time may advance
     TEST_ASSERT_EQUAL_INT(revs, c.cumulativeRevs);
     TEST_ASSERT_EQUAL_INT(t, c.lastEventTime);
+}
+
+// --- real Stages SPM2 frame (0x2F): golden vectors from the 2026-06-17 capture ------------
+// findings/captures/G-crankL-ble-recon-20260617.jsonl. A minimal 0x20 frame paired with the
+// SB20 but showed NO power; the spoof must emit THIS exact frame shape, so we pin it byte-wise.
+
+void test_stages_frame_golden_encode() {
+    // The exact bytes the real crank sent: flags 0x2F, power 174 W, balance 88 (44%), accum
+    // torque 63292, crank revs 230, last event 27838 -> "2f00ae00583cf7e600be6c".
+    std::vector<uint8_t> f = encodeStagesCpsMeasurement(174, 88, 63292, 230, 27838);
+    const uint8_t expected[] = {0x2f, 0x00, 0xae, 0x00, 0x58, 0x3c, 0xf7, 0xe6, 0x00, 0xbe, 0x6c};
+    TEST_ASSERT_EQUAL_INT(11, (int)f.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, f.data(), 11);
+}
+
+void test_stages_frame_flags_and_power() {
+    std::vector<uint8_t> f = encodeStagesCpsMeasurement(174, 88, 63292, 230, 27838);
+    TEST_ASSERT_EQUAL_HEX16(0x002F, decodeCpsFlags(f.data(), f.size()));
+    TEST_ASSERT_EQUAL_INT(174, decodeCpsPower(f.data(), f.size()));  // power still at bytes 2-3
+}
+
+void test_decode_crank_data_behind_preceding_fields() {
+    // The generic decoder must find crank-rev at offset 7 (after balance+torque), not a rigid 4.
+    const uint8_t frame[] = {0x2f, 0x00, 0xae, 0x00, 0x58, 0x3c, 0xf7, 0xe6, 0x00, 0xbe, 0x6c};
+    TEST_ASSERT_EQUAL_UINT(7, crankRevDataOffset(0x002F));
+    CpsCrankData c = decodeCrankData(frame, sizeof(frame));
+    TEST_ASSERT_TRUE(c.present);
+    TEST_ASSERT_EQUAL_INT(230, c.cumulativeRevs);
+    TEST_ASSERT_EQUAL_INT(27838, c.lastEventTime);
+}
+
+void test_cadence_from_two_real_stages_frames() {
+    // Two consecutive captured frames: revs 230->231 over 1127 event ticks (~1.10 s) ~= 54.5 rpm.
+    const uint8_t f1[] = {0x2f, 0x00, 0xae, 0x00, 0x58, 0x3c, 0xf7, 0xe6, 0x00, 0xbe, 0x6c};
+    const uint8_t f2[] = {0x2f, 0x00, 0xb0, 0x00, 0x5a, 0x16, 0xfb, 0xe7, 0x00, 0x25, 0x71};
+    CpsCrankData a = decodeCrankData(f1, sizeof(f1));
+    CpsCrankData b = decodeCrankData(f2, sizeof(f2));
+    float rpm = cadenceRpmFromCrank(a.cumulativeRevs, a.lastEventTime, b.cumulativeRevs,
+                                    b.lastEventTime);
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, 54.5f, rpm);
 }
 
 // --- ProxyCore relay (the loopback, in firmware) ------------------------------
@@ -352,6 +507,12 @@ void test_logbuffer_caps_line_length() {
     TEST_ASSERT_EQUAL_UINT(LogBuffer::kMaxLine + 1, log.text().size());
 }
 
+void test_tohex_encodes_bytes() {
+    const uint8_t b[] = {0x2f, 0x00, 0xae, 0x0c};
+    TEST_ASSERT_EQUAL_STRING("2f00ae0c", toHex(b, sizeof(b)).c_str());
+    TEST_ASSERT_EQUAL_STRING("", toHex(b, 0).c_str());  // empty is safe
+}
+
 void test_log_toggle_footer_states() {
     TEST_ASSERT_EQUAL_STRING("", renderLogToggleFooter(-1).c_str());  // hidden
     TEST_ASSERT_TRUE(renderLogToggleFooter(1).find("/log/off") != std::string::npos);  // on
@@ -404,14 +565,14 @@ void test_oled_connected_lines() {
     auto l = formatOledLines(OledMode::Connected, "192.168.1.82", 230, 85);
     TEST_ASSERT_EQUAL_STRING("SB20 PROXY", l[0].c_str());
     TEST_ASSERT_EQUAL_STRING("192.168.1.82", l[1].c_str());  // the IP — the thing you came for
-    TEST_ASSERT_EQUAL_STRING("230W", l[2].c_str());
-    TEST_ASSERT_EQUAL_STRING("85 rpm", l[3].c_str());
+    TEST_ASSERT_EQUAL_STRING("230W 85rpm", l[2].c_str());    // power + cadence share row 3 (3-row panel)
+    TEST_ASSERT_EQUAL_STRING("", l[3].c_str());
 }
 
-void test_oled_connected_unknown_cadence_blank() {
+void test_oled_connected_unknown_cadence_omitted() {
     auto l = formatOledLines(OledMode::Connected, "10.0.0.5", 120, -1);
-    TEST_ASSERT_EQUAL_STRING("120W", l[2].c_str());
-    TEST_ASSERT_EQUAL_STRING("", l[3].c_str());  // cadence < 0 (unknown) -> blank row
+    TEST_ASSERT_EQUAL_STRING("120W", l[2].c_str());  // cadence unknown -> power only, no rpm suffix
+    TEST_ASSERT_EQUAL_STRING("", l[3].c_str());
 }
 
 // --- saved page ---------------------------------------------------------------
@@ -455,9 +616,27 @@ int runUnityTests() {
     RUN_TEST(test_cps_measurement_roundtrip);
     RUN_TEST(test_cps_decode_short_frame_is_safe);
     RUN_TEST(test_calibration_response_bytes);
+    RUN_TEST(test_cp_offset_comp_enhanced_0x10);
+    RUN_TEST(test_cp_offset_comp_basic_0x0C);
+    RUN_TEST(test_cp_set_crank_length_0x04);
+    RUN_TEST(test_cp_request_crank_length_0x05_stages_format);
+    RUN_TEST(test_cp_set_then_request_crank_length_roundtrip);
+    RUN_TEST(test_cp_unknown_op_not_supported);
+    RUN_TEST(test_cp_malformed_is_safe);
+    RUN_TEST(test_cp_set_crank_length_missing_param_invalid);
+    RUN_TEST(test_meter_match_assioma_by_name);
+    RUN_TEST(test_meter_match_rejects_real_stages_crank);
+    RUN_TEST(test_meter_match_skips_our_own_spoof);
+    RUN_TEST(test_meter_match_nameless_winrt_rig_by_cps);
+    RUN_TEST(test_meter_match_pinned_address_wins);
+    RUN_TEST(test_meter_match_pin_never_reads_own_spoof);
     RUN_TEST(test_cps_cadence_frame);
     RUN_TEST(test_crank_cadence_roundtrips_rpm);
     RUN_TEST(test_crank_cadence_coasting_no_events);
+    RUN_TEST(test_stages_frame_golden_encode);
+    RUN_TEST(test_stages_frame_flags_and_power);
+    RUN_TEST(test_decode_crank_data_behind_preceding_fields);
+    RUN_TEST(test_cadence_from_two_real_stages_frames);
     RUN_TEST(test_proxy_relays_power);
     RUN_TEST(test_proxy_applies_correction);
     RUN_TEST(test_proxy_preserves_cadence);
@@ -481,6 +660,7 @@ int runUnityTests() {
     RUN_TEST(test_logbuffer_keeps_recent_in_order);
     RUN_TEST(test_logbuffer_drops_oldest_past_capacity);
     RUN_TEST(test_logbuffer_caps_line_length);
+    RUN_TEST(test_tohex_encodes_bytes);
     RUN_TEST(test_log_toggle_footer_states);
     RUN_TEST(test_portal_page_shows_log_toggle_when_requested);
     RUN_TEST(test_status_led_searching_fast_blink);
@@ -488,7 +668,7 @@ int runUnityTests() {
     RUN_TEST(test_status_led_searching_blinks_faster_than_connected);
     RUN_TEST(test_oled_portal_lines);
     RUN_TEST(test_oled_connected_lines);
-    RUN_TEST(test_oled_connected_unknown_cadence_blank);
+    RUN_TEST(test_oled_connected_unknown_cadence_omitted);
     RUN_TEST(test_saved_page_has_ssid_and_hints);
     RUN_TEST(test_saved_page_escapes_ssid);
     RUN_TEST(test_app_page_essentials);

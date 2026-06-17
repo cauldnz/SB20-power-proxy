@@ -13,7 +13,9 @@ enum class OledMode { Portal, Connecting, Connected };
 // font used for rows 2-4.
 //   Portal     -> how to provision (join the AP, open the URL)
 //   Connecting -> a brief "joining" notice
-//   Connected  -> the IP (the thing you came for) + live power / cadence
+//   Connected  -> the IP (the thing you came for) + a power+cadence row
+// The panel only shows ~3 rows, so a 4th row falls off the bottom: for Connected, power and
+// cadence therefore SHARE row 3 ("230W 85rpm") so the rebroadcast cadence is actually visible.
 inline std::array<std::string, 4> formatOledLines(OledMode mode, const std::string& ip,
                                                   int watts, int cadenceRpm) {
     switch (mode) {
@@ -22,9 +24,10 @@ inline std::array<std::string, 4> formatOledLines(OledMode mode, const std::stri
         case OledMode::Connecting:
             return {"SB20 PROXY", "connecting", std::string(), std::string()};
         case OledMode::Connected: {
-            std::string w = std::to_string(watts) + "W";
-            std::string c = cadenceRpm >= 0 ? std::to_string(cadenceRpm) + " rpm" : std::string();
-            return {"SB20 PROXY", ip, w, c};
+            // Row 3 = power then cadence (the rebroadcast value); cadence omitted when unknown.
+            std::string row = std::to_string(watts) + "W";
+            if (cadenceRpm >= 0) row += " " + std::to_string(cadenceRpm) + "rpm";
+            return {"SB20 PROXY", ip, row, std::string()};
         }
     }
     return {std::string(), std::string(), std::string(), std::string()};

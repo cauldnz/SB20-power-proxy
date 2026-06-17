@@ -8,6 +8,9 @@
 
 #include "Config.h"
 #include "Cps.h"
+#include "LogBuffer.h"     // toHex
+#include "MeterMatch.h"    // pure, host-tested meter-selection (which device to read)
+#include "net/DebugLog.h"  // logf -> /log (learn each meter's frame format by observation)
 
 using namespace sb20proxy;
 
@@ -34,50 +37,61 @@ static MeterClientCallbacks g_clientCb;
 class MeterScanCallbacks : public NimBLEScanCallbacks {
     void onResult(const NimBLEAdvertisedDevice* d) override {
         if (!g_meter) return;
-        std::string name = d->getName();
-        // Never read FROM a copy of the crank we impersonate — another proxy, a sibling test
-        // board, or the real Stages crank we're replacing all advertise SPOOF_NAME + CPS, and
-        // latching onto one would form a loop. The meter we want is the Assioma, not a "Stages".
-        if (name == Config::SPOOF_NAME) return;
-        // CPS service UUID first (a Windows winrt/bless peripheral advertises the UUID but no
-        // name); fall back to the name substring (a real Assioma advertises both).
-        bool match = d->isAdvertisingService(NimBLEUUID(UUID_CPS));
-        if (!match) {
-            match = !name.empty() && name.find(Config::METER_NAME_FILTER) != std::string::npos;
+        const std::string name = d->getName();
+        const std::string addr = d->getAddress().toString();
+        const bool cps = d->isAdvertisingService(NimBLEUUID(UUID_CPS));
+        // isTargetMeter (pure, host-tested) picks the source: a PINNED address wins; else a nameless
+        // WinRT rig matches by CPS UUID and a NAMED device must contain METER_NAME_FILTER — so a real
+        // "Stages NNNN" crank (also CPS-advertising) is NOT grabbed (the source-bouncing bug from
+        // bike-session 2), and we never read a copy of our own spoof (which would form a loop).
+        if (!isTargetMeter(name, cps, addr, Config::METER_ADDRESS, Config::SPOOF_NAME,
+                           Config::METER_NAME_FILTER)) {
+            return;
         }
-        if (match) {
-            NimBLEDevice::getScan()->stop();
-            g_meter->onFound(d->getAddress().toString().c_str(), d->getAddress().getType());
-        }
+        NimBLEDevice::getScan()->stop();
+        g_meter->onFound(addr.c_str(), d->getAddress().getType(), name.c_str());
     }
 };
 static MeterScanCallbacks g_scanCb;
 
-void BleMeterClient::onFound(const char* addr, uint8_t addrType) {
+void BleMeterClient::onFound(const char* addr, uint8_t addrType, const char* name) {
     strncpy(addr_, addr, sizeof(addr_) - 1);
+    strncpy(name_, name ? name : "", sizeof(name_) - 1);
     addrType_ = addrType;
-    haveTarget_ = true;  // connect from loop(), off the scan-callback context
+    haveTarget_ = true;     // connect from loop(), off the scan-callback context
+    loggedFrame_ = false;   // log this meter's first frame once connected
+    logf("[meter] found '%s' %s", name_, addr_);
 }
 
 void BleMeterClient::onMeasurement(const uint8_t* data, size_t len) {
     if (!cb_) return;
+
+    // Log the raw frame once per connection: this is how a field unit teaches us each meter's
+    // CPS format (Garmin/Wahoo/Assioma) — and it directly answers whether this meter carries
+    // cadence (the crank-rev flag) so the rebroadcast/OLED cadence is real, not assumed.
+    if (!loggedFrame_) {
+        loggedFrame_ = true;
+        const uint16_t flags = decodeCpsFlags(data, len);
+        logf("[meter] cps flags=0x%04x cadence=%s %s", flags,
+             (flags & CPM_CRANK_REV_DATA_PRESENT) ? "yes" : "no", toHex(data, len).c_str());
+    }
+
     PowerReading r;
     r.power_w = decodeCpsPower(data, len);  // sint16 at bytes 2-3, regardless of flags
     r.t_ms = millis();
 
-    // Recover cadence from Crank Revolution Data, the way a head unit does — but only when the
-    // crank fields are at the fixed 4-7 offset (no balance/torque/wheel field precedes them,
-    // which holds for our meters' power+cadence frame). Otherwise leave cadence unknown.
-    const uint16_t flags = decodeCpsFlags(data, len);
-    if ((flags & CPM_CRANK_REV_DATA_PRESENT) && !(flags & CPM_PRECEDING_DATA_BITS) && len >= 8) {
-        const uint16_t revs = decodeCrankRevs(data, len);
-        const uint16_t evt = decodeCrankEventTime(data, len);
+    // Recover cadence from Crank Revolution Data the way a head unit does. The generic decoder
+    // finds the crank-rev fields whatever optional fields precede them — the Assioma sends
+    // pedal-balance (+ maybe torque) first, which the old fixed-offset path couldn't handle.
+    const CpsCrankData ck = decodeCrankData(data, len);
+    if (ck.present) {
         if (havePrevCrank_) {
-            const float rpm = cadenceRpmFromCrank(prevRevs_, prevEventTime_, revs, evt);
+            const float rpm = cadenceRpmFromCrank(prevRevs_, prevEventTime_, ck.cumulativeRevs,
+                                                  ck.lastEventTime);
             if (rpm > 0.0f) r.cadence_rpm = (int16_t)(rpm + 0.5f);
         }
-        prevRevs_ = revs;
-        prevEventTime_ = evt;
+        prevRevs_ = ck.cumulativeRevs;
+        prevEventTime_ = ck.lastEventTime;
         havePrevCrank_ = true;
     }
     lastReadingMs_ = r.t_ms;  // feed the staleness watchdog
@@ -88,8 +102,10 @@ void BleMeterClient::onDisconnected() {
     connected_ = false;
     haveTarget_ = false;
     havePrevCrank_ = false;  // don't carry crank deltas across a reconnect
+    loggedFrame_ = false;    // re-log the frame format on the next connection
     lastReadingMs_ = 0;
     wantRescan_ = true;  // restart the scan from loop() (off the callback context)
+    logf("[meter] disconnected");
 }
 
 void BleMeterClient::begin() {

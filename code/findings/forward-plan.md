@@ -382,6 +382,28 @@ From `phase-0-report.md` §5 — track, don't block on:
 - **Distinct advertised identity for the live crank vs a mock/sibling board** — backlog. Two boards
   both advertise `Stages 62144`, so `crank_reader` must target by `--address`. Optional: vary
   `SPOOF_NAME` per board (or append a short id) so they're distinguishable by name on the bench.
+- **Read the SB20 shifter buttons over BLE** — backlog (future, *after* the power-meter proxy;
+  owner idea 2026-06-18). The SB20 has shifter buttons (virtual shifting); can we read presses over
+  BLE? *Cheap near-term capture, addable to any bike session:* connect to the **SB20 itself** — it
+  advertises as `Stages Bike 0105`, addr `E4:AA:5A:D6:0E:D4`, services FTMS `0x1826` + CSC `0x1816`
+  (from the 2026-06-17 scan) — with `06_capture_ble.py`, **actuate each shifter button**, and watch
+  for BLE notifications / a control- or HID-like characteristic that changes on a press. If a press
+  emits a packet → decode it (a new capture-driven protocol doc) and expose/relay it. Button
+  hardware context: PedalSmart.blog's shifter-button repair material (`06-prior-art-and-references.md`).
+- **Single surviving right-crank proxy** — promising use case (owner idea 2026-06-18, seen working
+  by accident in bike-session 2). On the SB20 the LEFT crank is the master; if it fails the rider
+  loses power entirely. The proxy can read the surviving RIGHT crank (`Stages 4963`,
+  `e3:25:39:38:92:71`) and rebroadcast it as the spoofed master (`Stages 62144`), restoring full
+  function on a single crank — tidier + more full-featured than the mechanical / re-pairing
+  workarounds (cf. PedalSmart.blog's single-failed-crank post). Depends on the meter-source pinning
+  item below; document as a first-class use case in `01-project-brief.md`. Single-sided caveat: a
+  right-only crank usually doubles right-leg power to estimate total.
+- **Meter-source pinning (choose which meter to READ)** — `BleMeterClient` matches too broadly:
+  with several meters in range it bounced between `ASSIOMA17039L` (`e6:20:90:8c:f3:fe`),
+  `ASSIOMA22428R` (`cc:d2:a0:d6:5c:9d`), and `Stages 4963` (`e3:25:39:38:92:71`) in bike-session 2,
+  so the relayed source was non-deterministic. Pin the source by address (or configured name) so the
+  relay is deterministic and the single-right-crank use case can target `4963` on purpose. (Distinct
+  from the spoof-side `--address` item above, which is about which crank we *impersonate*.)
 
 ---
 
