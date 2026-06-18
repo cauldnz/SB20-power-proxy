@@ -1064,3 +1064,28 @@ control-point responder — ACK `0x10` with a synthetic success (the Assioma is 
 meter; nothing to zero on the ESP), handle `0x04`/`0x05` crank length, generic `0x20 <op> 0x02` for
 unknowns; (2) re-advertise on disconnect; (3) meter-source pinning (also enables single-right-crank);
 (4) comprehensive controlled shifter probe + protocol write-up.
+
+## 2026-06-19 — ANT+ vs BLE zero-offset reconciliation (903 vs 0): the BLE crank must answer 0
+
+The Stages crank's zero-offset reads **903 over ANT+** but **0 over BLE** — long an open item, and it
+led to a real bug: `Config::SPOOF_CAL_OFFSET` carried the ANT+ value `903` into the BLE crank. They are
+**different representations of the same calibrated state**, both correct for their protocol:
+
+- **ANT+ Bike Power** (Calibration page 0x01, 0xAC general response): reports `903` — the crank's
+  **raw zero-offset** (the internal no-load ADC value the ANT+ profile exposes directly).
+- **BLE CPS Start Offset Compensation** (0x2A66 op 0x0C / 0x10): the real crank replies `200c010000`
+  → offset **0** after a successful zero-reset (`G-crank62144-ble-zero-20260615-070353.jsonl`, which
+  shows `200c01ffff` pre-zero → `200c010000` post-zero). The BLE op returns the **post-compensation
+  residual**, which is 0 once re-zeroed.
+
+So 903 (absolute raw, ANT+) and 0 (residual after comp, BLE) are the same crank from two protocols'
+viewpoints. **Fix applied:** our ESP32 IS the BLE crank, so its Start/Enhanced Offset Compensation reply
+must use the BLE value — `SPOOF_CAL_OFFSET` **903 → 0**, byte-matching the real crank's captured
+`200c010000` (host test `test_calibration_response_bytes` updated to the captured golden). The
+ANT+/openant proxy path keeps 903 (ANT+ semantics). This also tightens the spoof — a head unit reading
+the offset now sees the real BLE value.
+
+**Provenance note:** this finding originated on `claude/esp32-bike-powermeter-urnc0c` while `main`
+advanced in parallel through bike-sessions 2; `main`'s `903` was the un-BLE-validated ANT+ carry-over
+(session 2's zero-reset never completed, so 903 was never confirmed on BLE). Ported to `main` via PR #7
+alongside the off-loop-OLED perf work, keeping all of main's PR #5 control-point / pinning fixes.

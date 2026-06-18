@@ -13,7 +13,12 @@ struct Config {
     static constexpr const char* SPOOF_MODEL        = "SPM2";    // DIS model number (2A24)
     static constexpr const char* SPOOF_FW           = "1.8.2";   // DIS firmware revision (2A26)
     static constexpr const char* SPOOF_SERIAL       = "11821518";
-    static constexpr int         SPOOF_CAL_OFFSET   = 903;  // captured 0xAC zero-offset
+    // BLE Start Offset Compensation (0x2A66) reply offset. The real Stages crank returns **0** over
+    // BLE after a zero-reset (captured `200c010000` in G-crank62144-ble-zero-20260615-070353.jsonl),
+    // NOT the ANT+ raw zero-offset 903 (page 0x01 / 0xAC). They are different representations of the
+    // same calibration (see decisions.md 2026-06-17 offset reconciliation); this firmware IS the BLE
+    // crank, so its zero-reset must answer with the BLE value, 0.
+    static constexpr int         SPOOF_CAL_OFFSET   = 0;
     // Crank length reported (CP op 0x05) and stored when the bike sets it (0x04), in 1/2 mm.
     // 345 = 172.5 mm — the real crank's captured Request-Crank-Length value (`20 05 59 01`).
     static constexpr uint16_t    SPOOF_CRANK_LENGTH_HALFMM = 345;

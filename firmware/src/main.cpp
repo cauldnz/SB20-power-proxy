@@ -215,6 +215,15 @@ void loop() {
     perf.sample(esp_timer_get_time());  // record this loop's period (Phase A)
     proxy.loop();
 
+#if !USE_MOCK_METER
+    // Meter just dropped -> clear the last readings so the OLED / /stats don't show stale numbers
+    // (source already flips to "searching"; this stops a stale power_w lingering alongside it).
+    static bool wasConnected = false;
+    const bool nowConnected = meter.connected();
+    if (wasConnected && !nowConnected) proxy.reset();
+    wasConnected = nowConnected;
+#endif
+
 #if USE_WIFI
     wifi.handle();  // service HTTP + OTA, promote to healthy
 

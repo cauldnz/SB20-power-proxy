@@ -22,6 +22,14 @@ public:
 
     void loop() { source_.loop(); }
 
+    // Drop the last readings back to defaults (0 W, unknown cadence) — call when the meter
+    // disconnects so the OLED / /stats stop showing stale values. (forwarded_ is a lifetime
+    // counter and is intentionally left alone.)
+    void reset() {
+        lastSource_ = PowerReading{};
+        lastOutput_ = PowerReading{};
+    }
+
     // observability (for the OLED / tests)
     int forwarded() const { return forwarded_; }
     PowerReading lastSource() const { return lastSource_; }
