@@ -4,12 +4,13 @@ The single index of every on-bike / hardware session we **plan and run**. Histor
 links to that session's **Plan + Actual** doc, and completed sessions stay as the record. Convention:
 CLAUDE.md → *Session plans & the session ledger* (record Actual against Plan, status header, mark DONE).
 
-> **Active session → [Bike session 3](../BIKE-SESSION-3.md)**
-> · cold-start for the bike machine: [BIKE-SESSION-READY.md](../BIKE-SESSION-READY.md)
+> **Latest: session 3 ✅ DONE (2026-06-19).** Next: **session 4** — brake-lever BLE probe + retest A1
+> after its desk fix (not yet planned). **Desk work first:** derive the real Enhanced-Offset (`0x10`)
+> format for A1. · bike-machine cold-start: [BIKE-SESSION-READY.md](../BIKE-SESSION-READY.md)
 
 | # | Date | Status | Session (Plan + Actual) | Outcome |
 |---|------|--------|--------------------------|---------|
-| 3 | 2026-06-19 | 🟡 PLANNED | [verify PR #5 fixes + map the shifters](../BIKE-SESSION-3.md) | — *(record actuals into the doc; mark ✅ DONE after)* |
+| 3 | 2026-06-19 | ✅ DONE | [verify PR #5 fixes + map the shifters](../BIKE-SESSION-3.md) | A3 reconnect + A4 handshake ✅; A1 zero-reset ❌ + A2 crank-length ⚠️ (Stages app bypasses standard CP — desk fix); **full 6-button shifter map** captured (one-hot `0c46be60`, **stateless** → Zwift-Click-ready); silent chans likely aero-remote pods |
 | 2 | 2026-06-18 | ✅ DONE | [does the SB20 read the faithful spoof? + capture handshake](../BIKE-SESSION-2.md) | SB20 accepted power **and** cadence, crank-free; control-point / reconnect bugs captured → fixed in PR #5 |
 | 1 | pre-session-2 | ⛔ SUPERSEDED | [ANT+ Phase-1B pairing run-sheet](../NEXT-BIKE-SESSION.md) | Folded into sessions 2–3; kept for the un-run ANT+/Phase-1B steps |
 

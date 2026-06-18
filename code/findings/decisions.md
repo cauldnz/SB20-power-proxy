@@ -1089,3 +1089,26 @@ the offset now sees the real BLE value.
 advanced in parallel through bike-sessions 2; `main`'s `903` was the un-BLE-validated ANT+ carry-over
 (session 2's zero-reset never completed, so 903 was never confirmed on BLE). Ported to `main` via PR #7
 alongside the off-loop-OLED perf work, keeping all of main's PR #5 control-point / pinning fixes.
+
+## 2026-06-19 — Bike session 3: firmware-fix verification + full shifter map
+
+Findings (bike session 3; Part B precisely timestamped 08:38:17-08:53:08 local).
+
+CORE PRODUCT RE-VALIDATED on the bike: Assioma (ASSIOMA17039L, e6:20:90:8c:f3:fe) -> ESP -> SB20 relays power AND cadence crank-free (real L-crank battery pulled, R 4963 in). source:connected, src_power_w==power_w, src_cadence==cadence, forwarded climbing. A calibrated meter is zeroed upstream, so the spoofed crank never needs its own zero -> A1/A2 below are protocol-completeness, NOT blockers.
+
+Firmware fixes (PR #5) on the real bike:
+- A3 reconnect-without-reboot: CONFIRMED. SB20 disconnect reason=531 (HCI 0x13 remote-terminated) + auto-reconnect 3x, reboot_count held at 7 (no reboot). advertiseOnDisconnect(true) works.
+- A4 constant handshake: CONFIRMED. [prop fe02] write bfda1853 on every connect.
+- A1 zero-reset (Enhanced Offset Comp 0x10): STILL FAILS. SB20 writes bare 10; firmware replies 20 10 01 00 00 (encodeOffsetCompResponse(0x10, SPOOF_CAL_OFFSET=0)). Link HELD (no disconnect, better than session 2) but Stages app calibrate UI spins forever -> our Enhanced-Offset reply format is wrong. Have the real crank 0x0C reply (200c010000, 2026-06-15) but never its 0x10. DESK FIX: implement proper CPS Enhanced-Offset-Compensation response and/or a write-capable BLE probe to elicit the real crank 0x10 bytes.
+- A2 crank-length: setting 170mm produced NO [cp] write 04 to our crank (complete-from-boot /log); app showed 170 briefly then -- after a drop. Stages app does NOT configure crank length over the standard CPS control point (SB20-local or proprietary d445fe0x svc we present but do not implement). Our 0x04/0x05 handlers are vestigial for the Stages path.
+- PERF: one 2.6s loop stall (loop_max_us 2619993, stalls_200ms 1) in the BLE (re)connect path. Isolated, no reboot, relay unaffected; desk look. Otherwise OLED-off-loop fix holds (p95 10ms, 0 stalls at idle).
+
+SHIFTER MAP (Part B) — SB20 E4:AA:5A:D6:0E:D4 (Stages Bike 0105, SW 1.12.4+3792, Nordic nRF, Buttonless DFU 0xfe59), via 06_capture_ble.py --subscribe-all -> findings/captures/SHIFTER-probe-3-20260619-0838.jsonl (2687 lines):
+- ALL 6 buttons notify ONLY on 0c46be60 (svc 0c46be5f), one-hot uint16: LEFT up/down/3rd = 0x0001/0x0002/0x0004 (bits 0-2); RIGHT up/down/3rd = 0x0008/0x0010/0x0020 (bits 3-5). Completes the session-2 partial.
+- Frame per press: 01 00 <bit> streamed while held (~10-20 notifs/press, streams state not a clean edge -> emulator must debounce); commit 03 00 <bit> <bit> (both fields = pressed bit, NOT a left/right split); terminator 04 00 <bit> OR 08 00 <bit> (state-dependent: LEFT-up gave 04 once, 08 on all 10 of the walk; likely gear-changed vs at-limit; one open frame detail).
+- STATELESS: LEFT-up x10 kept bitmask 0x0001 (no counter/wrap/clamp). Gear index is NOT on the shifter; consumer owns it -> maps 1:1 onto the Zwift-Click model.
+- Silent channels 0c46be61 + 0c46beb0 never fired. HYPOTHESIS (owner): optional clip-on aero-bar REMOTE shifter pods — GATT has two parallel vendor svcs (0c46be5f: be60+be61; 0c46beaf: beb0 + write char beb1) = main + remotes. Untestable without the accessory. Brake levers untested -> session 4.
+- Write candidate 0c46beb1 (write-without-response): NOT probed (deferred).
+- Haptics: NONE on any pod — the buzz is the phone/Stages app (retro-explains session-2 "no haptic on 3rd").
+
+Next: A1 desk fix (real 0x10 format) before next bike trip; session 4 = brake-lever probe (be61/beb0/FTMS Status) + retest A1; Zwift-Click clean-room research now unblocked.
