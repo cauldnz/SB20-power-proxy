@@ -4,6 +4,11 @@
 through [`BIKE-SESSION-3.md`](BIKE-SESSION-3.md) — watching `/log` and the capture files as they
 narrate ("flashed", "battery out", "pairing now", "pressed LEFT-up"). Don't dump the whole sheet; walk it.
 
+**Record as you go.** Write each step's result **back into `BIKE-SESSION-3.md`** (`✅`/`❌`/`⚠️` + the
+observed values / `/log` lines) — not just into chat. At the end, set its `Status:` to `✅ DONE (date)`
+with a one-line Outcome, update the ledger [`sessions/README.md`](sessions/README.md), and promote durable
+findings to `code/findings/decisions.md` + commit captures. (CLAUDE.md → *Session plans & the session ledger*.)
+
 Prepared 2026-06-19 from the desk machine. Everything below was verified just before handoff.
 
 ---
@@ -64,5 +69,5 @@ Open [`BIKE-SESSION-3.md`](BIKE-SESSION-3.md) and walk the rider through it:
 JSONL capture files off the machine as they go. Each rung is a win — if something stalls, grab `/log`
 and we iterate.
 
-> Older docs (`NEXT-BIKE-SESSION.md`, `BIKE-SESSION-2.md`) are **superseded/historical** — ignore them
-> for today; `BIKE-SESSION-3.md` is the live run sheet.
+> Past/superseded sessions are indexed in [`sessions/README.md`](sessions/README.md) (the ledger) —
+> `BIKE-SESSION-3.md` is the only live run sheet for today.

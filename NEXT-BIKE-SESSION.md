@@ -1,8 +1,9 @@
 # 🚴 Next Bike Session — open-item closure + Phase 1B pairing test
 
-> ⛔ **SUPERSEDED (historical).** This run sheet predates bike-session 2. For the current session start
-> at **[`BIKE-SESSION-READY.md`](BIKE-SESSION-READY.md)** → **[`BIKE-SESSION-3.md`](BIKE-SESSION-3.md)**.
-> Kept only for the ANT+/Phase-1B steps that haven't been re-run.
+> ⛔ **Status: SUPERSEDED (historical).** This run sheet predates bike-session 2. For the current
+> session start at **[`BIKE-SESSION-READY.md`](BIKE-SESSION-READY.md)** →
+> **[`BIKE-SESSION-3.md`](BIKE-SESSION-3.md)**; all sessions are indexed in
+> [`sessions/README.md`](sessions/README.md). Kept only for the ANT+/Phase-1B steps that haven't been re-run.
 
 > 🟢 **Readiness + device coordinates: [`BIKE-SESSION-READY.md`](BIKE-SESSION-READY.md)** — read it
 > first (the ESP32 is **already flashed** with current firmware and on WiFi at `sb20proxy.local`;

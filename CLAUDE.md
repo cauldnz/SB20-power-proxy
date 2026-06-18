@@ -71,6 +71,17 @@ There is a **single developer** here, but often **multiple Claude sessions shari
 - **Reconciling divergent work: real data wins, and never silently drop the other line's finding.** When two branches disagree on a captured or numeric value (e.g. the BLE cal-offset `0` vs the ANT+ `903`), **verify against the actual capture in `findings/captures/` before choosing** — a capture-grounded value beats "but it was bike-tested." If both look defensible, ask rather than drop. This is *capture before code* / real-data-first applied to merges. When porting one branch's fix onto another, port the **specific delta**; never take a pre-PR branch wholesale (it will delete newer work).
 - **Flash/build only from firmware you've confirmed is current with `origin/main`.** Before flashing the bike, check the source isn't a superseded branch — flashing the wrong build wastes a session and can ship a wrong value (e.g. the ANT+ offset on a BLE crank). The local ESP32 compile is the pre-flash gate (see §Validation).
 
+## Session plans & the session ledger (bike / physical-interaction work)
+
+Any session that touches hardware we can't drive from the desk — a bike session, a flash/pair run, an on-air test — is **planned and recorded in the repo**, with the plan and what actually happened in the **same doc**, and every session tracked in **one ledger**. History stays valuable without leaving a scatter of stale files.
+
+- **One ledger: `sessions/README.md`.** Every physical session is a row there — number, date, status, one-line outcome, link to its doc. Check the ledger to know what's current, what's done, and what each session concluded; nothing else needs scanning to see the state of play.
+- **Each session doc is Plan *and* Actual.** It starts as the plan; while guiding the session live, **annotate each step in place** with what actually happened — `✅` pass / `❌` fail / `⚠️` partial, plus the observed bytes / values / UI / `/log` lines. Don't leave the result only in chat; write it back. The plan text stays — Actual is added next to it, not swapped in.
+- **Status header, always:** `Status: PLANNED → IN PROGRESS → ✅ DONE (YYYY-MM-DD)` (or `⛔ SUPERSEDED → <successor>`). At the end, flip to DONE and add a one-line **Outcome** at the top.
+- **Promote durable findings.** The session doc is the blow-by-blow narrative; lasting facts (a confirmed byte value, "the SB20 ergs off our crank", a refuted hypothesis) are also appended to `findings/decisions.md` (append-only) and captured bytes committed to `findings/captures/`. Those are the canonical record.
+- **No detritus.** New session docs live in `sessions/`; completed ones stay there marked DONE (history is valuable — don't delete) and are linked from the ledger. Don't spawn ad-hoc `NEXT-`/`READY-` variants per session — one ledger, one doc per session. (Legacy `BIKE-SESSION-*.md` / `NEXT-BIKE-SESSION.md` stay at the repo root because the append-only `decisions.md` links them; the ledger tracks them in place.)
+- **One open session at a time.** Don't draft session N+1 until N is DONE — keeps "what's current" unambiguous.
+
 ## Validation
 
 **Unit tests are the standing rule.** They live in `code/tests/`, run with `pytest` from

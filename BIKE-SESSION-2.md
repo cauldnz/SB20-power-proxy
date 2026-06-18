@@ -1,5 +1,9 @@
 # 🚴 Bike session 2 — does the SB20 read the faithful spoof? + capture its handshake
 
+**Status: ✅ DONE (2026-06-18)** · tracked in [`sessions/README.md`](sessions/README.md). **Outcome:**
+SB20 accepted power **and** cadence, crank-free; control-point / reconnect bugs captured via `/log` →
+fixed in PR #5; shifter-over-BLE discovered (bonus probe) → `code/findings/shifter-ble-protocol.md`.
+
 Prepared overnight 2026-06-18. The ESP32-C3 OLED board is flashed with the **byte-faithful** crank
 firmware (PR #5 / branch `ble-crank-fidelity`) and now **logs everything the SB20 writes to us** —
 the one thing no sniffer can see. Two goals tonight, in order:
