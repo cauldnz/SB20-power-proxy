@@ -111,12 +111,29 @@ void test_calibration_response_bytes() {
 // Request-Crank-Length reply OMITS the success byte (`20 05 <len>`, unlike the Assioma's `20 05 01 <len>`).
 
 void test_cp_offset_comp_enhanced_0x10() {
+    // Enhanced Offset Compensation (0x10) — the op the Stages app sends. Spec response is RICHER than
+    // the simple 0x0C: offset (sint16 LE) THEN Manufacturer Company ID (uint16 LE). The old firmware
+    // wrongly sent the 5-byte 0x0C shape -> the calibrate UI spun (bike-session 3, 2026-06-19). This
+    // asserts the spec-correct STRUCTURE; the exact company-id (+ any mfg data) are grounded next from
+    // the real crank's 0x10 reply (sessions/session-04 capture), not derivable from the spec.
     const uint8_t req[] = {CP_OP_ENHANCED_OFFSET_COMP};
-    CpResult r = handleControlPoint(req, sizeof(req), 345, 903);  // offset 903 = 0x0387 LE
-    const uint8_t expected[] = {0x20, 0x10, 0x01, 0x87, 0x03};
-    TEST_ASSERT_EQUAL_INT(5, (int)r.response.size());
-    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, r.response.data(), 5);
+    CpResult r = handleControlPoint(req, sizeof(req), 345, /*offset*/0, /*mfgCompanyId*/0x0123);
+    const uint8_t expected[] = {0x20, 0x10, 0x01, 0x00, 0x00, 0x23, 0x01};  // offset 0 LE, company 0x0123 LE
+    TEST_ASSERT_EQUAL_INT(7, (int)r.response.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, r.response.data(), 7);
     TEST_ASSERT_FALSE(r.crankLengthChanged);
+}
+
+void test_encode_enhanced_offset_comp_structure() {
+    // 0x20 | 0x10 | 0x01 | offset(sint16 LE) | mfgCompanyId(uint16 LE) | mfgData[...]
+    const std::vector<uint8_t> mfgData = {0xDE, 0xAD};
+    auto r = encodeEnhancedOffsetCompResponse(/*offset*/-5, /*mfgCompanyId*/0xABCD, mfgData);
+    const uint8_t expected[] = {0x20, 0x10, 0x01, 0xFB, 0xFF, 0xCD, 0xAB, 0xDE, 0xAD};  // -5 = 0xFFFB LE
+    TEST_ASSERT_EQUAL_INT(9, (int)r.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, r.data(), 9);
+    // No manufacturer-specific data -> 7 bytes (offset + company id only); still richer than 0x0C's 5.
+    auto bare = encodeEnhancedOffsetCompResponse(0, 0x0000);
+    TEST_ASSERT_EQUAL_INT(7, (int)bare.size());
 }
 
 void test_cp_offset_comp_basic_0x0C() {
@@ -709,6 +726,7 @@ int runUnityTests() {
     RUN_TEST(test_cps_decode_short_frame_is_safe);
     RUN_TEST(test_calibration_response_bytes);
     RUN_TEST(test_cp_offset_comp_enhanced_0x10);
+    RUN_TEST(test_encode_enhanced_offset_comp_structure);
     RUN_TEST(test_cp_offset_comp_basic_0x0C);
     RUN_TEST(test_cp_set_crank_length_0x04);
     RUN_TEST(test_cp_request_crank_length_0x05_stages_format);

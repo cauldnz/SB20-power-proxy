@@ -19,6 +19,14 @@ struct Config {
     // same calibration (see decisions.md 2026-06-17 offset reconciliation); this firmware IS the BLE
     // crank, so its zero-reset must answer with the BLE value, 0.
     static constexpr int         SPOOF_CAL_OFFSET   = 0;
+    // Manufacturer Company ID (uint16) carried in the ENHANCED Offset Compensation (0x10) reply the
+    // Stages app sends for its zero-reset — the spec puts it after the offset (see Cps.h
+    // encodeEnhancedOffsetCompResponse). ⚠️ UNCONFIRMED: the spec mandates the field but not its value,
+    // and the real crank's 0x10 reply was never sniffable passively. Grounded next from
+    // `06_capture_ble.py --control-point enhanced-offset-compensation` (sessions/session-04). 0 here is
+    // a flagged placeholder — the spec-correct *structure* is the candidate fix; the exact value (and
+    // any trailing manufacturer-specific data) come from the capture.
+    static constexpr uint16_t    SPOOF_MFG_COMPANY_ID = 0x0000;
     // Crank length reported (CP op 0x05) and stored when the bike sets it (0x04), in 1/2 mm.
     // 345 = 172.5 mm — the real crank's captured Request-Crank-Length value (`20 05 59 01`).
     static constexpr uint16_t    SPOOF_CRANK_LENGTH_HALFMM = 345;
