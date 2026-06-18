@@ -20,6 +20,10 @@ crank-power peripheral and the Click**. **New research target:** the **Zwift Cli
 virtual-shifting BLE protocol** (what Zwift expects) — clean-room; open prior art exists, do not copy
 GPL.
 
+**Second consumer of these same button events:** [`shifter-erg-control.md`](shifter-erg-control.md) —
+use the shifter buttons to **nudge the SB20's Erg target watts** (write FTMS Set Target Power), a feature
+the Stages app lacks. Both features share the read+debounce half decoded below.
+
 ## How it was found
 
 `06_capture_ble.py --address E4:AA:5A:D6:0E:D4 --subscribe-all` connects to the **SB20's own GATT**
