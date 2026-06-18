@@ -573,7 +573,17 @@ void test_oled_connected_lines() {
 void test_oled_connected_unknown_cadence_omitted() {
     auto l = formatOledLines(OledMode::Connected, "10.0.0.5", 120, -1);
     TEST_ASSERT_EQUAL_STRING("120W", l[2].c_str());  // cadence unknown -> power only, no rpm suffix
-    TEST_ASSERT_EQUAL_STRING("", l[3].c_str());
+    TEST_ASSERT_EQUAL_STRING("", l[3].c_str());      // cadence < 0 (unknown) -> blank row
+}
+
+void test_oled_connected_shows_rssi() {
+    // RSSI (negative dBm) rides the title row; the IP keeps its own row. rssi default 0 -> brand.
+    auto l = formatOledLines(OledMode::Connected, "192.168.1.82", 230, 85, -68);
+    TEST_ASSERT_EQUAL_STRING("WiFi -68", l[0].c_str());
+    TEST_ASSERT_EQUAL_STRING("192.168.1.82", l[1].c_str());  // IP unchanged
+    TEST_ASSERT_EQUAL_STRING("230W 85rpm", l[2].c_str());    // power+cadence still share the row
+    auto plain = formatOledLines(OledMode::Connected, "192.168.1.82", 230, 85);  // no rssi
+    TEST_ASSERT_EQUAL_STRING("SB20 PROXY", plain[0].c_str());
 }
 
 // --- saved page ---------------------------------------------------------------
@@ -734,6 +744,7 @@ int runUnityTests() {
     RUN_TEST(test_oled_portal_lines);
     RUN_TEST(test_oled_connected_lines);
     RUN_TEST(test_oled_connected_unknown_cadence_omitted);
+    RUN_TEST(test_oled_connected_shows_rssi);
     RUN_TEST(test_saved_page_has_ssid_and_hints);
     RUN_TEST(test_saved_page_escapes_ssid);
     RUN_TEST(test_app_page_essentials);

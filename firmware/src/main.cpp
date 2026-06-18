@@ -99,6 +99,34 @@ static void stallWatchdogCb(void*) {
 }
 #endif  // USE_WIFI
 
+#if USE_OLED
+// Dedicated OLED task: keeps the ~94 ms I2C render OFF the hot loop. Polls the live state and only
+// redraws when the 4 displayed rows actually change (render-on-change). The full-buffer I2C send
+// blocks THIS task (the IDF i2c driver yields on the transfer), so loop() no longer stalls on the
+// panel — the per-render cost moves off the path that services BLE/WiFi.
+static void oledTask(void*) {
+    std::array<std::string, 4> last = {};
+    for (;;) {
+        OledMode mode = OledMode::Connected;
+        std::string ip;
+        int rssi = 0;
+#if USE_WIFI
+        mode = wifi.inPortal() ? OledMode::Portal
+             : (wifi.isUp() ? OledMode::Connected : OledMode::Connecting);
+        ip = std::string(WiFi.localIP().toString().c_str());
+        rssi = wifi.isUp() ? WiFi.RSSI() : 0;
+#endif
+        auto lines = formatOledLines(mode, ip, proxy.lastOutput().power_w,
+                                     proxy.lastOutput().cadence_rpm, rssi);
+        if (lines != last) {
+            oled.drawLines(lines);
+            last = lines;
+        }
+        vTaskDelay(pdMS_TO_TICKS(250));  // poll 4x/s; render only on change
+    }
+}
+#endif  // USE_OLED
+
 void setup() {
     Serial.begin(115200);
     Serial.setTxTimeoutMs(0);  // never block on USB-serial if no host is reading (raedian gotcha)
@@ -175,6 +203,11 @@ void setup() {
         esp_timer_start_periodic(s_stallTimer, (uint64_t)15000 * 1000);  // 15 s window
     }
 #endif
+
+#if USE_OLED
+    // Render the OLED on its own task so the I2C transfer never blocks the hot loop.
+    xTaskCreate(oledTask, "oled", 4096, nullptr, 1, nullptr);
+#endif
 }
 
 void loop() {
@@ -190,19 +223,7 @@ void loop() {
     digitalWrite(Config::STATUS_LED_PIN, StatusLed::lit(ls, millis()) ? LOW : HIGH);  // active-low
 #endif
 
-#if USE_OLED
-    // Refresh the OLED at ~1 Hz. The 50 kHz I2C panel render blocks the loop ~50 ms, so the redraw
-    // rate sets the loop-stall rate (perf-results.md 2026-06-17: 2 Hz redraw == ~2 stalls/s >50ms).
-    // 1 Hz halves that and is plenty for a glanceable display. A later pass can render-on-change.
-    static uint32_t lastOled = 0;
-    if (millis() - lastOled >= 1000) {
-        lastOled = millis();
-        const OledMode m = wifi.inPortal() ? OledMode::Portal
-                         : (wifi.isUp() ? OledMode::Connected : OledMode::Connecting);
-        oled.render(m, WiFi.localIP().toString(), proxy.lastOutput().power_w,
-                    proxy.lastOutput().cadence_rpm);
-    }
-#endif
+    // (OLED now renders on its own task — see oledTask — so it never blocks this loop.)
 
 #if USE_MOCK_METER
     // Drive the mock source at 1 Hz with a gentle 100..300..100 W ramp so the spoofed
