@@ -20,6 +20,7 @@ Metrics (from `/stats`, cumulative over the soak window after `/stats/reset`):
 | date | commit | change / scenario | loop p95 | loop max | stalls 50/200ms | loops/s | min heap | frag% | reboots | verdict |
 |------|--------|-------------------|----------|----------|-----------------|---------|----------|-------|---------|---------|
 | 2026-06-17 | Phase A | **baseline** — live OLED fw; load = central (fake_meter --balance 2Hz) + peripheral (crank_reader) + /ui poll; 80 s | 10ms | 96ms | 161 / 0 | 139 | 131672 | 20 | none | baseline. **~2.0 stalls/s >50ms ≈ the 500 ms OLED redraw rate** → OLED render is the prime suspect (soak-1781759959.jsonl) |
+| 2026-06-17 | Phase D | **OLED redraw 500 ms → 1000 ms (1 Hz)** — same load/duration | 10ms | 94ms | 85 / 0 | 152 | 132176 | 18 | none | ✅ **KEEP**. Stalls halved 161→85 (2.0→1.06/s), loops/s 139→152 — **confirms the OLED I²C render is the loop-stall source**. Next: render-on-change (near-zero when idle) + attack the ~94 ms per-render cost itself (soak-1781760259.jsonl) |
 
 > Note: the **baseline** must be captured on the Phase A firmware (it serves `/stats`). At RSSI −81
 > the OTA was unreliable — run the iterate loop with the board **near the access point**.

@@ -191,9 +191,11 @@ void loop() {
 #endif
 
 #if USE_OLED
-    // Refresh the OLED at ~2 Hz (the 50 kHz I2C panel is slow; no need to redraw every loop).
+    // Refresh the OLED at ~1 Hz. The 50 kHz I2C panel render blocks the loop ~50 ms, so the redraw
+    // rate sets the loop-stall rate (perf-results.md 2026-06-17: 2 Hz redraw == ~2 stalls/s >50ms).
+    // 1 Hz halves that and is plenty for a glanceable display. A later pass can render-on-change.
     static uint32_t lastOled = 0;
-    if (millis() - lastOled >= 500) {
+    if (millis() - lastOled >= 1000) {
         lastOled = millis();
         const OledMode m = wifi.inPortal() ? OledMode::Portal
                          : (wifi.isUp() ? OledMode::Connected : OledMode::Connecting);
