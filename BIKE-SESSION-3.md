@@ -175,3 +175,12 @@ zero-offsets **903 / 951**, back to normal mode → pedal once to confirm the **
 - **Shifter capture connects but no notifications on press** → confirm the Stages app is **disconnected**
   from the SB20 (contention), and that you're on the SB20's own address `E4:AA:5A:D6:0E:D4`.
 - **Ctrl-C any capture any time** — already-captured data is kept. Screenshot any confusing app UI; I'll read it.
+
+---
+
+## Retro (fill in at the end — see [`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md) §4)
+
+- **Went well:**
+- **Went wrong / slow / confusing (+ root cause):**
+- **Changes to make before next session (process / run-sheet / tooling):**
+- **Next gate + desk work that must precede it:**

@@ -4,6 +4,10 @@
 through [`BIKE-SESSION-3.md`](BIKE-SESSION-3.md) — watching `/log` and the capture files as they
 narrate ("flashed", "battery out", "pairing now", "pressed LEFT-up"). Don't dump the whole sheet; walk it.
 
+**How to run it well: read [`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md) first** — the rider's time and
+patience are the budget; one step at a time, explicit pass/fail, never send them to do something you
+haven't verified is ready, and close with a retro.
+
 **Record as you go.** Write each step's result **back into `BIKE-SESSION-3.md`** (`✅`/`❌`/`⚠️` + the
 observed values / `/log` lines) — not just into chat. At the end, set its `Status:` to `✅ DONE (date)`
 with a one-line Outcome, update the ledger [`sessions/README.md`](sessions/README.md), and promote durable
