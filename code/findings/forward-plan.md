@@ -373,12 +373,15 @@ From `phase-0-report.md` §5 — track, don't block on:
   (PerfMonitor + `/stats`, Task-Watchdog + reset-reason to catch the hang, a `perf_soak.py` load
   harness, and a prioritised efficiency backlog), grounded in the framework's verified instrumentation
   APIs. Elevated now that the C3 OLED is the beta-tester board ([[esp32-c3-oled-beta-board]]).
-- **FTMS layer ("fitness device data" + trainer erg control)** — backlog, the next BLE layer after
-  the 2026-06-17 CPS bring-up. Two halves: (a) the ESP32 central also subscribing **FTMS Indoor Bike
-  Data (0x2AD2)** so a trainer/fitness machine is a valid source, and (b) the **Set Target Power**
-  control-point op (0x2AD9 op 0x05) for erg control — the "actually control the trainer power" goal.
-  Mirror the CPS work: a pure FTMS codec in `firmware/lib/proxy` + `sb20proxy.ble`, host-tested, then
-  a `fake_trainer.py` harness peripheral. Gated for *erg* on Session G Part C.
+- **FTMS layer ("fitness device data" + trainer erg control)** — the next BLE layer; both halves
+  (a) FTMS **Indoor Bike Data (0x2AD2)** as a power source, and (b) **Set Target Power** (0x2AD9 op
+  0x05) → the SB20's Control Point for erg ("actually control the trainer power", from the Python
+  ride-director). **Real-data-first, so it's phased on a capture:** the SB20 is itself an FTMS machine
+  but we have **zero captured FTMS payloads** → built `code/scripts/capture_ftms.py` (codec-free; logs
+  raw Indoor Bike Data + a guarded Set-Target-Power erg recon) and added it to `NEXT-BIKE-SESSION.md`
+  §5b. **The codec / `FtmsMeterClient` / `fake_trainer.py` / `ftms_erg.py` build is GATED on that ride
+  capture** (golden vectors from real bytes, like CPS). Approved plan covers F1–F3; erg acceptance is
+  the Session G Part C question the capture answers.
 - **Zero stale `src_*`/`power_w` on meter disconnect (cosmetic)** — backlog. On disconnect the board
   keeps the last received values while flipping `source` to `searching`; `source` is the
   authoritative "no live meter" flag, but a consumer reading only `power_w` would see a stale number.
