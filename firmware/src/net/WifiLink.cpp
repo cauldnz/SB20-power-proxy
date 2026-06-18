@@ -154,6 +154,15 @@ void WifiLink::startStationServer_() {
     server_->on("/ui", HTTP_GET, [this]() {  // streaming dashboard; polls / from the browser
         server_->send(200, "text/html", appPageHtml());
     });
+    // Perf observability (Phase A): loop timing, heap/frag, stack, idle, reboot evidence.
+    server_->on("/stats", HTTP_GET, [this]() {
+        std::string j = perfProvider_ ? perfProvider_() : std::string("{}");
+        server_->send(200, "application/json", j.c_str());
+    });
+    server_->on("/stats/reset", HTTP_GET, [this]() {  // zero the window (perf_soak calls this)
+        if (perfReset_) perfReset_();
+        server_->send(200, "text/plain", "perf window reset\n");
+    });
     server_->on("/update", HTTP_GET, [this]() {
         server_->send(200, "text/html",
                       "<form method='POST' action='/update' enctype='multipart/form-data'>"

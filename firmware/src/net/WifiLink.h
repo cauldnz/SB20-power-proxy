@@ -26,12 +26,21 @@ namespace sb20proxy {
 class WifiLink {
 public:
     using StatusProvider = std::function<ProxyStatus()>;
+    using PerfProvider = std::function<std::string()>;  // returns the GET /stats JSON
+    using PerfResetHook = std::function<void()>;         // zero the perf window (GET /stats/reset)
 
     // Join WiFi (or raise the setup portal), start OTA + the HTTP server. `provider` renders
     // the live status JSON per request. `display` (optional) reports setup state; defaults to
     // logging over Serial.
     void begin(const char* hostname, StatusProvider provider,
                IProvisioningDisplay* display = nullptr);
+
+    // Wire the perf observability endpoints (GET /stats + /stats/reset). Optional; call after
+    // begin(). The handlers read these at request time, so ordering with begin() doesn't matter.
+    void setPerf(PerfProvider stats, PerfResetHook reset) {
+        perfProvider_ = stats;
+        perfReset_ = reset;
+    }
 
     // Call from loop(): services HTTP + OTA (station) or the captive DNS + portal (setup), and
     // promotes to healthy (which cancels the boot-guard and validates the running OTA image).
@@ -50,6 +59,8 @@ private:
     WebServer* server_ = nullptr;
     DNSServer* dns_ = nullptr;
     StatusProvider provider_;
+    PerfProvider perfProvider_;
+    PerfResetHook perfReset_;
     IProvisioningDisplay* display_ = nullptr;
     const char* hostname_ = "sb20proxy";
     std::vector<ScannedNet> networks_;  // APs scanned for the portal picker (RSSI + secured)

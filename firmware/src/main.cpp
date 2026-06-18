@@ -4,9 +4,12 @@
 
 #include <Arduino.h>
 #include <NimBLEDevice.h>
+#include <esp_timer.h>
 
 #include "Config.h"
 #include "Correction.h"
+#include "PerfMonitor.h"
+#include "PerfStats.h"
 #include "ProxyCore.h"
 #include "StatusLed.h"
 #include "ble/BleCrankPeripheral.h"
@@ -20,7 +23,10 @@
 #endif
 
 #if USE_WIFI
+  #include <ArduinoOTA.h>
+  #include <Preferences.h>
   #include <WiFi.h>
+  #include <esp_heap_caps.h>
   #include "net/WifiLink.h"
 #endif
 
@@ -42,11 +48,79 @@ static WifiLink wifi;
 static OledDisplay oled;
 #endif
 
+// --- perf instrumentation (Phase A/B) -----------------------------------------
+static PerfMonitor perf;
+volatile uint32_t g_loopBeat = 0;  // bumped each loop AND during OTA; the stall watchdog watches it
+
+#if USE_WIFI
+static uint32_t g_rebootCount = 0;       // persisted across reboots (NVS)
+static int g_resetReason = 0;            // (int)esp_reset_reason() captured at boot
+static std::string g_swReason;           // why the last sw-reset happened ("loop_stall" / "")
+static uint32_t g_perfWindowStartMs = 0; // for /stats window_ms (reset by /stats/reset)
+static esp_timer_handle_t s_stallTimer = nullptr;
+
+// GET /stats — fill the pure PerfStats from the real esp_* reads (the seam), render via PerfStats.h.
+static std::string perfStatsJson() {
+    PerfStats p;
+    p.loop = perf.summary();
+    p.windowMs = millis() - g_perfWindowStartMs;
+    p.freeHeap = ESP.getFreeHeap();
+    p.minFreeHeap = ESP.getMinFreeHeap();
+    p.largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    p.loopStackHwm = uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t);  // calling = loop task
+    // CPU idle %: ulTaskGetIdleRunTimeCounter() isn't linkable in this Arduino FreeRTOS build, so
+    // idle_pct stays -1 and we use loops/sec (loop_count / window_ms) as the headroom proxy instead
+    // (computed in perf_soak.py — fewer loops/sec under load = less headroom).
+    p.rebootCount = g_rebootCount;
+    p.resetReasonCode = g_resetReason;
+    p.swReason = g_swReason;
+    p.uptimeMs = millis();
+    return renderPerfJson(p);
+}
+
+// Phase B — software loop-stall watchdog. Runs from the esp_timer task (alive even when the Arduino
+// loopTask is wedged): if loop() hasn't advanced for a full period, the device is hung — record why
+// (so /stats shows it after the reboot) and restart. OTA-safe: ArduinoOTA.onProgress also bumps
+// g_loopBeat, so a slow OTA transfer doesn't read as a stall.
+static void stallWatchdogCb(void*) {
+    static uint32_t lastBeat = 0;
+    static bool primed = false;
+    uint32_t beat = g_loopBeat;
+    if (primed && beat == lastBeat) {
+        Preferences p;
+        if (p.begin("sb20perf", false)) {
+            p.putString("swreason", "loop_stall");
+            p.end();
+        }
+        esp_restart();
+    }
+    lastBeat = beat;
+    primed = true;
+}
+#endif  // USE_WIFI
+
 void setup() {
     Serial.begin(115200);
     Serial.setTxTimeoutMs(0);  // never block on USB-serial if no host is reading (raedian gotcha)
     delay(200);
     Serial.println("[sb20proxy] BLE crank proxy starting");
+
+#if USE_WIFI
+    // Capture reboot evidence ASAP (before anything can hang): the IDF reset reason + a persisted
+    // reboot counter + the sw-reset detail the stall watchdog may have left last time.
+    g_resetReason = (int)esp_reset_reason();
+    {
+        Preferences prefs;
+        if (prefs.begin("sb20perf", false)) {
+            g_rebootCount = prefs.getUInt("reboots", 0) + 1;
+            prefs.putUInt("reboots", g_rebootCount);
+            g_swReason = std::string(prefs.getString("swreason", "").c_str());
+            prefs.remove("swreason");  // consume it; only the most recent sw-reset detail persists
+            prefs.end();
+        }
+    }
+    g_perfWindowStartMs = millis();
+#endif
 
 #if USE_OLED
     oled.begin();  // bring the panel up early so it can show portal / connecting
@@ -86,10 +160,26 @@ void setup() {
         Serial.printf("[sb20proxy] WiFi connected; status at http://%s/\n",
                       WiFi.localIP().toString().c_str());
     }
+
+    // Phase A/B: wire GET /stats + /stats/reset, and arm the loop-stall watchdog.
+    wifi.setPerf(perfStatsJson, []() {
+        perf.reset();
+        g_perfWindowStartMs = millis();
+    });
+    ArduinoOTA.onProgress([](unsigned int, unsigned int) { ++g_loopBeat; });  // keep WD fed during OTA
+    esp_timer_create_args_t wdArgs = {};
+    wdArgs.callback = &stallWatchdogCb;
+    wdArgs.dispatch_method = ESP_TIMER_TASK;
+    wdArgs.name = "stallwd";
+    if (esp_timer_create(&wdArgs, &s_stallTimer) == ESP_OK) {
+        esp_timer_start_periodic(s_stallTimer, (uint64_t)15000 * 1000);  // 15 s window
+    }
 #endif
 }
 
 void loop() {
+    ++g_loopBeat;                       // feed the stall watchdog (Phase B)
+    perf.sample(esp_timer_get_time());  // record this loop's period (Phase A)
     proxy.loop();
 
 #if USE_WIFI
