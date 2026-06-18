@@ -92,12 +92,16 @@ void test_cps_decode_short_frame_is_safe() {
 }
 
 void test_calibration_response_bytes() {
-    std::vector<uint8_t> r = encodeCalibrationResponse(903);  // 903 = 0x0387 LE
-    TEST_ASSERT_EQUAL_UINT8(0x20, r[0]);  // response op
-    TEST_ASSERT_EQUAL_UINT8(0x0C, r[1]);  // start offset compensation
-    TEST_ASSERT_EQUAL_UINT8(0x01, r[2]);  // success
-    TEST_ASSERT_EQUAL_UINT8(0x87, r[3]);
-    TEST_ASSERT_EQUAL_UINT8(0x03, r[4]);
+    // Real Stages crank BLE zero-reset reply (offset 0), captured byte-for-byte as 200c010000
+    // (G-crank62144-ble-zero-20260615-070353.jsonl). This is the production SPOOF_CAL_OFFSET value.
+    std::vector<uint8_t> real = encodeCalibrationResponse(0);
+    const uint8_t want[] = {0x20, 0x0c, 0x01, 0x00, 0x00};
+    TEST_ASSERT_EQUAL_INT(5, (int)real.size());
+    for (size_t i = 0; i < 5; ++i) TEST_ASSERT_EQUAL_HEX8(want[i], real[i]);
+    // sint16-LE encoding still works for a non-zero offset (903 = 0x0387, the ANT+ value):
+    std::vector<uint8_t> nz = encodeCalibrationResponse(903);
+    TEST_ASSERT_EQUAL_UINT8(0x87, nz[3]);
+    TEST_ASSERT_EQUAL_UINT8(0x03, nz[4]);
 }
 
 // --- control-point handshake: the SB20's calibration/config (must be ANSWERED) ----------------
@@ -318,6 +322,19 @@ void test_proxy_preserves_cadence() {
     meter.emit(200, 90);                                 // power 200, cadence 90
     TEST_ASSERT_EQUAL_INT(100, crank.last.power_w);      // power corrected
     TEST_ASSERT_EQUAL_INT(90, crank.last.cadence_rpm);   // cadence passes through untouched
+}
+
+void test_proxy_reset_clears_stale_readings() {
+    MockMeter meter;
+    MockCrank crank;
+    ProxyCore proxy(meter, crank, Correction{1.0f, 0.0f});
+    proxy.begin();
+    meter.emit(250, 90);
+    TEST_ASSERT_EQUAL_INT(250, proxy.lastOutput().power_w);
+    proxy.reset();  // meter disconnected -> drop stale values
+    TEST_ASSERT_EQUAL_INT(0, proxy.lastOutput().power_w);
+    TEST_ASSERT_EQUAL_INT(-1, proxy.lastOutput().cadence_rpm);
+    TEST_ASSERT_EQUAL_INT(0, proxy.lastSource().power_w);
 }
 
 // --- status JSON (the HTTP observability model) -------------------------------
@@ -715,6 +732,7 @@ int runUnityTests() {
     RUN_TEST(test_proxy_relays_power);
     RUN_TEST(test_proxy_applies_correction);
     RUN_TEST(test_proxy_preserves_cadence);
+    RUN_TEST(test_proxy_reset_clears_stale_readings);
     RUN_TEST(test_status_json_mock);
     RUN_TEST(test_status_json_source_state);
     RUN_TEST(test_status_json_unknown_cadence);
