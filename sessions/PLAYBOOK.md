@@ -45,6 +45,11 @@ This pairs with CLAUDE.md → *Session plans & the session ledger* (the doc/stat
   what you see." Make pass/fail something the human **observes**, not **interprets**.
 - **Record actuals inline as you go** — `✅`/`❌`/`⚠️` + the observed bytes/values/`/log` lines, written
   into the session doc, not just chat (the Plan/Actual rule). Memory is lossy; the rider is busy.
+- **Timestamp every step (wall-clock, in the doc).** Note the local time (`HH:MM`) when each section and
+  key step *starts*, beside its result — so **actual** durations are recorded, not reconstructed from
+  memory. The agent has been an unreliable time estimator (bike *and* desk work); logged actuals are the
+  only thing that fixes that. One clock-read per step turns every session into calibration data for the
+  planned-vs-actual review (§4). Get a timestamp at the start of the session and at each section boundary.
 - **Protect the rig.** Write current state down before changing anything; restore it at the end; confirm
   normal operation before they leave.
 - **Know when to stop ratholing.** If a step is stuck, don't loop the rider through blind retries — grab
@@ -73,12 +78,17 @@ better than the last:
   *A retro item without a resulting change is just a complaint.*
 - **Did we reduce future trips?** The best outcome is needing **fewer/shorter** sessions next time — batch
   more, derisk more, capture enough to iterate at the desk instead of on the bike.
+- **Planned vs actual — tabulate it from the timestamps.** Lay each section's *planned* budget beside its
+  *actual* wall-clock (from the per-step timestamps), note the delta and its cause, and carry those deltas
+  into the next session's Plan. The estimate only stops being wrong if the miss is written down; an
+  unrecorded over/under just repeats. (This project's running weak spot is the agent's time estimates.)
 
 Suggested stub to drop at the bottom of each session doc:
 ```
 ## Retro
 - Went well:
 - Went wrong / slow / confusing (+ root cause):
+- Planned vs actual (per section, from the timestamps; + the delta & why):
 - Changes to make before next session (process / run-sheet / tooling):
 - Next gate + desk work that must precede it:
 ```
