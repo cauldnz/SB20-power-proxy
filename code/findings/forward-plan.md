@@ -368,7 +368,11 @@ From `phase-0-report.md` §5 — track, don't block on:
   render-on-change) is plenty and cuts the I2C/coex load; (2) capture a crash backtrace (serial /
   persisted `/log`) to tell a task-watchdog block (likely the OLED I2C) from a coex panic;
   (3) reduce contention — throttle BLE adv/notify, never let the OLED I2C block the loop, pause the
-  OLED during OTA. Shell hardening; does not block the core proxy work. (Chip filed.)
+  OLED during OTA. Shell hardening; does not block the core proxy work. (Chip filed.) **Now has a
+  detailed plan:** [`perf-coex-plan.md`](perf-coex-plan.md) — the measure→improve→iterate loop
+  (PerfMonitor + `/stats`, Task-Watchdog + reset-reason to catch the hang, a `perf_soak.py` load
+  harness, and a prioritised efficiency backlog), grounded in the framework's verified instrumentation
+  APIs. Elevated now that the C3 OLED is the beta-tester board ([[esp32-c3-oled-beta-board]]).
 - **FTMS layer ("fitness device data" + trainer erg control)** — backlog, the next BLE layer after
   the 2026-06-17 CPS bring-up. Two halves: (a) the ESP32 central also subscribing **FTMS Indoor Bike
   Data (0x2AD2)** so a trainer/fitness machine is a valid source, and (b) the **Set Target Power**
