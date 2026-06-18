@@ -674,7 +674,7 @@ void test_perf_json_fields() {
     TEST_ASSERT_TRUE(j.find("\"loop_p95_us\":5000") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"loop_max_us\":60000") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"stalls_50ms\":3") != std::string::npos);
-    TEST_ASSERT_TRUE(j.find("\"frag_pct\":30") != std::string::npos);  // 1 - 90000/130000
+    TEST_ASSERT_TRUE(j.find("\"frag_pct\":31") != std::string::npos);  // 100 - 90000*100/130000 = 31 (int trunc)
     TEST_ASSERT_TRUE(j.find("\"reboot_count\":2") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"reset_reason\":\"task_wdt\"") != std::string::npos);
 }
