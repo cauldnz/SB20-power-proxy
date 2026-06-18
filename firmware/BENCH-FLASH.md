@@ -16,8 +16,25 @@ git checkout claude/esp32-bike-powermeter-urnc0c
 git pull origin claude/esp32-bike-powermeter-urnc0c
 pip install platformio
 cd firmware
-pio test -e native        # host tests, no board — expect 45/45
+pio test -e native        # host tests, no board — expect 56/56
 ```
+
+## ⚡ Reliable flash helper (recommended) — `firmware/flash.ps1`
+
+The C3 has two flashing failure modes we hit repeatedly: **weak-signal OTA drops** and the **USB-JTAG
+bootloader wedge**. `flash.ps1` encodes the recipes (RSSI pre-flight + OTA auto-retry + reboot verify;
+USB auto-detect + bootloader guidance). From `firmware/` (Windows PowerShell):
+```powershell
+.\flash.ps1                            # build + OTA esp32c3-oled-live -> sb20proxy.local (retries)
+.\flash.ps1 -NoBuild                   # just (re)flash the existing build
+.\flash.ps1 -Env esp32c3-wifi-live -Target 192.168.1.165
+.\flash.ps1 -Mode usb                  # USB flash (auto-detects the COM port)
+```
+- **OTA drops?** It's the signal. OTA gets unreliable below ~ **−72 dBm** — move the board nearer the
+  AP (watch `WiFi -XX` on the OLED, or `/ui`), then re-run. The helper retries automatically.
+- **USB "No serial data received" / "Unable to verify flash chip connection"?** The C3 USB-JTAG didn't
+  enter the bootloader. Recover: **HOLD BOOT, TAP RESET, RELEASE BOOT**, re-run `-Mode usb`, then
+  power-cycle the board. (This is the only reliable path once OTA is unavailable.)
 
 ## 1. Build / flash envs (platformio.ini)
 

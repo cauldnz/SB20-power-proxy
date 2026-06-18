@@ -17,17 +17,21 @@ enum class OledMode { Portal, Connecting, Connected };
 // The panel only shows ~3 rows, so a 4th row falls off the bottom: for Connected, power and
 // cadence therefore SHARE row 3 ("230W 85rpm") so the rebroadcast cadence is actually visible.
 inline std::array<std::string, 4> formatOledLines(OledMode mode, const std::string& ip,
-                                                  int watts, int cadenceRpm) {
+                                                  int watts, int cadenceRpm, int rssi = 0) {
     switch (mode) {
         case OledMode::Portal:
             return {"SB20 SETUP", "join wifi:", "SB20-Setup", "192.168.4.1"};
         case OledMode::Connecting:
             return {"SB20 PROXY", "connecting", std::string(), std::string()};
         case OledMode::Connected: {
-            // Row 3 = power then cadence (the rebroadcast value); cadence omitted when unknown.
+            // Row 3 (lines[2]) = power then cadence, SHARED so both stay visible on the ~3-row
+            // panel (cadence omitted when unknown). Title row = signal strength when connected,
+            // clearly labelled RSSI (handy for positioning the board for a strong-enough OTA);
+            // rssi == 0 (not yet connected) falls back to the brand. Full layout review pending.
             std::string row = std::to_string(watts) + "W";
             if (cadenceRpm >= 0) row += " " + std::to_string(cadenceRpm) + "rpm";
-            return {"SB20 PROXY", ip, row, std::string()};
+            std::string title = rssi < 0 ? "WiFi " + std::to_string(rssi) : std::string("SB20 PROXY");
+            return {title, ip, row, std::string()};
         }
     }
     return {std::string(), std::string(), std::string(), std::string()};

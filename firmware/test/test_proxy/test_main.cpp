@@ -14,6 +14,7 @@
 #include "MockCrank.h"
 #include "MockMeter.h"
 #include "Provisioning.h"
+#include "PerfStats.h"
 #include "ProxyCore.h"
 #include "Status.h"
 #include "StatusLed.h"
@@ -572,7 +573,17 @@ void test_oled_connected_lines() {
 void test_oled_connected_unknown_cadence_omitted() {
     auto l = formatOledLines(OledMode::Connected, "10.0.0.5", 120, -1);
     TEST_ASSERT_EQUAL_STRING("120W", l[2].c_str());  // cadence unknown -> power only, no rpm suffix
-    TEST_ASSERT_EQUAL_STRING("", l[3].c_str());
+    TEST_ASSERT_EQUAL_STRING("", l[3].c_str());      // cadence < 0 (unknown) -> blank row
+}
+
+void test_oled_connected_shows_rssi() {
+    // RSSI (negative dBm) rides the title row; the IP keeps its own row. rssi default 0 -> brand.
+    auto l = formatOledLines(OledMode::Connected, "192.168.1.82", 230, 85, -68);
+    TEST_ASSERT_EQUAL_STRING("WiFi -68", l[0].c_str());
+    TEST_ASSERT_EQUAL_STRING("192.168.1.82", l[1].c_str());  // IP unchanged
+    TEST_ASSERT_EQUAL_STRING("230W 85rpm", l[2].c_str());    // power+cadence still share the row
+    auto plain = formatOledLines(OledMode::Connected, "192.168.1.82", 230, 85);  // no rssi
+    TEST_ASSERT_EQUAL_STRING("SB20 PROXY", plain[0].c_str());
 }
 
 // --- saved page ---------------------------------------------------------------
@@ -602,6 +613,70 @@ void test_app_page_essentials() {
     TEST_ASSERT_TRUE(p.find("src_power_w") != std::string::npos);  // reads the received power field
     TEST_ASSERT_TRUE(p.find("METER IN") != std::string::npos);     // shows the in->out flow
     TEST_ASSERT_TRUE(p.find("CRANK OUT") != std::string::npos);
+}
+
+// --- perf monitor / stats (the load-observability core) -----------------------
+
+void test_perf_monitor_basic() {
+    PerfMonitor m;
+    for (int i = 0; i <= 100; ++i) m.sample((uint64_t)i * 1000);  // 100 deltas of 1 ms
+    LoopStats s = m.summary();
+    TEST_ASSERT_EQUAL_UINT32(100, s.count);
+    TEST_ASSERT_EQUAL_UINT32(1000, s.meanUs);
+    TEST_ASSERT_EQUAL_UINT32(1000, s.maxUs);
+    TEST_ASSERT_EQUAL_UINT32(0, s.stalls50);
+    TEST_ASSERT_EQUAL_UINT32(2000, s.p95Us);  // 1 ms lands in the [1000,2000) bucket (upper edge)
+}
+
+void test_perf_monitor_stalls() {
+    PerfMonitor m;
+    m.sample(0);
+    m.sample(1000);     // dt 1 ms
+    m.sample(61000);    // dt 60 ms  -> stall50
+    m.sample(300000);   // dt 239 ms -> stall50 + stall200
+    LoopStats s = m.summary();
+    TEST_ASSERT_EQUAL_UINT32(3, s.count);
+    TEST_ASSERT_EQUAL_UINT32(239000, s.maxUs);
+    TEST_ASSERT_EQUAL_UINT32(2, s.stalls50);
+    TEST_ASSERT_EQUAL_UINT32(1, s.stalls200);
+}
+
+void test_perf_monitor_reset() {
+    PerfMonitor m;
+    m.sample(0);
+    m.sample(5000);
+    m.reset();
+    LoopStats s = m.summary();
+    TEST_ASSERT_EQUAL_UINT32(0, s.count);
+    TEST_ASSERT_EQUAL_UINT32(0, s.maxUs);
+}
+
+void test_perf_frag_and_reset_reason() {
+    TEST_ASSERT_EQUAL_INT(40, fragPct(1000, 600));  // 1 - 600/1000
+    TEST_ASSERT_EQUAL_INT(0, fragPct(1000, 1000));  // no fragmentation
+    TEST_ASSERT_EQUAL_STRING("task_wdt", resetReasonName(6));
+    TEST_ASSERT_EQUAL_STRING("poweron", resetReasonName(1));
+    TEST_ASSERT_EQUAL_STRING("brownout", resetReasonName(9));
+    TEST_ASSERT_EQUAL_STRING("unknown", resetReasonName(99));
+}
+
+void test_perf_json_fields() {
+    PerfStats p;
+    p.loop.count = 1200;
+    p.loop.p95Us = 5000;
+    p.loop.maxUs = 60000;
+    p.loop.stalls50 = 3;
+    p.freeHeap = 130000;
+    p.largestBlock = 90000;
+    p.rebootCount = 2;
+    p.resetReasonCode = 6;  // task_wdt
+    std::string j = renderPerfJson(p);
+    TEST_ASSERT_TRUE(j.find("\"loop_p95_us\":5000") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"loop_max_us\":60000") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"stalls_50ms\":3") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"frag_pct\":31") != std::string::npos);  // 100 - 90000*100/130000 = 31 (int trunc)
+    TEST_ASSERT_TRUE(j.find("\"reboot_count\":2") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"reset_reason\":\"task_wdt\"") != std::string::npos);
 }
 
 // --- runner -------------------------------------------------------------------
@@ -669,9 +744,15 @@ int runUnityTests() {
     RUN_TEST(test_oled_portal_lines);
     RUN_TEST(test_oled_connected_lines);
     RUN_TEST(test_oled_connected_unknown_cadence_omitted);
+    RUN_TEST(test_oled_connected_shows_rssi);
     RUN_TEST(test_saved_page_has_ssid_and_hints);
     RUN_TEST(test_saved_page_escapes_ssid);
     RUN_TEST(test_app_page_essentials);
+    RUN_TEST(test_perf_monitor_basic);
+    RUN_TEST(test_perf_monitor_stalls);
+    RUN_TEST(test_perf_monitor_reset);
+    RUN_TEST(test_perf_frag_and_reset_reason);
+    RUN_TEST(test_perf_json_fields);
     return UNITY_END();
 }
 

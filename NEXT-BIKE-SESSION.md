@@ -153,6 +153,33 @@ result is valuable — tell me which.)
 
 *(Optional parallel BLE log on Windows: `code\.venv-win\Scripts\python.exe code\scripts\06_capture_ble.py --name Stages --duration 300 --output code\findings\captures\G-partC-ble-erg-<ts>.jsonl`)*
 
+### 5b · Capture the SB20's **FTMS** surface ⭐ *gates the whole FTMS feature build (real-data-first)*
+
+The SB20 is itself a **Fitness Machine (FTMS 0x1826)** — it has Indoor Bike Data (0x2AD2) + a Control
+Point (0x2AD9) that accepts **Set Target Power**. We have **zero captured FTMS bytes**, so the FTMS
+codec / trainer-as-source / ride-director-erg work is **blocked until this capture exists** (per
+capture-before-code). `capture_ftms.py` only logs raw bytes — no decoder. Run on the **native-Windows**
+machine (not WSL — no Bluetooth):
+
+```powershell
+# (i) PASSIVE — dump GATT + Feature + Supported Power Range, log Indoor Bike Data while you pedal:
+code\.venv\Scripts\python.exe code\scripts\capture_ftms.py --name SB20 --duration 180 `
+  --output code\findings\captures\G-sb20-ftms-recon-$(Get-Date -Format yyyyMMdd-HHmm).jsonl
+
+# (ii) ERG RECON — our script writes Request-Control + Set-Target-Power straight to the bike
+#      (bypasses the Stages app); pedal THROUGHOUT so the logged power shows whether erg tracks:
+code\.venv\Scripts\python.exe code\scripts\capture_ftms.py --name SB20 --duration 240 `
+  --erg --erg-targets 150,200,100 --erg-hold 25 `
+  --output code\findings\captures\G-sb20-ftms-erg-$(Get-Date -Format yyyyMMdd-HHmm).jsonl
+```
+
+**✅ Pass:** Indoor Bike Data frames + the Feature/Power-Range reads land in the JSONL **(those are the
+fixtures that unblock the FTMS build)**; and the `--erg` run shows whether the SB20 **accepts a
+third-party Set Target Power** (response `80 05 01` = success) and the bike's power tracks the target —
+that's the green light for the ride-director controlling the trainer. **Commit the JSONL** to
+`code/findings/captures/`. (If `--erg` is rejected, the app-driven erg in §5 may still work — tell me
+which, and paste the control-point responses.)
+
 ---
 
 ## 6 · Session G Part A — BLE recon · ~15 min · *do regardless — capture it for the record*
