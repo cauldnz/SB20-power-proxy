@@ -1,5 +1,9 @@
 # 🚴 Bike session 3 — verify the firmware fixes + map the shifters
 
+**Status: 🟡 PLANNED** · tracked in [`sessions/README.md`](sessions/README.md). **As you guide this
+live, record each step's result inline** (`✅`/`❌`/`⚠️` + observed values / `/log` lines), then set
+`Status: ✅ DONE (date)` with a one-line Outcome here. See CLAUDE.md → *Session plans & the session ledger*.
+
 > **Start-here for tonight.** Today = **session 3**. This is the whole run sheet — self-contained.
 > It's **live-guided**: narrate each step in chat ("flashed", "battery out", "pairing now", "pressed
 > LEFT-up") and I read `/log` + the capture files off the machine as you go. Don't rush ahead — walk it.
