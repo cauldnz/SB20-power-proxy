@@ -14,9 +14,10 @@ using namespace sb20proxy;
 
 // Cycling Power Control Point: answer EVERY write with an indication — the SB20 TERMINATES the link
 // if a procedure goes unanswered (bike-session 2: disconnect reason=531). handleControlPoint (pure,
-// host-tested) builds the reply: success+offset for the zero-reset (0x0C *or* the 0x10 the Stages app
-// actually sends), set/return crank length (0x04/0x05), "not supported" for the rest. Every write is
-// logged raw first — that's how we capture the SB20's calibration handshake (un-sniffable otherwise).
+// host-tested) builds the reply: simple offset for 0x0C, the spec-correct ENHANCED reply (offset +
+// mfg company id) for the 0x10 the Stages app actually sends (bike-session 3: the old 0x0C-shaped 0x10
+// reply left the calibrate UI spinning), set/return crank length (0x04/0x05), "not supported" for the
+// rest. Every write is logged raw first — that's how we capture the SB20's handshake (un-sniffable otherwise).
 class ControlPointCallbacks : public NimBLECharacteristicCallbacks {
  public:
     explicit ControlPointCallbacks(uint16_t* crankLenHalfMm) : crankLen_(crankLenHalfMm) {}
@@ -25,7 +26,8 @@ class ControlPointCallbacks : public NimBLECharacteristicCallbacks {
         if (v.size() == 0) return;
         logf("[cp] write %s", toHex(v.data(), v.size()).c_str());
         CpResult r = handleControlPoint(v.data(), v.size(), *crankLen_,
-                                        (int16_t)Config::SPOOF_CAL_OFFSET);
+                                        (int16_t)Config::SPOOF_CAL_OFFSET,
+                                        Config::SPOOF_MFG_COMPANY_ID);
         if (r.crankLengthChanged) {
             *crankLen_ = r.crankLengthHalfMm;
             logf("[cp] crank length set = %u (1/2 mm)", (unsigned)*crankLen_);

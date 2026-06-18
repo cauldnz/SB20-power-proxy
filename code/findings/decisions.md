@@ -1112,3 +1112,31 @@ SHIFTER MAP (Part B) — SB20 E4:AA:5A:D6:0E:D4 (Stages Bike 0105, SW 1.12.4+379
 - Haptics: NONE on any pod — the buzz is the phone/Stages app (retro-explains session-2 "no haptic on 3rd").
 
 Next: A1 desk fix (real 0x10 format) before next bike trip; session 4 = brake-lever probe (be61/beb0/FTMS Status) + retest A1; Zwift-Click clean-room research now unblocked.
+
+## 2026-06-19 — A1 desk fix: CPS Enhanced Offset Compensation (0x10) response format
+
+Session 3 proved our `0x10` reply was wrong: the SB20 sends a bare Enhanced Offset Compensation
+(`[cp] write 10`), we replied `20 10 01 00 00` (the simple `0x0C` 5-byte shape), the **link held but
+the Stages app's calibrate UI spun forever**. Derived the correct format **clean-room from the Bluetooth
+Cycling Power Service spec** (read & reimplemented; no GPL prior art):
+
+- **Simple Start Offset Compensation (0x0C)** success reply: `0x20 0x0C 0x01 | Offset (sint16 LE)` —
+  matches the real crank's captured `200c010000`. Unchanged.
+- **Enhanced Offset Compensation (0x10)** success reply is RICHER:
+  `0x20 0x10 0x01 | Offset (sint16 LE) | Manufacturer Company ID (uint16 LE) | Manufacturer-Specific
+  Data (opaque, fills the remainder)`. Our 5-byte reply was **too short to be a valid Enhanced
+  response** → the procedure never completed → spin.
+
+**Implemented** (`firmware/lib/proxy/Cps.h`): new `encodeEnhancedOffsetCompResponse(offset,
+mfgCompanyId, mfgData)`; `handleControlPoint` now splits 0x0C (simple) from 0x10 (enhanced);
+`BleCrankPeripheral` passes `Config::SPOOF_MFG_COMPANY_ID`. Host tests in the same commit
+(`test_cp_offset_comp_enhanced_0x10` now asserts the spec structure; `test_encode_enhanced_offset_comp_structure`
+golden-checks the byte layout incl. a sint16-LE negative offset + trailing mfg data). ESP32 target compiles.
+
+**Residual unknown (capture-gated, real-data-first):** the spec mandates the Manufacturer Company ID
+field but NOT its value, and the real crank's `0x10` reply was never passively sniffable (the whole
+project premise). So `SPOOF_MFG_COMPANY_ID` is a **flagged placeholder (0x0000)** and `mfgData` is empty.
+The spec-correct *structure* is the candidate fix; the exact bytes get **grounded by actively eliciting
+the real crank's 0x10 reply** — `06_capture_ble.py --control-point enhanced-offset-compensation` (G1 in
+`sessions/session-04-enhanced-offset-and-brake-levers.md`), then a one-line Config update + golden test.
+A1 remains **protocol-completeness, not a product blocker** (a calibrated meter is zeroed upstream).

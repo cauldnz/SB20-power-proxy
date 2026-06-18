@@ -160,11 +160,11 @@ inline float cadenceRpmFromCrank(uint16_t revs0, uint16_t t0, uint16_t revs1, ui
     return (float)dRevs * 60.0f * 1024.0f / (float)dT;
 }
 
-// Offset-compensation reply for opcode `reqOp` (0x0C Start *or* 0x10 Enhanced): success + offset
-// (sint16 LE). The SB20 / Stages app sends 0x10; the real crank's exact Enhanced payload is
-// unconfirmed (we never had it reply to a 0x10), but this success+offset shape is a valid CP
-// indication, stops the SB20 terminating the link, and reads as a successful calibration. Verify
-// the precise bytes on the bike (BIKE-SESSION-3 §A).
+// SIMPLE Start Offset Compensation (0x0C) reply: success + offset (sint16 LE) -> `20 0C 01 <off>`.
+// Grounded in the real crank's captured reply `200c010000` (offset 0, G-crank62144-ble-zero...).
+// The ENHANCED op 0x10 uses a DIFFERENT, richer response (mfg company id + data) — see
+// encodeEnhancedOffsetCompResponse; do NOT reuse this 5-byte shape for 0x10 (that left the app
+// spinning, bike-session 3).
 inline std::vector<uint8_t> encodeOffsetCompResponse(uint8_t reqOp, int16_t offset) {
     return {
         CP_OP_RESPONSE, reqOp, CP_RESPONSE_SUCCESS,
@@ -175,6 +175,29 @@ inline std::vector<uint8_t> encodeOffsetCompResponse(uint8_t reqOp, int16_t offs
 // Back-compat alias: the Start Offset Compensation (0x0C) reply.
 inline std::vector<uint8_t> encodeCalibrationResponse(int16_t offset) {
     return encodeOffsetCompResponse(CP_OP_START_OFFSET_COMP, offset);
+}
+
+// ENHANCED Offset Compensation (0x10) reply — the op the Stages app actually sends for its zero-reset.
+// Per the Bluetooth Cycling Power Service spec (clean-room; not copied from any prior art), the
+// Enhanced success response is RICHER than the simple 0x0C one: after the offset it carries the
+// Manufacturer Company ID (uint16 LE) and optional opaque Manufacturer-Specific Data —
+//     0x20 | 0x10 | 0x01 | offset(sint16 LE) | mfgCompanyId(uint16 LE) | mfgData[...]
+// Bike-session 3 (2026-06-19) confirmed the SB20 sends a BARE 0x10 and our old 5-byte reply
+// `20 10 01 00 00` (the 0x0C shape) left the app's calibrate UI spinning — too short to be a valid
+// Enhanced response. This emits the spec-correct shape. The EXACT mfgCompanyId (+ any mfgData) the
+// Stages app expects are NOT derivable from the spec and are not passively sniffable; they must be
+// grounded in the REAL crank's 0x10 reply, captured via
+// `06_capture_ble.py --control-point enhanced-offset-compensation` (sessions/session-04 plan).
+// Until then the values come from Config (SPOOF_MFG_COMPANY_ID), flagged unconfirmed.
+inline std::vector<uint8_t> encodeEnhancedOffsetCompResponse(int16_t offset, uint16_t mfgCompanyId,
+                                                             const std::vector<uint8_t>& mfgData = {}) {
+    std::vector<uint8_t> r = {
+        CP_OP_RESPONSE, CP_OP_ENHANCED_OFFSET_COMP, CP_RESPONSE_SUCCESS,
+        (uint8_t)(offset & 0xFF), (uint8_t)((offset >> 8) & 0xFF),
+        (uint8_t)(mfgCompanyId & 0xFF), (uint8_t)((mfgCompanyId >> 8) & 0xFF),
+    };
+    r.insert(r.end(), mfgData.begin(), mfgData.end());
+    return r;
 }
 
 // Set Crank Length (0x04) ack: success, no value.
@@ -207,7 +230,9 @@ struct CpResult {
     bool crankLengthChanged = false;
 };
 inline CpResult handleControlPoint(const uint8_t* req, size_t len,
-                                   uint16_t curCrankLenHalfMm, int16_t calOffset) {
+                                   uint16_t curCrankLenHalfMm, int16_t calOffset,
+                                   uint16_t mfgCompanyId = 0,
+                                   const std::vector<uint8_t>& mfgData = {}) {
     CpResult out;
     out.crankLengthHalfMm = curCrankLenHalfMm;
     if (req == nullptr || len == 0) {                 // malformed
@@ -216,9 +241,11 @@ inline CpResult handleControlPoint(const uint8_t* req, size_t len,
     }
     const uint8_t op = req[0];
     switch (op) {
-        case CP_OP_START_OFFSET_COMP:                 // 0x0C
-        case CP_OP_ENHANCED_OFFSET_COMP:              // 0x10 (what the Stages app sends)
-            out.response = encodeOffsetCompResponse(op, calOffset);
+        case CP_OP_START_OFFSET_COMP:                 // 0x0C — simple offset reply
+            out.response = encodeOffsetCompResponse(CP_OP_START_OFFSET_COMP, calOffset);
+            break;
+        case CP_OP_ENHANCED_OFFSET_COMP:              // 0x10 — Enhanced (the Stages app's zero-reset)
+            out.response = encodeEnhancedOffsetCompResponse(calOffset, mfgCompanyId, mfgData);
             break;
         case CP_OP_SET_CRANK_LENGTH:                  // 0x04 + uint16 LE (1/2 mm)
             if (len >= 3) {
