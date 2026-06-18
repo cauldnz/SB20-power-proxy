@@ -15,6 +15,9 @@ CLAUDE.md → *Session plans & the session ledger* (record Actual against Plan, 
 
 ## How to run a session
 
+**The full playbook — plan → execute → document → retro — is [`PLAYBOOK.md`](PLAYBOOK.md). Read it
+before directing a session.** In short:
+
 1. **Read** the active session's doc (and its cold-start, for a bike session).
 2. **Guide it live and write each step's result back into the doc** — `✅` pass / `❌` fail / `⚠️` partial,
    plus the observed bytes / values / UI / `/log` lines. Don't leave the result only in chat.
