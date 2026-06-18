@@ -54,24 +54,33 @@ The SB20 pairs the crankset as a **linked L/R pair**; for the spoof only the **L
 
 ## 0 · Pre-flight — flash the latest firmware + confirm it's alive · ~10 min
 
-The board must run the **PR #5 / `main`** firmware for the **A** fixes to be present. Build on the
-bike machine (WSL pio builds fine; Bluetooth isn't needed to build), then flash over the air with curl:
+The board must run **this branch's** firmware — the **PR #5** control-point/reconnect fixes (what **A**
+verifies) **plus** the OLED-off-loop perf fix (renders on its own task, so the panel never stalls the
+hot loop; `WiFi -XX` RSSI is back on the OLED title). Built + compile-verified at the desk; the bike
+just flashes it.
 
+**Recommended — the reliable flash helper** (`firmware/flash.ps1`, Windows PowerShell from `firmware/`):
+it does an RSSI pre-flight, OTA with auto-retry, and verifies the reboot.
+```powershell
+cd firmware ; .\flash.ps1            # build + OTA esp32c3-oled-live -> sb20proxy.local (retries)
+```
+**Manual alternative** (build on any pio host — WSL is fine, Bluetooth isn't needed to build — then
+push the image over WiFi):
 ```bash
-# build the OTA image (WSL or any pio host):
 cd firmware && pio run -e esp32c3-oled-live-ota
-# flash it to the running board over WiFi (from the firmware/ dir):
 curl -F firmware=@.pio/build/esp32c3-oled-live-ota/firmware.bin http://192.168.1.165/update
 ```
 
 - **Confirm it's alive + on the new build:** `curl http://sb20proxy.local/` → expect `source:searching`
   and a **low uptime** (it just rebooted). Then pedal a few strokes and confirm `source:connected` with
-  `src_power_w` tracking the Assioma.
-- **OTA dropping?** It's the signal. The C3's OTA gets unreliable below ~**−72 dBm** — check `rssi` in
-  the status JSON (`curl http://sb20proxy.local/`) and move the board nearer the AP, then retry.
+  `src_power_w` tracking the Assioma. *(Bonus observability this session: `curl /stats` → loop p50/p95/max
+  + heap + reboot count — handy if anything feels janky.)*
+- **OTA dropping?** It's the signal. The C3's OTA gets unreliable below ~**−72 dBm** — check the
+  `WiFi -XX` line on the OLED (or `rssi` in `curl http://sb20proxy.local/`) and move the board nearer the
+  AP, then retry. `flash.ps1` warns you and retries automatically.
 - **Can't reach `/update`?** The board may be on a different network — re-provision (portal) or flash
-  over **USB** (`pio run -e esp32c3-oled-live -t upload`; C3 USB-JTAG wedge → HOLD BOOT, TAP RESET,
-  RELEASE BOOT, re-run, power-cycle — see `firmware/BENCH-FLASH.md`).
+  over **USB** (`.\flash.ps1 -Mode usb`, or `pio run -e esp32c3-oled-live -t upload`; C3 USB-JTAG wedge →
+  HOLD BOOT, TAP RESET, RELEASE BOOT, re-run, power-cycle — see `firmware/BENCH-FLASH.md`).
 
 Open a **rolling `/log` window** in a second terminal now — you'll watch it through both A and B:
 ```powershell
