@@ -93,6 +93,14 @@ C:\repos\cauldnz\SB20-power-proxy\code\.venv-win\Scripts\python.exe `
 Narrate each action: **squeeze LEFT brake ×3, RIGHT brake ×3** (pause between), then any other buttons.
 Watch whether `0c46be61`, `0c46beb0`, or **FTMS Status `0x2ADA`** ever fires.
 
+**Also — map the hidden buttons 4 & 5 (the key button-budget test).** There are **5 buttons per side**
+(4 & 5 are under the bar tape); session 3 only mapped 1/2/3 (bits `0x01/0x02/0x04` L, `0x08/0x10/0x20` R).
+The app *config* ties **1≡4** and **2≡5** (can't set them separately), but **if they emit different BLE
+bits we can still separate all five.** So press, narrating each precisely: **LEFT button 1, then LEFT
+button 4** — same bit (`0x01`) or a new one? Then **LEFT 2, then LEFT 5**. Repeat on the RIGHT. Result
+decides the budget: distinct bits → up to **10** usable signals (set a Profile slot to "external" to free
+the pair); same bit → 1≡4 are indistinguishable to us and we're back to the 6 we have.
+
 **Then — input-gesture characterization** (grounds the **control-button** gestures, `shifter-erg-control.md`
 — the two **3rd** buttons are reserved for Zwift/ESP/menu control and need gestures; erg uses the main
 up/down buttons in erg mode). With the same capture running, **narrate *exactly* what you physically do
