@@ -95,13 +95,18 @@ Watch whether `0c46be61`, `0c46beb0`, or **FTMS Status `0x2ADA`** ever fires.
 
 **Then — input-gesture characterization** (grounds the **control-button** gestures, `shifter-erg-control.md`
 — the two **3rd** buttons are reserved for Zwift/ESP/menu control and need gestures; erg uses the main
-up/down buttons in erg mode). With the same capture running, narrate each:
+up/down buttons in erg mode). With the same capture running, **narrate *exactly* what you physically do
+for each — a single hold and N taps look the same in the frames, so the narration is the ground truth**
+(session 3 had an unrecorded "10 separate clicks" misread later as one hold — don't repeat that):
 1. **Chord:** press **LEFT-3rd + RIGHT-3rd at the same time** ×3 — does `0c46be60` show one frame with
    **both bits** (`0x0024`) or two separate events? (decides if a "both buttons" chord is usable).
-2. **Double-tap:** **RIGHT-3rd quick double-tap** ×3 — is the gap between the two `03/04/08` bursts clean
-   enough to detect vs a single press?
-3. **Hold:** **LEFT-3rd held ~2 s** ×2 — how many `01 00 0004` frames stream (≈ duration)? confirms
-   hold-duration is recoverable.
+2. **Double-tap:** **RIGHT-3rd quick double-tap** ×3, narrate "double-tap" — is the gap between the two
+   `03/04/08` bursts clean enough to detect vs a single press?
+3. **Hold vs taps — the multi-shift question** (UNRESOLVED — session 3 couldn't distinguish them). Do both,
+   narrating which: (a) **LEFT-3rd HELD ~2 s** ×2 — say "holding now … released"; (b) **LEFT-3rd TAPPED 5×
+   fast** — say "five separate taps". Compare: does a single *hold* emit **repeated `03` commits** (the
+   bike auto-repeating, at what rate?) plus a long `01` stream, vs the taps' **one `03` each**? This is the
+   "hold-to-ramp" question for the erg feature — get it from a clean, narrated capture, not inference.
 
 **✅ Pass:** brake capture lands + the three gestures are recorded. If a brake squeeze fires a char → new
 thread; if nothing → brakes aren't on BLE (consistent with the aero-remote hypothesis). Either way, send
