@@ -5,8 +5,14 @@
 **⏱ Timestamp from the start** (note `HH:MM` at the session start and each section — per the playbook, so
 planned-vs-actual is recorded, not reconstructed).
 
-Prepared 2026-06-19 (desk) after session 3. **~45–55 min** (G1 ~10 · G2 ~10 · C ~10 · B ~10 · restore ~5).
-Three gates + a probe, **front-loaded** (the high-information captures first, while the rig is fresh):
+Prepared 2026-06-19 (desk) after session 3. **~55–70 min** (G1 ~10 · G2 ~10 · C ~10 · B ~15–20
+[brake + button 4/5 map + gestures] · restore ~5). Three gates + a probe.
+
+> **Priority order, by value (front-load these):** **§C (FTMS erg) is the go/no-go for the next feature**
+> — do it first if time is tight. **§C + §B share one rig setup** (connect to the SB20 directly, Stages
+> app disconnected) and **need no ESP**, so batch them. **G1/G2** (the A1 `0x10` work) need the flashed
+> ESP + spoof pairing and are **protocol-completeness, not a product blocker** — secondary. The button
+> 4/5 map and gestures (in §B) are "do if time".
 
 - **G1 — capture the REAL crank's `0x10` Enhanced-Offset reply** (grounds the A1 desk fix; the one byte
   sequence the spec can't give us). ⭐ do this first.
