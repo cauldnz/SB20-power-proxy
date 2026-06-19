@@ -19,6 +19,13 @@ Supports two device-profile decoders:
 This is also the proxy's input path: "listen to the Assioma" is just one source.
 
 Usage (run detached on ride day — see code/findings/wsl-capture-runbook.md):
+    # meter-to-meter calibration (generic — any two Bike Power meters):
+    python 07_capture_multi.py \
+        --meter xcadey:12345 --meter assioma:17039 \
+        --duration 1500 \
+        --output ../findings/captures/CAL-xcadey-vs-assioma-20260619.jsonl
+
+    # legacy form (Stages crank vs Assioma + the bike's FE-C output) still works:
     python 07_capture_multi.py \
         --stages-id 62144 --assioma-id 17039 --fec-id 0 \
         --duration 1500 \
@@ -64,6 +71,20 @@ DEVTYPE_FEC = 0x11
 RF_FREQ_ANT_PLUS = 57
 PERIOD_BIKE_POWER = 8182
 PERIOD_FEC = 8192  # FE-C standard channel period (~4 Hz)
+
+
+def parse_meter_spec(spec: str) -> tuple[str, int]:
+    """Parse a ``--meter LABEL:ANT_DEVICE_NUMBER`` argument -> ``(label, device_id)``.
+
+    Used by the generic meter-to-meter calibration capture (e.g. ``--meter xcadey:12345
+    --meter assioma:17039``). Raises ``ValueError`` on a malformed spec so the CLI can
+    fail fast rather than hold the stick.
+    """
+    label, sep, num = spec.partition(":")
+    label, num = label.strip(), num.strip()
+    if not sep or not label or not num:
+        raise ValueError(f"--meter must be LABEL:ANTID (e.g. xcadey:12345), got {spec!r}")
+    return label, int(num)  # int() raises ValueError on a non-numeric id
 
 
 def decode_fec(data: bytes) -> dict[str, Any]:
@@ -201,8 +222,13 @@ class MultiCaptureRunner:
 
 def main() -> int:
     p = argparse.ArgumentParser(description="Multi-source ANT+ capture (one stick)")
-    p.add_argument("--stages-id", type=int, required=True, help="Stages crank device number")
-    p.add_argument("--assioma-id", type=int, required=True, help="Assioma (2nd meter) device number")
+    p.add_argument("--meter", action="append", default=[], metavar="LABEL:ANTID",
+                   help="A Bike Power meter as LABEL:ANT_DEVICE_NUMBER (repeatable). For the "
+                        "meter-to-meter calibration: --meter xcadey:12345 --meter assioma:17039")
+    p.add_argument("--stages-id", type=int, default=None,
+                   help="(legacy) Stages crank device number")
+    p.add_argument("--assioma-id", type=int, default=None,
+                   help="(legacy) Assioma (2nd meter) device number")
     p.add_argument("--assioma-label", default="assioma")
     p.add_argument("--fec-id", type=int, default=None,
                    help="Bike FE-C device number for the #7 check; 0 = wildcard. "
@@ -211,12 +237,28 @@ def main() -> int:
     p.add_argument("--output", type=Path, required=True)
     args = p.parse_args()
 
-    sources = [
-        Source("stages", args.stages_id, DEVTYPE_BIKE_POWER, PERIOD_BIKE_POWER, decode_page),
-        Source(args.assioma_label, args.assioma_id, DEVTYPE_BIKE_POWER, PERIOD_BIKE_POWER, decode_page),
-    ]
+    sources: list[Source] = []
+    # Legacy explicit flags (back-compat with existing run-sheets).
+    if args.stages_id is not None:
+        sources.append(Source("stages", args.stages_id,
+                              DEVTYPE_BIKE_POWER, PERIOD_BIKE_POWER, decode_page))
+    if args.assioma_id is not None:
+        sources.append(Source(args.assioma_label, args.assioma_id,
+                              DEVTYPE_BIKE_POWER, PERIOD_BIKE_POWER, decode_page))
+    # Generic meters (any label:id pair) — the path for XCadey vs Assioma etc.
+    for spec in args.meter:
+        try:
+            label, dev = parse_meter_spec(spec)
+        except ValueError as e:
+            print(str(e), file=sys.stderr)
+            return 2
+        sources.append(Source(label, dev, DEVTYPE_BIKE_POWER, PERIOD_BIKE_POWER, decode_page))
     if args.fec_id is not None:
         sources.append(Source("bike_fec", args.fec_id, DEVTYPE_FEC, PERIOD_FEC, decode_fec))
+    if len(sources) < 2:
+        print("need >=2 sources: use --meter LABEL:ANTID twice (e.g. xcadey + assioma), "
+              "or the legacy --stages-id/--assioma-id", file=sys.stderr)
+        return 2
 
     print(f"Multi capture: {[(s.label, s.device_id, hex(s.device_type)) for s in sources]}, "
           f"{args.duration:.0f}s -> {args.output}")
