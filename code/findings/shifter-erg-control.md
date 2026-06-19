@@ -40,19 +40,60 @@ shifter │  (button events)        (1 ev/press)   (held in ESP)      target pow
    `Request Control (0x00)` once → `Start/Resume (0x07)` → `Set Target Power (0x05) + <sint16 LE W>`;
    the machine indicates `Response 0x80 | req-op | result` (`0x01` success … `0x05` control-not-permitted).
 
-## Which buttons
+## Button budget — realistically TWO buttons (owner, 2026-06-19)
 
-The **3rd buttons** (`LEFT-3rd 0x0004`, `RIGHT-3rd 0x0020`) are the obvious candidates: session 3 found
-they're **not bound to any app shift** (no haptic/no-op today), so claiming them for erg ±/− steals
-nothing. Options, in order of preference:
-- **A — the two 3rd buttons = erg down / erg up.** Simple, dedicated, no mode. *(Recommended starting point.)*
-- **B — a mode toggle** (e.g. hold a 3rd button) that flips the up/down shift buttons between "virtual
-  shifting" and "erg nudge". More buttons for shifting, but stateful + needs an indicator.
-- **C — long-press vs short-press** on the up/down buttons. Needs press-duration from the frame stream
-  (the held `01`-frames give duration) — more decoding, more ambiguity.
+Don't design for 6 free buttons. **Most SB20 riders already use the up/down buttons (each side's first
+two) for the bike's own shifting**, so those are spoken for. What's actually free is the **two "3rd"
+buttons** — `LEFT-3rd 0x0004` and `RIGHT-3rd 0x0020` — which session 3 found **unbound** in the app (no
+shift action, but they DO still emit on `0c46be60`). So **design for two buttons.**
 
-Step size: start ~**±5 W** (fine) with maybe a ±10 W on the "other" pair, or accelerate on rapid presses.
-Tunable; decide against real feel on the bike.
+- **Basic erg ± fits exactly:** `LEFT-3rd = erg down`, `RIGHT-3rd = erg up`. No gestures needed — that's
+  the whole MVP, and it sits on the two free buttons without touching shifting. *(Recommended start.)*
+- **Want more than two functions → input gestures** (below), because two physical buttons is all we have.
+
+## Input gestures — getting more from two momentary buttons
+
+The buttons are **momentary** (press events, not held switches). Multiplexing few momentary buttons is
+well-trodden — and prior art exists in *this exact domain*:
+
+- **Chord — both buttons at once.** Zwift's **SRAM-style** virtual shifting already uses "press *both*
+  shift buttons together" to change the virtual chainring, so a both-3rd-buttons chord is a natural,
+  familiar gesture — e.g. *toggle erg-adjust mode* or *reset to a default target*. **Open (session-4
+  capture):** does the SB20 emit a simultaneous press as one frame with both bits (`0x0024`) or as two
+  separate events? — decides whether chords are cleanly detectable.
+- **Double-tap (one button).** Standard firmware pattern (QMK *Tap Dance*; ESP `Button2`-style libraries
+  give single/double/triple/long with ~3–4 ms debounce). e.g. *single tap = ±5 W, double tap = ±25 W* —
+  a second function per button at the cost of a ~250 ms detection delay.
+- **Long-press / hold — *not* as out as it looked.** The instinct was "momentary ⇒ no hold", but session
+  3's capture shows the SB20 **streams `01 00 <bit>` continuously while a button is held** (~10–20
+  notifications/press), so **hold *duration* is directly observable** from the frame run. Tools like
+  **BikeControl** added long-press (for steering) over exactly these systems. UX caveat: holding a bar
+  button mid-effort is awkward, so prefer tap / double-tap / chord; treat hold as a bonus, confirm in a capture.
+
+So **two buttons + (single / double / chord)** comfortably covers erg down / up / a coarse step / a
+mode-or-reset — enough for the feature without ever touching the shifting buttons. Step size: start
+~**±5 W** fine, a bigger step on double-tap; accelerate on rapid presses. Tune against real feel on the bike.
+
+## Dependency — the Stages app's button "Profiles"
+
+The Stages Cycling app configures button behaviour via **Profiles** (owner, 2026-06-19; no official docs).
+This matters two ways:
+1. **No conflict for the 3rd buttons** — they're already unassigned, so the app won't fight us. (And in
+   erg mode the trainer holds power regardless of "gear", so even the shift buttons may be inert mid-erg —
+   to confirm.)
+2. **If we ever repurpose a *shifting* button**, we'd have to **disable its shift in a Profile** first, so
+   the bike doesn't also act on the press. So the Profile config is part of the feature's setup story.
+
+### What would help — owner can gather (capture-before-code)
+No docs exist, so annotated info from the app is real data we'd otherwise guess at. Most useful:
+- Screenshots of the **Profiles / button-assignment** screen(s): what actions a button can be set to, and
+  whether a button can be set to **None / disabled**.
+- Whether the **3rd buttons** appear in the config at all (assignable, or fixed/unused?).
+- Whether **shifting can be turned off per-button** (freeing a button for us to proxy).
+- What the app calls erg / target-power mode, and whether shift buttons do anything **in erg mode**.
+
+Drop screenshots + notes anywhere I can read them (commit to the repo, or describe in chat) and I'll fold
+them in — same capture-before-code discipline as the byte captures.
 
 ## ⚠️ The gate — does the SB20 erg off a THIRD-PARTY Set Target Power?
 

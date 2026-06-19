@@ -93,8 +93,19 @@ C:\repos\cauldnz\SB20-power-proxy\code\.venv-win\Scripts\python.exe `
 Narrate each action: **squeeze LEFT brake ×3, RIGHT brake ×3** (pause between), then any other buttons.
 Watch whether `0c46be61`, `0c46beb0`, or **FTMS Status `0x2ADA`** ever fires.
 
-**✅ Pass:** capture lands. If a brake squeeze fires a char → new thread; if nothing → brakes aren't on
-BLE (consistent with the aero-remote hypothesis for the silent channels). Either way, send the JSONL.
+**Then — input-gesture characterization** (grounds the erg-feature gestures, `shifter-erg-control.md`;
+the erg feature realistically has only the two **3rd** buttons + gestures). With the same capture running,
+narrate each:
+1. **Chord:** press **LEFT-3rd + RIGHT-3rd at the same time** ×3 — does `0c46be60` show one frame with
+   **both bits** (`0x0024`) or two separate events? (decides if a "both buttons" chord is usable).
+2. **Double-tap:** **RIGHT-3rd quick double-tap** ×3 — is the gap between the two `03/04/08` bursts clean
+   enough to detect vs a single press?
+3. **Hold:** **LEFT-3rd held ~2 s** ×2 — how many `01 00 0004` frames stream (≈ duration)? confirms
+   hold-duration is recoverable.
+
+**✅ Pass:** brake capture lands + the three gestures are recorded. If a brake squeeze fires a char → new
+thread; if nothing → brakes aren't on BLE (consistent with the aero-remote hypothesis). Either way, send
+the JSONL — the gesture frames decide the erg button-input design.
 
 ---
 

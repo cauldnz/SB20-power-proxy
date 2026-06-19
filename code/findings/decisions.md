@@ -1140,3 +1140,25 @@ The spec-correct *structure* is the candidate fix; the exact bytes get **grounde
 the real crank's 0x10 reply** — `06_capture_ble.py --control-point enhanced-offset-compensation` (G1 in
 `sessions/session-04-enhanced-offset-and-brake-levers.md`), then a one-line Config update + golden test.
 A1 remains **protocol-completeness, not a product blocker** (a calibrated meter is zeroed upstream).
+
+## 2026-06-19 — Shifter-control direction: FTMS erg first, Zwift backlog, 2-button reality
+
+Owner feedback after the Zwift research:
+
+- **FTMS erg-watts-from-the-bars is the next feature** (gated on the session-4 §C capture: does the SB20
+  erg off a third-party Set Target Power?). **Zwift-controller emulation → backlog** ("sounds complex"):
+  it needs a custom RC1 GATT + RideOn handshake + (Play/Ride) ECDH/AES + protobuf, routes via Zwift not
+  FTMS, and Zwift can reject non-genuine devices. See `zwift-controls-research.md` (parked).
+- **Realistic button budget is TWO, not six.** Most riders already use the up/down buttons for the SB20's
+  own shifting; only the **two "3rd" buttons** (`0x0004` L, `0x0020` R) are free (session 3: unbound but
+  they still emit on `0c46be60`). Basic erg ± fits exactly (down/up). More functions need **input
+  gestures** — and prior art exists in-domain: Zwift's SRAM-style shifting uses a **both-buttons chord**;
+  BikeControl multiplexes Di2/AXS with single/double/**hold**. Buttons are momentary, but session 3's
+  captured `01`-frame *stream while held* means **hold-duration IS observable** (the "no long-press"
+  assumption is beatable; tap/double-tap/chord are still nicer UX). Chord/double-tap/hold frames to be
+  characterised in session-4 §B.
+- **Stages app "Profiles" are a dependency.** The app configures per-button behaviour via Profiles (no
+  official docs). The 3rd buttons are unassigned so no conflict; but repurposing a *shifting* button would
+  require disabling its shift in a Profile. Owner to gather annotated screenshots of the Profiles /
+  button-assignment screens (what a button can be set to, can it be disabled, do the 3rd buttons appear,
+  do shift buttons act in erg mode) — capture-before-code input for the button design.

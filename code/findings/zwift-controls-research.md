@@ -1,10 +1,19 @@
 # Zwift controllers + the SB20 — research (Click / Play / Ride, virtual shifting, ride-ons)
 
-**Status:** research / orientation — **no code**. Answers the owner's questions (2026-06-19): *how does
-Zwift Click work, what does it offer, what makes sense on the SB20, does it route via FTMS or via Zwift,
-and is what we actually want really just buttons for steering / ride-ons?* Clean-room — all protocol
-facts below are from public reverse-engineering write-ups (cited); **do not copy GPL prior art**
-(`SHIFTR`, `qdomyos-zwift/zwiftplay` are GPL-3.0 — read to understand, reimplement clean).
+**Status:** research / orientation — **no code · parked to BACKLOG** (owner decision 2026-06-19: the
+FTMS erg feature in [`shifter-erg-control.md`](shifter-erg-control.md) goes first; Zwift-controller
+emulation is "sounds complex → future backlog"). Answers the owner's questions: *how does Zwift Click
+work, what does it offer, what makes sense on the SB20, does it route via FTMS or via Zwift, and is what
+we actually want really just buttons for steering / ride-ons?* Clean-room — all protocol facts below are
+from public reverse-engineering write-ups (cited); **do not copy GPL prior art** (`SHIFTR`,
+`qdomyos-zwift/zwiftplay`, `OpenBikeControl/bikecontrol` are GPL — read to understand, reimplement clean).
+
+> **Button-budget reality (owner, 2026-06-19):** riders already use the up/down buttons for the SB20's own
+> shifting, so a Zwift mapping realistically has only the **two 3rd buttons** (`0x0004`/`0x0020`) +
+> gestures (single / double-tap / chord) — see [`shifter-erg-control.md`](shifter-erg-control.md)
+> §*Input gestures*. Two discrete buttons is thin for a full game controller, which reinforces parking
+> this behind the erg feature. (BikeControl already maps Di2/AXS shift levers to Zwift with single/double/
+> hold — relevant prior art if/when this is revisited.)
 
 ## TL;DR for the SB20
 
