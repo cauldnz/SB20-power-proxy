@@ -40,49 +40,60 @@ shifter │  (button events)        (1 ev/press)   (held in ESP)      target pow
    `Request Control (0x00)` once → `Start/Resume (0x07)` → `Set Target Power (0x05) + <sint16 LE W>`;
    the machine indicates `Response 0x80 | req-op | result` (`0x01` success … `0x05` control-not-permitted).
 
-## Button budget — realistically TWO buttons (owner, 2026-06-19)
+## Button allocation — by mode (owner, refined 2026-06-19)
 
-Don't design for 6 free buttons. **Most SB20 riders already use the up/down buttons (each side's first
-two) for the bike's own shifting**, so those are spoken for. What's actually free is the **two "3rd"
-buttons** — `LEFT-3rd 0x0004` and `RIGHT-3rd 0x0020` — which session 3 found **unbound** in the app (no
-shift action, but they DO still emit on `0c46be60`). So **design for two buttons.**
+The right split depends on the mode, because **shifting is unused in erg mode** (the trainer holds the
+target power regardless of "gear"). So:
 
-- **Basic erg ± fits exactly:** `LEFT-3rd = erg down`, `RIGHT-3rd = erg up`. No gestures needed — that's
-  the whole MVP, and it sits on the two free buttons without touching shifting. *(Recommended start.)*
-- **Want more than two functions → input gestures** (below), because two physical buttons is all we have.
+- **Erg mode → repurpose the four MAIN up/down buttons** for erg adjust (they're idle for shifting in
+  erg). Natural mapping is **fine + coarse**:
+  - LEFT up / down = **erg +/− small** (e.g. ±5 W)
+  - RIGHT up / down = **erg +/− big** (e.g. ±25 W)
+  *(exact assignment is UX; the point is 4 buttons → small/big × up/down — no gestures needed for erg.)*
+- **The two 3rd buttons (`0x0004` L / `0x0020` R) are RESERVED for *control*, across modes** — Zwift
+  actions (backlog), **ESP-device control** (mode/feature toggles, etc.), menus. They're the always-free
+  pair (unbound in the app, but they still emit on `0c46be60`), so keep them for cross-mode control
+  rather than spending them on erg.
 
-## Input gestures — getting more from two momentary buttons
+This rests on two things to confirm (session 4 §C + the app dig):
+1. **Erg-mode detection.** The ESP reads **FTMS Fitness Machine Status (`0x2ADA`) / Training Status
+   (`0x2AD3`)** to know it's in erg, and only *then* treats the main up/down presses as erg-adjust —
+   otherwise they shift the bike normally.
+2. **Harmless shift-in-erg.** Does the SB20 *do* anything when a shift button is pressed in erg mode? If a
+   gear change there has no effect (erg overrides resistance), we just read the BLE press and repurpose it
+   with **no Profile change needed**; if it does something unwanted, disable shifting via a Stages-app
+   Profile while in erg.
 
-The buttons are **momentary** (press events, not held switches). Multiplexing few momentary buttons is
-well-trodden — and prior art exists in *this exact domain*:
+## Input gestures — for the two control buttons (momentary)
 
-- **Chord — both buttons at once.** Zwift's **SRAM-style** virtual shifting already uses "press *both*
-  shift buttons together" to change the virtual chainring, so a both-3rd-buttons chord is a natural,
-  familiar gesture — e.g. *toggle erg-adjust mode* or *reset to a default target*. **Open (session-4
-  capture):** does the SB20 emit a simultaneous press as one frame with both bits (`0x0024`) or as two
-  separate events? — decides whether chords are cleanly detectable.
+Erg doesn't need gestures (4 main buttons cover small/big × up/down). Gestures matter for the **two 3rd
+control buttons**, where two physical momentary buttons must cover several control actions. Prior art
+exists in *this exact domain*:
+
+- **Chord — both 3rd buttons at once.** Zwift's **SRAM-style** virtual shifting already uses "press *both*
+  shift buttons together" (to change the chainring), so a both-buttons chord is a familiar gesture — e.g.
+  *enter/exit a mode*. **Open (session-4 §B):** does the SB20 emit a simultaneous press as one frame with
+  both bits (`0x0024`) or as two events? — decides whether chords are cleanly detectable.
 - **Double-tap (one button).** Standard firmware pattern (QMK *Tap Dance*; ESP `Button2`-style libraries
-  give single/double/triple/long with ~3–4 ms debounce). e.g. *single tap = ±5 W, double tap = ±25 W* —
-  a second function per button at the cost of a ~250 ms detection delay.
-- **Long-press / hold — *not* as out as it looked.** The instinct was "momentary ⇒ no hold", but session
-  3's capture shows the SB20 **streams `01 00 <bit>` continuously while a button is held** (~10–20
-  notifications/press), so **hold *duration* is directly observable** from the frame run. Tools like
-  **BikeControl** added long-press (for steering) over exactly these systems. UX caveat: holding a bar
-  button mid-effort is awkward, so prefer tap / double-tap / chord; treat hold as a bonus, confirm in a capture.
+  give single/double/triple/long with ~3–4 ms debounce) — a second action per button at ~250 ms latency.
+- **Long-press / hold — *not* as out as it looked.** Session 3's capture shows the SB20 **streams
+  `01 00 <bit>` continuously while held** (~10–20 notifications), so **hold *duration* is observable**.
+  Tools like **BikeControl** added long-press for steering over exactly these systems. UX caveat: holding
+  a bar button mid-effort is awkward — prefer tap / double-tap / chord; treat hold as a bonus to confirm.
 
-So **two buttons + (single / double / chord)** comfortably covers erg down / up / a coarse step / a
-mode-or-reset — enough for the feature without ever touching the shifting buttons. Step size: start
-~**±5 W** fine, a bigger step on double-tap; accelerate on rapid presses. Tune against real feel on the bike.
+So the two 3rd buttons + (single / double / chord) cover a handful of control actions (mode, menu,
+ESP/Zwift) without touching the erg/shift buttons.
 
 ## Dependency — the Stages app's button "Profiles"
 
 The Stages Cycling app configures button behaviour via **Profiles** (owner, 2026-06-19; no official docs).
 This matters two ways:
-1. **No conflict for the 3rd buttons** — they're already unassigned, so the app won't fight us. (And in
-   erg mode the trainer holds power regardless of "gear", so even the shift buttons may be inert mid-erg —
-   to confirm.)
-2. **If we ever repurpose a *shifting* button**, we'd have to **disable its shift in a Profile** first, so
-   the bike doesn't also act on the press. So the Profile config is part of the feature's setup story.
+1. **No conflict for the 3rd control buttons** — they're already unassigned, so the app won't fight us.
+2. **The erg feature repurposes the *main* up/down buttons in erg mode**, so the key question is whether a
+   shift press *does anything* in erg (see allocation point 2 above). If erg overrides resistance and a
+   gear change is inert, no Profile change is needed; if not, the fallback is **disable shifting in a
+   Profile** while in erg. Either way the Profile config is part of the feature's setup story — which is
+   why the screenshots below matter.
 
 ### What would help — owner can gather (capture-before-code)
 No docs exist, so annotated info from the app is real data we'd otherwise guess at. Most useful:

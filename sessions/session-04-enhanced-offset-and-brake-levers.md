@@ -93,9 +93,9 @@ C:\repos\cauldnz\SB20-power-proxy\code\.venv-win\Scripts\python.exe `
 Narrate each action: **squeeze LEFT brake ×3, RIGHT brake ×3** (pause between), then any other buttons.
 Watch whether `0c46be61`, `0c46beb0`, or **FTMS Status `0x2ADA`** ever fires.
 
-**Then — input-gesture characterization** (grounds the erg-feature gestures, `shifter-erg-control.md`;
-the erg feature realistically has only the two **3rd** buttons + gestures). With the same capture running,
-narrate each:
+**Then — input-gesture characterization** (grounds the **control-button** gestures, `shifter-erg-control.md`
+— the two **3rd** buttons are reserved for Zwift/ESP/menu control and need gestures; erg uses the main
+up/down buttons in erg mode). With the same capture running, narrate each:
 1. **Chord:** press **LEFT-3rd + RIGHT-3rd at the same time** ×3 — does `0c46be60` show one frame with
    **both bits** (`0x0024`) or two separate events? (decides if a "both buttons" chord is usable).
 2. **Double-tap:** **RIGHT-3rd quick double-tap** ×3 — is the gap between the two `03/04/08` bursts clean
@@ -137,6 +137,13 @@ BLE (or needs to be the *sole* controller / bonding); tell me the exact response
 feature and the alternative-app path. **Commit the JSONL** either way (passive Indoor Bike Data + the
 Feature/Power-Range reads are useful regardless). *(Fallback if `--name SB20` doesn't match: use
 `--address E4:AA:5A:D6:0E:D4`.)*
+
+**Bonus — shift-in-erg behaviour** (decides the erg button allocation; the feature plans to repurpose the
+**main up/down buttons** for erg ± *in erg mode*). While pedalling at a held erg target, **press a main
+shift button (LEFT-up) a few times** and watch the SB20/Stages app + the Indoor Bike Data power: does the
+gear change **do anything** in erg (resistance/power blip, an on-screen gear number), or is it **inert**
+(erg overrides)? **Inert → we can repurpose the shift buttons for erg with no app Profile change; does
+something → we'd disable shifting via a Profile in erg.** Note what you see.
 
 ---
 
