@@ -82,6 +82,7 @@ Any session that touches hardware we can't drive from the desk — a bike sessio
 - **Promote durable findings.** The session doc is the blow-by-blow narrative; lasting facts (a confirmed byte value, "the SB20 ergs off our crank", a refuted hypothesis) are also appended to `findings/decisions.md` (append-only) and captured bytes committed to `findings/captures/`. Those are the canonical record.
 - **No detritus.** New session docs live in `sessions/`; completed ones stay there marked DONE (history is valuable — don't delete) and are linked from the ledger. Don't spawn ad-hoc `NEXT-`/`READY-` variants per session — one ledger, one doc per session. (Legacy `BIKE-SESSION-*.md` / `NEXT-BIKE-SESSION.md` stay at the repo root because the append-only `decisions.md` links them; the ledger tracks them in place.)
 - **One open session at a time.** Don't draft session N+1 until N is DONE — keeps "what's current" unambiguous.
+- **Improve the playbook after every session.** Closing a session includes reviewing its retro and folding the durable lessons back into `sessions/PLAYBOOK.md` (the rules + the §Lessons section) — it's a **living, compounding** doc, not a write-once one. A session whose lessons never reach the playbook is only half-closed; the whole point is that each session is better-prepared than the last.
 
 ## Validation
 

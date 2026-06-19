@@ -36,6 +36,11 @@ This pairs with CLAUDE.md → *Session plans & the session ledger* (the doc/stat
 - **Write each step as Plan**: *goal · exact action · expected result (explicit pass/fail) · what to
   capture.* Mark **must-do vs optional/stretch**, and give an **honest time budget up front** ("~45 min,
   3 must-dos").
+- **A step that can *fail* is investigation, not verification — budget it as such.** Session 3's "verify
+  the firmware fixes" read as quick, but two of four steps failed and became **~30 min of diagnosis
+  against a planned 20**. When a step's pass/fail is genuinely unknown, pad it, and treat a fail as the
+  start of a capture-and-iterate loop, not a retry. (The biggest, most persistent estimate misses come
+  from calling investigation "verification".) *(BIKE-SESSION-3 retro.)*
 - **A fallback per gate.** For each likely failure (pairing rejected, OTA drops, meter bounces), the next
   move is already written — the rider never waits while you think.
 - **Bring-list + restore-list.** What the rider must have on hand (battery, tools, the right app), and the
@@ -125,6 +130,12 @@ better than the last:
   *actual* wall-clock (from the per-step timestamps), note the delta and its cause, and carry those deltas
   into the next session's Plan. The estimate only stops being wrong if the miss is written down; an
   unrecorded over/under just repeats. (This project's running weak spot is the agent's time estimates.)
+- **Fold the lessons back into THIS playbook — every session, not "someday".** The retro's durable
+  lessons (a new gotcha, a process gap, a tooling fix, a better-prepared run-sheet shape) belong in
+  `sessions/PLAYBOOK.md` so the *next* session inherits them — the rules above and the §Lessons section
+  **grow each session**. A lesson left in one session's retro is re-learned on the rider's time.
+  **Reviewing the retro and updating this playbook is a required step of closing a session** — the
+  playbook is a living, compounding doc, and "is it better-prepared than last time?" is answered here.
 
 Suggested stub to drop at the bottom of each session doc:
 ```
