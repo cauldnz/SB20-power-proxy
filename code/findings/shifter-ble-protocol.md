@@ -16,9 +16,10 @@ paradigm — <https://us.zwift.com/products/zwift-cog-and-click-upgrade-kit>) us
 shifters, no extra hardware. The ESP would: (1) subscribe to the SB20's gear char `0c46be60` (decoded
 below), (2) act as a BLE peripheral Zwift accepts as a Click / virtual shifter, translating each SB20
 press into a Zwift shift-up/down. This composes with the power proxy — **one ESP can be both the
-crank-power peripheral and the Click**. **New research target:** the **Zwift Click / Zwift
-virtual-shifting BLE protocol** (what Zwift expects) — clean-room; open prior art exists, do not copy
-GPL.
+crank-power peripheral and the Click**. The **Zwift controller BLE protocol** (Click / Play / Ride — what
+Zwift expects, and how virtual shifting / steering / Ride-Ons route) is researched in
+[`zwift-controls-research.md`](zwift-controls-research.md) — clean-room; open prior art exists but is
+GPL, do not copy.
 
 **Second consumer of these same button events:** [`shifter-erg-control.md`](shifter-erg-control.md) —
 use the shifter buttons to **nudge the SB20's Erg target watts** (write FTMS Set Target Power), a feature
