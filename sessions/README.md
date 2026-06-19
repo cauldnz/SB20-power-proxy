@@ -4,13 +4,13 @@ The single index of every on-bike / hardware session we **plan and run**. Histor
 links to that session's **Plan + Actual** doc, and completed sessions stay as the record. Convention:
 CLAUDE.md → *Session plans & the session ledger* (record Actual against Plan, status header, mark DONE).
 
-> **Latest: session 3 ✅ DONE (2026-06-19).** Next: **session 4 🟡 PLANNED** —
-> [ground the Enhanced-Offset `0x10` format + brake-lever probe](session-04-enhanced-offset-and-brake-levers.md).
-> **A1 desk fix landed** (spec-correct `0x10` Enhanced reply; the exact mfg-id/data are session-4's G1
-> capture). · bike-machine cold-start: [BIKE-SESSION-READY.md](../BIKE-SESSION-READY.md)
+> **Latest done: session 3 ✅ (2026-06-19).** Two **independent** sessions planned — do whichever kit is
+> set up: **session 4** (SB20 — Enhanced-Offset / FTMS erg / shifters) and **session 5** (track bike —
+> paired XCadey+Assioma calibration capture). · bike-machine cold-start: [BIKE-SESSION-READY.md](../BIKE-SESSION-READY.md)
 
 | # | Date | Status | Session (Plan + Actual) | Outcome |
 |---|------|--------|--------------------------|---------|
+| 5 | 2026-06-19 | 🟡 PLANNED | [paired XCadey + Assioma capture (meter-to-meter calibration)](session-05-meter-calibration-capture.md) | — *(track bike on a trainer; structured power×cadence blocks → fit the XCadey→Assioma correction)* |
 | 4 | 2026-06-19 | 🟡 PLANNED | [ground Enhanced-Offset (`0x10`) + FTMS erg + brake-lever probe](session-04-enhanced-offset-and-brake-levers.md) | — *(G1 capture real crank `0x10` → grounds A1; G2 retest spoof; **C FTMS erg-acceptance** → gates the shifter-erg feature; B brake levers)* |
 | 3 | 2026-06-19 | ✅ DONE | [verify PR #5 fixes + map the shifters](../BIKE-SESSION-3.md) | A3 reconnect + A4 handshake ✅; A1 zero-reset ❌ + A2 crank-length ⚠️ (Stages app bypasses standard CP — desk fix); **full 6-button shifter map** captured (one-hot `0c46be60`, **stateless** → Zwift-Click-ready); silent chans likely aero-remote pods |
 | 2 | 2026-06-18 | ✅ DONE | [does the SB20 read the faithful spoof? + capture handshake](../BIKE-SESSION-2.md) | SB20 accepted power **and** cadence, crank-free; control-point / reconnect bugs captured → fixed in PR #5 |
