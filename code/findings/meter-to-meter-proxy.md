@@ -51,25 +51,38 @@ The Stages↔Assioma error was *cadence*-dependent (~13% high @60 rpm vs ~5% @10
 3. **Deploy to the proxy** — config: read the **XCadey** (CPS), apply the fitted model, rebroadcast as a
    CPS power meter. Two runtime options (decision below).
 
-## Runtime — recommendation: the same ESP32 firmware
+## Runtime — an ESP32 firmware variant (decided 2026-06-19)
 
-The ESP32 already does **read CPS → apply `Correction` → rebroadcast CPS**; it's pocket-sized, battery,
-BLE. So the natural runtime is a **firmware build variant**: `METER_NAME_FILTER = "XCADEY"`, a
-power-meter spoof identity (not the Stages crank), and the fitted curve loaded into `Correction`. The one
-**gap**: the firmware only wires the *linear* `scale/offset` from `Config` today — loading a fitted
-**grid** (curve) needs a small addition (curve points in `Config`/NVS; `Correction.h` already supports the
-curve, it's just not populated). *(Alt: a Python proxy on a phone/Pi reuses `04_run_proxy.py` directly —
-heavier to carry, but zero firmware work.)*
+The ESP32 already does **read CPS → apply `Correction` → rebroadcast CPS**; it's pocket-sized and BLE, so
+the runtime is a **firmware build variant**. Decided with the owner:
 
-## Decisions for the owner
+- **ESP32, BLE-only.** It reads the XCadey over **BLE** (no ANT+ on the device). The correction is
+  power→power, so a model fitted from ANT+ captures applies unchanged. Owner to sort a **battery** for the
+  pocket unit (a LiPo + charge board for the C3 — the Maker skill can help source it).
+- **Broadcast under our OWN identity — not a spoof.** Unlike the SB20 case (where we *must* impersonate
+  "Stages 62144", because the SB20 only accepts its own crank), a head unit / training app accepts *any*
+  CPS power meter — so the proxy advertises as **its own device**: an honest *corrected rebroadcast*, not
+  a pretend-to-be-X. **Product name TBD** 🙂. This makes "advertised identity" a **config axis**:
+  SB20-mode spoofs a Stages crank; meter-corrector-mode advertises our own product.
+- **Fitted-curve gap.** The firmware only wires the *linear* `scale/offset` from `Config` today; loading a
+  fitted **grid** needs a small addition (curve points in `Config`/NVS — `Correction.h` already supports
+  the curve, it's just not populated).
+- **Device discovery + pairing in the UI (forward requirement, owner).** Ultimately the source meter
+  (XCadey here) should be **found and paired from the ESP32 web UI** — a BLE scan → pick-the-meter →
+  persist-to-NVS flow — rather than a hardcoded `METER_NAME_FILTER`. It serves both this and the SB20 use
+  case; backlogged in `forward-plan.md`.
 
-- **Runtime:** ESP32 firmware variant (recommended) vs Python-on-a-Pi?
-- **Spoof identity:** rebroadcast as **"Assioma"** (apps/head-units see one consistent meter) vs a
-  distinct name (clearer it's the proxy)? Either is easy.
-- **XCadey/Assioma ANT+ device ids** (for the capture) — and confirm XCadey broadcasts ANT+ (it does BLE
-  too; ANT+ reuses the whole fit pipeline).
-- **Model:** start power-only; only add cadence-awareness if the analyse step shows it's needed (don't
-  pre-build it).
+*(Alt runtime: a Python proxy on a phone/Pi reuses `04_run_proxy.py` directly — heavier to carry, zero
+firmware work. Not chosen.)*
+
+## Decisions (resolved 2026-06-19)
+
+- **Runtime:** ✅ ESP32 firmware variant, BLE-only.
+- **Identity:** ✅ our own device identity (not a spoof); product name TBD.
+- **Model:** ✅ data-driven — power-only first, add cadence only if the analyse step shows residual
+  cadence structure.
+- **Still needed from the owner:** the **XCadey & Assioma ANT+ device ids** (to run the P2 capture) +
+  confirm the XCadey broadcasts ANT+.
 
 ## Phases
 

@@ -1206,3 +1206,23 @@ architecture-shaping facts:
 **Architecture takeaway:** External mode + per-button `external` are the SB20's **designed-in hooks for an
 outside brain** — exactly what the ESP is becoming (power source + erg target + button input; bike =
 trainer + display). De-risks the erg feature and is the incremental path to the alternative-app idea.
+
+## 2026-06-19 — Meter-to-meter proxy: runtime + identity decisions
+
+Owner decisions on the XCadey→Assioma-scale proxy (`meter-to-meter-proxy.md`):
+
+- **Runtime = ESP32 firmware variant, BLE-only.** Reads the XCadey over BLE; no ANT+ on the device. The
+  correction is power→power so a model fitted from ANT+ captures applies unchanged. (Owner to add a
+  battery to the C3 — Maker skill can help source a LiPo + charge board.)
+- **Broadcast under our OWN identity, not a spoof.** Key distinction from the SB20 case: the SB20 only
+  accepts its own crank so we *must* impersonate "Stages 62144"; but a head unit / training app accepts
+  ANY CPS power meter, so the meter-corrector advertises as **its own device** — an honest corrected
+  rebroadcast, not a pretend-to-be-Assioma. ⇒ "advertised identity" becomes a **config axis** (spoof-mode
+  vs own-identity-mode). **Product name TBD.**
+- **Model:** data-driven — power-only first, add cadence only if the fit's residuals show cadence
+  structure.
+- **Forward requirement (owner):** ultimately, **find + pair the source meter and choose the identity
+  from the ESP32 web UI** (BLE scan → pick → NVS), not a hardcoded `Config`. Backlogged in forward-plan
+  §8 — serves both the meter-corrector and the SB20 spoof.
+
+Still gated on a paired XCadey+Assioma capture (real-data-first) before any fit/firmware is built.

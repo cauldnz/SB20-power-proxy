@@ -411,6 +411,13 @@ From `phase-0-report.md` §5 — track, don't block on:
   so the relayed source was non-deterministic. Pin the source by address (or configured name) so the
   relay is deterministic and the single-right-crank use case can target `4963` on purpose. (Distinct
   from the spoof-side `--address` item above, which is about which crank we *impersonate*.)
+- **Device discovery + pairing + identity, from the ESP32 web UI** — backlog (owner, 2026-06-19; serves
+  the meter-to-meter proxy and the SB20 spoof). Today the source meter and the advertised identity are
+  **hardcoded in `Config`** (`METER_NAME_FILTER`, `SPOOF_NAME`). Generalise to a **UI flow**: BLE-scan
+  nearby power meters → pick the one to READ → choose the advertised identity (a *spoof* like "Stages
+  62144" for the SB20, or our **own product identity** for the meter-corrector use case — product name
+  TBD) → persist to NVS. Turns the firmware from a dev-config build into a user-configurable product.
+  Pieces: a firmware BLE scan, a `/ui` device picker, NVS storage. See `meter-to-meter-proxy.md`.
 
 ---
 
