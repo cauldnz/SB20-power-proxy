@@ -1162,3 +1162,19 @@ Owner feedback after the Zwift research:
   require disabling its shift in a Profile. Owner to gather annotated screenshots of the Profiles /
   button-assignment screens (what a button can be set to, can it be disabled, do the 3rd buttons appear,
   do shift buttons act in erg mode) — capture-before-code input for the button design.
+
+## 2026-06-19 — Shifter button allocation refined: erg = main buttons (in erg mode), 3rd = control
+
+Refinement of the same-day button-budget note (owner). Better split than "erg on the two 3rd buttons":
+
+- **Erg mode repurposes the four MAIN up/down buttons** — shifting is unused in erg (the trainer holds
+  power regardless of gear), so map them **fine + coarse**: e.g. LEFT up/down = erg ± small (~5 W),
+  RIGHT up/down = erg ± big (~25 W). No gestures needed for erg.
+- **The two 3rd buttons (`0x0004`/`0x0020`) are RESERVED for control across modes** — Zwift actions
+  (backlog), **ESP-device control** (mode/feature toggles), menus. Two momentary buttons → use gestures
+  (single/double/chord) for several control actions.
+- **Two confirmations needed:** (1) **erg-mode detection** via FTMS Fitness Machine Status `0x2ADA` /
+  Training Status `0x2AD3` (only treat main buttons as erg when in erg); (2) **is a shift press inert in
+  erg?** If erg overrides resistance, repurpose the main buttons with no app change; else disable shifting
+  via a Stages-app Profile in erg. Session-4 §C adds a shift-in-erg check; §B characterises the 3rd-button
+  chord/double-tap/hold gestures.
