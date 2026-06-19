@@ -1178,3 +1178,31 @@ Refinement of the same-day button-budget note (owner). Better split than "erg on
   erg?** If erg overrides resistance, repurpose the main buttons with no app change; else disable shifting
   via a Stages-app Profile in erg. Session-4 §C adds a shift-in-erg check; §B characterises the 3rd-button
   chord/double-tap/hold gestures.
+
+## 2026-06-19 — Stages app config consolidated; erg lives in EXTERNAL mode (architecture)
+
+Full owner recon of the (undocumented) Stages Cycling app → `code/findings/stages-app-config.md`. The
+architecture-shaping facts:
+
+- **Three ride modes:** *External* (gears work; bike expects an **external** controller over FTMS — the
+  Zwift mode), *Grade* (app sets grade), *Power/Erg* (gears OFF; the **app** owns the target power). Our
+  "shifter nudges erg watts" feature lives in **External** mode — NOT the app's Power/Erg mode (we can't
+  inject there). External mode *expecting* an outside controller strongly suggests the SB20 will accept
+  our FTMS Set Target Power (the §C gate; run §C in External mode).
+- **Buttons:** **5 per side / 10 total** (4 & 5 hidden under the bar tape; session 3 mapped only 1/2/3).
+  The app exposes **three config slots/side — `{1,4}`, `{2,5}`, `{3}`** — ties 1≡4 and 2≡5; each slot
+  assignable to front/rear easier/harder **or `external`**.
+- **The "external" assignment is the keystone mechanism:** set a slot `external` → the app ignores those
+  buttons, but the bike still broadcasts them on `0c46be60` → the ESP reads + repurposes them. A supported
+  setting, no hack. (Explains why button 3 was inert-in-app but emitting in session 3 — already external.)
+  Plan: the rider makes a **"proxy" Profile** marking the buttons we want as external.
+- **Open (session 4):** are 1≡4 / 2≡5 *separable* over BLE (different bits → up to 10 signals)? does the
+  SB20 erg off a third-party Set Target Power in External mode (§C)? hold-vs-taps repeat (§B)? Custom-2×
+  `03`-frame front/rear fields?
+- **Profile settings (context):** gradient-scale (100%) + equipment-weight (8 kg) = sim physics;
+  vibrate/audio-on-shift toggle (**confirms the haptic is the phone, not the pods**); Gear Setup
+  Dream-Drive vs Custom (2×); shift mode Shimano/Campagnolo/Custom.
+
+**Architecture takeaway:** External mode + per-button `external` are the SB20's **designed-in hooks for an
+outside brain** — exactly what the ESP is becoming (power source + erg target + button input; bike =
+trainer + display). De-risks the erg feature and is the incremental path to the alternative-app idea.

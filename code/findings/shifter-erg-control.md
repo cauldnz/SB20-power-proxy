@@ -40,78 +40,53 @@ shifter │  (button events)        (1 ev/press)   (held in ESP)      target pow
    `Request Control (0x00)` once → `Start/Resume (0x07)` → `Set Target Power (0x05) + <sint16 LE W>`;
    the machine indicates `Response 0x80 | req-op | result` (`0x01` success … `0x05` control-not-permitted).
 
-## Button allocation — by mode (owner, refined 2026-06-19)
+## Button allocation — free buttons via the app's "external" assignment
 
-The right split depends on the mode, because **shifting is unused in erg mode** (the trainer holds the
-target power regardless of "gear"). So:
+> Supersedes earlier "repurpose the main buttons in erg mode" drafts — the owner's app recon
+> ([`stages-app-config.md`](stages-app-config.md)) gives a cleaner, supported mechanism.
 
-- **Erg mode → repurpose the four MAIN up/down buttons** for erg adjust (they're idle for shifting in
-  erg). Natural mapping is **fine + coarse**:
-  - LEFT up / down = **erg +/− small** (e.g. ±5 W)
-  - RIGHT up / down = **erg +/− big** (e.g. ±25 W)
-  *(exact assignment is UX; the point is 4 buttons → small/big × up/down — no gestures needed for erg.)*
-- **The two 3rd buttons (`0x0004` L / `0x0020` R) are RESERVED for *control*, across modes** — Zwift
-  actions (backlog), **ESP-device control** (mode/feature toggles, etc.), menus. They're the always-free
-  pair (unbound in the app, but they still emit on `0c46be60`), so keep them for cross-mode control
-  rather than spending them on erg.
+Two facts fix the design:
 
-This rests on two things to confirm (session 4 §C + the app dig):
-1. **Erg-mode detection.** The ESP reads **FTMS Fitness Machine Status (`0x2ADA`) / Training Status
-   (`0x2AD3`)** to know it's in erg, and only *then* treats the main up/down presses as erg-adjust —
-   otherwise they shift the bike normally.
-2. **Harmless shift-in-erg.** Does the SB20 *do* anything when a shift button is pressed in erg mode? If a
-   gear change there has no effect (erg overrides resistance), we just read the BLE press and repurpose it
-   with **no Profile change needed**; if it does something unwanted, disable shifting via a Stages-app
-   Profile while in erg.
+- **Our erg control lives in the SB20's *External* mode** — the bike's "driven from an outside controller"
+  mode — **not** the app's *Power/Erg* mode (the app owns the target there, we can't inject). In External
+  mode gears still work, so we don't rely on "erg disables shifting".
+- **The app frees buttons for us via its own "external" assignment.** Per side there are **three config
+  slots** — `{1,4}`, `{2,5}`, `{3}` — each settable to a shift action **or `external`**; set a slot
+  `external` and the app ignores those buttons while the bike **still broadcasts them on `0c46be60`** for
+  us. So the rider creates a **"proxy" Profile** marking the buttons we want as external — a supported
+  setting, no hack, no fighting the app.
 
-## Input gestures — for the two control buttons (momentary)
+**Mapping (MVP):** free a slot per side → e.g. **LEFT = erg − / + (small step)**, **RIGHT = erg − / + (big
+step)** (fine + coarse), leaving a third slot `external` as the **control** surface (mode / menu /
+Zwift-later). Up to **10** buttons are potentially available (5/side) — *if* 1≠4 and 2≠5 at the BLE level
+(session-4 §B); even the worst case (the mapped 6) is ample for erg + a couple of control actions.
 
-Erg doesn't need gestures (4 main buttons cover small/big × up/down). Gestures matter for the **two 3rd
-control buttons**, where two physical momentary buttons must cover several control actions. Prior art
-exists in *this exact domain*:
+**Confirm in session 4:** (1) **does the SB20 accept our FTMS Set Target Power in External mode** (§C —
+External mode *expecting* external control makes this likely); (2) **1≡4 / 2≡5 BLE separability** (§B),
+which sets the button ceiling. The ESP can read **FTMS Fitness Machine Status `0x2ADA` / Training Status
+`0x2AD3`** to know the bike's mode.
 
-- **Chord — both 3rd buttons at once.** Zwift's **SRAM-style** virtual shifting already uses "press *both*
-  shift buttons together" (to change the chainring), so a both-buttons chord is a familiar gesture — e.g.
-  *enter/exit a mode*. **Open (session-4 §B):** does the SB20 emit a simultaneous press as one frame with
-  both bits (`0x0024`) or as two events? — decides whether chords are cleanly detectable.
-- **Double-tap (one button).** Standard firmware pattern (QMK *Tap Dance*; ESP `Button2`-style libraries
-  give single/double/triple/long with ~3–4 ms debounce) — a second action per button at ~250 ms latency.
-- **Long-press / hold — *not* as out as it looked.** Session 3's capture shows the SB20 **streams
-  `01 00 <bit>` continuously while held** (~10–20 notifications), so **hold *duration* is observable**.
-  Tools like **BikeControl** added long-press for steering over exactly these systems. UX caveat: holding
-  a bar button mid-effort is awkward — prefer tap / double-tap / chord; treat hold as a bonus to confirm.
+## Input gestures — only if a control button must do more than one thing
 
-So the two 3rd buttons + (single / double / chord) cover a handful of control actions (mode, menu,
-ESP/Zwift) without touching the erg/shift buttons.
-
-## Dependency — the Stages app's button "Profiles"
-
-The Stages Cycling app configures button behaviour via **Profiles** (owner, 2026-06-19; no official docs).
-This matters two ways:
-1. **No conflict for the 3rd control buttons** — they're already unassigned, so the app won't fight us.
-2. **The erg feature repurposes the *main* up/down buttons in erg mode**, so the key question is whether a
-   shift press *does anything* in erg (see allocation point 2 above). If erg overrides resistance and a
-   gear change is inert, no Profile change is needed; if not, the fallback is **disable shifting in a
-   Profile** while in erg. Either way the Profile config is part of the feature's setup story — which is
-   why the screenshots below matter.
-
-### What would help — owner can gather (capture-before-code)
-No docs exist, so annotated info from the app is real data we'd otherwise guess at. Most useful:
-- Screenshots of the **Profiles / button-assignment** screen(s): what actions a button can be set to, and
-  whether a button can be set to **None / disabled**.
-- Whether the **3rd buttons** appear in the config at all (assignable, or fixed/unused?).
-- Whether **shifting can be turned off per-button** (freeing a button for us to proxy).
-- What the app calls erg / target-power mode, and whether shift buttons do anything **in erg mode**.
-
-Drop screenshots + notes anywhere I can read them (commit to the repo, or describe in chat) and I'll fold
-them in — same capture-before-code discipline as the byte captures.
+Erg needs no gestures (freed slots cover small/big ±). Gestures matter only when a **control** slot has to
+cover several actions. Prior art is in-domain: **chord** (both buttons at once — Zwift's SRAM-style
+shifting uses exactly this), **double-tap** (QMK *Tap Dance* / ESP `Button2`, ~3–4 ms debounce, ~250 ms
+latency), and **hold** — session 3 shows the SB20 **streams `01 00 <bit>` while held**, so hold-duration
+is observable (BikeControl uses long-press for steering). Prefer tap / double-tap / chord; the chord and
+the hold-vs-taps repeat behaviour are **session-4 §B** captures (the latter is *unconfirmed* — a frame
+burst can't be told from N taps without narration).
 
 ## ⚠️ The gate — does the SB20 erg off a THIRD-PARTY Set Target Power?
 
-**This is the go/no-go and it is UNCONFIRMED.** We know the SB20 *advertises* the FTMS Control Point and
-that the Stages app drives erg through it — but we have **never captured the SB20 accepting a Set Target
-Power from anyone but the app**, and FTMS machines can refuse control to an un-paired/secondary client
-(`result 0x05 control-not-permitted`). There are **no FTMS/erg captures in `findings/captures/` yet**.
+**This is the go/no-go and it is UNCONFIRMED** (though the odds look good — see below). We know the SB20
+*advertises* the FTMS Control Point and that the Stages app drives erg through it — but we have **never
+captured the SB20 accepting a Set Target Power from anyone but the app**, and FTMS machines can refuse
+control to an un-paired/secondary client (`result 0x05 control-not-permitted`). There are **no FTMS/erg
+captures in `findings/captures/` yet**.
+
+**Why the odds look good:** the SB20 has an **External ride mode** whose entire purpose is to be driven by
+an outside controller (`stages-app-config.md`) — i.e. the bike is *designed* to accept exactly this. Run
+§C with the bike in **External** mode.
 
 **Resolve it with the tooling we already built:** `code/scripts/capture_ftms.py --erg` does exactly the
 recon — `Request Control → Start → Set Target Power` at a few targets, logging the SB20's `0x80`
