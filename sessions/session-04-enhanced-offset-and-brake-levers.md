@@ -1,23 +1,35 @@
-# 🚴 Bike session 4 — ground the Enhanced-Offset (0x10) format + brake-lever shifter probe
+# 🚴 Bike session 4 — ground the Enhanced-Offset (0x10) format + FTMS erg + brake-lever probe
 
 **Status: 🟡 PLANNED** · tracked in [`sessions/README.md`](sessions/README.md). Run via
 [`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md) — one step at a time, record actuals inline, retro at the end.
+**⏱ Timestamp from the start** (note `HH:MM` at the session start and each section — per the playbook, so
+planned-vs-actual is recorded, not reconstructed).
 
-Prepared 2026-06-19 (desk) after session 3. Two gates + a probe, **front-loaded** (the high-information
-captures first, while the rig is fresh):
+Prepared 2026-06-19 (desk) after session 3. **~45–55 min** (G1 ~10 · G2 ~10 · C ~10 · B ~10 · restore ~5).
+Three gates + a probe, **front-loaded** (the high-information captures first, while the rig is fresh):
 
 - **G1 — capture the REAL crank's `0x10` Enhanced-Offset reply** (grounds the A1 desk fix; the one byte
   sequence the spec can't give us). ⭐ do this first.
 - **G2 — re-test our spoof's `0x10`** after flashing the A1 desk fix (does the Stages app's calibrate
   now COMPLETE instead of spinning?).
+- **C — FTMS erg-acceptance** ⭐ — does the SB20 erg off a **third-party** Set-Target-Power? The go/no-go
+  for the *shifter-buttons-adjust-erg-watts* feature (`code/findings/shifter-erg-control.md`).
 - **B — brake-lever / silent-channel shifter probe** (do the brake levers fire on `be61`/`beb0` or FTMS
   Status `0x2ADA`? — the session-3 open thread).
+
+> ⚠️ **Realistic-time note (session-3 lesson):** "verify/retest" steps (G2) can become *investigation* if
+> they fail — budget for it, don't assume quick. The time budget above already pads them.
 
 > **Why G1 matters:** session 3 proved our old `0x10` reply (`20 10 01 00 00`, the 5-byte `0x0C` shape)
 > leaves the app spinning. The desk fix sends the **spec-correct Enhanced shape**
 > `20 10 01 <offset s16> <mfgCompanyId u16> <mfgData…>` (see `Cps.h encodeEnhancedOffsetCompResponse`),
 > but the **exact company-id + any trailing manufacturer data are unknown** and were never passively
 > sniffable. G1 actively elicits them from the real crank by *writing* `0x10` to it and logging its reply.
+
+## Bring (pre-flight — per the playbook checklist)
+A **fresh CR2032** + coin/screwdriver (the real L crank `62144` has read **12–14%** before — and **G1
+needs it awake**, so check/replace it first; reinsert for the restore). Phone with the **Stages Cycling**
+app. This chat open.
 
 ## Restore values — WRITE DOWN before changing any pairing
 **Stages `62144` (L) : `4963` (R)** · crank length **165 mm** · ANT+ zero-offset **L 903 / R 951**.
@@ -83,6 +95,37 @@ Watch whether `0c46be61`, `0c46beb0`, or **FTMS Status `0x2ADA`** ever fires.
 
 **✅ Pass:** capture lands. If a brake squeeze fires a char → new thread; if nothing → brakes aren't on
 BLE (consistent with the aero-remote hypothesis for the silent channels). Either way, send the JSONL.
+
+---
+
+## C · FTMS erg-acceptance — does the SB20 erg off a THIRD-PARTY Set Target Power? ⭐ (~10 min)
+
+**The go/no-go for the *shifter-buttons-adjust-erg-watts* feature** (owner ask;
+`code/findings/shifter-erg-control.md`). The SB20 is a full FTMS machine — the Stages app drives erg by
+writing **Set Target Power** to Control Point `0x2AD9`. **Unknown:** will the SB20 accept that op from
+*us* (not the app) and actually hold the target? FTMS machines can refuse a secondary controller
+(`control-not-permitted`). One capture settles it; nothing gets built until it passes.
+
+**Setup:** connect to the **SB20 itself** (`E4:AA:5A:D6:0E:D4`), **Stages app DISCONNECTED** from the SB20
+(FTMS expects one controller). Put the bike in **erg/target-power mode** if there's a manual way; **pedal
+steadily throughout** so the logged power can be seen to track (or not). The capture tool does the erg
+handshake itself — Request-Control → Start → Set-Target-Power — and logs the SB20's `0x80` responses.
+
+```powershell
+C:\repos\cauldnz\SB20-power-proxy\code\.venv-win\Scripts\python.exe `
+  C:\repos\cauldnz\SB20-power-proxy\code\scripts\capture_ftms.py `
+  --name SB20 --duration 240 --erg --erg-targets 150,200,100 --erg-hold 25 `
+  --output "C:\repos\cauldnz\SB20-power-proxy\code\findings\captures\G-sb20-ftms-erg-$(Get-Date -Format yyyyMMdd-HHmm).jsonl"
+```
+
+**✅ Pass:** responses come back `80 00 01` (Request-Control success) and `80 05 01` (Set-Target-Power
+success), **and the Indoor Bike Data power tracks the 150/200/100 targets** as you pedal → **the
+shifter-erg feature is real**; build it grounded in the captured FTMS frames. **❌ Fail:**
+`…05` = `control-not-permitted`, or power ignores the targets → the SB20 won't erg off a third party over
+BLE (or needs to be the *sole* controller / bonding); tell me the exact response bytes — that decides the
+feature and the alternative-app path. **Commit the JSONL** either way (passive Indoor Bike Data + the
+Feature/Power-Range reads are useful regardless). *(Fallback if `--name SB20` doesn't match: use
+`--address E4:AA:5A:D6:0E:D4`.)*
 
 ---
 
