@@ -87,6 +87,14 @@ rider starts:
   memory. The agent has been an unreliable time estimator (bike *and* desk work); logged actuals are the
   only thing that fixes that. One clock-read per step turns every session into calibration data for the
   planned-vs-actual review (§4). Get a timestamp at the start of the session and at each section boundary.
+- **Record every mid-session instruction change, not just the planned steps — the capture depends on it.**
+  When you deviate from the written plan live (an ad-hoc instruction like "now press LEFT-up **ten
+  separate times**", a changed order, an improvised probe), **write the new instruction AND what the rider
+  physically did into the doc**, beside its timestamp. A capture is only interpretable later if you know
+  what action produced each moment — a BLE frame burst is genuinely ambiguous (one long *hold*? ten *taps*?
+  a *double-tap*?) without the narration logged. *(Session 3: an unrecorded "do 10 separate clicks"
+  improvisation was later misread from the capture as a single long hold; the deviation log would have
+  caught the mistake — and without it, the behaviour had to be re-tested on the bike.)*
 - **Protect the rig.** Write current state down before changing anything; restore it at the end; confirm
   normal operation before they leave.
 - **Know when to stop ratholing.** If a step is stuck, don't loop the rider through blind retries — grab
