@@ -39,25 +39,31 @@ The discipline we keep instead:
 - **Firmware depth:** codec (host-tested) **+ flag-gated seam classes** (FTMS erg client / trainer
   server) **+ a real hardware test loop** against the connected ESP32(s) + the host's own BLE.
 
-## Hardware (detected 2026-06-21 on this machine)
+## Hardware (verified 2026-06-21 on this machine)
 
-- ✅ **1 ESP32 enumerated** — `COM9`, native-USB (VID `303A:1001`), MAC `38:44:BE:45:E9:A4`,
-  ESP32-C3-class. **This is the bike board** — it carries the Session-4 firmware.
-- ⚠️ **1 "USB Device — Descriptor Request Failed (Error)"** — most likely the **second ESP32 not
-  enumerating** (charge-only cable / flaky port / wedged). Unusable until it comes up.
-- ✅ **Host BLE works** (Realtek BT adapter) → Windows-native bleak/WinRT → the **host can be a BLE
-  FTMS peer**.
-- ✅ **PlatformIO 6.1.19** at `…\Roaming\Python\Python313\Scripts\pio.exe`; flash via `pio run -t upload`.
+- ✅ **Two ESP32-C3 boards, both up** (confirmed booting + BLE-advertising):
+  - `COM9` — MAC `38:44:BE:45:E9:A4` — the **OLED bike board** (answers `sb20proxy.local`, carries the
+    Session-4 firmware). **Owner OK'd flashing it**, but prefer COM10 to keep it pristine.
+  - `COM10` — MAC `E0:72:A1:70:02:7C` — the **spare/no-OLED dev board** — flash freely.
+  - (A separate "USB Device — Descriptor Request Failed" is **not** an ESP32 — owner confirmed there is
+    no third board; ignore it.)
+- ✅ **Host BLE works** (Realtek BT adapter; bleak sees both boards at strong RSSI) → the **host is a
+  reliable BLE FTMS peer**.
+- ✅ **Reliable hang-free flashing solved + proven** (~6 cycles, zero wedges): **`code/scripts/flash_c3.py
+  --env <env> --port COM10 [--verify-ble NAME]`**, which flashes pio's built bins with **esptool 4.11
+  direct** (`--before default_reset --after hard_reset`), time-bounded with retries + a BLE alive-check.
+  **`pio run -t upload` FAILS on these boards** — its bundled esptool 4.5.1 (`tool-esptoolpy@1.40501.0`)
+  hits the C3 USB-JTAG "No serial data received" bug. **So: build with `pio run -e <env>`, flash with
+  `flash_c3.py`.**
 
-**Two hard constraints this creates (the run must honour):**
-1. **Don't strand the bike board.** If the hardware loop uses `COM9`, it overwrites the bike firmware.
-   The run must **re-flash the canonical bike build (`esp32c3-oled-live-ota`) back onto `COM9` at the
-   end** of the hardware tier — and verify it — so Session 4 isn't blocked. Best avoided entirely if
-   the **second board** is available (then the bike board is never touched).
-2. **Flashing can wedge.** Per memory (`esp32-c3-flashing`): USB-JTAG auto-reset wedges; reliable
-   recovery needs a *physical* power-cycle this run can't do. So the **hardware tier is best-effort and
-   non-blocking** — attempt flash+loop with a bounded retry; on a wedge, **log it and move on**; the
-   desk deliverables (codec + host tests + compile-gated seams) still stand.
+**Two hard constraints the run must honour:**
+1. **Don't strand the bike board.** Prefer **`COM10` (the spare)** for the hardware loop so `COM9`
+   (bike board) is never touched. If `COM9` *is* used, **re-flash + verify the canonical bike build
+   (`esp32c3-oled-live-ota`) onto it at the end** so Session 4 isn't blocked.
+2. **Flashing is best-effort and non-blocking.** `flash_c3.py` is time-bounded with bounded retries; on
+   any failure it **logs and the run moves on** — the desk deliverables (codec + host tests +
+   compile-gated seams) stand regardless. (Fallback if a wedge ever recurs: manual bootloader +
+   `--before no_reset` + power-cycle — not needed with esptool 4.11.)
 
 ## Guardrails
 
@@ -92,17 +98,17 @@ The discipline we keep instead:
    advertise FTMS, Indoor Bike Data notify from a power source, Control-Point write+indicate handler) —
    both delegating to `Ftms.h`. New `platformio.ini` envs (`esp32c3-ftms-server`,
    `esp32c3-ftms-ergclient`). Compile-gated.
-6. **F6 — Real hardware loop (best-effort, non-blocking).** `code/scripts/ftms_hw_loop.py` + a flash
-   wrapper:
-   - **Server seam:** flash `esp32c3-ftms-server` → host (bleak, reuse `capture_ftms.py` client logic)
-     connects, Request Control → Set Target Power(N) → assert the board acks + reflects N in Indoor
-     Bike Data.
-   - **Client seam:** flash `esp32c3-ftms-ergclient` → host stands up a **WinRT FTMS peripheral**
+6. **F6 — Real hardware loop (best-effort, non-blocking).** `code/scripts/ftms_hw_loop.py`; flash with
+   **`flash_c3.py`** (build first: `pio run -e <env>`). Prefer **`COM10`** (spare) so the bike board
+   stays pristine.
+   - **Server seam:** flash `esp32c3-ftms-server` → `COM10`; host (bleak, reuse `capture_ftms.py` client
+     logic) connects, Request Control → Set Target Power(N) → assert the board acks + reflects N in
+     Indoor Bike Data.
+   - **Client seam:** flash `esp32c3-ftms-ergclient` → `COM10`; host stands up a **WinRT FTMS peripheral**
      (per `ble-peripheral-winrt`) → assert the board connects + writes the right Set-Target-Power bytes.
-   - **ESP↔ESP (only if the 2nd board enumerates):** board A = server, board B = client; observe via
-     serial/`/log`.
-   - **Restore:** re-flash `esp32c3-oled-live-ota` to `COM9` + verify, unless only the 2nd
-     (non-bike) board was used. Bounded retries; log + continue on any wedge.
+   - **ESP↔ESP (both boards):** `esp32c3-ftms-server` → one board, `esp32c3-ftms-ergclient` → the other;
+     observe via serial/`/log`. If `COM9` is used, **restore `esp32c3-oled-live-ota` + verify** at the end.
+   - Every flash via `flash_c3.py` (bounded retries + timeout); log + continue on any failure.
 7. **F7 — Docs + ledger.** `code/findings/ftms-protocol.md` (the byte-layout reference + spec-built-vs-
    capture-validated status + the hardware-loop how-to); `decisions.md` entry; `forward-plan.md` update;
    link `erg_setpoint_w` → the erg client. Note Session 4 §C remains the real-capture gate.
