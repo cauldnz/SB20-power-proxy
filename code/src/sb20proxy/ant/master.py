@@ -91,11 +91,15 @@ class LoopbackMaster(AntMaster):
         if self._ack_handler is not None:
             self._ack_handler(bytes(data))
 
-    def inject_broadcast(self, data: bytes) -> None:
-        """Deliver one broadcast page to all listeners now (test / utility hook)."""
+    def _deliver(self, page: bytes) -> None:
+        """Count one broadcast and fan it out to every listener."""
         self._broadcasts += 1
         for listener in self._listeners:
-            listener(bytes(data))
+            listener(page)
+
+    def inject_broadcast(self, data: bytes) -> None:
+        """Deliver one broadcast page to all listeners now (test / utility hook)."""
+        self._deliver(bytes(data))
 
     @property
     def broadcasts(self) -> int:
@@ -119,8 +123,5 @@ class LoopbackMaster(AntMaster):
     async def _run(self) -> None:
         while True:
             if self._tx_provider is not None:
-                page = self._tx_provider()
-                self._broadcasts += 1
-                for listener in self._listeners:
-                    listener(page)
+                self._deliver(self._tx_provider())
             await self._sleep(self._period_s)
