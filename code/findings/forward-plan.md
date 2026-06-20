@@ -423,9 +423,24 @@ From `phase-0-report.md` §5 — track, don't block on:
   an HTTP **control API** (read live state + mutate the plan + push messages in real time), on a
   **dynamic versioned plan** model with **power-zone / %FTP** workouts (Coggan 7-zone). Host-tested,
   no bike (PRs #38–#42). Reference: [`ride-director.md`](ride-director.md); brief:
-  [`ride-director-uplift-plan.md`](ride-director-uplift-plan.md). **Remaining (gated / stretch):** wire
-  the exposed `erg_setpoint_w` → the FTMS *Set Target Power* write once Session 4 §C confirms the SB20
-  ergs off a third party (auto-set Power-Zone workouts); build out the zone-workout library; on-bike use.
+  [`ride-director-uplift-plan.md`](ride-director-uplift-plan.md). Zone-workout library also built (PR #44:
+  endurance / sweet-spot / over-unders / VO2). **Remaining (gated):** wire the exposed `erg_setpoint_w`
+  → the FTMS *Set Target Power* write once Session 4 §C confirms the SB20 ergs off a third party
+  (auto-set Power-Zone workouts); on-bike use.
+- **Stages↔Assioma calibration-grid experiment** — parked idea (owner, 2026-06-21). Use the new Ride
+  Director to run a **power calibration grid** between the two meters already on the SB20 (native Stages
+  L crank + Favero Assioma). *Why (not just redundant):* (a) a full dress-rehearsal of the **Session-5
+  meter-to-meter fit pipeline** (XCadey→Assioma) with a *known* delta to confirm the fit recovers it,
+  de-risking the track-bike calibration; (b) quantifies the Stages-vs-Assioma delta and — the useful
+  part — whether it's flat (→ `fit_scale_offset`) or **power/cadence-dependent** (→ `fit_grid`). *Already
+  in hand:* `ride_web.py --live --stages-id … --assioma-id … --output` (paired ANT+ capture while driving
+  a workout) → `09_fit_calibration.py --target stages --ref assioma` / `08_analyze_grid.py`. *New artifact
+  needed:* a **grid workout** — a %FTP power spine held steady (~2 min/step so both meters settle: e.g.
+  40/55/70/85/100/110% FTP @ 90 rpm) + **cadence rows** at anchor powers (70% @ {60,75,105} rpm, 90% @
+  {60,105}) + a coast for the zero. *Bonus the uplift unlocks:* drive it as a **live agent-operator** via
+  the control API — watch `Stages − Assioma` on `/api/control/state`, `extend` a step until settled, push
+  Δ-feedback banners, skip once a point is clean. Runs on the **SB20 bike** (both meters on it) + the
+  ANT+ stick → a bike session. Builds on the `RIDE-CARD` / power-grid note in the meter-to-meter section.
 
 ---
 
