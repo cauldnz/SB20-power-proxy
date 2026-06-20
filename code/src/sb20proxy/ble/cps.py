@@ -211,6 +211,26 @@ def cadence_rpm_from_crank(revs0: int, t0: int, revs1: int, t1: int) -> float:
     return d_revs * 60.0 * 1024.0 / d_t
 
 
+class CrankCadenceTracker:
+    """Recover cadence (rpm) across successive Crank Revolution Data samples, holding the
+    previous (revs, event_time) so callers don't each hand-roll the state. `update` returns the
+    rounded rpm, or None when there's no prior sample yet or no cadence is recoverable (rpm <= 0).
+    The caller decides what to do with None (a per-reading source uses it as-is; a sticky twin
+    keeps its last good value)."""
+
+    def __init__(self) -> None:
+        self._prev: tuple[int, int] | None = None
+
+    def update(self, revs: int, event_time: int) -> int | None:
+        cadence: int | None = None
+        if self._prev is not None:
+            rpm = cadence_rpm_from_crank(self._prev[0], self._prev[1], revs, event_time)
+            if rpm > 0:
+                cadence = round(rpm)
+        self._prev = (revs, event_time)
+        return cadence
+
+
 @dataclass
 class CrankCadence:
     """Advancing crank-revolution state for the CPS Crank Revolution Data fields. A head
