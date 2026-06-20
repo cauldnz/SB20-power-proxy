@@ -165,16 +165,16 @@ inline float cadenceRpmFromCrank(uint16_t revs0, uint16_t t0, uint16_t revs1, ui
 // The ENHANCED op 0x10 uses a DIFFERENT, richer response (mfg company id + data) — see
 // encodeEnhancedOffsetCompResponse; do NOT reuse this 5-byte shape for 0x10 (that left the app
 // spinning, bike-session 3).
-inline std::vector<uint8_t> encodeOffsetCompResponse(uint8_t reqOp, int16_t offset) {
+inline std::vector<uint8_t> encodeOffsetCompResponse(int16_t offset) {
     return {
-        CP_OP_RESPONSE, reqOp, CP_RESPONSE_SUCCESS,
+        CP_OP_RESPONSE, CP_OP_START_OFFSET_COMP, CP_RESPONSE_SUCCESS,
         (uint8_t)(offset & 0xFF), (uint8_t)((offset >> 8) & 0xFF),
     };
 }
 
 // Back-compat alias: the Start Offset Compensation (0x0C) reply.
 inline std::vector<uint8_t> encodeCalibrationResponse(int16_t offset) {
-    return encodeOffsetCompResponse(CP_OP_START_OFFSET_COMP, offset);
+    return encodeOffsetCompResponse(offset);
 }
 
 // ENHANCED Offset Compensation (0x10) reply — the op the Stages app actually sends for its zero-reset.
@@ -242,7 +242,7 @@ inline CpResult handleControlPoint(const uint8_t* req, size_t len,
     const uint8_t op = req[0];
     switch (op) {
         case CP_OP_START_OFFSET_COMP:                 // 0x0C — simple offset reply
-            out.response = encodeOffsetCompResponse(CP_OP_START_OFFSET_COMP, calOffset);
+            out.response = encodeOffsetCompResponse(calOffset);
             break;
         case CP_OP_ENHANCED_OFFSET_COMP:              // 0x10 — Enhanced (the Stages app's zero-reset)
             out.response = encodeEnhancedOffsetCompResponse(calOffset, mfgCompanyId, mfgData);
