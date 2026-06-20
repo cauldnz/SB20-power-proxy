@@ -65,6 +65,10 @@ class LiveState:
         self._ride_started_at: float | None = None
         self._plan = plan if plan is not None else RidePlan("")
         self._cursor = Cursor()
+        # agent control surface: coaching messages + an ad-hoc hold-target override
+        self._coach: list[dict[str, Any]] = []
+        self._next_msg_id = 1
+        self._hold: dict[str, Any] | None = None
 
     # ---- written by the capture/replay thread ----
 
@@ -207,6 +211,52 @@ class LiveState:
             if self._cursor.started_at is not None:
                 self._cursor = Cursor(index=0, started_at=self._now())
 
+    # ---- agent coaching messages + ad-hoc hold-target (the control surface) ----
+
+    def post_message(self, text: str, *, level: str = "info",
+                     ttl_s: float | None = None) -> None:
+        """Push a coaching message for the phone banner (latest active one wins)."""
+        with self._lock:
+            self._coach.append({
+                "id": self._next_msg_id, "text": text, "level": level,
+                "created_s": self._now(), "ttl_s": ttl_s,
+            })
+            self._next_msg_id += 1
+            self._coach = self._coach[-20:]  # keep a short tail
+
+    def set_hold(self, *, power_w: int | None = None, cadence_rpm: int | None = None,
+                 duration_s: float | None = None) -> None:
+        """Set an ad-hoc hold-this target that supersedes the segment target on the
+        phone (and the erg setpoint). Optional duration auto-clears it."""
+        with self._lock:
+            until = None if not duration_s else self._now() + duration_s
+            self._hold = {"power_w": power_w, "cadence_rpm": cadence_rpm, "until": until}
+
+    def clear_hold(self) -> None:
+        with self._lock:
+            self._hold = None
+
+    def _active_message(self, now: float) -> dict[str, Any] | None:
+        for msg in reversed(self._coach):
+            if msg["ttl_s"] is None or now - msg["created_s"] < msg["ttl_s"]:
+                return {"id": msg["id"], "text": msg["text"], "level": msg["level"],
+                        "age_s": round(now - msg["created_s"], 1)}
+        return None
+
+    def _hold_view(self, now: float) -> dict[str, Any] | None:
+        """The live hold override, lazily clearing it once its duration is up."""
+        if self._hold is None:
+            return None
+        until = self._hold["until"]
+        if until is not None and now >= until:
+            self._hold = None
+            return None
+        return {
+            "power_w": self._hold["power_w"],
+            "cadence_rpm": self._hold["cadence_rpm"],
+            "remaining_s": None if until is None else round(until - now, 1),
+        }
+
     # ---- read by the HTTP handler thread ----
 
     def snapshot(self) -> dict[str, Any]:
@@ -226,6 +276,12 @@ class LiveState:
             }
             elapsed = (None if self._ride_started_at is None
                        else round(now - self._ride_started_at, 2))
+            director = director_view(ds, self._plan)
+            hold = self._hold_view(now)
+            # the erg setpoint the (future) FTMS path will write: the hold override if
+            # one is set, else the active segment's resolved target.
+            erg = (hold["power_w"] if hold and hold["power_w"] is not None
+                   else director["target_power_w"])
             return {
                 "mode": self._mode,
                 "output": self._output,
@@ -235,5 +291,10 @@ class LiveState:
                 "ride_started": self._ride_started_at is not None,
                 "ride_elapsed_s": elapsed,
                 "plan_version": self._plan.version,
-                "director": director_view(ds, self._plan),
+                "cursor": {"index": self._cursor.index,
+                           "started_at": self._cursor.started_at},
+                "director": director,
+                "message": self._active_message(now),
+                "hold": hold,
+                "erg_setpoint_w": erg,
             }
