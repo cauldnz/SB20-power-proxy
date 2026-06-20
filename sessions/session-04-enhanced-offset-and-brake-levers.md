@@ -166,6 +166,42 @@ something → we'd disable shifting via a Profile in erg.** Note what you see.
 
 ---
 
+## D · Calibration grid — Stages↔Assioma (OPTIONAL, ~25 min, only if legs + time) 🟢
+
+**Lowest priority — do the gated items (G1, C) FIRST.** A meter-vs-meter calibration of the SB20's two
+meters (native Stages L crank + Favero Assioma). *Why it's worth it:* a **dress-rehearsal of the
+Session-5 meter-to-meter fit pipeline** with a *known* delta (we measured ~9 % on the short QUICK-multi
+sample), and it tells us whether that delta is **flat** (→ scale+offset) or **power/cadence-dependent**
+(→ a grid model). The harness is **built + desk-verified** (`calgrid` workout, see `ride-director.md`).
+
+**Needs:** the **ANT+ stick** on the bike machine (this path is ANT+, not BLE) + your Stages & Assioma
+**ANT+ device numbers** + your Stages **FTP**. The Ride Director shows the **Stages** target watts —
+chase the number on your phone and **hold each block as steady as you can**.
+
+1. **Run the grid + paired capture** (drives the phone + logs both meters on one clock):
+   ```bash
+   python code/scripts/ride_web.py --live --workout calgrid --ftp <YOUR_STAGES_FTP> \
+       --stages-id <STAGES_ANT_ID> --assioma-id <ASSIOMA_ANT_ID> \
+       --output code/findings/captures/CAL-grid-$(date +%Y%m%d-%H%M).jsonl
+   ```
+   Open the printed URL on your phone, pedal, **press Start**. The grid is a power spine
+   (40→110 % FTP @ 90 rpm, ~2 min each) + cadence rows (70 % & 90 % FTP at 60/75/105 rpm) + a 30 s
+   coast (stop pedalling — the zero point). ~23 min.
+2. **Fit** (commit the capture first — it's the canonical record):
+   ```bash
+   python code/scripts/09_fit_calibration.py --input code/findings/captures/CAL-grid-<ts>.jsonl \
+       --target stages --ref assioma --mode auto \
+       --output code/findings/calibration-stages-assioma.json
+   ```
+3. **Check cadence-dependence** (the C-rows answer this): `python code/scripts/08_analyze_grid.py
+   --input code/findings/captures/CAL-grid-<ts>.jsonl --target stages --ref assioma`.
+4. **Record** the chosen fit (scale/offset or grid) + residual into the Retro, and whether the residual
+   shows cadence structure. (*Optional:* from the dev box you can watch the live Stages−Assioma Δ at
+   `http://<bike-host>:8080/api/control/state` and nudge a block longer with `ride_control.py extend`
+   if a point hasn't settled.)
+
+---
+
 ## 🔁 Restore (before you leave)
 Reinsert **both** crank batteries → re-pair the SB20 to **`62144` (L) : `4963` (R)**, **165 mm**, ANT+
 offsets **903 / 951**, normal mode → pedal once to confirm the real cranks read.

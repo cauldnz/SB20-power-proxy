@@ -41,7 +41,9 @@ twin (`--replay`). The whole thing runs and is proven at the desk (`test_ride_e2
 - **`server.py`** — stdlib HTTP, no deps. Routes below. Optional `control_token` gates `/api/control/*`.
 - **`webapp.py`** — `director_view` / `workout_json` (pure view transforms) + `APP_HTML` (the phone page).
 - **`workouts.py`** — `CALIBRATION`, `DEMO` (absolute) + a %FTP/zone library: `sweetspot`,
-  `sweetspot2x20`, `endurance` (Z2), `overunder` (threshold over-unders), `vo2` (30/30s).
+  `sweetspot2x20`, `endurance` (Z2), `overunder` (threshold over-unders), `vo2` (30/30s), and
+  `calgrid` (the meter-vs-meter calibration grid — power spine + cadence rows + coast; feeds
+  `09_fit_calibration.py`, run sheet in the session-4 doc §D).
 
 ## HTTP surface
 

@@ -124,8 +124,43 @@ VO2_30_30 = Workout(
     ),
 )
 
+# Meter-vs-meter calibration GRID (vs the older CALIBRATION "spread"): a systematic
+# power x cadence matrix held STEADY at each point, so a paired Stages+Assioma capture
+# (ride_web.py --live) gives 09_fit_calibration.py clean per-point data. Targets are %FTP
+# (chase the displayed STAGES watts), so it scales to the rider via --ftp. Two halves:
+#   * a power SPINE @ 90 rpm (40..110% FTP) — the scale/offset + power-dependent ratio;
+#   * cadence ROWS at two anchor powers — exposes whether the meter delta is cadence-
+#     dependent (-> a grid/cadence model) or flat (-> scale+offset). Plus a coast for the
+#     zero-power point. ~23 min. Each hold is ~2 min so each grid point yields ~90 s of
+#     clean steady data after settling. See findings/forward-plan.md (calibration-grid).
+_CAL_HOLD = 120   # power-spine hold (s)
+_CAL_CAD = 75     # cadence-row hold (s)
+CALIBRATION_GRID = Workout(
+    name="Calibration grid (meter-vs-meter, %FTP)",
+    segments=(
+        Segment(180, "Warm-up", cadence_rpm=90, zone="Z2", note="Easy spin — wake both meters."),
+        # power spine @ 90 rpm — hold each as STEADY as you can
+        Segment(_CAL_HOLD, "P 40%", cadence_rpm=90, pct_ftp=0.40, note="Steady — low-power point."),
+        Segment(_CAL_HOLD, "P 55%", cadence_rpm=90, pct_ftp=0.55, note="Steady."),
+        Segment(_CAL_HOLD, "P 70%", cadence_rpm=90, pct_ftp=0.70, note="Steady."),
+        Segment(_CAL_HOLD, "P 85%", cadence_rpm=90, pct_ftp=0.85, note="Steady."),
+        Segment(_CAL_HOLD, "P 100%", cadence_rpm=90, pct_ftp=1.00, note="Steady — threshold."),
+        Segment(_CAL_HOLD, "P 110%", cadence_rpm=90, pct_ftp=1.10, note="Steady — over threshold."),
+        # cadence rows: same power, different cadence (does the delta move with cadence?)
+        Segment(_CAL_CAD, "C 70%@60", cadence_rpm=60, pct_ftp=0.70, note="70% FTP, low cadence"),
+        Segment(_CAL_CAD, "C 70%@75", cadence_rpm=75, pct_ftp=0.70, note="70% FTP, mid cadence"),
+        Segment(_CAL_CAD, "C 70%@105", cadence_rpm=105, pct_ftp=0.70, note="70% FTP, high cadence"),
+        Segment(_CAL_CAD, "C 90%@60", cadence_rpm=60, pct_ftp=0.90, note="90% FTP, low cadence"),
+        Segment(_CAL_CAD, "C 90%@105", cadence_rpm=105, pct_ftp=0.90, note="90% FTP, high cadence"),
+        # zero-power point (meter offset)
+        Segment(30, "Coast", power_w=0, cadence_rpm=0, note="STOP pedalling — zero-power point."),
+        Segment(90, "Cool-down", cadence_rpm=85, zone="Z1", note="Easy spin to finish."),
+    ),
+)
+
 WORKOUTS: dict[str, Workout] = {
     "calibration": CALIBRATION,
+    "calgrid": CALIBRATION_GRID,
     "demo": DEMO,
     "sweetspot": SWEET_SPOT,
     "endurance": ENDURANCE_Z2,
