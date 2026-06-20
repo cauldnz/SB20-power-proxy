@@ -427,9 +427,14 @@ From `phase-0-report.md` §5 — track, don't block on:
   endurance / sweet-spot / over-unders / VO2). **Remaining (gated):** wire the exposed `erg_setpoint_w`
   → the FTMS *Set Target Power* write once Session 4 §C confirms the SB20 ergs off a third party
   (auto-set Power-Zone workouts); on-bike use.
-- **Stages↔Assioma calibration-grid experiment** — parked idea (owner, 2026-06-21). Use the new Ride
-  Director to run a **power calibration grid** between the two meters already on the SB20 (native Stages
-  L crank + Favero Assioma). *Why (not just redundant):* (a) a full dress-rehearsal of the **Session-5
+- **Stages↔Assioma calibration-grid experiment** — ✅ **harness built (owner, 2026-06-21); ride pending
+  (Session 4 §D).** The `calgrid` workout (power spine 40→110 % FTP @ 90 rpm + cadence rows + coast,
+  %FTP, desk-verified) drives the rider; `ride_web.py --live --workout calgrid` does the paired ANT+
+  capture → `09_fit_calibration.py --target stages --ref assioma` (verified on the QUICK-multi sample:
+  stages ~9 % high, grid beats linear) + `08_analyze_grid.py` for cadence-dependence. Turnkey run sheet
+  in [`sessions/session-04-…`](../../sessions/session-04-enhanced-offset-and-brake-levers.md) §D. Use the
+  new Ride Director to run a **power calibration grid** between the two meters already on the SB20 (native
+  Stages L crank + Favero Assioma). *Why (not just redundant):* (a) a full dress-rehearsal of the **Session-5
   meter-to-meter fit pipeline** (XCadey→Assioma) with a *known* delta to confirm the fit recovers it,
   de-risking the track-bike calibration; (b) quantifies the Stages-vs-Assioma delta and — the useful
   part — whether it's flat (→ `fit_scale_offset`) or **power/cadence-dependent** (→ `fit_grid`). *Already

@@ -47,3 +47,23 @@ def test_vo2_intervals_are_supra_threshold():
     assert len(ons) == 16  # 2 sets x 8
     # 120% FTP lands in Z5 (VO2 max) at any FTP
     assert all(P.zone_for_watts(s.resolved_power_w(P)).id == "Z5" for s in ons)
+
+
+def test_calibration_grid_is_a_well_formed_grid():
+    from sb20proxy.ride.workouts import CALIBRATION_GRID
+    segs = CALIBRATION_GRID.segments
+    assert WORKOUTS["calgrid"] is CALIBRATION_GRID
+    # every block resolves to a non-negative target (coast = 0 W; the rest are %FTP)
+    watts = [s.resolved_power_w(P) for s in segs]
+    assert all(w is not None and w >= 0 for w in watts)
+    # a zero-power coast point (the meter offset / zero)
+    assert any(s.power_w == 0 for s in segs)
+    # a power spine spanning low -> over-threshold (>= 6 steady points)
+    spine = [s.resolved_power_w(P) for s in segs if s.label.startswith("P ")]
+    assert len(spine) >= 6
+    assert min(spine) <= 0.45 * P.ftp_w and max(spine) >= 1.05 * P.ftp_w
+    # cadence rows at a fixed power, >= 3 distinct cadences (cadence-dependence probe)
+    cad_at_70 = sorted({s.cadence_rpm for s in segs if s.label.startswith("C 70%")})
+    assert len(cad_at_70) >= 3
+    # plausible duration for a calibration ride
+    assert 18 * 60 <= CALIBRATION_GRID.total_s <= 30 * 60
