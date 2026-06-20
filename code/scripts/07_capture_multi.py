@@ -237,22 +237,22 @@ def main() -> int:
     p.add_argument("--output", type=Path, required=True)
     args = p.parse_args()
 
-    sources: list[Source] = []
-    # Legacy explicit flags (back-compat with existing run-sheets).
+    # Every Bike Power meter as (label, ant_id) — the legacy --stages-id/--assioma-id flags are just
+    # shorthand for a --meter entry, so they feed the same list and one construction path.
+    meters: list[tuple[str, int]] = []
     if args.stages_id is not None:
-        sources.append(Source("stages", args.stages_id,
-                              DEVTYPE_BIKE_POWER, PERIOD_BIKE_POWER, decode_page))
+        meters.append(("stages", args.stages_id))
     if args.assioma_id is not None:
-        sources.append(Source(args.assioma_label, args.assioma_id,
-                              DEVTYPE_BIKE_POWER, PERIOD_BIKE_POWER, decode_page))
-    # Generic meters (any label:id pair) — the path for XCadey vs Assioma etc.
+        meters.append((args.assioma_label, args.assioma_id))
     for spec in args.meter:
         try:
-            label, dev = parse_meter_spec(spec)
+            meters.append(parse_meter_spec(spec))
         except ValueError as e:
             print(str(e), file=sys.stderr)
             return 2
-        sources.append(Source(label, dev, DEVTYPE_BIKE_POWER, PERIOD_BIKE_POWER, decode_page))
+
+    sources = [Source(label, dev, DEVTYPE_BIKE_POWER, PERIOD_BIKE_POWER, decode_page)
+               for label, dev in meters]
     if args.fec_id is not None:
         sources.append(Source("bike_fec", args.fec_id, DEVTYPE_FEC, PERIOD_FEC, decode_fec))
     if len(sources) < 2:
