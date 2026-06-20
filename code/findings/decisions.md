@@ -1267,3 +1267,43 @@ with the meters live — hermetic, no bike. 200 tests green.
 Will revisit if: the on-bike FTMS capture (Session 4 §C) confirms the SB20 ergs off a third-party Set
 Target Power — then wire `erg_setpoint_w` → the FTMS write so Power-Zone workouts auto-set resistance.
 Also pending real use: build out the zone-workout library; surface device discovery/pairing in the UI.
+
+## 2026-06-21 — FTMS protocol implemented (spec-built ahead of capture); on-air server seam PASS
+
+Decision: Implement the FTMS (Fitness Machine Service, 0x1826) "bike" protocol — codec + erg control +
+the shifter-nudges-watts mapper + the trainer-server role — **building from the Bluetooth spec ahead of
+the on-bike capture** (an owner-approved exception to capture-before-code, 2026-06-21: the FTMS spec is
+strong and prior art is readable). Built F1–F6 across PRs #48–#53. Reference:
+[`ftms-protocol.md`](ftms-protocol.md); plan: [`ftms-implementation-plan.md`](ftms-implementation-plan.md).
+
+Context: completes the "control the trainer" half and closes the Ride Director loop — the director
+exposes `erg_setpoint_w` and FTMS **Set Target Power** writes it so the SB20 actually ergs.
+
+What was built (all spec-built, labelled, pending Session 4 §C):
+- **Codec** — `ble/ftms.py` + `firmware/lib/proxy/Ftms.h` (twins, byte-for-byte agreeing vectors):
+  Indoor Bike Data decode/encode (incl. the inverted More-Data bit0 = speed-present-when-0), Control
+  Point (Request Control / Start / Set Target Power / …) + the 0x80 response, Feature / Supported Power
+  Range / Status. `SPEC_VECTORS` are **spec-derived**, not captures.
+- **Erg control** — `ble/ftms_erg.py`: pure `ErgController` (Request Control → Start → Set Target Power,
+  clamp to range, resend-on-change) + `RideErgBridge` (driven by `erg_setpoint_w`) + an in-process fake
+  machine; host-tested end-to-end. Firmware twin `FtmsErgClient`.
+- **Shifter-erg** — `ble/shifter_erg.py`: debounced shifter button → ± step → Set Target Power.
+- **Firmware seams** — `FtmsTrainerServer` (peripheral) + `FtmsErgClient` (central), flag-gated envs
+  `esp32c3-ftms-server` / `esp32c3-ftms-ergclient` (NimBLE + Ftms.h only); both compile.
+
+It works on real hardware (no SB20): the F6 on-air loop drove the ESP32 FTMS server from the host —
+Request Control → Start → **Set Target Power(225) ACKed**, Status Target Power Changed → 225 W, Indoor
+Bike Data 220 W / 90 rpm, Feature erg-capable. Record `F-ftms-hwloop-server-20260621-0116.jsonl`. The
+bike board (COM9) was left untouched (server on COM10 + host).
+
+Tooling decisions that came out of the hardware bring-up:
+- **Reliable flashing = esptool 4.11 direct via `code/scripts/flash_c3.py`.** PlatformIO's bundled
+  esptool 4.5.1 (`tool-esptoolpy@1.40501.0`) hits the ESP32-C3 USB-JTAG "No serial data received" bug, so
+  `pio run -t upload` FAILS on these boards; 4.11 auto-resets cleanly (~6 cycles, zero wedges, no
+  power-cycle). flash_c3.py is time-bounded + retried + BLE-verified — safe for autonomous flashing.
+- Boards: COM9 = OLED bike board (`38:44:BE…`), COM10 = spare/no-OLED (`E0:72:A1…`).
+
+Will revisit if: Session 4 §C (`capture_ftms.py --erg`) confirms the SB20 ergs off a third-party Set
+Target Power and supplies the real frames — then validate/reconcile the codec against them and wire
+`erg_setpoint_w` → the FTMS write into the runtime (measuring C3 BLE coex). Client-seam on-air test
+(ESP↔ESP or host WinRT server) is bench-deferred.

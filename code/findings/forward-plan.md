@@ -441,14 +441,15 @@ From `phase-0-report.md` §5 — track, don't block on:
   the control API — watch `Stages − Assioma` on `/api/control/state`, `extend` a step until settled, push
   Δ-feedback banners, skip once a point is clean. Runs on the **SB20 bike** (both meters on it) + the
   ANT+ stick → a bike session. Builds on the `RIDE-CARD` / power-grid note in the meter-to-meter section.
-- **FTMS protocol implementation** — planned (owner, 2026-06-21; **spec-built ahead of capture**, an
-  owner-approved exception to capture-before-code). Implement the FTMS (`0x1826`) bike protocol — codec
-  (Indoor Bike Data + Control Point + Feature/Status/ranges, Python + firmware), the **erg-control
-  client** that drives the SB20's *Set Target Power* wired to the Ride Director's `erg_setpoint_w` + the
-  shifter-nudges-watts mapper, and the trainer-server role — with a **real on-air test loop** against
-  the bench ESP32(s) + host BLE. Full brief: [`ftms-implementation-plan.md`](ftms-implementation-plan.md).
-  Builds on `shifter-erg-control.md` + `capture_ftms.py`. Session 4 §C (`capture_ftms.py --erg`) remains
-  the real-capture gate that validates the spec-built codec.
+- **FTMS protocol implementation** — ✅ **BUILT (F1–F6, spec-built; owner, 2026-06-21).** The FTMS
+  (`0x1826`) bike protocol: codec (Python `ftms.py` + firmware `Ftms.h`), the **erg-control client**
+  wired to the Ride Director's `erg_setpoint_w` + the shifter-nudges-watts mapper, and the trainer-server
+  role. **On-air server seam PASS** on real hardware (PRs #48–#53). Reference:
+  [`ftms-protocol.md`](ftms-protocol.md); plan: [`ftms-implementation-plan.md`](ftms-implementation-plan.md).
+  **Remaining (gated):** Session 4 §C (`capture_ftms.py --erg`) is the real-capture gate that validates
+  the spec-built codec + answers does-the-SB20-erg-off-a-third-party; the client-seam on-air test is
+  bench-deferred (ESP↔ESP or host WinRT server); wire `erg_setpoint_w` → the FTMS write into the runtime
+  (measure C3 BLE coex when stacked on the CPS spoof + WiFi).
 
 ---
 
