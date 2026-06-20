@@ -142,6 +142,17 @@ void WifiLink::addLogRoutes_() {
     });
 }
 
+void WifiLink::addForgetRoute_(const char* msg) {
+    // GET /forget: wipe stored creds and reboot. `msg` (a string literal) is the only thing the
+    // station and portal versions differed by, so both share this installer.
+    server_->on("/forget", HTTP_GET, [this, msg]() {
+        WifiCreds::clear();
+        server_->send(200, "text/plain", msg);
+        delay(400);
+        esp_restart();
+    });
+}
+
 void WifiLink::startStationServer_() {
     ArduinoOTA.setHostname(hostname_);
     ArduinoOTA.begin();
@@ -187,12 +198,7 @@ void WifiLink::startStationServer_() {
             }
         });
     // Re-provision from the station too: forget creds, reboot into the portal.
-    server_->on("/forget", HTTP_GET, [this]() {
-        WifiCreds::clear();
-        server_->send(200, "text/plain", "credentials cleared - rebooting into setup\n");
-        delay(400);
-        esp_restart();
-    });
+    addForgetRoute_("credentials cleared - rebooting into setup\n");
     addLogRoutes_();
     server_->begin();
 }
@@ -293,12 +299,7 @@ void WifiLink::startPortal_() {
         esp_restart();
     });
 
-    server_->on("/forget", HTTP_GET, [this]() {
-        WifiCreds::clear();
-        server_->send(200, "text/plain", "credentials cleared - restarting\n");
-        delay(400);
-        esp_restart();
-    });
+    addForgetRoute_("credentials cleared - restarting\n");
 
     // OS captive-portal probes -> redirect to the setup page (drives the auto-popup), and a
     // catch-all so any other URL the phone tries lands on setup too.
