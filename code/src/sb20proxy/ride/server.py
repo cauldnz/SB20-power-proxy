@@ -89,7 +89,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif path == "/api/live":
             self._json(srv.state.snapshot())
         elif path == "/api/workout":
-            self._json(workout_json(srv.state.plan))
+            self._json(workout_json(srv.state.plan, srv.state.profile))
         elif path == "/api/control/state":
             if not self._control_authed():
                 return self._json({"ok": False, "error": "unauthorized"}, 401)

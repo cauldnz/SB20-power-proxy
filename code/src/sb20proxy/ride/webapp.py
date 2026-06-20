@@ -118,14 +118,28 @@ canvas{width:100%;height:130px;background:var(--card);border-radius:12px;display
 .tl>div{display:flex;align-items:center;justify-content:center;font-size:.6rem;color:#0b0e18;
 font-weight:700;overflow:hidden;white-space:nowrap}
 .foot{color:var(--mut);font-size:.75rem;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.banner{border-radius:10px;padding:10px 12px;margin-bottom:10px;font-weight:600;font-size:.92rem;display:none}
+.banner.show{display:block}
+.banner.info{background:#13315f;color:#cfe0ff}
+.banner.ok{background:#10331f;color:#bff0d0}
+.banner.warn{background:#3a2e12;color:#ffe2a6}
+.banner.bad{background:#3a1620;color:#ffc4cf}
+.zone{display:inline-block;margin-top:6px;padding:3px 11px;border-radius:999px;font-size:.8rem;
+font-weight:700;letter-spacing:.03em;color:#0b0e18}
+.target.holding{outline:2px solid var(--warn)}
+.hold-badge{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:6px;background:var(--warn);
+color:#0b0e18;font-size:.85rem;font-weight:800;vertical-align:middle}
 </style></head><body>
 <header><h1>SB20 Ride Director <span id="dot" class="dot"></span></h1>
 <span id="mode" class="sub"></span></header>
 
-<div class="target">
+<div class="banner" id="banner"></div>
+
+<div class="target" id="targetCard">
   <div class="seg" id="seg">READY</div>
   <div class="big"><span id="tp">--</span> <small>W target</small></div>
   <div class="cad" id="tc"></div>
+  <div><span class="zone" id="zone" style="display:none"></span></div>
   <div class="count" id="count"></div>
   <div class="bar"><div id="segbar"></div></div>
   <div class="note" id="note">Press Start when you're spinning.</div>
@@ -143,17 +157,23 @@ font-weight:700;overflow:hidden;white-space:nowrap}
 <script>
 var $=function(i){return document.getElementById(i)};
 var COLORS=['#3b82f6','#22c55e','#f59e0b','#a855f7'];
-var hist={}, MAX=120, started=false, targetPow=null, total=0, wb=null;
+// Coggan zone -> chip colour (Z1..Z7)
+var ZCOLORS={Z1:'#9ca3af',Z2:'#22c55e',Z3:'#84cc16',Z4:'#f59e0b',Z5:'#f97316',Z6:'#ef4444',Z7:'#a855f7'};
+var hist={}, MAX=120, started=false, targetPow=null, total=0, wb=null, lastVer=null;
 
 function mmss(s){s=Math.max(0,Math.round(s));var m=Math.floor(s/60);return m+':'+String(s%60).padStart(2,'0');}
 
 function loadWorkout(){fetch('/api/workout',{cache:'no-store'}).then(function(r){return r.json();}).then(function(w){
-  total=w.total_s; wb=w; var tl=$('tl'); tl.innerHTML='';
+  total=w.total_s; wb=w; lastVer=w.version; var tl=$('tl'); tl.innerHTML='';
   w.segments.forEach(function(s,i){var d=document.createElement('div');
-    d.style.flex=s.duration_s; d.style.background=COLORS[i%COLORS.length];
-    d.title=s.label+' — '+(s.power_w==null?'free':s.power_w+'W')+(s.cadence_rpm?' @'+s.cadence_rpm+'rpm':'');
+    d.style.flex=s.duration_s; d.style.background=s.zone?ZCOLORS[s.zone]:COLORS[i%COLORS.length];
+    d.title=s.label+' — '+(s.power_w==null?'free':s.power_w+'W')+(s.zone?' ('+s.zone+')':'')+(s.cadence_rpm?' @'+s.cadence_rpm+'rpm':'');
     d.textContent=s.power_w==null?s.label:s.power_w; tl.appendChild(d);});
 });}
+
+function renderBanner(m){var b=$('banner');
+  if(!m){b.className='banner';b.textContent='';return;}
+  b.className='banner show '+(m.level||'info'); b.textContent=m.text;}
 
 function drawChart(){var c=$('chart'),r=window.devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;
   c.width=w*r;c.height=h*r;var x=c.getContext('2d');x.scale(r,r);x.clearRect(0,0,w,h);
@@ -172,19 +192,33 @@ function toggle(){fetch(started?'/api/stop':'/api/start',{method:'POST'}).then(t
 
 function tick(){fetch('/api/live',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
   $('dot').classList.add('on');
+  // re-fetch the timeline when the agent has edited the plan
+  if(d.plan_version!=null&&d.plan_version!==lastVer){lastVer=d.plan_version;loadWorkout();}
+  renderBanner(d.message);
   $('mode').textContent=d.mode+(d.capture_running?'':' (capture stopped)');
-  var dir=d.director; started=dir.started; targetPow=dir.target_power_w;
+  var dir=d.director, hd=d.hold; started=dir.started;
+  // the number the rider chases (and the chart line + meter delta) = the erg setpoint,
+  // which is the agent's hold override when one is set, else the segment target.
+  targetPow=d.erg_setpoint_w;
   $('btn').textContent=started?'Stop':(dir.finished?'Restart':'Start ride');
   $('btn').className='btn'+(started?' stop':'');
-  $('seg').textContent=dir.finished?'COMPLETE':dir.label;
-  $('tp').textContent=dir.target_power_w==null?'--':dir.target_power_w;
-  $('tc').textContent=dir.target_cadence_rpm?('@ '+dir.target_cadence_rpm+' rpm'):(dir.target_power_w!=null?'any cadence':'');
-  $('note').textContent=dir.note||(dir.finished?'Workout complete — nice ride!':(started?'':'Press Start when you\'re spinning.'));
+  $('targetCard').className='target'+(hd?' holding':'');
+  $('seg').innerHTML=hd?('HOLD <span class="hold-badge">'+(hd.remaining_s!=null?mmss(hd.remaining_s):'∞')+'</span>')
+                       :(dir.finished?'COMPLETE':dir.label);
+  $('tp').textContent=targetPow==null?'--':targetPow;
+  var cad=hd&&hd.cadence_rpm!=null?hd.cadence_rpm:dir.target_cadence_rpm;
+  $('tc').textContent=cad?('@ '+cad+' rpm'):(targetPow!=null?'any cadence':'');
+  // zone chip (segment zone; hidden while a manual hold overrides the plan)
+  var zEl=$('zone');
+  if(!hd&&dir.zone){zEl.style.display='inline-block';zEl.style.background=ZCOLORS[dir.zone]||'#0b0e18';
+    zEl.textContent=dir.zone+' · '+(dir.zone_name||'')+(dir.target_pct_ftp!=null?' · '+Math.round(dir.target_pct_ftp*100)+'% FTP':'');}
+  else{zEl.style.display='none';}
+  $('note').textContent=hd?'Hold this — the director is steering you.':(dir.note||(dir.finished?'Workout complete — nice ride!':(started?'':'Press Start when you\'re spinning.')));
   $('count').textContent=started&&!dir.finished?(mmss(dir.seg_remaining_s)+' left in block'):'';
   $('segbar').style.width=(dir.seg_duration_s?Math.min(100,100*dir.seg_elapsed_s/dir.seg_duration_s):0)+'%';
   $('next').textContent=dir.next_label?('Next: '+dir.next_label+(dir.next_power_w!=null?' — '+dir.next_power_w+' W':'')):'';
   $('total').textContent=started?('elapsed '+mmss(dir.total_elapsed_s)+' / '+mmss(dir.total_s)):('workout '+mmss(dir.total_s));
-  $('status').textContent=d.messages+' msgs · '+(d.output||'');
+  $('status').textContent=d.messages+' msgs · FTP '+(d.profile?d.profile.ftp_w:'?')+'W · '+(d.output||'');
   // meters
   var mEl=$('meters'); var names=Object.keys(d.meters); mEl.innerHTML='';
   names.forEach(function(n){var m=d.meters[n];
