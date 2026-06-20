@@ -22,20 +22,84 @@ from dataclasses import dataclass, field, replace
 
 
 @dataclass(frozen=True)
+class Zone:
+    """A Coggan power-training zone: a %FTP band plus a representative target %FTP
+    (used when a segment chases the zone rather than a specific number)."""
+
+    id: str        # "Z1".."Z7"
+    name: str
+    lo_pct: float  # inclusive lower bound, as a fraction of FTP
+    hi_pct: float  # exclusive upper bound (inf for Z7)
+    target_pct: float  # the %FTP a zone-target segment chases
+
+
+# Classic Coggan 7-zone model (fractions of FTP). Bands are [lo, hi); Z7 is open-ended.
+COGGAN_ZONES: tuple[Zone, ...] = (
+    Zone("Z1", "Active recovery", 0.0, 0.55, 0.50),
+    Zone("Z2", "Endurance", 0.55, 0.75, 0.65),
+    Zone("Z3", "Tempo", 0.75, 0.90, 0.83),
+    Zone("Z4", "Threshold", 0.90, 1.05, 0.98),
+    Zone("Z5", "VO2 max", 1.05, 1.20, 1.13),
+    Zone("Z6", "Anaerobic", 1.20, 1.50, 1.35),
+    Zone("Z7", "Neuromuscular", 1.50, float("inf"), 1.70),
+)
+ZONE_IDS: frozenset[str] = frozenset(z.id for z in COGGAN_ZONES)
+
+
+@dataclass(frozen=True)
+class RiderProfile:
+    """The rider's FTP and which meter scale it's measured on. Resolves %FTP / zone
+    targets to watts and classifies watts into a zone for display. Configurable at
+    launch (--ftp/--scale) and live via POST /api/control/profile."""
+
+    ftp_w: int = 250
+    scale: str = "stages"
+
+    def watts_for_pct(self, pct: float) -> int:
+        return round(pct * self.ftp_w)
+
+    def watts_for_zone(self, zone_id: str) -> int | None:
+        for z in COGGAN_ZONES:
+            if z.id == zone_id:
+                return round(z.target_pct * self.ftp_w)
+        return None
+
+    def zone_for_watts(self, watts: int | None) -> Zone | None:
+        if watts is None or self.ftp_w <= 0:
+            return None
+        pct = watts / self.ftp_w
+        for z in COGGAN_ZONES:
+            if z.lo_pct <= pct < z.hi_pct:
+                return z
+        return None
+
+
+@dataclass(frozen=True)
 class Segment:
-    """One block of a workout. `power_w` is in STAGES watts (the number the rider
-    chases). None means 'no target' (free / coast)."""
+    """One block of a workout. The target is one of: absolute `power_w` (STAGES watts,
+    the number the rider chases), `pct_ftp` (e.g. 0.88), or a `zone` id ("Z4"); they
+    resolve in that precedence. None across all three means 'no target' (free / coast)."""
 
     duration_s: float
     label: str
     power_w: int | None = None
     cadence_rpm: int | None = None
     note: str = ""
+    pct_ftp: float | None = None
+    zone: str | None = None
 
-    def resolved_power_w(self, profile: object | None = None) -> int | None:
-        """The concrete target watts for this segment. Phase 1 has only absolute
-        `power_w`; Phase 3 extends this to resolve %FTP / zone against a profile."""
-        return self.power_w
+    def resolved_power_w(self, profile: RiderProfile | None = None) -> int | None:
+        """The concrete target watts. Absolute `power_w` wins; otherwise %FTP / zone
+        need a profile to resolve (None without one)."""
+        if self.power_w is not None:
+            return self.power_w
+        if profile is None:
+            return None
+        if self.pct_ftp is not None:
+            return profile.watts_for_pct(self.pct_ftp)
+        if self.zone is not None:
+            return profile.watts_for_zone(self.zone)
+        return None
 
 
 @dataclass(frozen=True)
@@ -166,6 +230,7 @@ class RideDirector:
 
 # re-export so callers can `from .director import replace` if they edit segments
 __all__ = [
-    "Segment", "Workout", "RidePlan", "Cursor", "DirectorState",
-    "RideDirector", "advance_cursor", "derive_state", "replace",
+    "Segment", "Workout", "RidePlan", "Cursor", "DirectorState", "RideDirector",
+    "Zone", "RiderProfile", "COGGAN_ZONES", "ZONE_IDS",
+    "advance_cursor", "derive_state", "replace",
 ]

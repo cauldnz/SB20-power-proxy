@@ -26,6 +26,7 @@ from typing import Any
 from .director import (
     Cursor,
     RidePlan,
+    RiderProfile,
     Segment,
     advance_cursor,
     derive_state,
@@ -49,6 +50,7 @@ class LiveState:
         self,
         *,
         plan: RidePlan | None = None,
+        profile: RiderProfile | None = None,
         mode: str = "",
         output: str = "",
         event_sink: EventSink | None = None,
@@ -64,6 +66,7 @@ class LiveState:
         self._event_sink = event_sink
         self._ride_started_at: float | None = None
         self._plan = plan if plan is not None else RidePlan("")
+        self._profile = profile if profile is not None else RiderProfile()
         self._cursor = Cursor()
         # agent control surface: coaching messages + an ad-hoc hold-target override
         self._coach: list[dict[str, Any]] = []
@@ -224,17 +227,31 @@ class LiveState:
             self._next_msg_id += 1
             self._coach = self._coach[-20:]  # keep a short tail
 
-    def set_hold(self, *, power_w: int | None = None, cadence_rpm: int | None = None,
-                 duration_s: float | None = None) -> None:
+    def set_hold(self, *, power_w: int | None = None, pct_ftp: float | None = None,
+                 cadence_rpm: int | None = None, duration_s: float | None = None) -> None:
         """Set an ad-hoc hold-this target that supersedes the segment target on the
-        phone (and the erg setpoint). Optional duration auto-clears it."""
+        phone (and the erg setpoint). Target is absolute `power_w` or `pct_ftp` (resolved
+        against the profile). Optional duration auto-clears it."""
         with self._lock:
             until = None if not duration_s else self._now() + duration_s
-            self._hold = {"power_w": power_w, "cadence_rpm": cadence_rpm, "until": until}
+            self._hold = {"power_w": power_w, "pct_ftp": pct_ftp,
+                          "cadence_rpm": cadence_rpm, "until": until}
 
     def clear_hold(self) -> None:
         with self._lock:
             self._hold = None
+
+    @property
+    def profile(self) -> RiderProfile:
+        return self._profile
+
+    def set_profile(self, *, ftp_w: int | None = None, scale: str | None = None) -> None:
+        """Update FTP / scale live; re-resolves every %FTP and zone target."""
+        with self._lock:
+            self._profile = RiderProfile(
+                ftp_w=self._profile.ftp_w if ftp_w is None else ftp_w,
+                scale=self._profile.scale if scale is None else scale,
+            )
 
     def _active_message(self, now: float) -> dict[str, Any] | None:
         for msg in reversed(self._coach):
@@ -244,15 +261,19 @@ class LiveState:
         return None
 
     def _hold_view(self, now: float) -> dict[str, Any] | None:
-        """The live hold override, lazily clearing it once its duration is up."""
+        """The live hold override, lazily clearing it once its duration is up. Resolves
+        a `pct_ftp` hold to watts against the current profile."""
         if self._hold is None:
             return None
         until = self._hold["until"]
         if until is not None and now >= until:
             self._hold = None
             return None
+        power = self._hold["power_w"]
+        if power is None and self._hold["pct_ftp"] is not None:
+            power = self._profile.watts_for_pct(self._hold["pct_ftp"])
         return {
-            "power_w": self._hold["power_w"],
+            "power_w": power,
             "cadence_rpm": self._hold["cadence_rpm"],
             "remaining_s": None if until is None else round(until - now, 1),
         }
@@ -276,7 +297,7 @@ class LiveState:
             }
             elapsed = (None if self._ride_started_at is None
                        else round(now - self._ride_started_at, 2))
-            director = director_view(ds, self._plan)
+            director = director_view(ds, self._plan, self._profile)
             hold = self._hold_view(now)
             # the erg setpoint the (future) FTMS path will write: the hold override if
             # one is set, else the active segment's resolved target.
@@ -293,6 +314,7 @@ class LiveState:
                 "plan_version": self._plan.version,
                 "cursor": {"index": self._cursor.index,
                            "started_at": self._cursor.started_at},
+                "profile": {"ftp_w": self._profile.ftp_w, "scale": self._profile.scale},
                 "director": director,
                 "message": self._active_message(now),
                 "hold": hold,

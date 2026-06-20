@@ -12,33 +12,44 @@ from __future__ import annotations
 
 from typing import Any
 
-from .director import DirectorState, RidePlan, Workout
+from .director import DirectorState, RidePlan, RiderProfile, Workout
 
 
-def workout_json(plan: RidePlan | Workout) -> dict[str, Any]:
+def workout_json(plan: RidePlan | Workout,
+                 profile: RiderProfile | None = None) -> dict[str, Any]:
     """The timeline payload for GET /api/workout. Accepts a live RidePlan (carries a
-    `version` the phone watches) or a Workout template (version 0)."""
+    `version` the phone watches) or a Workout template (version 0). `power_w` is the
+    resolved target (absolute, or %FTP/zone against `profile`)."""
+    zone_of = profile.zone_for_watts if profile else (lambda _w: None)
+    segments = []
+    for s in plan.segments:
+        watts = s.resolved_power_w(profile)
+        z = zone_of(watts)
+        segments.append({
+            "label": s.label,
+            "duration_s": s.duration_s,
+            "power_w": watts,
+            "cadence_rpm": s.cadence_rpm,
+            "note": s.note,
+            "zone": z.id if z else None,
+        })
     return {
         "name": plan.name,
         "total_s": plan.total_s,
         "version": getattr(plan, "version", 0),
-        "segments": [
-            {
-                "label": s.label,
-                "duration_s": s.duration_s,
-                "power_w": s.resolved_power_w(),
-                "cadence_rpm": s.cadence_rpm,
-                "note": s.note,
-            }
-            for s in plan.segments
-        ],
+        "segments": segments,
     }
 
 
-def director_view(ds: DirectorState, plan: RidePlan) -> dict[str, Any]:
-    """Format a DirectorState (+ its plan) into the `director` block the browser reads."""
+def director_view(ds: DirectorState, plan: RidePlan,
+                  profile: RiderProfile | None = None) -> dict[str, Any]:
+    """Format a DirectorState (+ its plan) into the `director` block the browser reads.
+    Targets resolve against `profile` (%FTP/zone) and carry a zone label."""
     seg = ds.segment
     nxt = ds.next_segment
+    target = seg.resolved_power_w(profile) if seg else None
+    next_target = nxt.resolved_power_w(profile) if nxt else None
+    zone = profile.zone_for_watts(target) if profile else None
     return {
         "workout": plan.name,
         "started": ds.started,
@@ -47,8 +58,12 @@ def director_view(ds: DirectorState, plan: RidePlan) -> dict[str, Any]:
         "n_segments": len(plan.segments),
         "label": seg.label if seg else ("Done" if ds.finished else "Ready"),
         "note": seg.note if seg else "",
-        "target_power_w": seg.resolved_power_w() if seg else None,
+        "target_power_w": target,
         "target_cadence_rpm": seg.cadence_rpm if seg else None,
+        "zone": zone.id if zone else None,
+        "zone_name": zone.name if zone else None,
+        "target_pct_ftp": (round(target / profile.ftp_w, 2)
+                           if (profile and profile.ftp_w and target is not None) else None),
         "seg_elapsed_s": round(ds.seg_elapsed_s, 1),
         "seg_remaining_s": round(ds.seg_remaining_s, 1),
         "seg_duration_s": seg.duration_s if seg else 0,
@@ -56,7 +71,7 @@ def director_view(ds: DirectorState, plan: RidePlan) -> dict[str, Any]:
         "total_remaining_s": round(ds.total_remaining_s, 1),
         "total_s": plan.total_s,
         "next_label": nxt.label if nxt else None,
-        "next_power_w": nxt.resolved_power_w() if nxt else None,
+        "next_power_w": next_target,
         "next_cadence_rpm": nxt.cadence_rpm if nxt else None,
     }
 
