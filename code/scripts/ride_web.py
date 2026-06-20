@@ -130,7 +130,11 @@ def main() -> int:
     server.start()
     url = f"http://localhost:{server.port}/"
     print(f"\n  Ride director:  {url}")
-    print(f"  Workout:        {workout.name}  ({workout.total_s/60:.0f} min)")
+    print(f"  Workout:        {workout.name}  ({workout.total_s/60:.0f} min)  "
+          f"FTP {profile.ftp_w} W ({profile.scale})")
+    tok = "  (token required)" if args.control_token else ""
+    print(f"  Agent control:  {url}api/control/state{tok}  |  "
+          f"scripts/ride_control.py state --base {url.rstrip('/')}")
     print("  Open it, start pedalling, press Start. Ctrl-C to quit.\n")
     if not args.no_browser:
         try:
