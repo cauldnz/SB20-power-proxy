@@ -1226,3 +1226,44 @@ Owner decisions on the XCadey→Assioma-scale proxy (`meter-to-meter-proxy.md`):
   §8 — serves both the meter-corrector and the SB20 spoof.
 
 Still gated on a paired XCadey+Assioma capture (real-data-first) before any fit/firmware is built.
+
+## 2026-06-20 — Ride Director uplift: steerable session engine (Phases 1–6, desk-complete)
+
+Decision: Rebuild the Ride Director from a static-workout dashboard into a **steerable session
+engine** — the phone is the rider's interface; an agent monitors + steers the plan in real time over
+an HTTP control API; workouts can be power-zone / %FTP. Built entirely at the desk (no bike), fully
+host-tested, landed across PRs #38–#42. Reference: [`ride-director.md`](ride-director.md);
+plan/brief: [`ride-director-uplift-plan.md`](ride-director-uplift-plan.md).
+
+Context: owner wants on-bike sessions driven by the Ride Director web app on their phone (not direct
+Claude-Code chat), with the agent monitoring and updating the plan via an API; and eventually running
+Power-Zone workouts.
+
+Resolved with owner (these are the locked choices):
+- **Scope:** agent control API + dynamic plan engine + phone UI uplift. (A full zone-workout *library*
+  is a backlog stretch; the model + one example `SWEET_SPOT` prove it.)
+- **Zones:** **Coggan 7-zone %FTP.** FTP is configurable (`--ftp` / `POST /api/control/profile`),
+  never baked in. Default 250 W / `stages`. Primary scale = SB20/Stages watts; profile carries `scale`
+  so the track-bike/Assioma context reuses it later.
+- **Steering:** **both** live-in-the-loop (edits reflect on the phone within the ~1 s poll) and
+  author-ahead (the director runs a pre-built plan with no live agent attached). Same API serves both.
+- **Plan model:** `RidePlan` is mutable + **versioned**; a `Cursor` pins the active block by
+  wall-clock (`started_at`) so a live edit to a *future* segment never retro-shifts the active one.
+
+Numbers / contract chosen:
+- Coggan bands (fractions of FTP, [lo, hi)): Z1 [0,.55) Z2 [.55,.75) Z3 [.75,.90) Z4 [.90,1.05)
+  Z5 [1.05,1.20) Z6 [1.20,1.50) Z7 [1.50,∞). Zone-as-target representative %FTP: .50/.65/.83/.98/
+  1.13/1.35/1.70.
+- **`erg_setpoint_w`** is exposed in every snapshot = hold override if set, else the active segment's
+  resolved target. This is the hook the (bike-gated) FTMS *Set Target Power* path will later write to
+  auto-set the SB20. No bike dependency added now.
+- Control endpoints gated by an optional `control_token` (header `X-Control-Token` or `?token=`);
+  rider/phone endpoints stay open.
+
+It works (on replay): `test_ride_e2e.py` pumps a real committed capture through the replay feed into
+the live server and drives the full agent→director→phone loop (message, hold target, plan swap, skip)
+with the meters live — hermetic, no bike. 200 tests green.
+
+Will revisit if: the on-bike FTMS capture (Session 4 §C) confirms the SB20 ergs off a third-party Set
+Target Power — then wire `erg_setpoint_w` → the FTMS write so Power-Zone workouts auto-set resistance.
+Also pending real use: build out the zone-workout library; surface device discovery/pairing in the UI.
