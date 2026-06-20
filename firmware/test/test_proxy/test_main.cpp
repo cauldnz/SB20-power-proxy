@@ -9,6 +9,7 @@
 
 #include "Correction.h"
 #include "Cps.h"
+#include "Ftms.h"
 #include "MeterMatch.h"
 #include "LogBuffer.h"
 #include "MockCrank.h"
@@ -713,6 +714,84 @@ void test_perf_json_fields() {
     TEST_ASSERT_TRUE(j.find("\"reset_reason\":\"task_wdt\"") != std::string::npos);
 }
 
+// --- FTMS codec (Ftms.h) — the C++ twin of sb20proxy.ble.ftms ------------------
+// SPEC-BUILT (Session 4 Part C captures will pin these). Vectors match the Python
+// SPEC_VECTORS byte-for-byte so the two codecs agree on the wire.
+
+void test_ftms_ibd_encode_matches_spec_vector() {
+    // (30.00 km/h, 90 rpm, 200 W) -> the documented frame 4400 b80b b400 c800
+    std::vector<uint8_t> f = encodeIndoorBikeData(200, 90.0f, /*haveSpeed=*/true, 30.0f);
+    const uint8_t want[] = {0x44, 0x00, 0xb8, 0x0b, 0xb4, 0x00, 0xc8, 0x00};
+    TEST_ASSERT_EQUAL_INT(8, (int)f.size());
+    for (size_t i = 0; i < 8; ++i) TEST_ASSERT_EQUAL_HEX8(want[i], f[i]);
+}
+
+void test_ftms_ibd_decode_speed_cadence_power() {
+    const uint8_t frame[] = {0x44, 0x00, 0xb8, 0x0b, 0xb4, 0x00, 0xc8, 0x00};
+    IndoorBikeData d = decodeIndoorBikeData(frame, sizeof(frame));
+    TEST_ASSERT_TRUE(d.hasPower && d.hasCadence && d.hasSpeed);
+    TEST_ASSERT_EQUAL_INT(200, d.instPower);
+    TEST_ASSERT_EQUAL_FLOAT(90.0f, d.cadenceRpm());
+    TEST_ASSERT_EQUAL_FLOAT(30.0f, d.speedKmh());
+}
+
+void test_ftms_ibd_more_data_inversion() {
+    // power-only (no speed) -> More-Data bit set, no speed field
+    std::vector<uint8_t> f = encodeIndoorBikeData(150, 80.0f);
+    IndoorBikeData d = decodeIndoorBikeData(f.data(), f.size());
+    TEST_ASSERT_TRUE((d.flags & IBD_MORE_DATA) != 0);
+    TEST_ASSERT_FALSE(d.hasSpeed);
+    TEST_ASSERT_EQUAL_INT(150, d.instPower);
+}
+
+void test_ftms_ibd_short_frame_is_safe() {
+    uint8_t two[2] = {0x40, 0x00};  // claims power but truncated -> no crash, hasPower false
+    IndoorBikeData d = decodeIndoorBikeData(two, 2);
+    TEST_ASSERT_EQUAL_INT(0x40, (int)(d.flags & 0xFF));
+}
+
+void test_ftms_set_target_power_bytes() {
+    std::vector<uint8_t> f = encodeSetTargetPower(250);
+    const uint8_t want[] = {0x05, 0xfa, 0x00};
+    TEST_ASSERT_EQUAL_INT(3, (int)f.size());
+    for (size_t i = 0; i < 3; ++i) TEST_ASSERT_EQUAL_HEX8(want[i], f[i]);
+}
+
+void test_ftms_cp_decode_set_target_power_request() {
+    const uint8_t req[] = {0x05, 0xfa, 0x00};
+    FtmsCpMessage m = decodeControlPoint(req, sizeof(req));
+    TEST_ASSERT_TRUE(m.valid && !m.isResponse && m.hasTargetPower);
+    TEST_ASSERT_EQUAL_INT(250, m.targetPower);
+}
+
+void test_ftms_cp_decode_response() {
+    const uint8_t ok[] = {0x80, 0x05, 0x01};
+    FtmsCpMessage m = decodeControlPoint(ok, sizeof(ok));
+    TEST_ASSERT_TRUE(m.isResponse && m.success());
+    TEST_ASSERT_EQUAL_INT(0x05, m.requestOpcode);
+    const uint8_t no[] = {0x80, 0x05, 0x05};
+    TEST_ASSERT_FALSE(decodeControlPoint(no, sizeof(no)).success());
+}
+
+void test_ftms_feature_and_power_range_and_status() {
+    // feature: cadence|power-measurement machine + power target setting
+    const uint8_t feat[] = {0x02, 0x40, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00};
+    FtmsFeature f = decodeFitnessMachineFeature(feat, sizeof(feat));
+    TEST_ASSERT_TRUE(f.cadence() && f.powerMeasurement() && f.powerTargetSetting());
+    // power range 0..1000 step 1, clamped
+    const uint8_t pr[] = {0x00, 0x00, 0xe8, 0x03, 0x01, 0x00};
+    FtmsPowerRange r = decodeSupportedPowerRange(pr, sizeof(pr));
+    TEST_ASSERT_EQUAL_INT(0, r.minimum);
+    TEST_ASSERT_EQUAL_INT(1000, r.maximum);
+    TEST_ASSERT_EQUAL_INT(1000, r.clamp(5000));
+    TEST_ASSERT_EQUAL_INT(0, r.clamp(-10));
+    // status: target power changed -> 200 W
+    const uint8_t st[] = {0x08, 0xc8, 0x00};
+    FtmsStatus s = decodeFitnessMachineStatus(st, sizeof(st));
+    TEST_ASSERT_TRUE(s.hasTargetPower);
+    TEST_ASSERT_EQUAL_INT(200, s.targetPower);
+}
+
 // --- runner -------------------------------------------------------------------
 
 int runUnityTests() {
@@ -789,6 +868,14 @@ int runUnityTests() {
     RUN_TEST(test_perf_monitor_reset);
     RUN_TEST(test_perf_frag_and_reset_reason);
     RUN_TEST(test_perf_json_fields);
+    RUN_TEST(test_ftms_ibd_encode_matches_spec_vector);
+    RUN_TEST(test_ftms_ibd_decode_speed_cadence_power);
+    RUN_TEST(test_ftms_ibd_more_data_inversion);
+    RUN_TEST(test_ftms_ibd_short_frame_is_safe);
+    RUN_TEST(test_ftms_set_target_power_bytes);
+    RUN_TEST(test_ftms_cp_decode_set_target_power_request);
+    RUN_TEST(test_ftms_cp_decode_response);
+    RUN_TEST(test_ftms_feature_and_power_range_and_status);
     return UNITY_END();
 }
 
