@@ -418,12 +418,14 @@ From `phase-0-report.md` §5 — track, don't block on:
   62144" for the SB20, or our **own product identity** for the meter-corrector use case — product name
   TBD) → persist to NVS. Turns the firmware from a dev-config build into a user-configurable product.
   Pieces: a firmware BLE scan, a `/ui` device picker, NVS storage. See `meter-to-meter-proxy.md`.
-- **Ride Director uplift — steerable session engine** — planned (owner, 2026-06-20). Turn the phone
-  Ride Director into the rider's session interface, driven by an agent over an HTTP **control API**
-  (read live state + mutate the plan + push messages in real time), on a **dynamic versioned plan**
-  model with **power-zone / %FTP** workouts (Coggan 7-zone). Desk-buildable + fully host-testable
-  (no bike); exposes an `erg_setpoint_w` hook for the later FTMS auto-set. Full brief +
-  phase-by-phase plan in [`ride-director-uplift-plan.md`](ride-director-uplift-plan.md).
+- **Ride Director uplift — steerable session engine** — ✅ **BUILT (Phases 1–6, desk-complete; owner,
+  2026-06-20).** The phone Ride Director is now the rider's session interface, steered by an agent over
+  an HTTP **control API** (read live state + mutate the plan + push messages in real time), on a
+  **dynamic versioned plan** model with **power-zone / %FTP** workouts (Coggan 7-zone). Host-tested,
+  no bike (PRs #38–#42). Reference: [`ride-director.md`](ride-director.md); brief:
+  [`ride-director-uplift-plan.md`](ride-director-uplift-plan.md). **Remaining (gated / stretch):** wire
+  the exposed `erg_setpoint_w` → the FTMS *Set Target Power* write once Session 4 §C confirms the SB20
+  ergs off a third party (auto-set Power-Zone workouts); build out the zone-workout library; on-bike use.
 
 ---
 
