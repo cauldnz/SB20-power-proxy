@@ -27,8 +27,16 @@ of truth.** Sync before anything:
 ```powershell
 cd C:\repos\cauldnz\SB20-power-proxy
 git fetch origin
-git checkout main && git pull            # current truth (HEAD should be 8155420 or later)
+git checkout main && git pull            # current truth (origin/main ~ f129e65 or later)
 ```
+
+> **Since this doc was first written, two things landed (overnight 2026-06-21):**
+> **(1)** The **whole FTMS stack is now built spec-ahead** (codec + erg client + shifter-erg + firmware
+> seams; bench-proven over real BLE — see `code/findings/ftms-protocol.md`). So **§C is now the
+> *validation* gate** — it confirms the SB20 actually ergs off our Set-Target-Power and supplies the real
+> frames to pin the spec-built codec. (The §C run itself is unchanged: `capture_ftms.py --erg`.)
+> **(2)** A new **§D calibration grid** (optional, lowest priority, needs the **ANT+ stick**) was added to
+> the session-04 doc.
 
 > If `git status` shows a different branch with local edits, you're on a stale checkout — `git fetch`
 > and compare to `origin/main` first (CLAUDE.md → *Git & branch hygiene*).
@@ -43,6 +51,8 @@ Three gates + a probe (full plan + commands in the session-04 doc). **Front-load
   `1≡4`/`2≡5` separable over BLE?), and the chord/double-tap/hold gestures.
 - **G1 / G2 — the A1 `0x10` fix** — capture the **real crank's** Enhanced-Offset reply (G1), then **retest
   our spoof's** `0x10` (G2). Protocol-completeness, **secondary**.
+- **§D — Stages↔Assioma calibration grid** (OPTIONAL, ~25 min, lowest priority) — only if legs + time +
+  the **ANT+ stick** is plugged in. Drives the `calgrid` workout + a paired ANT+ capture → the fit.
 
 **§C and §B connect to the SB20 directly (Stages app disconnected) and need NO ESP** — so they can run
 first, before any flashing. **Only G2 needs the ESP**, flashed with the latest firmware (below).
@@ -55,9 +65,18 @@ current `main` before G2** (not needed for §C/§B):
 ```powershell
 cd firmware ; .\flash.ps1            # build + OTA esp32c3-oled-live -> sb20proxy.local (RSSI pre-flight + retries)
 ```
-Confirm alive: `curl http://sb20proxy.local/` → `source:searching`, low uptime. OTA flaky? It's the
-signal (<−72 dBm) — move the board nearer the AP, or `.\flash.ps1 -Mode usb`. Open a rolling `/log`:
+Confirm alive: `curl http://sb20proxy.local/` → `source:searching`, low uptime. Open a rolling `/log`:
 `while($true){(iwr http://sb20proxy.local/log).Content;sleep 3}`.
+
+> **OTA flaky (weak signal, <−72 dBm)? Use USB — but via `flash_c3.py`, NOT `flash.ps1 -Mode usb`.**
+> We found (2026-06-21) that PlatformIO's bundled esptool 4.5.1 has the ESP32-C3 USB-JTAG "No serial data
+> received" bug, so `pio`-based USB upload **fails** on these boards. The reliable hang-free path is
+> esptool 4.11 direct, wrapped by **`flash_c3.py`** (build with pio first):
+> ```powershell
+> cd firmware ; python -m platformio run -e esp32c3-oled-live
+> python ..\code\scripts\flash_c3.py --env esp32c3-oled-live --port COM<N> --verify-ble "Stages 62144"
+> ```
+> (`COM<N>` = the board's port — check Device Manager / `pio device list`. See memory `esp32-c3-flashing`.)
 
 ---
 
