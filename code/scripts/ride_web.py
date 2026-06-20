@@ -34,7 +34,7 @@ SRC = HERE.parent / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from sb20proxy.ride import WORKOUTS, LiveState, RideDirector  # noqa: E402
+from sb20proxy.ride import WORKOUTS, LiveState, RidePlan  # noqa: E402
 from sb20proxy.ride.replay import replay_into  # noqa: E402
 from sb20proxy.ride.server import RideServer  # noqa: E402
 
@@ -110,17 +110,17 @@ def main() -> int:
         p.error("--live needs --stages-id, --assioma-id and --output")
 
     workout = WORKOUTS[args.workout]
+    plan = RidePlan.from_workout(workout)
     if args.live:
-        state = LiveState(mode="live", output=str(args.output))
+        state = LiveState(mode="live", output=str(args.output), plan=plan)
         feed = _run_live
     else:
         if not args.replay.exists():
             p.error(f"capture not found: {args.replay}")
-        state = LiveState(mode="replay", output=args.replay.name)
+        state = LiveState(mode="replay", output=args.replay.name, plan=plan)
         feed = _run_replay
 
-    director = RideDirector(workout)
-    server = RideServer(state, director, port=args.port)
+    server = RideServer(state, port=args.port)
     server.start()
     url = f"http://localhost:{server.port}/"
     print(f"\n  Ride director:  {url}")

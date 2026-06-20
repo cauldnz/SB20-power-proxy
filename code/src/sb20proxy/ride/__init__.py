@@ -11,15 +11,28 @@ state, page render) are host-tested; the capture/replay feed is the hardware sea
 
 from __future__ import annotations
 
-from .director import DirectorState, RideDirector, Segment, Workout
+from .director import (
+    Cursor,
+    DirectorState,
+    RideDirector,
+    RidePlan,
+    Segment,
+    Workout,
+    advance_cursor,
+    derive_state,
+)
 from .state import LiveState
 from .workouts import WORKOUTS
 
 __all__ = [
     "Segment",
     "Workout",
+    "RidePlan",
+    "Cursor",
     "RideDirector",
     "DirectorState",
+    "advance_cursor",
+    "derive_state",
     "LiveState",
     "WORKOUTS",
 ]
