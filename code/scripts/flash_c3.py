@@ -114,7 +114,8 @@ def main() -> int:
     p.add_argument("--port", required=True, help="COM port, e.g. COM10")
     p.add_argument("--baud", type=int, default=460800)
     p.add_argument("--retries", type=int, default=3)
-    p.add_argument("--timeout", type=float, default=90.0, help="per-attempt seconds (then kill+retry)")
+    p.add_argument("--timeout", type=float, default=90.0,
+                   help="per-attempt seconds (then kill+retry)")
     p.add_argument("--verify-ble", metavar="NAME", default=None,
                    help="after flashing, require a BLE advert whose name contains NAME")
     a = p.parse_args()
