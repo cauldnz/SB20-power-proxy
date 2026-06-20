@@ -17,7 +17,7 @@ from pathlib import Path
 from sb20proxy.reading import PowerReading
 from sb20proxy.sources import PowerSource, ReadingCallback
 
-from .cps import cadence_rpm_from_crank, decode_cps_measurement
+from .cps import CrankCadenceTracker, decode_cps_measurement
 
 Sleeper = Callable[[float], Awaitable[None]]
 
@@ -82,7 +82,7 @@ class BleReplaySource(PowerSource):
             raise FileNotFoundError(f"capture file not found: {self._path}")
         schedule: list[tuple[float, PowerReading]] = []
         prev_t: float | None = None
-        prev_crank: tuple[int, int] | None = None
+        crank = CrankCadenceTracker()
         with open(self._path) as fh:
             for line in fh:
                 line = line.strip()
@@ -100,13 +100,7 @@ class BleReplaySource(PowerSource):
                 m = decode_cps_measurement(bytes.fromhex(raw))
                 cadence: int | None = None
                 if m.cumulative_crank_revs is not None and m.last_crank_event_time is not None:
-                    if prev_crank is not None:
-                        rpm = cadence_rpm_from_crank(prev_crank[0], prev_crank[1],
-                                                     m.cumulative_crank_revs,
-                                                     m.last_crank_event_time)
-                        if rpm > 0:
-                            cadence = round(rpm)
-                    prev_crank = (m.cumulative_crank_revs, m.last_crank_event_time)
+                    cadence = crank.update(m.cumulative_crank_revs, m.last_crank_event_time)
                 delay = 0.0 if prev_t is None else max(0.0, t - prev_t)
                 prev_t = t
                 schedule.append((delay, PowerReading(

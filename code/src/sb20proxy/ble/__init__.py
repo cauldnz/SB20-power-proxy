@@ -13,6 +13,7 @@ from __future__ import annotations
 from .cps import (
     CpsMeasurement,
     CrankCadence,
+    CrankCadenceTracker,
     cadence_rpm_from_crank,
     decode_control_point,
     decode_cps_measurement,
@@ -27,6 +28,7 @@ from .twin import BleSb20Twin
 __all__ = [
     "CpsMeasurement",
     "CrankCadence",
+    "CrankCadenceTracker",
     "cadence_rpm_from_crank",
     "decode_cps_measurement",
     "encode_cps_measurement",

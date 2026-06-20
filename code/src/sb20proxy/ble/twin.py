@@ -11,7 +11,7 @@ from __future__ import annotations
 from .cps import (
     CP_START_OFFSET_COMPENSATION,
     ControlPointResponse,
-    cadence_rpm_from_crank,
+    CrankCadenceTracker,
     decode_control_point,
     decode_cps_measurement,
 )
@@ -25,7 +25,7 @@ class BleSb20Twin:
         self.last_power: int | None = None
         self.last_cadence: int | None = None
         self.calibration_response: ControlPointResponse | None = None
-        self._prev_crank: tuple[int, int] | None = None
+        self._crank = CrankCadenceTracker()
         self._gatt = gatt
         gatt.subscribe_measurement(self._on_measurement)
         gatt.subscribe_control_point(self._on_control_point)
@@ -35,12 +35,9 @@ class BleSb20Twin:
         m = decode_cps_measurement(data)
         self.last_power = m.power_w
         if m.cumulative_crank_revs is not None and m.last_crank_event_time is not None:
-            if self._prev_crank is not None:
-                rpm = cadence_rpm_from_crank(self._prev_crank[0], self._prev_crank[1],
-                                             m.cumulative_crank_revs, m.last_crank_event_time)
-                if rpm > 0:
-                    self.last_cadence = round(rpm)
-            self._prev_crank = (m.cumulative_crank_revs, m.last_crank_event_time)
+            cadence = self._crank.update(m.cumulative_crank_revs, m.last_crank_event_time)
+            if cadence is not None:  # sticky: keep the last good cadence over an unrecoverable gap
+                self.last_cadence = cadence
 
     def _on_control_point(self, data: bytes) -> None:
         decoded = decode_control_point(data)
