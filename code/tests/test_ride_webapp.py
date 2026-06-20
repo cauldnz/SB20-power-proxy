@@ -61,3 +61,14 @@ def test_app_html_has_the_essentials():
     for needle in ("SB20 Ride Director", "/api/live", "/api/start", "/api/workout",
                    "<canvas", "target", "Start ride"):
         assert needle in APP_HTML, f"page is missing {needle!r}"
+
+
+def test_app_html_wires_the_uplift_features():
+    # the Phase 4 hooks consume the live-JSON fields added in Phases 2-3
+    for needle in (
+        'id="banner"', "renderBanner",       # agent message banner
+        "erg_setpoint_w", "d.hold", "holding",  # hold-target override
+        'id="zone"', "ZCOLORS", "% FTP",      # zone chip + %FTP
+        "plan_version", "lastVer",            # version-aware timeline re-fetch
+    ):
+        assert needle in APP_HTML, f"page is missing the {needle!r} hook"

@@ -14,7 +14,7 @@ import urllib.request
 
 import pytest
 
-from sb20proxy.ride import LiveState, RidePlan
+from sb20proxy.ride import LiveState, RidePlan, RiderProfile
 from sb20proxy.ride.director import Segment
 from sb20proxy.ride.server import RideServer
 
@@ -78,6 +78,19 @@ def test_control_plan_swap_reflects_in_live(server):
     # erg setpoint tracks the new active segment once the ride is running
     _req(f"{server}/api/start", method="POST")
     assert _req(f"{server}/api/live")[1]["erg_setpoint_w"] == 333
+
+
+def test_workout_resolves_pct_ftp_against_profile():
+    # the /api/workout timeline must resolve %FTP/zone targets, not return None
+    plan = RidePlan("z", [Segment(60, "SS", pct_ftp=0.90, cadence_rpm=90)])
+    srv = RideServer(LiveState(plan=plan, profile=RiderProfile(ftp_w=300)),
+                     host="127.0.0.1", port=0)
+    srv.start()
+    try:
+        seg = _req(f"http://127.0.0.1:{srv.port}/api/workout")[1]["segments"][0]
+        assert seg["power_w"] == 270 and seg["zone"] == "Z4"  # 0.90 * 300
+    finally:
+        srv.stop()
 
 
 def test_bad_control_request_is_400(server):
