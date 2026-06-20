@@ -30,10 +30,6 @@ public:
         oled_.setFontMode(1);
     }
 
-    void render(OledMode mode, const String& ip, int watts, int cadenceRpm, int rssi = 0) {
-        drawLines(formatOledLines(mode, std::string(ip.c_str()), watts, cadenceRpm, rssi));
-    }
-
     // Draw 4 pre-formatted rows. The ~94 ms full-buffer I2C send at 50 kHz blocks the CALLING task
     // (the IDF i2c driver yields on the transfer), so running this on a dedicated OLED task keeps
     // it off the hot loop. Pair with render-on-change (only call when the lines differ).

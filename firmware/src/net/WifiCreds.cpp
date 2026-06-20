@@ -40,11 +40,6 @@ void WifiCreds::clear() {
     p.end();
 }
 
-bool WifiCreds::has() {
-    WifiCredentials c;
-    return load(c);
-}
-
 bool WifiCreds::logEnabled(bool dflt) {
     Preferences p;
     p.begin(kNamespace, /*readOnly=*/true);
