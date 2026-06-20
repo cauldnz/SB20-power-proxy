@@ -20,13 +20,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from .director import RidePlan, Segment
+from .director import ZONE_IDS, RidePlan, Segment
 from .state import LiveState
 from .webapp import workout_json
 
 # the ops apply_control accepts (also used by the server to validate the path)
 CONTROL_OPS = frozenset(
-    {"plan", "segments", "skip", "goto", "extend", "message", "target"}
+    {"plan", "segments", "skip", "goto", "extend", "message", "target", "profile"}
 )
 
 
@@ -58,7 +58,17 @@ def _opt_int(v: Any, name: str) -> int | None:
     return int(v)
 
 
+def _opt_zone(v: Any) -> str | None:
+    if v is None:
+        return None
+    if v not in ZONE_IDS:
+        raise ControlError(f"zone must be one of {sorted(ZONE_IDS)}")
+    return v
+
+
 def segment_from_json(d: Any) -> Segment:
+    """Parse a segment. Target is one of power_w / pct_ftp / zone (precedence in that
+    order); all optional (a coast block has none)."""
     if not isinstance(d, dict):
         raise ControlError("segment must be an object")
     if "duration_s" not in d:
@@ -72,13 +82,16 @@ def segment_from_json(d: Any) -> Segment:
         power_w=_opt_int(d.get("power_w"), "power_w"),
         cadence_rpm=_opt_int(d.get("cadence_rpm"), "cadence_rpm"),
         note=str(d.get("note", "")),
+        pct_ftp=_opt_number(d.get("pct_ftp"), "pct_ftp"),
+        zone=_opt_zone(d.get("zone")),
     )
 
 
 def control_state(state: LiveState) -> dict[str, Any]:
-    """The agent's monitoring view: the live snapshot plus the full plan timeline."""
+    """The agent's monitoring view: the live snapshot plus the full plan timeline
+    (each segment's target resolved against the rider profile)."""
     snap = state.snapshot()
-    snap["plan"] = workout_json(state.plan)
+    snap["plan"] = workout_json(state.plan, state.profile)
     return snap
 
 
@@ -128,9 +141,16 @@ def apply_control(state: LiveState, op: str, body: dict[str, Any]) -> dict[str, 
         else:
             state.set_hold(
                 power_w=_opt_int(body.get("power_w"), "power_w"),
+                pct_ftp=_opt_number(body.get("pct_ftp"), "pct_ftp"),
                 cadence_rpm=_opt_int(body.get("cadence_rpm"), "cadence_rpm"),
                 duration_s=_opt_number(body.get("duration_s"), "duration_s"),
             )
+    elif op == "profile":
+        ftp = _opt_int(body.get("ftp_w"), "ftp_w")
+        if ftp is not None and ftp <= 0:
+            raise ControlError("ftp_w must be > 0")
+        scale = None if body.get("scale") is None else str(body.get("scale"))
+        state.set_profile(ftp_w=ftp, scale=scale)
     else:
         raise ControlError(f"unknown control op: {op!r}")
 

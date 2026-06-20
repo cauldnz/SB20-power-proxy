@@ -12,12 +12,15 @@ state, page render) are host-tested; the capture/replay feed is the hardware sea
 from __future__ import annotations
 
 from .director import (
+    COGGAN_ZONES,
     Cursor,
     DirectorState,
     RideDirector,
     RidePlan,
+    RiderProfile,
     Segment,
     Workout,
+    Zone,
     advance_cursor,
     derive_state,
 )
@@ -31,6 +34,9 @@ __all__ = [
     "Cursor",
     "RideDirector",
     "DirectorState",
+    "RiderProfile",
+    "Zone",
+    "COGGAN_ZONES",
     "advance_cursor",
     "derive_state",
     "LiveState",

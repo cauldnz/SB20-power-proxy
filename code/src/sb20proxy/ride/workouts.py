@@ -39,7 +39,24 @@ DEMO = Workout(
     ),
 )
 
+# An FTP-relative power-zone workout: targets are expressed as %FTP / Coggan zone, so
+# the absolute watts come from the rider profile (--ftp / POST /api/control/profile).
+# This is the proof of the zone model; a fuller library is the project backlog.
+SWEET_SPOT = Workout(
+    name="Sweet-spot 2x12 (%FTP)",
+    segments=(
+        Segment(300, "Warm-up", cadence_rpm=90, zone="Z2", note="Easy endurance spin."),
+        Segment(720, "Sweet spot 1", cadence_rpm=90, pct_ftp=0.90,
+                note="Hold ~90% FTP — comfortably hard."),
+        Segment(300, "Recover", cadence_rpm=90, zone="Z1", note="Spin easy."),
+        Segment(720, "Sweet spot 2", cadence_rpm=90, pct_ftp=0.90,
+                note="Same again — smooth and steady."),
+        Segment(300, "Cool-down", cadence_rpm=88, zone="Z1", note="Ease off to finish."),
+    ),
+)
+
 WORKOUTS: dict[str, Workout] = {
     "calibration": CALIBRATION,
     "demo": DEMO,
+    "sweetspot": SWEET_SPOT,
 }

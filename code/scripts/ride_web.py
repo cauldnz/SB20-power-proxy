@@ -34,7 +34,7 @@ SRC = HERE.parent / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from sb20proxy.ride import WORKOUTS, LiveState, RidePlan  # noqa: E402
+from sb20proxy.ride import WORKOUTS, LiveState, RidePlan, RiderProfile  # noqa: E402
 from sb20proxy.ride.replay import replay_into  # noqa: E402
 from sb20proxy.ride.server import RideServer  # noqa: E402
 
@@ -94,6 +94,11 @@ def main() -> int:
     p.add_argument("--workout", choices=sorted(WORKOUTS), default="calibration")
     p.add_argument("--port", type=int, default=8080)
     p.add_argument("--no-browser", action="store_true", help="don't auto-open a browser")
+    # rider profile (resolves %FTP / zone workout targets to watts)
+    p.add_argument("--ftp", type=int, default=250, help="rider FTP in watts (default 250)")
+    p.add_argument("--scale", default="stages", help="meter scale the FTP is on (default stages)")
+    p.add_argument("--control-token", default=None,
+                   help="require this token on /api/control/* (header X-Control-Token or ?token=)")
     # replay options
     p.add_argument("--speed", type=float, default=1.0, help="replay time multiplier")
     p.add_argument("--replay-source", default="stages",
@@ -111,16 +116,17 @@ def main() -> int:
 
     workout = WORKOUTS[args.workout]
     plan = RidePlan.from_workout(workout)
+    profile = RiderProfile(ftp_w=args.ftp, scale=args.scale)
     if args.live:
-        state = LiveState(mode="live", output=str(args.output), plan=plan)
+        state = LiveState(mode="live", output=str(args.output), plan=plan, profile=profile)
         feed = _run_live
     else:
         if not args.replay.exists():
             p.error(f"capture not found: {args.replay}")
-        state = LiveState(mode="replay", output=args.replay.name, plan=plan)
+        state = LiveState(mode="replay", output=args.replay.name, plan=plan, profile=profile)
         feed = _run_replay
 
-    server = RideServer(state, port=args.port)
+    server = RideServer(state, port=args.port, control_token=args.control_token)
     server.start()
     url = f"http://localhost:{server.port}/"
     print(f"\n  Ride director:  {url}")
