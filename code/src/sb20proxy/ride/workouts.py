@@ -55,8 +55,81 @@ SWEET_SPOT = Workout(
     ),
 )
 
+# ---- a small Coggan power-zone library (all %FTP / zone, resolved by the profile) ----
+
+
+def _over_unders(reps: int, under_s: float, under_pct: float,
+                 over_s: float, over_pct: float, cad: int) -> list[Segment]:
+    """`reps` alternations of just-under-threshold then just-over-threshold."""
+    out: list[Segment] = []
+    for i in range(reps):
+        out.append(Segment(under_s, f"Under {i + 1}", cadence_rpm=cad, pct_ftp=under_pct,
+                           note="Hold just under threshold."))
+        out.append(Segment(over_s, f"Over {i + 1}", cadence_rpm=cad, pct_ftp=over_pct,
+                           note="Lift just over — ride the burn."))
+    return out
+
+
+def _on_offs(reps: int, on_s: float, on_pct: float, off_s: float,
+             off_pct: float, cad_on: int) -> list[Segment]:
+    """`reps` of a hard on-effort then an easy spin (e.g. VO2 30/30s)."""
+    out: list[Segment] = []
+    for i in range(reps):
+        out.append(Segment(on_s, f"VO2 {i + 1}", cadence_rpm=cad_on, pct_ftp=on_pct,
+                           note="Hard — full gas for the on."))
+        out.append(Segment(off_s, f"Easy {i + 1}", pct_ftp=off_pct, note="Spin easy."))
+    return out
+
+
+ENDURANCE_Z2 = Workout(
+    name="Endurance — Zone 2 (60 min)",
+    segments=(
+        Segment(600, "Warm-up", cadence_rpm=90, zone="Z2", note="Easy spin to open the legs."),
+        Segment(2700, "Endurance", cadence_rpm=88, pct_ftp=0.68,
+                note="Steady aerobic — stay conversational."),
+        Segment(300, "Cool-down", cadence_rpm=88, zone="Z1", note="Spin down."),
+    ),
+)
+
+SWEET_SPOT_2X20 = Workout(
+    name="Sweet-spot 2x20 (%FTP)",
+    segments=(
+        Segment(600, "Warm-up", cadence_rpm=90, zone="Z2", note="Build to working effort."),
+        Segment(1200, "Sweet spot 1", cadence_rpm=90, pct_ftp=0.90, note="~90% FTP, smooth."),
+        Segment(360, "Recover", cadence_rpm=90, zone="Z1", note="Easy spin."),
+        Segment(1200, "Sweet spot 2", cadence_rpm=90, pct_ftp=0.90, note="Same again — steady."),
+        Segment(300, "Cool-down", cadence_rpm=88, zone="Z1", note="Ease off to finish."),
+    ),
+)
+
+THRESHOLD_OVER_UNDER = Workout(
+    name="Threshold over-unders (2 sets)",
+    segments=(
+        Segment(600, "Warm-up", cadence_rpm=90, zone="Z2", note="Build steadily."),
+        *_over_unders(3, 120, 0.95, 60, 1.05, 92),
+        Segment(300, "Recover", cadence_rpm=90, zone="Z1", note="Spin easy between sets."),
+        *_over_unders(3, 120, 0.95, 60, 1.05, 92),
+        Segment(300, "Cool-down", cadence_rpm=88, zone="Z1", note="Ease off."),
+    ),
+)
+
+VO2_30_30 = Workout(
+    name="VO2 max 30/30s (2 sets)",
+    segments=(
+        Segment(600, "Warm-up", cadence_rpm=95, zone="Z2", note="Include a couple of openers."),
+        *_on_offs(8, 30, 1.15, 30, 0.50, 100),
+        Segment(300, "Recover", cadence_rpm=90, zone="Z1", note="Easy spin between sets."),
+        *_on_offs(8, 30, 1.15, 30, 0.50, 100),
+        Segment(300, "Cool-down", cadence_rpm=88, zone="Z1", note="Spin down."),
+    ),
+)
+
 WORKOUTS: dict[str, Workout] = {
     "calibration": CALIBRATION,
     "demo": DEMO,
     "sweetspot": SWEET_SPOT,
+    "endurance": ENDURANCE_Z2,
+    "sweetspot2x20": SWEET_SPOT_2X20,
+    "overunder": THRESHOLD_OVER_UNDER,
+    "vo2": VO2_30_30,
 }
