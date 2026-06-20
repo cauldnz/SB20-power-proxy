@@ -4,49 +4,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-An ANT+ man-in-the-middle proxy that lets a Stages SB20 smart bike consume power data from a third-party power meter (primary target: Favero Assioma) as if it came from the bike's native Stages crank power meters. See `README.md` and `01-project-brief.md`.
+Read a power meter → correct it → re-broadcast it so a consumer accepts it as its own. Primary form: an **ESP32-C3 BLE firmware** carried on the bike, with Python desk-tooling alongside. Original target: let a Stages SB20 smart bike run its erg loop off a third-party meter (Favero Assioma) by impersonating its native Stages crank. See §Architecture below for the full picture.
 
-## Where to start
+## Where to start (current canonical docs)
 
-**Read in this order before doing anything:**
+- **`code/findings/decisions.md`** — append-only chronological log; the source of truth for what's decided/found (every numeric value, refuted hypothesis, "it works now").
+- **`code/findings/phase-0-report.md`** — the spoof spec + state of knowledge.
+- **`sessions/README.md`** — the session ledger (physical sessions run / planned); **`sessions/PLAYBOOK.md`** — how to run one.
+- **Protocol/feature references in `code/findings/`** — `shifter-ble-protocol.md`, `stages-app-config.md`, `meter-to-meter-proxy.md`, `zwift-controls-research.md`, `forward-plan.md` (backlog).
+- The numbered root docs (`01-…`–`10-…`, `HANDOFF.md`, `START-HERE.md`) are the **pre-pivot brief** — useful background, but superseded by the findings docs above (per `README.md`).
 
-1. `HANDOFF.md` — your role, the first task, and what's not in this package
-2. `01-project-brief.md` — goals and success criteria
-3. `03-central-hypothesis-and-phase-zero.md` — **most important** — why we don't write proxy code yet
-4. `02-technical-context.md` — background on SB20, ANT+ Bike Power, BLE Cycling Power
-5. The parent `Research_Content` document in the project files (broader fitness-sensor research)
+## Setup
 
-Then as needed: `04-architecture.md`, `05-implementation-phases.md`, `06-prior-art-and-references.md`, `07-hardware-and-environment.md`, `08-risks-and-gotchas.md`, `09-exploring-captures.md`, `10-relationship-to-QZ.md`.
-
-## Build / install / run
-
-This is a Python project. Layout:
-
-```
-code/
-├── pyproject.toml               # openant + optional [dev], [ble], [analysis]
-├── scripts/                     # one-off scripts (capture, ingest, summarise, diff)
-├── src/sb20proxy/               # the actual proxy library — sources/ targets/
-├── findings/                    # committed history of captures + analyses
-├── docker/                      # InfluxDB + Grafana stack for visualisation
-└── grafana/                     # Grafana provisioning + dashboards
-```
-
-Setup (Linux / WSL Ubuntu):
+Python desk-tooling (Linux / WSL Ubuntu), from `code/` — build/run/test commands are in §Commands:
 
 ```bash
-cd code
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev,analysis]"
-# udev rule for ANT+ sticks — write directly; openant's `udev_rules` helper
-# copies from a relative resources/ path that pip doesn't ship, so it errors.
+pip install -e ".[dev,analysis,ble]"
+# udev rule for ANT+ sticks (openant's own helper errors — write it directly):
 sudo tee /etc/udev/rules.d/42-ant-usb-sticks.rules >/dev/null <<'RULE'
 SUBSYSTEM=="usb", ATTRS{idVendor}=="0fcf", MODE="0666"
 RULE
-sudo udevadm control --reload-rules && sudo udevadm trigger   # then unplug+replug stick
+sudo udevadm control --reload-rules && sudo udevadm trigger   # then re-plug the stick
 ```
 
-For Windows users, USB passthrough to WSL is required — see `START-HERE.md` and `07-hardware-and-environment.md` §"Windows + WSL".
+Windows needs USB passthrough to WSL (`START-HERE.md` / `07-hardware-and-environment.md` §"Windows + WSL"). Firmware (ESP32-C3) is PlatformIO.
 
 ## Commands
 
@@ -123,25 +105,22 @@ Invariants this project depends on — follow them:
 
 ## Git & branch hygiene (one human, several concurrent Claude sessions)
 
-There is a **single developer** here, but often **multiple Claude sessions sharing this repo at the same time**, with work landing on `main` via PRs between sessions. That combination once produced a painful divergence — a long-lived branch drifted from `main` while other sessions advanced it, then had to be reconciled commit-by-commit, and a capture-grounded fix was almost lost. These rules keep `main` the single source of truth and branches cheap and short-lived:
+`main` is the single source of truth; work lands via PR. One dev, but **multiple Claude sessions share this repo at once** — a long-lived branch once drifted from `main` while other sessions advanced it and a capture-grounded fix was nearly lost. Hence:
 
-- **`main` is the source of truth; treat every branch as disposable.** Long-lived feature branches are *the* hazard — they silently diverge from whatever other sessions merged. A branch lives for **one task**, not one "topic."
-- **Sync before you touch anything.** At the start of a session/task, `git fetch origin` and check whether `origin/main` (and your current branch) moved. If `origin/main` advanced, recut or rebase onto it **before** working. Never assume the working tree or your branch is current — another session may have merged since.
-- **Cut branches fresh from an up-to-date `origin/main`; never resurrect a previous session's branch** — assume it has diverged. If you start on an existing `claude/*` (or any older) branch, `git fetch` and diff it against `origin/main` before adding to it; if it's behind, branch off `origin/main` instead.
-- **One task → one short-lived branch → PR → merge → delete, within the session where possible.** Don't leave branches lying around for the next session to trip over. Direct pushes to `main` are blocked by design — PR + green CI is the path — but merge promptly and don't let the branch outlive the task.
-- **Concurrent sessions coordinate only through `origin/main`.** Don't assume changes already in the tree are yours (`git status` / `git fetch` first). Avoid two sessions editing the same files; if unavoidable, rebase on `main` often so conflicts stay small.
-- **Reconciling divergent work: real data wins, and never silently drop the other line's finding.** When two branches disagree on a captured or numeric value (e.g. the BLE cal-offset `0` vs the ANT+ `903`), **verify against the actual capture in `findings/captures/` before choosing** — a capture-grounded value beats "but it was bike-tested." If both look defensible, ask rather than drop. This is *capture before code* / real-data-first applied to merges. When porting one branch's fix onto another, port the **specific delta**; never take a pre-PR branch wholesale (it will delete newer work).
-- **Flash/build only from firmware you've confirmed is current with `origin/main`.** Before flashing the bike, check the source isn't a superseded branch — flashing the wrong build wastes a session and can ship a wrong value (e.g. the ANT+ offset on a BLE crank). The local ESP32 compile is the pre-flash gate (see §Commands).
+- **Sync before you touch anything** — `git fetch origin`; if `origin/main` moved, recut/rebase onto it *first*. Never assume the tree or your branch is current (another session may have merged since).
+- **Cut branches fresh from up-to-date `origin/main`; never resurrect a prior session's branch** (assume it diverged — diff it first). A branch is **one task**, not one topic.
+- **One task → one short-lived branch → PR → green CI → merge → delete**, same session. Direct pushes to `main` are blocked by design; merge promptly, don't let branches outlive the task.
+- **Concurrent sessions coordinate only through `origin/main`** — avoid two sessions editing the same files; rebase often so conflicts stay small.
+- **Reconciling divergent work: real data wins, never silently drop the other line's finding.** If two branches disagree on a captured/numeric value (e.g. BLE cal-offset `0` vs ANT+ `903`), verify against the actual capture in `findings/captures/` before choosing; if both defensible, ask. Port the **specific delta**, never a pre-PR branch wholesale (it deletes newer work).
+- **Flash/build only from firmware confirmed current with `origin/main`** — the wrong build wastes a session and can ship a wrong value (e.g. the ANT+ offset on a BLE crank). The local ESP32 compile is the pre-flash gate (§Commands).
 
 ## Session plans & the session ledger (bike / physical-interaction work)
 
-Any session that touches hardware we can't drive from the desk — a bike session, a flash/pair run, an on-air test — is **planned and recorded in the repo**, with the plan and what actually happened in the **same doc**, and every session tracked in **one ledger**. History stays valuable without leaving a scatter of stale files.
+Any session touching hardware we can't drive from the desk (bike, flash/pair, on-air test) is **planned and recorded in one doc** — the plan *and* what actually happened — and tracked in **one ledger**.
 
-- **How to run one well: the playbook — [`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md).** Plan (desk-derisk, front-load the gates, pre-stage turnkey) → execute (one step at a time, explicit pass/fail, record actuals) → document → **retro** (turn what went wrong *and* right into a concrete change before the next session). The rider's **time and patience are the budget**; never send them to do something you haven't verified is ready. Read it before directing a session.
-- **One ledger: `sessions/README.md`.** Every physical session is a row there — number, date, status, one-line outcome, link to its doc. Check the ledger to know what's current, what's done, and what each session concluded; nothing else needs scanning to see the state of play.
-- **Each session doc is Plan *and* Actual.** It starts as the plan; while guiding the session live, **annotate each step in place** with what actually happened — `✅` pass / `❌` fail / `⚠️` partial, plus the observed bytes / values / UI / `/log` lines. Don't leave the result only in chat; write it back. The plan text stays — Actual is added next to it, not swapped in.
-- **Status header, always:** `Status: PLANNED → IN PROGRESS → ✅ DONE (YYYY-MM-DD)` (or `⛔ SUPERSEDED → <successor>`). At the end, flip to DONE and add a one-line **Outcome** at the top.
-- **Promote durable findings.** The session doc is the blow-by-blow narrative; lasting facts (a confirmed byte value, "the SB20 ergs off our crank", a refuted hypothesis) are also appended to `findings/decisions.md` (append-only) and captured bytes committed to `findings/captures/`. Those are the canonical record.
-- **No detritus.** New session docs live in `sessions/`; completed ones stay there marked DONE (history is valuable — don't delete) and are linked from the ledger. Don't spawn ad-hoc `NEXT-`/`READY-` variants per session — one ledger, one doc per session. (Legacy `BIKE-SESSION-*.md` / `NEXT-BIKE-SESSION.md` stay at the repo root because the append-only `decisions.md` links them; the ledger tracks them in place.)
-- **One open session at a time.** Don't draft session N+1 until N is DONE — keeps "what's current" unambiguous.
-- **Improve the playbook after every session.** Closing a session includes reviewing its retro and folding the durable lessons back into `sessions/PLAYBOOK.md` (the rules + the §Lessons section) — it's a **living, compounding** doc, not a write-once one. A session whose lessons never reach the playbook is only half-closed; the whole point is that each session is better-prepared than the last.
+- **Run it via the playbook — [`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md):** plan (desk-derisk, front-load the gates, pre-stage turnkey) → execute (one step at a time, explicit pass/fail, timestamp + record actuals) → document → **retro**. The rider's **time and patience are the budget**; never send them to do something you haven't verified is ready.
+- **One ledger — [`sessions/README.md`](sessions/README.md):** every physical session is a row (number, date, status, outcome, link). It alone tells you the state of play.
+- **Each session doc is Plan *and* Actual** — annotate each step in place (`✅`/`❌`/`⚠️` + observed bytes/values/`/log`), keep a `Status:` header (`PLANNED → IN PROGRESS → ✅ DONE (date)` / `⛔ SUPERSEDED`), and flip to DONE with a one-line Outcome. Don't leave results only in chat.
+- **Promote durable findings** to `findings/decisions.md` (append-only) + commit captures to `findings/captures/` — those are canonical; the session doc is the narrative.
+- **No detritus / one open session at a time.** New docs live in `sessions/`; completed ones stay (marked DONE) and are linked from the ledger — no ad-hoc `NEXT-`/`READY-` variants. Don't draft session N+1 until N is DONE. (Legacy `BIKE-SESSION-*.md` stay at root because append-only `decisions.md` links them.)
+- **Improve the playbook after every session** — fold the retro's lessons back into `PLAYBOOK.md`; it's a living, compounding doc. A session whose lessons never reach the playbook is only half-closed.
