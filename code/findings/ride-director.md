@@ -40,7 +40,8 @@ twin (`--replay`). The whole thing runs and is proven at the desk (`test_ride_e2
   is host-tested with a FakeClock. `control_state()` is the agent's rich monitoring view.
 - **`server.py`** — stdlib HTTP, no deps. Routes below. Optional `control_token` gates `/api/control/*`.
 - **`webapp.py`** — `director_view` / `workout_json` (pure view transforms) + `APP_HTML` (the phone page).
-- **`workouts.py`** — `CALIBRATION`, `DEMO` (absolute), `SWEET_SPOT` (%FTP/zone — proves the model).
+- **`workouts.py`** — `CALIBRATION`, `DEMO` (absolute) + a %FTP/zone library: `sweetspot`,
+  `sweetspot2x20`, `endurance` (Z2), `overunder` (threshold over-unders), `vo2` (30/30s).
 
 ## HTTP surface
 
@@ -94,5 +95,7 @@ later. See the FTMS plan / `forward-plan.md`. Wiring that write is **gated on th
 ## What's deliberately not here
 
 - **Auto-erg to the SB20** — bike-gated (only the `erg_setpoint_w` hook exists). 
-- **A fuller Coggan zone-workout library** — backlog stretch (the model + `SWEET_SPOT` prove it).
 - **On-bike use** — a later bike session; this is the desk build, proven over replay.
+
+(The Coggan zone-workout library — endurance / sweet-spot / over-unders / VO2 — is **built**; see
+`workouts.py`. More workouts are easy to add or push live via `POST /api/control/plan`.)
