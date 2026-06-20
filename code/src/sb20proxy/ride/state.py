@@ -1,13 +1,18 @@
-"""LiveState — the thread-safe handoff between the capture/replay feed and the web.
+"""LiveState — the thread-safe live owner of the session.
 
-The capture runs in one thread (blocking openant `node.start()`, or a replay loop)
-and pushes the latest reading per meter here; the HTTP handler thread reads a
-snapshot to answer GET /api/live. A single lock guards everything. The clock is
-injectable so the director timing is testable without wall-clock waits.
+It holds everything that changes during a ride: the latest reading per meter, the
+ride clock, and the live `RidePlan` + `Cursor`. The capture/replay feed runs in one
+thread (blocking openant `node.start()`, or a replay loop) and pushes readings here;
+the HTTP handler thread reads a snapshot to answer GET /api/live and calls the
+control methods (start/skip/edit) to answer the POSTs. A single lock guards it all.
+The clock is injectable so the director timing is testable without wall-clock waits.
 
-When the rider presses Start, the ride clock begins and (optionally) a `ride_start`
-marker is written into the capture JSONL via `event_sink`, so the analysis can line
-the workout segments up against the recorded data.
+The director projection (advance_cursor / derive_state) is pure and lives in
+`director`; this class drives it under the lock and keeps the cursor consistent
+across live plan edits (insert/delete shift the active index so the rider's current
+block keeps its identity). When the rider presses Start, the ride clock + cursor
+begin and (optionally) a `ride_start` marker is written into the capture JSONL via
+`event_sink`, so analysis can line the workout up against the recorded data.
 """
 
 from __future__ import annotations
@@ -17,6 +22,16 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+
+from .director import (
+    Cursor,
+    RidePlan,
+    Segment,
+    advance_cursor,
+    derive_state,
+    replace,
+)
+from .webapp import director_view
 
 EventSink = Callable[[str, dict[str, Any]], None]
 
@@ -33,6 +48,7 @@ class LiveState:
     def __init__(
         self,
         *,
+        plan: RidePlan | None = None,
         mode: str = "",
         output: str = "",
         event_sink: EventSink | None = None,
@@ -47,6 +63,8 @@ class LiveState:
         self._capture_running = True
         self._event_sink = event_sink
         self._ride_started_at: float | None = None
+        self._plan = plan if plan is not None else RidePlan("")
+        self._cursor = Cursor()
 
     # ---- written by the capture/replay thread ----
 
@@ -65,13 +83,15 @@ class LiveState:
         with self._lock:
             self._capture_running = False
 
-    # ---- ride clock (driven by the rider via the web UI) ----
+    # ---- ride clock + cursor (driven by the rider / agent via the web UI) ----
 
     def start_ride(self) -> None:
         sink = None
         with self._lock:
             if self._ride_started_at is None:
-                self._ride_started_at = self._now()
+                now = self._now()
+                self._ride_started_at = now
+                self._cursor = Cursor(index=0, started_at=now)
                 sink = self._event_sink
         if sink is not None:
             sink("ride_start", {"mode": self._mode})
@@ -81,6 +101,7 @@ class LiveState:
         with self._lock:
             was_running = self._ride_started_at is not None
             self._ride_started_at = None
+            self._cursor = Cursor()
             if was_running:
                 sink = self._event_sink
         if sink is not None:
@@ -92,11 +113,107 @@ class LiveState:
                 return None
             return self._now() - self._ride_started_at
 
+    def _sync_cursor(self, now: float) -> None:
+        """Bring the cursor up to date for `now` so 'which block is active' is current
+        before a cursor-relative mutation reasons about it. Caller holds the lock."""
+        self._cursor = advance_cursor(self._plan, self._cursor, now)
+
+    def skip(self) -> None:
+        """Advance to the next segment now (the rider/agent skips the current block)."""
+        with self._lock:
+            if self._cursor.started_at is None:
+                return
+            now = self._now()
+            self._sync_cursor(now)
+            self._cursor = Cursor(index=self._cursor.index + 1, started_at=now)
+
+    def goto(self, index: int) -> None:
+        """Jump the cursor to `index` and (re)start that block now."""
+        with self._lock:
+            if self._cursor.started_at is None:
+                return
+            index = max(0, min(index, len(self._plan.segments)))
+            self._cursor = Cursor(index=index, started_at=self._now())
+
+    def extend(self, seconds: float) -> None:
+        """Lengthen (or shorten) the active block by `seconds` (clamped at 0)."""
+        with self._lock:
+            if self._cursor.started_at is not None:
+                self._sync_cursor(self._now())
+            i = self._cursor.index
+            if not 0 <= i < len(self._plan.segments):
+                return
+            seg = self._plan.segments[i]
+            self._plan.segments[i] = replace(
+                seg, duration_s=max(0.0, seg.duration_s + seconds)
+            )
+            self._plan.version += 1
+
+    # ---- plan editing (the agent author-ahead / live-edit path) ----
+
+    @property
+    def plan(self) -> RidePlan:
+        return self._plan
+
+    def append_segment(self, seg: Segment) -> None:
+        with self._lock:
+            self._plan.segments.append(seg)
+            self._plan.version += 1
+
+    def insert_segment(self, index: int, seg: Segment) -> None:
+        with self._lock:
+            if self._cursor.started_at is not None:
+                self._sync_cursor(self._now())
+            index = max(0, min(index, len(self._plan.segments)))
+            self._plan.segments.insert(index, seg)
+            self._plan.version += 1
+            # keep the active block's identity if we inserted at/ before it
+            if self._cursor.started_at is not None and index <= self._cursor.index:
+                self._cursor = replace(self._cursor, index=self._cursor.index + 1)
+
+    def replace_segment(self, index: int, seg: Segment) -> None:
+        with self._lock:
+            if not 0 <= index < len(self._plan.segments):
+                return
+            self._plan.segments[index] = seg
+            self._plan.version += 1
+
+    def delete_segment(self, index: int) -> None:
+        with self._lock:
+            if not 0 <= index < len(self._plan.segments):
+                return
+            if self._cursor.started_at is not None:
+                self._sync_cursor(self._now())
+            del self._plan.segments[index]
+            self._plan.version += 1
+            if self._cursor.started_at is None:
+                return
+            ci = self._cursor.index
+            if index < ci:
+                self._cursor = replace(self._cursor, index=ci - 1)
+            elif index == ci:
+                # the active block vanished — start whatever now sits here, fresh
+                self._cursor = Cursor(
+                    index=min(ci, len(self._plan.segments)), started_at=self._now()
+                )
+
+    def replace_plan(self, plan: RidePlan) -> None:
+        """Swap in a whole new plan (live swap or author-ahead). If a ride is running,
+        restart it from the top of the new plan. `version` stays monotonic so the
+        phone always sees a change."""
+        with self._lock:
+            plan.version = self._plan.version + 1
+            self._plan = plan
+            if self._cursor.started_at is not None:
+                self._cursor = Cursor(index=0, started_at=self._now())
+
     # ---- read by the HTTP handler thread ----
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             now = self._now()
+            self._cursor = advance_cursor(self._plan, self._cursor, now)
+            ds = derive_state(self._plan, self._cursor, now)
             meters = {
                 name: {
                     "power_w": m.power_w,
@@ -117,4 +234,6 @@ class LiveState:
                 "meters": meters,
                 "ride_started": self._ride_started_at is not None,
                 "ride_elapsed_s": elapsed,
+                "plan_version": self._plan.version,
+                "director": director_view(ds, self._plan),
             }

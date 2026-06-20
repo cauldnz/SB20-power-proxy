@@ -1,7 +1,8 @@
-"""The web layer: the live-JSON payload (pure) and the static dashboard page.
+"""The web layer: the live-JSON view transforms (pure) and the static dashboard page.
 
-`render_live()` and `workout_json()` are pure transforms (LiveState snapshot +
-RideDirector -> the dict the browser polls), so they're host-tested. APP_HTML is a
+`director_view()` and `workout_json()` are pure transforms (a DirectorState / plan ->
+the dict the browser polls), so they're host-tested. `LiveState.snapshot()` calls
+`director_view` to embed the director state in the live payload. APP_HTML is a
 self-contained, dependency-free page that polls GET /api/live once a second and
 renders everything in the browser — same philosophy as the ESP32 /ui: the device
 (or the laptop) just serves small JSON; the phone does the work.
@@ -11,57 +12,53 @@ from __future__ import annotations
 
 from typing import Any
 
-from .director import RideDirector, Workout
+from .director import DirectorState, RidePlan, Workout
 
 
-def workout_json(workout: Workout) -> dict[str, Any]:
+def workout_json(plan: RidePlan | Workout) -> dict[str, Any]:
+    """The timeline payload for GET /api/workout. Accepts a live RidePlan (carries a
+    `version` the phone watches) or a Workout template (version 0)."""
     return {
-        "name": workout.name,
-        "total_s": workout.total_s,
+        "name": plan.name,
+        "total_s": plan.total_s,
+        "version": getattr(plan, "version", 0),
         "segments": [
             {
                 "label": s.label,
                 "duration_s": s.duration_s,
-                "power_w": s.power_w,
+                "power_w": s.resolved_power_w(),
                 "cadence_rpm": s.cadence_rpm,
                 "note": s.note,
             }
-            for s in workout.segments
+            for s in plan.segments
         ],
     }
 
 
-def render_live(snapshot: dict[str, Any], director: RideDirector) -> dict[str, Any]:
-    """Combine a LiveState snapshot with the director's view of the workout."""
-    started = bool(snapshot.get("ride_started"))
-    elapsed = snapshot.get("ride_elapsed_s")
-    ds = director.state_at(
-        elapsed if (started and elapsed is not None) else 0.0, started=started
-    )
+def director_view(ds: DirectorState, plan: RidePlan) -> dict[str, Any]:
+    """Format a DirectorState (+ its plan) into the `director` block the browser reads."""
     seg = ds.segment
     nxt = ds.next_segment
-    out = dict(snapshot)
-    out["director"] = {
-        "workout": director.workout.name,
+    return {
+        "workout": plan.name,
         "started": ds.started,
         "finished": ds.finished,
         "seg_index": ds.seg_index,
-        "n_segments": len(director.workout.segments),
+        "n_segments": len(plan.segments),
         "label": seg.label if seg else ("Done" if ds.finished else "Ready"),
         "note": seg.note if seg else "",
-        "target_power_w": seg.power_w if seg else None,
+        "target_power_w": seg.resolved_power_w() if seg else None,
         "target_cadence_rpm": seg.cadence_rpm if seg else None,
         "seg_elapsed_s": round(ds.seg_elapsed_s, 1),
         "seg_remaining_s": round(ds.seg_remaining_s, 1),
         "seg_duration_s": seg.duration_s if seg else 0,
         "total_elapsed_s": round(ds.total_elapsed_s, 1),
         "total_remaining_s": round(ds.total_remaining_s, 1),
-        "total_s": director.workout.total_s,
+        "total_s": plan.total_s,
         "next_label": nxt.label if nxt else None,
-        "next_power_w": nxt.power_w if nxt else None,
+        "next_power_w": nxt.resolved_power_w() if nxt else None,
         "next_cadence_rpm": nxt.cadence_rpm if nxt else None,
     }
-    return out
 
 
 APP_HTML = r"""<!DOCTYPE html><html><head><meta charset="utf-8">

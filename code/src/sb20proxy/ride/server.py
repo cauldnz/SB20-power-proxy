@@ -16,19 +16,17 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from .director import RideDirector
 from .state import LiveState
-from .webapp import APP_HTML, render_live, workout_json
+from .webapp import APP_HTML, workout_json
 
 
 class _RideHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, addr: tuple[str, int], state: LiveState, director: RideDirector) -> None:
+    def __init__(self, addr: tuple[str, int], state: LiveState) -> None:
         super().__init__(addr, _Handler)
         self.state = state
-        self.director = director
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -57,9 +55,9 @@ class _Handler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             self._send(200, "text/html; charset=utf-8", APP_HTML)
         elif path == "/api/live":
-            self._json(render_live(srv.state.snapshot(), srv.director))
+            self._json(srv.state.snapshot())
         elif path == "/api/workout":
-            self._json(workout_json(srv.director.workout))
+            self._json(workout_json(srv.state.plan))
         else:
             self._send(404, "text/plain", "not found\n")
 
@@ -79,9 +77,9 @@ class _Handler(BaseHTTPRequestHandler):
 class RideServer:
     """Thin lifecycle wrapper around a threaded HTTP server."""
 
-    def __init__(self, state: LiveState, director: RideDirector,
+    def __init__(self, state: LiveState,
                  *, host: str = "0.0.0.0", port: int = 8080) -> None:
-        self._httpd = _RideHTTPServer((host, port), state, director)
+        self._httpd = _RideHTTPServer((host, port), state)
         self.host = host
         self.port = self._httpd.server_address[1]  # resolves port 0 to the real one
         self._thread: threading.Thread | None = None
