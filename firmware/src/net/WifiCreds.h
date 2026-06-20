@@ -16,8 +16,6 @@ public:
     static void save(const WifiCredentials& c);
     // Erase stored creds (forces the portal on next boot).
     static void clear();
-    // True iff a non-empty SSID is stored.
-    static bool has();
 
     // Persisted on/off preference for the diagnostic /log endpoint (survives reboot + OTA,
     // same nvs partition as the creds). `dflt` is returned when nothing has been stored.
