@@ -53,6 +53,7 @@ private:
     void startStationServer_();  // OTA + status/update/forget routes (assumes WiFi joined)
     void startPortal_();         // SoftAP + captive DNS + setup routes
     void addLogRoutes_();        // GET /log + /log/on + /log/off (shared by both modes)
+    void addForgetRoute_(const char* msg);  // GET /forget: clear creds + reboot (shared by both modes)
     void populateFromScan_(int n);  // fill networks_ from a finished WiFi scan (Arduino WiFi.*)
     bool collectScan_();            // harvest a completed async scan; true if one is still running
 
