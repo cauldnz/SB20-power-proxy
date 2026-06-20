@@ -110,14 +110,16 @@ references for the shifter, FTMS, and app surfaces. Nothing is built ahead of th
 
 ## Engineering disciplines
 
-A few invariants that this project's success depends on:
+Invariants this project depends on — follow them:
 
-- **Capture before code.** Phase 0 (diagnostic capture) is mandatory; the proxy's architecture depends on what it reveals. See `03-central-hypothesis-and-phase-zero.md`.
-- **JSONL is the canonical lossless record.** Summaries, diffs, and InfluxDB rows are derived. Never edit a capture; produce a new analysis.
-- **Document protocol bytes, not Python idioms.** When findings resolve into a "what we need to spoof" specification, write it as a protocol doc (page formats, byte layouts, calibration response shape) — not as code. The doc ports across languages; the code may not.
-- **`findings/decisions.md` is append-only.** Record every numeric value chosen, every hypothesis refuted, every "it works now" moment. Future debugging will rely on it.
-- **Test the desk-testable, in the same change.** Any logic that runs without the ANT+ stick or the SB20 — page encode/decode, capture parsing, file replay, `ProxyCore` wiring, calibration-byte construction — ships with `pytest` unit tests in the **same commit** as the code (no "tests later"). Hardware-bound behaviour (radio TX, real pairing) is isolated behind a seam — e.g. an injectable radio — so its logic is still unit-tested with a fake; only the final on-air / pairing check is left to the bench. Build fixtures from the **real committed captures**, never invented bytes (see *Capture before code* and real-data-first). The suite stays hermetic (no hardware, no network) and green; CI runs it on every push. Details in §Validation.
-- **MIT-licensed.** Don't copy code from GPL-3.0 prior art (qdomyos-zwift especially). Read, understand, reimplement clean-room.
+- **Real-data-first / capture before code.** Don't build a codec or correction ahead of the on-bike capture that grounds it (Phase 0 is mandatory). Fixtures come from the **real committed captures** in `code/findings/captures/`, never invented bytes.
+- **JSONL captures are the canonical lossless record** — never edit one; derive summaries/diffs/analyses from it.
+- **Document protocol bytes, not Python idioms.** A "what to spoof" spec is a protocol doc (page/byte layouts, calibration-response shape) that ports across languages — not code.
+- **`code/findings/decisions.md` is append-only** — log every numeric value chosen, hypothesis refuted, and "it works now"; future debugging relies on it.
+- **Test the desk-testable in the same commit.** Any logic that runs without the stick/SB20 (codecs, parsers, file replay, `ProxyCore` wiring, calibration-byte construction) ships with `pytest` / `pio test -e native` tests in the same change — no "tests later". Isolate hardware behind a seam (injectable radio / `FakeRadio`) so its logic is unit-tested with a fake; only the final on-air / pairing check is manual. Keep the suite **hermetic** (no hardware/network) and green, and `ruff check src tests` clean — CI runs both on every push.
+- **MIT — clean-room.** Read GPL prior art (qdomyos-zwift, SHIFTR, bikecontrol) to *understand*; never copy — reimplement.
+
+**Verification gotchas:** `code/tests/conftest.py` exposes `capture_pages` (iterate a real capture's pages for golden-vector tests). Touching openant? verify against the installed version *and* its source on disk before assuming an API exists. Capture/analysis scripts → smoke-test against a synthetic JSONL fixture. **Nothing replaces hardware testing against a real SB20** — the bench loopback + pairing are manual; CI covers only the replay / codec / wiring layer.
 
 ## Git & branch hygiene (one human, several concurrent Claude sessions)
 
@@ -129,7 +131,7 @@ There is a **single developer** here, but often **multiple Claude sessions shari
 - **One task → one short-lived branch → PR → merge → delete, within the session where possible.** Don't leave branches lying around for the next session to trip over. Direct pushes to `main` are blocked by design — PR + green CI is the path — but merge promptly and don't let the branch outlive the task.
 - **Concurrent sessions coordinate only through `origin/main`.** Don't assume changes already in the tree are yours (`git status` / `git fetch` first). Avoid two sessions editing the same files; if unavoidable, rebase on `main` often so conflicts stay small.
 - **Reconciling divergent work: real data wins, and never silently drop the other line's finding.** When two branches disagree on a captured or numeric value (e.g. the BLE cal-offset `0` vs the ANT+ `903`), **verify against the actual capture in `findings/captures/` before choosing** — a capture-grounded value beats "but it was bike-tested." If both look defensible, ask rather than drop. This is *capture before code* / real-data-first applied to merges. When porting one branch's fix onto another, port the **specific delta**; never take a pre-PR branch wholesale (it will delete newer work).
-- **Flash/build only from firmware you've confirmed is current with `origin/main`.** Before flashing the bike, check the source isn't a superseded branch — flashing the wrong build wastes a session and can ship a wrong value (e.g. the ANT+ offset on a BLE crank). The local ESP32 compile is the pre-flash gate (see §Validation).
+- **Flash/build only from firmware you've confirmed is current with `origin/main`.** Before flashing the bike, check the source isn't a superseded branch — flashing the wrong build wastes a session and can ship a wrong value (e.g. the ANT+ offset on a BLE crank). The local ESP32 compile is the pre-flash gate (see §Commands).
 
 ## Session plans & the session ledger (bike / physical-interaction work)
 
@@ -143,28 +145,3 @@ Any session that touches hardware we can't drive from the desk — a bike sessio
 - **No detritus.** New session docs live in `sessions/`; completed ones stay there marked DONE (history is valuable — don't delete) and are linked from the ledger. Don't spawn ad-hoc `NEXT-`/`READY-` variants per session — one ledger, one doc per session. (Legacy `BIKE-SESSION-*.md` / `NEXT-BIKE-SESSION.md` stay at the repo root because the append-only `decisions.md` links them; the ledger tracks them in place.)
 - **One open session at a time.** Don't draft session N+1 until N is DONE — keeps "what's current" unambiguous.
 - **Improve the playbook after every session.** Closing a session includes reviewing its retro and folding the durable lessons back into `sessions/PLAYBOOK.md` (the rules + the §Lessons section) — it's a **living, compounding** doc, not a write-once one. A session whose lessons never reach the playbook is only half-closed; the whole point is that each session is better-prepared than the last.
-
-## Validation
-
-**Unit tests are the standing rule.** They live in `code/tests/`, run with `pytest` from
-`code/` (after `pip install -e ".[dev]"`), and are **hermetic** — no ANT+ stick, no SB20, no
-network — so they run in CI on every push (`.github/workflows/tests.yml`) and on any laptop.
-The conventions:
-
-- **Cover the desk-testable surface in the same commit as the code** — codecs, parsers, sources
-  that read files, `ProxyCore` wiring, byte construction (see the *Test the desk-testable*
-  discipline above). A change that adds such logic without tests is incomplete.
-- **Fixtures come from the real committed captures** in `findings/captures/` (round-trip /
-  golden-vector style), not invented bytes. `tests/conftest.py` exposes a `capture_pages` helper
-  that iterates the real pages of a capture; reserved/edge byte values were confirmed against the
-  captures, not guessed.
-- **Isolate hardware behind a seam.** The radio / BLE I/O is the only thing that needs the stick;
-  the page-scheduling, calibration, and encode/decode logic must be unit-testable with a fake
-  (e.g. a `FakeRadio`). Only the final on-air check is manual.
-- **Keep it green and lint-clean.** `pytest` and `ruff check src tests` both pass before a commit.
-
-For changes to capture / analysis scripts: smoke-test against a synthetic JSONL fixture (the diff and summarize tools have been tested this way; see `code/findings/decisions.md` for the manufacturer-ID-69-vs-263 reference fixture).
-
-For changes touching openant API usage: verify against the installed openant version (`pip show openant`) and the actual openant source on disk before assuming an API exists.
-
-For changes to the proxy itself: nothing replaces hardware testing against a real SB20. The bench loopback and SB20 pairing are **manual** steps (documented in `NEXT-BIKE-SESSION.md` and `code/findings/forward-plan.md`); CI covers only the replay-against-fixtures / codec / wiring layer.
