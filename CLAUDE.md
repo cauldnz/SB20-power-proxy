@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Project metadata for [Claude Code](https://claude.ai/code) and similar tools.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this project is
 
@@ -47,6 +47,66 @@ sudo udevadm control --reload-rules && sudo udevadm trigger   # then unplug+repl
 ```
 
 For Windows users, USB passthrough to WSL is required — see `START-HERE.md` and `07-hardware-and-environment.md` §"Windows + WSL".
+
+## Commands
+
+**Python (desk tooling + tests) — from `code/`** (after `pip install -e ".[dev,analysis,ble]"`):
+- `pytest -q` — the hermetic suite (no hardware/network). One file: `pytest tests/test_ble_cps.py -q`;
+  one test by name: `pytest -k cadence`.
+- `ruff check src tests` — lint (this is the CI scope; `scripts/` is **not** linted).
+- `python scripts/03_static_replay.py --radio loopback --input findings/captures/<cap>.jsonl` — the
+  **keystone hardware-free check**: replays a real capture through the proxy + an in-process twin
+  ("PASS" = the spoof path works end-to-end). `--radio ant` uses the real stick.
+- Capture (needs the stick / BLE): `01_capture_stages.py`, `02_capture_assioma.py`, `06_capture_ble.py`
+  (BLE — `--subscribe-all`, `--control-point`), `07_capture_multi.py` (`--meter LABEL:ANTID` ×N, the
+  paired meter-to-meter capture), `capture_ftms.py` (the SB20's FTMS surface).
+- Calibration: `09_fit_calibration.py --target X --ref Y` → a profile JSON; `08_analyze_grid.py` /
+  `12_compare_fit.py` validate it. `04_run_proxy.py --profile <json>` runs the ANT+ proxy;
+  `python scripts/ride_web.py` is the ride-day dashboard. `sb20proxy` is the console entry (`cli.py`).
+
+**Firmware (ESP32-C3) — from `firmware/`** (PlatformIO):
+- `pio test -e native` — host unit tests for the pure proxy core (no board; runs in CI).
+- `pio run -e esp32c3-oled-live-ota` — compile the live OLED build. **The ESP32 target compile is the
+  pre-flash gate** — always do it before flashing.
+- Flash: `firmware/flash.ps1` (OTA — RSSI pre-flight + auto-retry + reboot verify) or `flash.ps1 -Mode usb`;
+  raw `pio run -e <env> -t upload`. Envs + on-bike checklist: `firmware/BENCH-FLASH.md`.
+- Observe a running board: `curl http://sb20proxy.local/` (status JSON) · `/ui` (dashboard) · `/log`
+  (serial-over-HTTP — the main live-session instrument) · `/stats` (loop-perf).
+
+## Architecture (big picture)
+
+**Two codebases for one idea: read a power meter → correct it → re-broadcast it so a consumer accepts it
+as its own.** Both mirror a `ProxyCore` (`source → correction → target`) with hardware behind a seam.
+
+- **`firmware/` — the on-device runtime (ESP32-C3, BLE) — the primary product.** A **dual-role** BLE
+  device: a **central** that subscribes to a real power meter (Cycling Power Service `0x1818`) *and* a
+  **peripheral** that re-presents the corrected power. Split into a **pure, host-tested core** in
+  `firmware/lib/proxy/` — `Cps.h` (CPS measurement + control-point codec), `ProxyCore.h` (the
+  read→correct→rebroadcast wiring), `Correction.h` (scale/offset/curve), `Config.h` (the read/spoof
+  identity + cal values), `OledScreen.h`, `PerfMonitor.h` — and a thin **hardware seam** in
+  `firmware/src/`: `ble/BleMeterClient` (central), `ble/BleCrankPeripheral` (peripheral + the control-point
+  responder the SB20 demands), `net/WifiLink` (captive portal + the `/`,`/ui`,`/log`,`/stats` HTTP),
+  `disp/` (OLED). The core compiles and unit-tests with no radio; only the seam needs a board. Build
+  flavours via `platformio.ini` envs: mock-meter (ramp) vs `*-live` (reads a real meter), ± OLED, ± OTA.
+- **`code/` — Python desk tooling + the original ANT+ proxy.** The `sb20proxy` package mirrors the same
+  flow over **ANT+**: `sources/` (read), `targets/` (re-broadcast, e.g. `stages_ant`), `core.py`
+  (`ProxyCore`), `ble/cps.py` (the Python CPS codec — the twin of `Cps.h`), `ant/` (openant master +
+  page codecs), `calibration.py` + `transform.py` (the correction model), `ride/` (a ride-director + web
+  app), `twins/` (in-process fakes so the proxy is hermetically testable). The numbered `scripts/` are the
+  capture / fit / replay / proxy entry points (see §Commands).
+
+**Two product modes** (same core, different identity + correction):
+1. **SB20 crank spoof** — *must* impersonate the Stages L crank (`Stages 62144`, byte-faithful `0x2F`
+   framing, answer the control point) because the SB20 only accepts its own crank; feeds the bike's erg
+   loop from a third-party meter. The active bike-session work.
+2. **Meter-to-meter corrector** — read e.g. an XCadey, re-broadcast on the Assioma scale under our **own**
+   identity (no spoof — head units accept any CPS meter). See `code/findings/meter-to-meter-proxy.md`.
+
+**The real-data pipeline is the spine:** on-bike **captures** (committed JSONL in `findings/captures/`) →
+**codecs/fixtures** (golden-vector tests) → **fit** a correction (`calibration.py`, from paired captures)
+→ **deploy** into the firmware `Correction`. Protocol facts live in `code/findings/` docs — `decisions.md`
+(append-only log), `phase-0-report.md` (the spoof spec), and the `*-protocol.md` / `stages-app-config.md`
+references for the shifter, FTMS, and app surfaces. Nothing is built ahead of the capture that grounds it.
 
 ## Engineering disciplines
 
