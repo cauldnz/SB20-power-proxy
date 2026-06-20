@@ -1,0 +1,22 @@
+{"iso_time": "2026-06-21T01:16:26", "monotonic_s": 0.526888, "kind": "scan_result", "found": true, "name": "SB20-FTMS-Server", "address": "E0:72:A1:70:02:7E"}
+{"iso_time": "2026-06-21T01:16:36", "monotonic_s": 10.940768, "kind": "ble_connect", "address": "E0:72:A1:70:02:7E"}
+{"iso_time": "2026-06-21T01:16:36", "monotonic_s": 11.132897, "kind": "ble_read", "char": "feature", "power_target_setting": true}
+{"iso_time": "2026-06-21T01:16:36", "monotonic_s": 11.28725, "kind": "ble_read", "char": "power_range", "min": 0, "max": 1000, "inc": 1}
+{"iso_time": "2026-06-21T01:16:37", "monotonic_s": 11.905532, "kind": "ble_notification", "char": "indoor_bike_data", "raw_hex": "4500b4000901", "power_w": 265, "cadence_rpm": 90.0}
+{"iso_time": "2026-06-21T01:16:38", "monotonic_s": 12.321506, "kind": "ble_notification", "char": "indoor_bike_data", "raw_hex": "4500b4000401", "power_w": 260, "cadence_rpm": 90.0}
+{"iso_time": "2026-06-21T01:16:38", "monotonic_s": 12.923591, "kind": "ble_notification", "char": "indoor_bike_data", "raw_hex": "4500b400ff00", "power_w": 255, "cadence_rpm": 90.0}
+{"iso_time": "2026-06-21T01:16:38", "monotonic_s": 12.980878, "kind": "ble_cp_write", "note": "request_control", "raw_hex": "00"}
+{"iso_time": "2026-06-21T01:16:38", "monotonic_s": 13.222052, "kind": "ble_notification", "char": "control_point", "raw_hex": "800001"}
+{"iso_time": "2026-06-21T01:16:39", "monotonic_s": 13.47153, "kind": "ble_notification", "char": "indoor_bike_data", "raw_hex": "4500b400fa00", "power_w": 250, "cadence_rpm": 90.0}
+{"iso_time": "2026-06-21T01:16:39", "monotonic_s": 13.783039, "kind": "ble_cp_write", "note": "start", "raw_hex": "07"}
+{"iso_time": "2026-06-21T01:16:39", "monotonic_s": 13.954556, "kind": "ble_notification", "char": "indoor_bike_data", "raw_hex": "4500b400f500", "power_w": 245, "cadence_rpm": 90.0}
+{"iso_time": "2026-06-21T01:16:39", "monotonic_s": 13.954797, "kind": "ble_notification", "char": "control_point", "raw_hex": "800701"}
+{"iso_time": "2026-06-21T01:16:40", "monotonic_s": 14.548911, "kind": "ble_notification", "char": "indoor_bike_data", "raw_hex": "4500b400f000", "power_w": 240, "cadence_rpm": 90.0}
+{"iso_time": "2026-06-21T01:16:40", "monotonic_s": 14.566417, "kind": "ble_cp_write", "note": "set_target_power=225", "raw_hex": "05e100"}
+{"iso_time": "2026-06-21T01:16:40", "monotonic_s": 14.972753, "kind": "ble_notification", "char": "indoor_bike_data", "raw_hex": "4500b400eb00", "power_w": 235, "cadence_rpm": 90.0}
+{"iso_time": "2026-06-21T01:16:40", "monotonic_s": 14.973047, "kind": "ble_notification", "char": "control_point", "raw_hex": "800501"}
+{"iso_time": "2026-06-21T01:16:40", "monotonic_s": 14.974282, "kind": "ble_notification", "char": "fitness_machine_status", "raw_hex": "08e100"}
+{"iso_time": "2026-06-21T01:16:41", "monotonic_s": 15.385981, "kind": "ble_notification", "char": "indoor_bike_data", "raw_hex": "4500b400e600", "power_w": 230, "cadence_rpm": 90.0}
+{"iso_time": "2026-06-21T01:16:41", "monotonic_s": 15.801521, "kind": "ble_notification", "char": "indoor_bike_data", "raw_hex": "4500b400e100", "power_w": 225, "cadence_rpm": 90.0}
+{"iso_time": "2026-06-21T01:16:42", "monotonic_s": 16.402599, "kind": "ble_notification", "char": "indoor_bike_data", "raw_hex": "4500b400dc00", "power_w": 220, "cadence_rpm": 90.0}
+{"iso_time": "2026-06-21T01:16:42", "monotonic_s": 16.717318, "kind": "result", "cp_results": [[0, 1], [7, 1], [5, 1]], "status_target": 225, "ibd_power": 220, "erg_capable": true, "cp_ok": true, "status_ok": true, "ibd_ok": true}
