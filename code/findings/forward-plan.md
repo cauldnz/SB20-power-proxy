@@ -441,6 +441,14 @@ From `phase-0-report.md` §5 — track, don't block on:
   the control API — watch `Stages − Assioma` on `/api/control/state`, `extend` a step until settled, push
   Δ-feedback banners, skip once a point is clean. Runs on the **SB20 bike** (both meters on it) + the
   ANT+ stick → a bike session. Builds on the `RIDE-CARD` / power-grid note in the meter-to-meter section.
+- **FTMS protocol implementation** — planned (owner, 2026-06-21; **spec-built ahead of capture**, an
+  owner-approved exception to capture-before-code). Implement the FTMS (`0x1826`) bike protocol — codec
+  (Indoor Bike Data + Control Point + Feature/Status/ranges, Python + firmware), the **erg-control
+  client** that drives the SB20's *Set Target Power* wired to the Ride Director's `erg_setpoint_w` + the
+  shifter-nudges-watts mapper, and the trainer-server role — with a **real on-air test loop** against
+  the bench ESP32(s) + host BLE. Full brief: [`ftms-implementation-plan.md`](ftms-implementation-plan.md).
+  Builds on `shifter-erg-control.md` + `capture_ftms.py`. Session 4 §C (`capture_ftms.py --erg`) remains
+  the real-capture gate that validates the spec-built codec.
 
 ---
 
