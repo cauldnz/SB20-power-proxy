@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -123,6 +124,122 @@ def build_children(args) -> list[Child]:
     return children
 
 
+# ── Clean teardown on a hard stop ───────────────────────────────────────────
+# Session-7 bug: a harness TaskStop SIGTERMs this orchestrator; untrapped, the
+# finally never ran, so the sniff_ble children orphaned and ran on to their
+# --duration (had to be killed by PID). The right defence differs by OS:
+#   • POSIX/WSL: SIGTERM IS delivered to Python — trap it and raise KeyboardInterrupt
+#     so the existing finally stops the children and finalises the manifest.
+#   • Windows: an *external* SIGTERM is an uncatchable TerminateProcess (verified —
+#     the handler never fires), so also bind the children to a kill-on-close Job
+#     Object; the OS tears them down when this process dies, even on a hard kill.
+_STOP_SIGNAL: str | None = None  # set by the trap; recorded in the manifest
+
+
+def _install_signal_handlers() -> None:
+    """Trap SIGTERM (and Windows Ctrl-Break) so a hard stop tears down exactly like
+    Ctrl-C. No-op where registration isn't allowed (non-main thread / unsupported)."""
+    def _trap(signum, _frame):
+        global _STOP_SIGNAL
+        _STOP_SIGNAL = signal.Signals(signum).name
+        try:  # one-shot: a second signal during teardown should hard-stop, not loop
+            signal.signal(signum, signal.SIG_DFL)
+        except (ValueError, OSError):
+            pass
+        raise KeyboardInterrupt
+
+    for name in ("SIGTERM", "SIGBREAK"):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        try:
+            signal.signal(sig, _trap)
+        except (ValueError, OSError):
+            pass
+
+
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
+
+    class _JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", wintypes.LARGE_INTEGER),
+            ("PerJobUserTimeLimit", wintypes.LARGE_INTEGER),
+            ("LimitFlags", wintypes.DWORD),
+            ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t),
+            ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t),
+            ("PriorityClass", wintypes.DWORD),
+            ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class _IO_COUNTERS(ctypes.Structure):
+        _fields_ = [(n, ctypes.c_ulonglong) for n in (
+            "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+            "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+    class _JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", _JOBOBJECT_BASIC_LIMIT_INFORMATION),
+            ("IoInfo", _IO_COUNTERS),
+            ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    _JOB_INFO_EXTENDED_LIMIT = 9  # JobObjectExtendedLimitInformation
+    _JOB_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+
+    def _bind_children_to_parent_lifetime(children: list[Child]):
+        """Put the children in a kill-on-close Job Object so Windows tears them down
+        when this process dies — covering the uncatchable external SIGTERM. Returns
+        the job handle, which the caller MUST keep referenced for the whole run
+        (dropping it closes the handle and kills the children early). None on failure."""
+        try:
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            k32.CreateJobObjectW.restype = wintypes.HANDLE
+            k32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+            k32.SetInformationJobObject.restype = wintypes.BOOL
+            k32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                                                    wintypes.LPVOID, wintypes.DWORD]
+            k32.AssignProcessToJobObject.restype = wintypes.BOOL
+            k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+
+            job = k32.CreateJobObjectW(None, None)
+            if not job:
+                raise ctypes.WinError(ctypes.get_last_error())
+            info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+            info.BasicLimitInformation.LimitFlags = _JOB_LIMIT_KILL_ON_JOB_CLOSE
+            if not k32.SetInformationJobObject(job, _JOB_INFO_EXTENDED_LIMIT,
+                                               ctypes.byref(info), ctypes.sizeof(info)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            for c in children:
+                if c.proc is not None:
+                    if not k32.AssignProcessToJobObject(job, int(c.proc._handle)):
+                        raise ctypes.WinError(ctypes.get_last_error())
+            return job
+        except Exception as e:  # best-effort safety net; degrade to the signal trap
+            print(f"[{_iso()}] WARN: Windows job-object teardown unavailable ({e}); "
+                  "relying on the signal trap only")
+            return None
+else:
+    def _bind_children_to_parent_lifetime(children: list[Child]):
+        return None  # POSIX relies on the SIGTERM trap + finally
+
+
+def _finalize_manifest(path: Path, data: dict, children: list[Child], stopped_by: str) -> None:
+    """Rewrite the manifest with end-of-run facts so a stopped session is self-describing."""
+    data = dict(data, end=_iso(), stopped_by=stopped_by,
+                final_sizes={c.name: max(c.size(), 0) for c in children})
+    try:
+        path.write_text(json.dumps(data, indent=2))
+    except OSError:
+        pass
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -144,20 +261,26 @@ def main() -> int:
     if not args.self_test and not args.sb20:
         ap.error("--sb20 is required unless --self-test")
 
+    _install_signal_handlers()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     children = build_children(args)
     for c in children:
         c.start()
+    job = _bind_children_to_parent_lifetime(children)  # keep referenced until teardown
     print(f"[{_iso()}] MONITOR START  tag={args.tag}  duration={args.duration:.0f}s  -> {args.out}")
     for c in children:
         print(f"   {c.name:<9} -> {c.output.name}")
+    if job:
+        print(f"[{_iso()}] children bound to a kill-on-close job object (hard-stop safe)")
     manifest = out / f"MANIFEST-{args.tag}.json"
-    manifest.write_text(json.dumps({
+    manifest_data = {
         "tag": args.tag, "start": _iso(), "duration_s": args.duration, "sb20": args.sb20,
         "ant": args.ant, "hr": args.hr, "fec": args.fec,
-        "outputs": [str(c.output) for c in children]}, indent=2))
+        "outputs": [str(c.output) for c in children]}
+    manifest.write_text(json.dumps(manifest_data, indent=2))
 
+    stopped_by = "duration"
     end = time.monotonic() + args.duration + 20
     try:
         while time.monotonic() < end:
@@ -172,15 +295,19 @@ def main() -> int:
                 parts.append(f"{c.name}={max(sz, 0)}B[{flag}]")
             print("  ".join(parts))
             if not alive_any:
+                stopped_by = "all-exited"
                 print(f"[{_iso()}] all captures exited -> stopping")
                 break
     except KeyboardInterrupt:
-        print(f"\n[{_iso()}] interrupted -> stopping")
+        # Ctrl-C (SIGINT) or a trapped SIGTERM/Ctrl-Break — same clean teardown.
+        stopped_by = _STOP_SIGNAL or "interrupt"
+        print(f"\n[{_iso()}] {stopped_by} -> stopping")
     finally:
         for c in children:
             c.stop()
+    _finalize_manifest(manifest, manifest_data, children, stopped_by)
     final = ", ".join(f"{c.name}:{max(c.size(), 0)}B" for c in children)
-    print(f"[{_iso()}] MONITOR STOP  final={{{final}}}")
+    print(f"[{_iso()}] MONITOR STOP  stopped_by={stopped_by}  final={{{final}}}")
     print(f"   manifest: {manifest}")
     return 0
 
