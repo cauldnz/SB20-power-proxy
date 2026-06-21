@@ -11,6 +11,13 @@ __pycache__/
 build/
 dist/
 
+# Derived SQLite analysis index — rebuildable from the JSONL captures, never the
+# source of truth (see findings/sqlite-analysis-layer.md). Keep it out of findings/.
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
 # IDE
 .vscode/
 .idea/
