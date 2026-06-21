@@ -462,6 +462,14 @@ From `phase-0-report.md` §5 — track, don't block on:
   the spec-built codec + answers does-the-SB20-erg-off-a-third-party; the client-seam on-air test is
   bench-deferred (ESP↔ESP or host WinRT server); wire `erg_setpoint_w` → the FTMS write into the runtime
   (measure C3 BLE coex when stacked on the CPS spoof + WiFi).
+- **Power-topology Phase 2 + multi-transport observability** — ✅ **tooling built (owner, 2026-06-21).**
+  The session-4 finding (`sb20-power-topology.md`): the SB20 erg reads ~1.3× below the Assioma
+  (single-sided refuted) — mechanism open. The fix is a **simultaneous multi-device capture** (every
+  meter + the SB20 FTMS, over BLE *and* ANT+, one clock) → reconcile. Built: **`capture_ble_multi.py`**
+  (paired BLE) + the SQLite layer now surfaces BLE CPS power keyed by device + `--basis iso` cross-capture
+  reconcile. **Run-sheet + the ANT+/WSL permission fix + the nRF-sniffer plan:
+  [`traffic-observability.md`](traffic-observability.md).** Remaining (next ride): run Phase 2; order an
+  **nRF52840 dongle** for passive app↔SB20 sniffing (the one thing connect-and-subscribe can't see).
 
 ---
 

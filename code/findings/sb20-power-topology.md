@@ -80,8 +80,11 @@ ESP-fed; if it drops, it was on the real Stages crank.
   WSL has no systemd to apply it). Enable WSL systemd (`/etc/wsl.conf` → `[boot] systemd=true` +
   `wsl --shutdown`), or `sudo udevadm control --reload-rules && sudo udevadm trigger`, or run as root.
   Verify with a libusb claim test. (See `sessions/PLAYBOOK.md`.)
-- A tool that subscribes/pairs **multiple meters at once** — `07_capture_multi.py` already does paired ANT+
-  (`--meter LABEL:ANTID` ×N); extend it (or pair with a BLE multi-subscribe) for the both-transport view.
+- A tool that subscribes/pairs **multiple meters at once** — ✅ **built**: `07_capture_multi.py` (paired
+  ANT+, `--meter LABEL:ANTID` ×N) + the new **`capture_ble_multi.py`** (paired BLE, `--device
+  LABEL:KIND:ADDRESS` ×N), reconciled on `iso_time` via `13_build_sqlite.py --basis iso` (which now
+  surfaces BLE CPS power keyed by device). **Turnkey run-sheet + the ANT+ permission fix:
+  [`traffic-observability.md`](traffic-observability.md).**
 
 ## Why it matters
 If the SB20 ergs off a single-sided Stages crank, the shifter-erg feature (and any erg use) targets

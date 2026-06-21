@@ -36,10 +36,13 @@ JSONL ``kind``      table                                               key colu
 ``ble_advertisement`` ``ble_advertisement``                            address, rssi
 ==================  ==================================================  ===============
 
-The ``power_sample`` view unifies ANT broadcasts and FTMS Indoor Bike Data into
-one ``(stream, power_w, cadence_rpm)`` stream so :func:`reconcile` can align two
-meters on a time bucket and report the per-bucket delta/ratio — the same pairing
-``scripts/08_analyze_grid.py`` does by hand, expressed as SQL.
+The ``power_sample`` view unifies ANT broadcasts, FTMS Indoor Bike Data, and BLE
+Cycling Power Measurement into one ``(stream, power_w, cadence_rpm)`` stream so
+:func:`reconcile` can align two meters on a time bucket and report the per-bucket
+delta/ratio — the same pairing ``scripts/08_analyze_grid.py`` does by hand, as SQL.
+A multi-device BLE capture (``capture_ble_multi.py``) tags each row with a
+``device`` label, which becomes the stream key (so the SB20 FTMS feed and several
+meters' CPS streams reconcile against each other on one clock).
 """
 
 from __future__ import annotations
@@ -54,6 +57,7 @@ from pathlib import Path
 from statistics import median
 
 from sb20proxy.analysis._jsonl import iter_jsonl_lines
+from sb20proxy.ble.cps import decode_cps_measurement
 from sb20proxy.ble.ftms import (
     CP_RESPONSE,
     CP_SET_TARGET_POWER,
@@ -62,7 +66,7 @@ from sb20proxy.ble.ftms import (
     decode_indoor_bike_data,
 )
 
-SCHEMA_VERSION = 2  # v2: null-safe annotation dedup (COALESCE unique index)
+SCHEMA_VERSION = 3  # v3: per-device BLE streams + BLE CPS power in power_sample
 
 
 class SchemaVersionError(RuntimeError):
@@ -107,6 +111,7 @@ CREATE TABLE IF NOT EXISTS ble_notification (
     rec_index        INTEGER NOT NULL,
     monotonic_s      REAL,
     iso_time         TEXT,
+    device           TEXT,               -- multi-device capture stream label (else NULL)
     char             TEXT,               -- normalised characteristic name
     raw_hex          TEXT,
     flags            INTEGER,            -- IBD flags (NULL if not Indoor Bike Data)
@@ -170,10 +175,12 @@ CREATE TABLE IF NOT EXISTS ant_broadcast (
 );
 CREATE INDEX IF NOT EXISTS ix_ant_src ON ant_broadcast(capture_id, source, monotonic_s);
 
--- Unified power/cadence stream for reconciliation. `stream` is the meter
--- identity: the ANT channel label (or 'ant' for a single-source capture) and
--- 'ftms' for the SB20's Indoor Bike Data. Only rows that actually carry power
--- are surfaced.
+-- Unified power/cadence stream for reconciliation. `stream` is the meter identity:
+-- the ANT channel label (or 'ant' single-source); for BLE it's the multi-device
+-- capture's `device` label, falling back to 'ftms' (Indoor Bike Data) / 'cps'
+-- (Cycling Power Measurement) for a single-device capture. Only rows carrying
+-- power are surfaced. NB: BLE CPS cadence is derived (two crank samples), so it's
+-- NULL per-row here — pass `--min-cadence 0` when reconciling a CPS stream.
 CREATE VIEW IF NOT EXISTS power_sample AS
     SELECT capture_id, rec_index, monotonic_s, iso_time,
            COALESCE(source, 'ant') AS stream, 'ant' AS protocol,
@@ -182,10 +189,16 @@ CREATE VIEW IF NOT EXISTS power_sample AS
      WHERE power_w IS NOT NULL
     UNION ALL
     SELECT capture_id, rec_index, monotonic_s, iso_time,
-           'ftms' AS stream, 'ftms' AS protocol,
+           COALESCE(device, 'ftms') AS stream, 'ftms' AS protocol,
            power_w, cadence_rpm
       FROM ble_notification
-     WHERE char = 'indoor_bike_data' AND power_w IS NOT NULL;
+     WHERE char = 'indoor_bike_data' AND power_w IS NOT NULL
+    UNION ALL
+    SELECT capture_id, rec_index, monotonic_s, iso_time,
+           COALESCE(device, 'cps') AS stream, 'cps' AS protocol,
+           power_w, cadence_rpm
+      FROM ble_notification
+     WHERE char = 'cycling_power_measurement' AND power_w IS NOT NULL;
 """
 
 
@@ -376,6 +389,7 @@ def _route_notification(conn: sqlite3.Connection, cid: int, idx: int, rec: dict)
         return
 
     char = _norm_char(raw_char)
+    device = rec.get("device")  # multi-device capture stream label (NULL otherwise)
     flags = power = cadence = speed = avg_power = distance = None
     decoded = 0
     if char == "indoor_bike_data" and raw_hex:
@@ -391,13 +405,22 @@ def _route_notification(conn: sqlite3.Connection, cid: int, idx: int, rec: dict)
             avg_power = ibd.average_power
             distance = ibd.total_distance
             decoded = 1
+    elif char == "cycling_power_measurement" and raw_hex:
+        try:
+            cpm = decode_cps_measurement(bytes.fromhex(raw_hex))
+        except ValueError:  # short / malformed frame
+            decoded = 0
+        else:
+            flags = cpm.flags
+            power = cpm.power_w           # cadence is derived (two samples) -> left NULL
+            decoded = 1
 
     conn.execute(
         """INSERT INTO ble_notification
-           (capture_id, rec_index, monotonic_s, iso_time, char, raw_hex, flags,
+           (capture_id, rec_index, monotonic_s, iso_time, device, char, raw_hex, flags,
             power_w, cadence_rpm, speed_kmh, avg_power_w, total_distance_m, decoded)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (cid, idx, rec.get("monotonic_s"), rec.get("iso_time"), char, raw_hex, flags,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (cid, idx, rec.get("monotonic_s"), rec.get("iso_time"), device, char, raw_hex, flags,
          power, cadence, speed, avg_power, distance, decoded),
     )
 
