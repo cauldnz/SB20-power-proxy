@@ -1,0 +1,2 @@
+{"iso_time": "2026-06-21T11:06:54", "monotonic_s": 0.000138, "kind": "session_start", "device_id": 17039, "device_type": 11, "transmission_type": 0, "channel_period": 8182, "rf_freq": 57, "output": "/mnt/c/repos/cauldnz/SB20-power-proxy/code/findings/captures/CAL-assioma-ant-3way-20260621-110654.jsonl"}
+{"iso_time": "2026-06-21T11:06:54", "monotonic_s": 0.049682, "kind": "setup_error", "error": "[Errno 13] Access denied (insufficient permissions)"}

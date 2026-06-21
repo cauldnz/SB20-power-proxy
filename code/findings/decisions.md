@@ -1307,3 +1307,59 @@ Will revisit if: Session 4 §C (`capture_ftms.py --erg`) confirms the SB20 ergs 
 Target Power and supplies the real frames — then validate/reconcile the codec against them and wire
 `erg_setpoint_w` → the FTMS write into the runtime (measuring C3 BLE coex). Client-seam on-air test
 (ESP↔ESP or host WinRT server) is bench-deferred.
+
+## 2026-06-21 — Bike session 4: FTMS erg PASS, full shifter map, and a power-topology finding
+
+Session 4 (`sessions/session-04-…`, ✅ DONE; ran 09:43–11:23). §C + §B run; G1/G2/§D deferred (board
+un-flashable — WiFi/OTA down). Captures in `findings/captures/`.
+
+### §C — FTMS erg-acceptance: ✅ PASS (the gate)
+The SB20 **accepts and holds a third-party Set-Target-Power** over BLE (FTMS CP `0x2AD9`), Stages app
+disconnected, sole controller. Every op ACKed success, **no `control-not-permitted`**: Request-Control
+`80 00 01`, Start `80 07 01`, Set-Target-Power `80 05 01 <wLE>` (150/200/100), Reset `80 01 01`; Status
+`0x2ADA` Target-Power-Changed `08 <wLE>` per target. Indoor Bike Data (`0x2AD2`, flags `0x00C5` =
+cadence·power·avg-power) tracked the targets. Feature `8a4000000e200000` → Target-Setting **bit3
+Power-Target** set; Power Range `0000a00f0100` = 0–4000 W / 1 W. DIS: Stages Cycling / SB20 / SN
+H0512210105 / FW 1.1 / SW 1.12.4+3792. ⟹ the **shifter-erg feature is real**; the spec-built FTMS codec
+(`ftms.py`/`Ftms.h`) is **validated against real frames** (`G-sb20-ftms-erg-20260621-0949.jsonl`).
+Shift-in-erg: a main shift (LEFT-up) while erg-held is **inert** (rider-narrated; the SB20 has no display)
+→ main shift buttons are free to repurpose for erg ±.
+
+### ⚠️ Power-topology finding (the big lead — UNRESOLVED)
+On repeated erg holds with an **independent** meter, the SB20's erg power read **far below the Assioma**:
+SB20 "200 W" ↔ Garmin/Assioma ~260 W (**1.30×**); a 100/150/200 sweep gave Assioma **1.34× / 1.62×** the
+SB20; later SB20 "200 W" ↔ Garmin **~380 W (~1.9× ≈ 2×)**. Reads: ESP `src_power_w` (BLE, ~1:1 passthrough
+of the Assioma) + the owner's Garmin (**Assioma over ANT+**). **Hypothesis (owner, strong): single-sided
+reading** — ~2× is the fingerprint of one meter on a single leg vs the other on true total; the SB20 appears
+to run erg off the **real Stages LEFT crank single-sided (~half)**, *not* the ESP/Assioma spoof (SB20 IBD ≠
+ESP `src_power_w`; the **variable** 1.3–1.9× ratio = **L/R imbalance**). **Tension to verify:** the prior
+"Stages reads ~5–13 % *high* vs Assioma" was the *combined* `62144` stream, not single-L — don't assume.
+**Resolution = a simultaneous multi-device capture** → designed in
+[`sb20-power-topology.md`](sb20-power-topology.md). Captures `G-sb20-ftms-erg200-20260621-104341.jsonl`,
+`G-sb20-ftms-erg3way-20260621-110555.jsonl`, `ESP-assioma-poll-erg3way-20260621-1106.txt`; owner to send the
+Garmin `.FIT` (two lap marks on the erg runs).
+
+### §B — shifter fully mapped (char `0c46be60`)
+- **6 distinct one-hot buttons** (frame `<u16 edge><u16 btn-bitmap>`): L1/L2/L3 = `0x01/0x02/0x04`,
+  R1/R2/R3 = `0x08/0x10/0x20`. **Hidden buttons 4 & 5 alias 1 & 2 byte-for-byte on BOTH sides** (L4→`0x01`,
+  L5→`0x02`, R4→`0x08`, R5→`0x10`) ⟹ **6 usable signals, not 10**. (`SHIFTER-probe-4-buttons45-…1727.jsonl`.)
+- **The bitmap is a true OR of buttons down** → **chord** L3+R3 = sustained `0x24` (a usable 7th signal).
+  **Double-tap** detectable (two `0100…`→`0800…` press→release cycles, ~110–180 ms apart). **Hold vs taps
+  RESOLVED** (session-3's open question): a **hold** = one continuous `0100<bit>` stream at ~8 Hz + a
+  periodic `030004000400` "still-held" marker + **one** release; **N taps** = N short bursts + **N**
+  releases, **no `0300…`**. ⟹ **hold-to-ramp and multi-tap counting both viable**.
+  (`SHIFTER-probe-4-gestures-…2429`, `…holdtaps-…3001`.)
+- **Brake levers are NOT on BLE with the app off** — LEFT+RIGHT ×3 fired nothing on `be60`/`be61`/`beb0`/
+  FTMS-Status. Owner reports the brakes slow the flywheel **only when the Stages app is connected** ⟹
+  **app-gated**; capturing them needs a dual (app + sniffer) connection. (`SHIFTER-probe-4-20260621-1000.jsonl`.)
+
+### Tooling / ops (folded into `sessions/PLAYBOOK.md`)
+- **ANT+ bring-up = WSL + usbipd** (stick `0fcf:1008`, bind-shared; `usbipd attach --wsl`; venv
+  `~/sb20-ant-venv` + `pip install -e .[ble]` → openant 1.3.4; capture the Assioma with its **explicit** ANT
+  id **`17039`** — never wildcard, the Stages are `62144`/`4963`). **Blocked by `[Errno 13]`**: the
+  MODE-0666 udev rule is present but WSL has no systemd to apply it (and no passwordless sudo to self-fix) →
+  enable WSL systemd / `udevadm` reload / run as root; pre-stage before the next ride.
+- **The ESP32-C3 doesn't roam between WiFi APs** — it clung to the upstairs AP after the rider went
+  downstairs (−89 dBm, all HTTP dead); **power-cycle to re-associate**. Also adopted: the agent runs all
+  captures itself (`buffering=1` → live-tail), and anchors timestamps on the capture `iso_time` (the agent's
+  sandboxed shell clock read a day + ~6 h off real).
