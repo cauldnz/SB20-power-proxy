@@ -32,12 +32,93 @@ def test_resolve_char_uuid16_proprietary_and_handle_fallback():
     assert ps.resolve_char(None, None, 0x99, {}) == "handle_0x0099"
 
 
-def test_parse_handle_map_from_real_discovery_line():
-    # real read_by_type_rsp: decl 0x0038, value 0x0039, char uuid = 0c46beb1 (wire order)
-    line = "0x0038,0x0039\t\te5f4a2e1eac60eaeff48229cb1be460c"
-    hmap = ps.parse_handle_map([line])
-    assert 0x0039 in hmap and hmap[0x0039].startswith("stages_prop")
-    assert 0x0038 not in hmap  # only the *value* handle is keyed (what data ops use)
+def test_resolve_char_strips_0x_prefix():
+    """tshark prints btatt.uuid16 as ``0x2ad2``; UUID16_CHARS is keyed ``2ad2``.
+
+    Without stripping the prefix the 16-bit FTMS/CPS chars never resolve — this was
+    the session-7 ride bug (every char fell through to ``uuid16_0x….``, so ibd=0).
+    """
+    assert ps.resolve_char("0x2ad2", None, None, {}) == "indoor_bike_data"
+    assert ps.resolve_char("0x2ad9", None, None, {}) == "fitness_machine_control_point"
+    assert ps.resolve_char("0x2a63", None, None, {}) == "cycling_power_measurement"
+    assert ps.resolve_char("2ad2", None, None, {}) == "indoor_bike_data"  # bare still works
+    assert ps.resolve_char("0xBEEF", None, None, {}) == "uuid16_beef"     # unknown -> bare label
+
+
+# Real GATT-discovery TSV lines from the session-7 ride pcap
+# (RIDE-ble-sb20-ride-20260622.pcap), as `discovery_handle_map`'s second tshark pass
+# emits them: `btatt.opcode \t btatt.handle \t btatt.uuid16 \t btatt.uuid128`, each
+# field comma-joined over every occurrence in the packet (-E occurrence=a).
+# frame 2086: one read_by_type_rsp carrying the SB20's whole FTMS service — three
+# 16-bit chars (Indoor Bike Data 0x2ad2, FM Status 0x2ada, FM Control Point 0x2ad9),
+# handles as decl,value,decl,value,…, the 0x2803 declaration type interleaved.
+_DISC_FTMS = ("0x09\t0x001c,0x001d,0x001f,0x0020,0x0022,0x0023"
+              "\t0x2803,0x2ad2,0x2803,0x2ada,0x2803,0x2ad9,0x2803\t")
+# frame 2110: a 128-bit proprietary char (shifter 0c46be60); note uuid16 carries the
+# 0x2803 declaration type that previously shadowed the real (uuid128) char.
+_DISC_PROP = "0x09\t0x002e,0x002f\t0x2803,0x2803\te5f4a2e1eac60eaeff48229c60be460c"
+# frame 2034: a find_information_rsp (CCCD descriptor 0x2902), handle/uuid 1:1.
+_DISC_CCCD = "0x05\t0x000d\t0x2902\t"
+
+
+def test_parse_handle_map_maps_every_char_in_multichar_ftms_packet():
+    """The bug: occurrence=a flattened the 3-char FTMS packet into parallel comma
+    lists and only the first (the bogus 0x2803 decl) was mapped. All three value
+    handles must now resolve to their real chars."""
+    hmap = ps.parse_handle_map([_DISC_FTMS])
+    assert hmap[0x001d] == "indoor_bike_data"
+    assert hmap[0x0020] == "fitness_machine_status"
+    assert hmap[0x0023] == "fitness_machine_control_point"
+    # declaration handles (the even positions) are never keyed — only value handles
+    assert 0x001c not in hmap and 0x001f not in hmap and 0x0022 not in hmap
+
+
+def test_parse_handle_map_proprietary_128bit_not_shadowed_by_decl_uuid16():
+    # real read_by_type_rsp: decl 0x002e, value 0x002f, 128-bit char 0c46be60 (wire
+    # order). The interleaved 0x2803 declaration type must NOT win over the uuid128.
+    hmap = ps.parse_handle_map([_DISC_PROP])
+    assert 0x002f in hmap and hmap[0x002f].startswith("stages_prop")
+    assert 0x002e not in hmap  # only the value handle is keyed (what data ops use)
+
+
+def test_parse_handle_map_find_information_rsp_pairs_one_to_one():
+    hmap = ps.parse_handle_map([_DISC_CCCD])
+    assert hmap == {0x000d: "cccd"}  # find_info handle/uuid are 1:1, no decl/value split
+
+
+def test_parse_handle_map_full_discovery_resolves_ftms_value_handles():
+    """All three lines together — the value handles the importer needs for decode."""
+    hmap = ps.parse_handle_map([_DISC_FTMS, _DISC_PROP, _DISC_CCCD])
+    assert hmap[0x001d] == "indoor_bike_data"
+    assert hmap[0x0023] == "fitness_machine_control_point"
+    assert hmap[0x002f].startswith("stages_prop")
+
+
+def test_load_att_rows_decodes_real_ftms_ibd_via_inline_uuid_and_handle_map():
+    """A real Indoor Bike Data notification (handle 0x1d, value c500a000f3000000 ->
+    243 W, 80 rpm) decodes both via its inline uuid16 (0x2ad2, the prefix fix) and,
+    when the op carries no inline UUID, via the discovery handle map (the map fix)."""
+    hmap = ps.parse_handle_map([_DISC_FTMS])
+    conn = js.connect(":memory:")
+    t0 = 1_750_000_000.0
+    rows = [
+        # as tshark really emits it: the notification carries the resolved uuid16 0x2ad2
+        {"frame": 1, "t_epoch": t0, "access_addr": "0xaa", "opcode": 0x1B,
+         "handle": 0x001D, "uuid16": "0x2ad2", "value": "c500a000f3000000"},
+        # same byte payload but no inline UUID -> must resolve via the handle map alone
+        {"frame": 2, "t_epoch": t0 + 1, "access_addr": "0xaa", "opcode": 0x1B,
+         "handle": 0x001D, "uuid16": None, "value": "c500a000f3000000"},
+    ]
+    stats = ps.load_att_rows(conn, "FTMS.pcap", rows, handle_map=hmap)
+    assert stats["ibd"] == 2
+
+    decoded = conn.execute(
+        "SELECT char, power_w, cadence_rpm FROM ble_notification ORDER BY rec_index").fetchall()
+    assert [d["char"] for d in decoded] == ["indoor_bike_data", "indoor_bike_data"]
+    assert all(d["power_w"] == 243 for d in decoded)
+    # power surfaces in the shared power_sample view (reconcile picks the FTMS stream up)
+    psm = conn.execute("SELECT power_w FROM power_sample WHERE protocol='ftms'").fetchall()
+    assert [p["power_w"] for p in psm] == [243, 243]
 
 
 def test_parse_att_row_tsv():
