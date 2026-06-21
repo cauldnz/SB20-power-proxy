@@ -1441,3 +1441,43 @@ abandoned). `analysis/pcap_sqlite.py` (tshark → a `pcap_att` raw spine + decod
 into the **same** index, so reconciliation is a timestamp JOIN. `scripts/14_build_pcap_fit.py` is the turnkey
 build. Tests are hermetic (tshark/fitparse are the I/O seam; parse/decode/load are pure). This is the
 queryable knowledge base for the planned comprehensive passive-sniff session.
+
+## 2026-06-22 — Session 7: power topology RESOLVED (qdomyos training ride, multi-radio capture)
+
+Ran the comprehensive passive monitor (`sessions/session-07-…`) through a real qdomyos-zwift training ride:
+**ANT+ 5-channel** (Assioma `17039`, Stages L crank `62144`, SB20 FE-C `#105`, HR `#54880`) on one stick +
+**nRF following qdomyos↔SB20 (FTMS)**, one clock, ~73 min (ANT 16.8 MB / 39 k records; nRF pcap 11.8 MB /
+44 k ATT). Captures: `RIDE-ant-ride-20260622.jsonl`, `RIDE-ble-sb20-ride-20260622.pcap`,
+`ASSIOMA-ble-cps-20260622.jsonl`. **The long-running power-topology question is settled.**
+
+**TOPOLOGY — definitive** (simultaneous same-clock reconcile, `basis=mono`, 449–1278 paired seconds):
+- **SB20 FE-C ÷ Stages crank = 1.000** (Δ 0 W, 1278 buckets) — **the SB20 reports the Stages-crank power
+  VERBATIM, no rescaling**, on both ANT+ FE-C and BLE FTMS.
+- **Assioma ÷ Stages-crank = 0.898**, **Assioma ÷ SB20-FE-C = 0.895** — **the Stages cranks read ~11 % HIGH
+  vs the Assioma** (Δ ~24–27 W). So the SB20's erg/display power ≈ **1.11 × the Assioma**.
+- FTMS cross-check (the *exact* session-4 measurement, decoded from `pcap_att`): SB20 FTMS-IBD median **228 W**
+  ≈ FE-C 241 ≈ crank 236, all ~11 % above Assioma 206 → consistent across both SB20 outputs.
+- ⛔ **OVERTURNS the session-4 Phase-1 finding "SB20 reads ~30 % LOW (≈0.73×)."** Same comparison done
+  simultaneously on one clock is the **opposite direction (~11 % HIGH)**; session 4's 0.73× was a
+  cross-capture FIT-alignment artifact / different config — this supersedes it. **Confirms** session-6's
+  preliminary (Stages ~10 % high) and the pre-session-4 "Stages 5–13 % high vs Assioma."
+
+**Block S — qdomyos vs the Stages app:** qdomyos drives erg over **standard FTMS** (Control Point `0x2AD9` +
+Indoor Bike Data `0x2AD2`) — *unlike* the Stages app (session 6), which used the proprietary `0c46be`. Both
+cleartext, no bonding. The **shifter `0c46be60` (handle `0x002f`) also notified on the qdomyos connection** —
+the 6 buttons as one-hot `0x01…0x20` with press (`0100…`) / release (`0800…`) events, byte-faithful to the
+session-3 map, now captured live mid-ride. (Brakes app-gated → silent, as expected.)
+
+**L/R balance grounding** (for the proxy-forward backlog): captured the Assioma's BLE CPS directly —
+**flags `0x0023` (Pedal-Power-Balance Present + Left reference), balance byte at offset 4 = left % × 2**
+(ride ~38–46 % left, right-dominant); CPS Feature `0x00111209` (balance supported); crank length **172.5 mm**;
+device Favero Assioma `17039.013.118`. The spoof's `0x2F` already carries the balance byte → forwarding is a
+clean offset-4 → offset-4 relay (`forward-plan.md` §8). **NB the ESP32 reads this over BLE only.**
+
+**Tooling / method (works):** ANT+ on Windows = **Zadig WinUSB + the `libusb-package` backend** (wired into
+`07_capture_multi.py`; threading-timer; + HR type `0x78`). `15_monitor_ride.py` ran both radios with live
+`growing/STALE/dead` health-checks; the **sniff-BEFORE-connect rule worked** (caught the `CONNECT_IND` → 44 k
+ATT). **Open issues filed:** (a) `15_monitor_ride.py` doesn't trap `SIGTERM`, so a TaskStop orphans the
+`sniff_ble` children (had to kill by PID); (b) `pcap_sqlite` didn't auto-decode this pcap's FTMS/CPS chars
+(handle→uuid map miss for 16-bit chars) — decoded from the `pcap_att` raw spine instead. Both are
+hardening follow-ups; the raw capture + the topology result are unaffected.

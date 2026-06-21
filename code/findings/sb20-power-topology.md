@@ -1,9 +1,12 @@
 # SB20 power-topology — does erg run off the right meter, and is "200 W" really 200 W?
 
-**Status: 🟠 PHASE 1 DONE (2026-06-21) — single-sided REFUTED.** The dense FIT reconciliation shows the SB20
-reads a fairly flat **~1.3× below the Assioma (~70–75 % of total), not the ~2×** the live spot-read implied.
-Mechanism still open → **Phase 2 (simultaneous multi-device capture)** still needed. Companion to
-[`shifter-erg-control.md`](shifter-erg-control.md) and [`ftms-protocol.md`](ftms-protocol.md).
+**Status: ✅ RESOLVED (2026-06-22, session 7).** Phase 2 (the simultaneous multi-device capture) ran and
+**overturns Phase 1**: on one clock, the **SB20 reports the Stages crank VERBATIM (1:1, ratio 1.000) and both
+read ~11 % HIGH vs the Assioma (≈1.11×)** — the *opposite* of the Phase-1 FIT-reconcile's "~1.3× below" (that
+was a cross-capture FIT-alignment artifact). The SB20 does **not** rescale the crank; it reads high because
+the **Stages cranks** read ~11 % high vs the Assioma. Full finding → [`decisions.md`](decisions.md)
+2026-06-22. Companion to [`shifter-erg-control.md`](shifter-erg-control.md) and
+[`ftms-protocol.md`](ftms-protocol.md). *(Phase-1 narrative below kept for the record.)*
 
 ## The question
 Session 4 §C proved the SB20 **accepts + holds** a third-party erg Set-Target-Power. But an independent

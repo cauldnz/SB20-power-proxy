@@ -470,6 +470,24 @@ From `phase-0-report.md` §5 — track, don't block on:
   reconcile. **Run-sheet + the ANT+/WSL permission fix + the nRF-sniffer plan:
   [`traffic-observability.md`](traffic-observability.md).** Remaining (next ride): run Phase 2; order an
   **nRF52840 dongle** for passive app↔SB20 sniffing (the one thing connect-and-subscribe can't see).
+- **Forward L/R power balance through the proxy (dual pedals → SB20 → Stages-app balance display)** —
+  backlog (owner, 2026-06-22). The Stages app shows **left/right balance**, so the spoof should carry the
+  **Assioma duals' real L/R split** rather than an implicit 50/50. **Most of the wiring already exists:** the
+  spoof CPS measurement **flags `0x2F`** set **bit 0 (Pedal Power Balance Present)** + **bit 1 (reference)**,
+  so the balance **byte is already on air** (UINT8, ½-% units) — today almost certainly a fixed placeholder.
+  The work: **read the source balance** (the Assioma duals report it — BLE CPS `0x2A63` balance byte, or the
+  ANT+ Bike-Power "Pedal Power Balance" field) in `BleMeterClient`/`AntPowerSource`, thread it through
+  `ProxyCore`/`PowerReading` → `Cps.h` so the spoofed crank emits the **real** split, then confirm the
+  SB20/Stages app renders it. **Ground it from the session-7 ride capture** — `RIDE-ant-ride-20260622`
+  carries the real **Stages crank `62144`** *and* **Assioma `17039`**, both dual-sided, on ANT+ — so extract
+  both balance fields → golden vectors (real-data-first). Pairs with the single-right-crank +
+  meter-source-pinning items above.
+  **NB — the ESP32 is BLE-only**, so the *source* read is over **Bluetooth**, not ANT+: read the Assioma's
+  L/R from the **master/left pedal's CPS `0x2A63`** balance byte (the DUO reports combined power + balance
+  there), **or** read **both pedals** over BLE (each advertises — `ASSIOMA…L` / `ASSIOMA…R`) and derive it.
+  The ANT+ mention above is only for the *Python* proxy / for grounding the balance **value**; the firmware
+  path is `BleMeterClient` only. Remaining grounding for the BLE read: a quick **Assioma BLE-CPS capture**
+  (the ESP, or a BLE central) to confirm whether the balance comes from one pedal's `0x2A63` or needs both.
 
 ---
 

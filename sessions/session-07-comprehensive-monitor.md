@@ -1,7 +1,10 @@
 # 🚴 Bike session 7 — comprehensive passive ride monitor (qdomyos training ride)
 
-**Status: 🟢 READY** — tooling built + smoke-tested on the bike laptop **2026-06-21 night**; runs the
-morning of **2026-06-22**. Tracked in [`README.md`](README.md); run via [`PLAYBOOK.md`](PLAYBOOK.md).
+**Status: ✅ DONE (2026-06-22).** Ran the qdomyos ride → **power topology RESOLVED**: SB20 = Stages crank
+(1:1), both **~11 % high vs Assioma** (≈1.11×); **overturns session-4's ~30%-low**. Caught the qdomyos↔SB20
+FTMS handshake (44 k ATT) + the shifter; grabbed the Assioma BLE balance on cool-down. Full finding + the
+L/R-balance grounding + tooling notes → [`decisions.md`](../code/findings/decisions.md) 2026-06-22. (Tooling
+built + smoke-tested 2026-06-21 night.) Tracked in [`README.md`](README.md); run via [`PLAYBOOK.md`](PLAYBOOK.md).
 Bike-laptop, **Claude-driven**: the rider powers on, connects the apps on cue, pedals; Claude runs every
 capture + the checks and records actuals here.
 
