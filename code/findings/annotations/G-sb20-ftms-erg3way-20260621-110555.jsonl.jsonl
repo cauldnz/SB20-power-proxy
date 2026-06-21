@@ -1,0 +1,3 @@
+{"filename": "G-sb20-ftms-erg3way-20260621-110555.jsonl", "label": "erg_hold_target=100W", "rec_start": 40, "rec_end": 97, "t_start_s": 19.746395, "t_end_s": 49.746395, "note": "erg hold 100 W for 30 s", "source": "auto:erg_hold"}
+{"filename": "G-sb20-ftms-erg3way-20260621-110555.jsonl", "label": "erg_hold_target=150W", "rec_start": 105, "rec_end": 160, "t_start_s": 52.092515, "t_end_s": 82.09251499999999, "note": "erg hold 150 W for 30 s", "source": "auto:erg_hold"}
+{"filename": "G-sb20-ftms-erg3way-20260621-110555.jsonl", "label": "erg_hold_target=200W", "rec_start": 169, "rec_end": 223, "t_start_s": 84.19196, "t_end_s": 114.19196, "note": "erg hold 200 W for 30 s", "source": "auto:erg_hold"}

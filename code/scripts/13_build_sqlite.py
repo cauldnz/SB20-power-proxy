@@ -11,8 +11,11 @@ Examples
     # build / refresh code/captures.sqlite from every committed capture
     python 13_build_sqlite.py
 
-    # rebuild from scratch
+    # rebuild from scratch (re-materialises annotations from the committed sidecars)
     python 13_build_sqlite.py --rebuild
+
+    # derive annotations (erg holds, ...) and append their committed sidecars
+    python 13_build_sqlite.py --auto-annotate
 
     # §D calibration grid: stages vs assioma, per second, in one ANT+ capture
     python 13_build_sqlite.py --reconcile \
@@ -35,9 +38,11 @@ _SRC = _SCRIPTS.parent / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
+from sb20proxy.analysis import annotations as anno  # noqa: E402
 from sb20proxy.analysis import jsonl_sqlite as js  # noqa: E402
 
 _DEFAULT_CAPTURES = _SCRIPTS.parent / "findings" / "captures"
+_DEFAULT_ANNOTATIONS = _SCRIPTS.parent / "findings" / "annotations"
 _DEFAULT_DB = _SCRIPTS.parent / "captures.sqlite"
 
 _COUNT_TABLES = (
@@ -115,6 +120,10 @@ def main() -> int:
                     help="directory of *.jsonl captures")
     ap.add_argument("--rebuild", action="store_true", help="re-import every capture from scratch")
     ap.add_argument("--no-build", action="store_true", help="skip import; just query/reconcile")
+    ap.add_argument("--annotations-dir", type=Path, default=_DEFAULT_ANNOTATIONS,
+                    help="directory of committed annotation sidecars")
+    ap.add_argument("--auto-annotate", action="store_true",
+                    help="derive annotations (erg holds, ...) and append their sidecars")
 
     ap.add_argument("--reconcile", action="store_true", help="run a two-stream reconciliation")
     ap.add_argument("--capture", help="capture filename pinning both streams (basis=mono)")
@@ -139,10 +148,32 @@ def main() -> int:
         stats = js.import_dir(conn, args.captures_dir, replace=args.rebuild)
         _print_build(args.db, stats)
         _print_counts(conn)
+        _do_annotations(conn, args)
 
     if args.reconcile:
         return _do_reconcile(conn, args)
     return 0
+
+
+def _do_annotations(conn, args) -> None:
+    """Materialise the annotation table from the committed sidecars, then (optionally)
+    derive fresh auto-annotations and append them.
+
+    Re-materialising from the sidecars on every build is what makes the table a
+    lossless rebuild of the committed text (the source of truth) — so ``--rebuild``
+    reproduces it and nothing is lost. ``--auto-annotate`` additionally derives erg
+    holds (etc.) from the captures and appends them to their sidecars.
+    """
+    if args.auto_annotate:
+        derived = anno.auto_annotate(conn, annotations_dir=args.annotations_dir)
+        print(f"## auto-annotate: derived {len(derived)} annotation(s)")
+        for ann in derived:
+            print(f"  + {ann.filename:<40} {ann.label}")
+    loaded = anno.rematerialise_annotations(conn, args.annotations_dir)
+    n_files = len(sorted(Path(args.annotations_dir).glob("*.jsonl"))) \
+        if Path(args.annotations_dir).exists() else 0
+    print(f"\n## annotation table: {loaded} row(s) from {n_files} sidecar(s) "
+          f"in {args.annotations_dir}\n")
 
 
 if __name__ == "__main__":
