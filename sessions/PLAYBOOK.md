@@ -203,6 +203,20 @@ Every item below is attributable to a specific event — a session, a `decisions
 capture, or a logged symptom. They are the texture the rules above are abstracted from; read them so you
 don't re-learn each one on the rider's time. Citations are in *(parens)*.
 
+### Passive BLE sniffing (nRF dongle)
+
+- **Start the sniff BEFORE the target connects — the nRF sniffer can only *follow* a connection if it catches
+  the `CONNECT_IND`.** If the link is already up when the sniff starts you get **adverts only** — no ATT, no
+  characteristic data — even though the device is plainly connected and working. *(Session 6: `Block S`
+  started before the app connected → 636 ATT ops, the full erg conversation; the `sweep`/`zero` sniffs started
+  after the SB20 was already connected → ~4979 frames of pure advertising, zero connection data, and the
+  crank-CPS reconcile was lost. It was **not** encryption.)* ⟹ **power-cycle the SB20 / toggle the pairing as
+  the sniff goes live**, then connect — and confirm non-zero ATT (a `CONNECT_IND`) before trusting the capture.
+- **Parse pcaps with `tshark`, never by hand.** Wireshark's CLI natively dissects the `LINKTYPE_NORDIC_BLE`
+  pcaps down to ATT/GATT; `analysis/pcap_sqlite.py` shells out to it → SQLite (and `fit_sqlite.py` does the
+  Garmin FITs → the same index, so a reconcile is a JOIN). A pure-Python Nordic-BLE parser is a tar-pit — a
+  subagent stalled on it before tshark made it a non-problem. *(Session 6; `decisions.md` 2026-06-21.)*
+
 ### Flashing & OTA (the recurring time-sink)
 
 - **Weak-signal OTA drops below ~−72 dBm on the C3.** OTA to the board gets unreliable in the drop zone;

@@ -1,10 +1,126 @@
 # 🚴 Bike session 6 — sniff the app↔SB20 erg conversation + resolve the power topology
 
-**Status: 🟡 PLANNED** (prepared 2026-06-21, desk) · tracked in [`sessions/README.md`](README.md) · run via
-[`sessions/PLAYBOOK.md`](PLAYBOOK.md). Runs **on the bike laptop** (the desk machine where this was built is
-elsewhere — the nRF dongle moves to the laptop). Designed to be **driven by a Claude session, hands-free**:
-the rider only sets up, pedals, and works the Stages app when asked; Claude runs every capture + the erg drive
-and records actuals into this doc.
+**Status: ✅ DONE (2026-06-21)** — Block S answered (cleartext; erg over proprietary `0c46be`, **not FTMS**);
+pcap+FIT→SQLite pipeline delivered + tested; power-topology Phase 2 **blocked** (adverts-only sniffs →
+"sniff *before* connect" lesson). Started **17:11** local (UTC+10) · tracked
+in [`sessions/README.md`](README.md) · run via [`sessions/PLAYBOOK.md`](PLAYBOOK.md). Runs **on the bike
+laptop**. Designed to be **driven by a Claude session, hands-free**: the rider only sets up, pedals, and
+works the Stages app when asked; Claude runs every capture + the erg drive and records actuals into this doc.
+
+### Live run log (actuals)
+- **17:11** — Session start (bike laptop). Synced to `origin/main` `5d84581` (sniffer + Phase-2 tooling merged).
+- **17:11 · Pre-stage env check:** nRF sniffer dongle present = **COM8** (`VID_1915&PID_522A` → `autodetect_port`
+  finds it); ESP32-C3 spoof on COM5. ⚠️ makerdiary clone + Wireshark-extcap dir + venv-win `pyserial` all
+  absent → staging: clone makerdiary for SnifferAPI, `pip install pyserial psutil`, run via `--extcap-dir`
+  (Wireshark not needed for the headless capture).
+- **17:11 · Staged ✅:** makerdiary cloned → `…/tools/ble_sniffer/extcap/SnifferAPI` present; venv-win has
+  `pyserial 3.5` + `psutil 7.2.2`. Run sniffer with `--extcap-dir C:\repos\nrf52840-mdk-usb-dongle\tools\ble_sniffer\extcap`.
+- **17:12 · Sniffer smoke test ✅ (Block-S go/no-go PASSED):** `sniff_ble.py --scan-only --duration 12` →
+  **`sniffer on COM8 @ 1000000 baud`**, SnifferAPI loaded, **29 advertisers**. ⚠️ The SB20 *bike*
+  ("Stages Bike 0105") was **NOT advertising** — only the **ESP spoof "Stages 62144" @ `38:44:be:45:e9:a6`
+  (−74 dBm)**. Need the SB20 powered on + Stages-app-disconnected to capture its advertising MAC (Block S
+  follows that address). *(Re-scan pending SB20 power-on.)*
+- **17:13 · SB20 MAC CONFIRMED** (rider moved downstairs/pedalling → SB20 in range; re-scan): **`<SB20_ADV>`
+  = `e4:aa:5a:d6:0e:d4` (−51 dBm)** — same as the session-4 connect address, **not rotating** (no name in the
+  12 s scan, but the address matches). Also seen: ESP spoof `38:44:be:45:e9:a6` + real L crank
+  `e8:cf:d8:d9:3a:20` (both "Stages 62144"), real R crank `e3:25:39:38:92:71` ("Stages 4963"). ESP
+  reconnected to the downstairs AP. **Pre-stage COMPLETE.**
+
+## Block S — actuals
+- **17:13 · START:** launched `sniff_ble.py --device e4:aa:5a:d6:0e:d4 --duration 420` →
+  `findings/captures/SNIFF-sb20-app-20260621-1713.pcap` (capturing from *before* the app connects, to catch
+  pairing/bonding). Waiting for `FOLLOWING` before cueing the rider to open the app.
+- **17:13 · FOLLOWING confirmed** — `FOLLOWING e4:aa:5a:d6:0e:d4`, sniffer streaming (~4 k advert packets
+  pre-connect). Cued rider: open Stages app → connect → erg workout (set 150 → 200 → 100 W, narrate each),
+  pedal ~2–3 min. Will `TaskStop` when the rider's done, then analyse the `.pcap` (cleartext CP writes vs
+  encrypted/bonded).
+- **~17:15 · Rider erg workout (narrated = ground truth):** Stages app connected to the SB20; **Set Target
+  Power 200 → 299 → 351 W**, pedalling ~70 rpm. In the `.pcap`, a *cleartext* app would show ATT writes to
+  the FTMS CP (`0x2AD9`): `05 c800` (200), `05 2b01` (299), `05 5f01` (351). Absence/ciphertext ⇒ bonded.
+- **~17:16 · OPPORTUNISTIC — rider does a ZERO/calibrate** (suspects calibration is off — a candidate cause
+  of the ~30 % SB20-vs-Assioma gap). Sniffer still following → the **app's calibration conversation lands in
+  the same `.pcap`** (high value: sessions 2–3 only saw the zero *spin* from our spoof side; this captures
+  what the *app* actually sends). Rider stops pedalling, cranks still; to narrate start + the **app-reported
+  offset + pass/spin**. *(Current Block-S `.pcap` had only ~30 s left → letting it end cleanly (erg writes
+  already captured), then a **fresh sniff** for the zero so the calibrate is captured from before it starts.)*
+- **17:17 · Block-S erg `.pcap` COMPLETE + intact** — `SNIFF-sb20-app-20260621-1713.pcap` (~1.0 MB, ~19.5 k
+  packets, full erg conversation incl. the 200/299/351 writes). Script exited 1 only on a **cosmetic
+  final-print `UnicodeEncodeError`** (`→` vs Windows cp1252, Python 3.14) — *after* a clean `doExit` + file
+  close, so the capture is whole + dongle clean. **Fix forward:** `PYTHONIOENCODING=utf-8` (and/or ASCII-safe
+  the prints — minor `sniff_ble.py` bug to file).
+- **17:17 · ZERO capture START:** fresh sniff (utf-8) following `e4:aa:5a:d6:0e:d4` →
+  `SNIFF-sb20-zero-20260621-1717.pcap`. Awaiting `FOLLOWING`, then cue the rider's calibrate.
+- **17:18 · KEY RIG CLARIFICATION (owner) — the dongle is BLE-only:** Stages app **power-meter pairing =
+  ANT+**, "Pair with Bluetooth" toggle **OFF**. ⟹ the **zero-reset was ANT+** → **LHS 902 / RHS 951** (LHS
+  battery just replaced; ≈ session-4's 903/951, so the **zero-offset is stable — NOT the ~30% gap's cause**).
+  ⚠️ **The nRF BLE dongle does NOT capture ANT+**, so the Assioma + Stages cranks + this zero are invisible
+  to it — that traffic belongs to the **ANT+ stick** (Block T ANT half). Stopped the BLE zero-sniff (no
+  calibrate on BLE). **OPEN, decides Block S's value:** is the app↔SB20 **erg** control **BLE (FTMS)** or
+  **ANT+ (FE-C)**? If ANT+, the `SNIFF-sb20-app-1713.pcap` BLE connection is the **SB20↔crank** link (maybe
+  the ESP), not the app's erg writes. → resolve via the owner + `.pcap` dissection.
+- **17:19 · RESOLVED (owner):** the **Stages app ↔ SB20 bike is ALWAYS Bluetooth**; the ANT-vs-BT setting is
+  only how the **power-meter cranks pair to the bike** (currently ANT+). ⟹ the app's erg control
+  (200/299/351 Set-Target-Power) is **BLE FTMS → captured in `SNIFF-sb20-app-1713.pcap`** — **Block S got the
+  right conversation; the bonding question is answerable from it** (subagent dissecting → pcap→SQLite). The
+  **cranks↔SB20 (ANT+)** path (power + the 902/951 zero) is the **ANT+ stick's** domain (Block T). Corollary:
+  the **SB20 ergs off the real Stages cranks over ANT+ (zeroed 902/951)** — the Phase-2 target.
+
+### Tooling spun off (forking pattern)
+- **17:19 · pcap→SQLite importer** — background subagent (`feat/pcap-sqlite`): build a `LINKTYPE_NORDIC_BLE`
+  pcap dissector → SQLite (ATT writes, FTMS CP decode, encryption-state) + run it on `SNIFF-sb20-app-1713.pcap`
+  → compact verdict (cleartext CP writes? bonded? what connection?) + commit the `.pcap`s + verify if the nRF
+  can sniff ANT+. PR for review (not merge). *(Token-efficient: dissection in the subagent's context, not here.)*
+  - **⛔ SUPERSEDED (desk, ~18:5x):** the pure-Python Nordic-BLE dissector stalled (no commits). **tshark
+    (Wireshark CLI) dissects these pcaps natively** (BLE/L2CAP/ATT/GATT) → pivoted to a **`tshark→SQLite`**
+    importer (below). Subagent stood down; its `feat/pcap-sqlite` worktree to be cleaned up.
+
+## Block T (pivot to BTLE power-meter mode) — actuals
+- **~17:20 · BTLE power-meter mode (owner):** ANT+ stick not plugged (single USB-A port), so to make the crank
+  power + zero **BLE-sniffable** the rider switched the SB20's power-meter pairing to **BTLE** and **powered the
+  ESP spoof OFF** (so the SB20 pairs the *real* cranks, not the spoof "Stages 62144"). Block T ran BLE-only.
+- **~17:20 · BTLE ZERO — LHS 903 / RHS 951**, captured while following the SB20 →
+  `SNIFF-sb20-bleZero-20260621-1721.pcap` (~520 kB). ≈ the ANT+ zero (902/951) ⟹ **offset stable across
+  ANT+/BTLE**. ⭐ **Hypothesis the pcap tests:** is the zero/calibrate *always carried over ANT+* (hence
+  invisible to the BLE sniff even in BTLE mode)? `bleZero` is the definitive check.
+- **~17:2x · Sweep #1 (short, aborted)** — `SNIFF-sb20-sweep-20260621-1726.pcap` (~130 kB): 100/200/300 but
+  intervals too short → redo.
+- **~17:59 · Sweep #2 (CLEAN) ✅** — `SNIFF-sb20-sweep2-20260621-1728.pcap` (~354 kB): fresh sniff; rider ran
+  **1 min each at 100 / 200 / 300 W** (Stages-app targets) with a **Garmin lap at each minute boundary** on a
+  **new Garmin workout** → the crank-vs-Assioma reconcile data. *(Filename `…1728` is a ~30-min-early estimate —
+  my running clock drifted; the Garmin clock [sweep ~17:59 local] is authoritative. Align by data/laps, not the
+  filename. **Retro:** stamp from capture iso_time, not estimates — recurring session-4 lesson.)*
+
+## Garmin FITs + preliminary topology finding
+- **Two FITs preserved** in `findings/captures/` (Assioma reference; parsed via `fitparse`, never read raw):
+  - `G-garmin-assioma-earlier-20260621.fit` (Garmin act. **23325047298**) — earlier block (erg + zeros),
+    UTC 07:23–07:54, 1873 rec, lap0 = 26 min @ avg **198 W**. Pairs with `app-1713` + the zeros.
+  - `G-garmin-assioma-sweepShort-20260621.fit` (act. **23325151488**) — **the CLEAN sweep**, UTC 07:59–08:02,
+    3 × ~1-min laps **avg 103 / 180 / 274 W** at SB20 targets **100 / 200 / 300**. Pairs with `sweep2`.
+- ⭐ **PRELIMINARY (FIT-only; to confirm via the sniffed-crank reconcile):** at targets 200/300 the Assioma read
+  **180 / 274** — *below* target. The SB20 holds its **source (the real Stages cranks)** at the target ⟹ **the
+  Stages cranks read ~10 % HIGH vs the Assioma** here.
+  - ✅ consistent with the *old* "Stages reads 5–13 % high vs Assioma";
+  - ⚠️ **opposite** session 4's "SB20 reads ~30 % *low* vs Assioma" → strong evidence **session 4 erged off a
+    different / miscalibrated source**, not these freshly-zeroed BTLE cranks.
+
+## Desk phase — parser + findings ✅
+- **Pipeline DELIVERED (committed + tested):** `analysis/pcap_sqlite.py` (tshark → `pcap_att` raw spine +
+  decoded CPS/FTMS power + `0c46be` control) and `analysis/fit_sqlite.py` (Garmin FIT → `fit_record`/`fit_lap`)
+  load **both** the BLE sniffs *and* the FITs into one SQLite index (reconcile = a timestamp JOIN);
+  `scripts/14_build_pcap_fit.py` is the turnkey build. **tshark** (Wireshark CLI) natively dissects the
+  Nordic-BLE pcaps — it replaced the **stalled pure-Python subagent** (`feat/pcap-sqlite`, abandoned). 11 new
+  hermetic tests; **full suite 322 green, ruff clean.**
+- **(a) Block S — ANSWERED (`app-1713`):** app↔SB20 erg is **cleartext** (zero `btsmp`/bonding, 636 ATT ops)
+  and driven over the **Stages-proprietary `0c46be`** char (handle `0x0039` = `0c46beb1`, write
+  `02 00 <u16-LE> 00 00`), **not FTMS**. The `<u16>` is **not watts** — joined vs the overlapping "earlier"
+  FIT it tracks power loosely (ratio 1.4–5.2×, median ~1.75, cadence-dependent) ⟹ an **app-side
+  resistance/load setpoint** (vs our FTMS path where the SB20 closes the loop).
+- **(b) "zero always ANT?" + (c) crank-vs-Assioma scale — BLOCKED.** `sweep2` / `bleZero` are **adverts-only**
+  (4979 frames, no `CONNECT_IND` → the sniffer never followed the link → no ATT/CPS). **Not encryption.**
+  **Lesson:** start every sniff **before** the device connects (power-cycle / toggle the link). The ~10 %-high
+  topology preliminary (FIT-only; **conflicts with Phase 1**) stays unconfirmed → see `decisions.md`.
+- **Next session:** the comprehensive passive-sniff — now with the parser working **and** the
+  start-before-connect lesson baked in.
 
 ## Why this session — two open questions, one rig
 
