@@ -1363,3 +1363,22 @@ Garmin `.FIT` (two lap marks on the erg runs).
   downstairs (−89 dBm, all HTTP dead); **power-cycle to re-associate**. Also adopted: the agent runs all
   captures itself (`buffering=1` → live-tail), and anchors timestamps on the capture `iso_time` (the agent's
   sandboxed shell clock read a day + ~6 h off real).
+
+## 2026-06-21 — Session 4 follow-up: power-topology Phase 1 (FIT reconciliation) — single-sided REFUTED
+
+Reconciled the owner's Garmin `.FIT` (dense Assioma over ANT+, *with L/R balance*; committed
+`findings/captures/G-garmin-assioma-session4-20260621.fit`) against the SB20 erg captures (FIT UTC +10 h →
+machine local; alignment confirmed by FIT lap 2 @ 11:03:50 bracketing the 3-way sweep). **Result: the SB20
+erg power is a fairly flat ~1.3× below the Assioma (≈70–75 % of total), NOT the ~2× / single-sided the live
+spot-read suggested.** L/R balance ≈ **46 % left (even)** and SB20 ≈ **1.5× the Assioma's left leg** (not ≈
+it) ⟹ **single-sided REFUTED** (a 2× artifact needs SB20 ≈ one leg). Cleanest/longest hold (erg200, n=66):
+**1.31×**; shorter erg3way holds spread 1.3–1.6× (short windows + ±1 s alignment + a release-tail-contaminated
+200 W hold). The live "~380 vs 200 ≈ 1.9×" was a **transient** spot-read, not the steady ratio. **Mechanism
+still open** — ≈0.73× total is an odd factor that also *conflicts* with the prior "Stages reads ~5–13 % high
+vs Assioma", so the SB20 likely isn't simply echoing a Stages stream; most consistent with the SB20's own
+meter (or erg-control source) reading ~30 % low. → **Phase 2 = the simultaneous multi-device capture**
+(`sb20-power-topology.md`). Lesson reinforced: **dense data corrects noisy live spot-reads.**
+
+Also this follow-up: **reviewed + merged the SQLite analysis layer (PR #57).** Its CI had failed only because
+its tests read this session's capture `G-sb20-ftms-erg-20260621-0949.jsonl`, which wasn't on `main` until the
+session-4 close-out merged (`bd80fdb`); fixed by merging `main` into the branch → green → merged (`8695c45`).
