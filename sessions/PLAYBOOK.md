@@ -70,6 +70,15 @@ rider starts:
   *and* `ASSIOMA22428R`) and the real Stages cranks also advertise CPS — pin the source by address or the
   client bounces (see Lessons §BLE).
 - [ ] **A rolling `/log` window open** in a second terminal — you watch it through the whole session.
+- [ ] **An independent reference-meter feed running — timestamped, for the whole session.** Log a *second*,
+  independent power+cadence stream (the **Assioma over ANT+** is ideal — a separate radio, so zero
+  contention with the BLE work) for the *entire* session, so every gate has ground-truth to reconcile
+  against at the desk. The bike's own number can't validate itself: the Stages cranks read **~5–13 % high
+  vs the Assioma, cadence-dependent**, so "erg held 200 W" on the SB20 may not be 200 W at the pedals — an
+  independent log is the only way to know. **Pre-stage the ANT+ stick at the desk** (WSL + `usbipd`
+  passthrough per `wsl-capture-runbook.md`; native Windows is BLE-only) — standing it up mid-ride has been a
+  time-sink (ride 1 lost ~25 min), so treat a mid-ride bring-up as its own gated step. *(Owner ask,
+  Session 4: want a continuous ANT+ power+cadence feed for reconciliation every session.)*
 
 ## 2 · Execute (live, you driving)
 
@@ -78,6 +87,22 @@ rider starts:
   SB20's interactive protocol — control-point writes, the proprietary `fe02` token, disconnect reasons —
   was invisible to any sniffer; the **only** thing that saw it was our own spoofed crank logging to
   `/log`. The diagnostic endpoint is how you confirm, not the rider's read of the app UI alone.)*
+- **You run the tooling; the rider's hands are only for the hardware.** The BLE/ANT+ radio and your shell
+  are on the **same** bike machine, so launch every capture/flash command **yourself** (use
+  `run_in_background` so it doesn't block you), and leave the rider only the physical actions — pedal, pull
+  a battery, press a button, narrate. **Don't make them paste commands**; that was an unnecessary tax in the
+  earlier run sheets. *(Session 4: `capture_ftms.py --erg` was run agent-side in the background; the rider
+  only pedalled.)*
+- **The capture scripts are line-buffered (`buffering=1`) — tail the JSONL *live*.** `Read` the output file
+  **as it is being written** and confirm pass/fail in real time (the control-point ACKs, the power
+  tracking), feeding the rider live confirmation instead of waiting for the run to finish — and stop the run
+  early (`TaskStop`) once the result is in, to free the radio for the next step. Both `capture_ftms.py` and
+  `06_capture_ble.py` open with `buffering=1`; **verify a new script flushes per line before relying on
+  this.** *(Session 4 §C: read the erg `80 05 01` ACKs + Indoor-Bike-Data power off
+  `G-sb20-ftms-erg-*.jsonl` live, called the PASS before the run ended, then `TaskStop`ped it.)* **Launch a
+  live-walk capture only when the rider is ready to *act*, and stop it the moment the actions are done** —
+  don't let it run through an off-bike discussion. *(Session 4 §B burned a 420 s shifter-probe window
+  mid-chat capturing only idle; the button-4/5 map + gestures had to be re-captured.)*
 - **State the expected result *before* they act** — "you should see `source:connected` and ~200 W; tell me
   what you see." Make pass/fail something the human **observes**, not **interprets**.
 - **Record actuals inline as you go** — `✅`/`❌`/`⚠️` + the observed bytes/values/`/log` lines, written
@@ -87,6 +112,10 @@ rider starts:
   memory. The agent has been an unreliable time estimator (bike *and* desk work); logged actuals are the
   only thing that fixes that. One clock-read per step turns every session into calibration data for the
   planned-vs-actual review (§4). Get a timestamp at the start of the session and at each section boundary.
+  **Don't trust the agent's shell clock blindly** — when a capture is running, the file's `iso_time` (written
+  by the real, un-sandboxed capture process) is ground truth; anchor the doc's times on it (a `Get-Date` with
+  the sandbox disabled also reads true). *(Session 4: the agent's sandboxed shell `Get-Date` read **a day +
+  ~6 h** off the real clock; the capture `iso_time`s were correct, so the whole log was re-based on them.)*
 - **Record every mid-session instruction change, not just the planned steps — the capture depends on it.**
   When you deviate from the written plan live (an ad-hoc instruction like "now press LEFT-up **ten
   separate times**", a changed order, an improvised probe), **write the new instruction AND what the rider
@@ -170,6 +199,14 @@ don't re-learn each one on the rider's time. Citations are in *(parens)*.
   (RSSI pre-flight + auto-retry) and `firmware/BENCH-FLASH.md`. *(decisions.md 2026-06-17; `flash.ps1`
   lines 40–59. Conversely, a desk OTA at −73 dBm **succeeded** — the threshold is real but close, so
   check, don't assume.)*
+- **The C3 doesn't roam between WiFi APs — power-cycle it to re-associate with the nearest one.** It stays
+  bonded to whatever AP it first joined; if the board or the rider then moves into another AP's coverage, it
+  clings to the now-distant one — RSSI craters (**−89 dBm** seen), `/` and `/log` time out, OTA is hopeless,
+  and any live `curl`-based reference (e.g. reading `src_power_w` off `/`) is lost. **Pre-flight + recovery
+  step: if `rssi` (in `curl /`) is low or the board is unreachable, power-cycle the ESP** so it re-scans and
+  joins the closest AP — and re-check `rssi` after any time the board (or rider) changes floors/rooms.
+  *(Session 4: board sat on the upstairs AP after the rider went downstairs → −89 dBm, all Assioma polls
+  timed out, the live cross-check was lost; power-cycle + move-nearer restored it.)*
 - **USB-JTAG bootloader wedge.** Symptoms: "No serial data received" / "Unable to verify flash chip
   connection" — the C3's native-USB auto-reset didn't enter the bootloader. Recover with **HOLD BOOT,
   TAP RESET, RELEASE BOOT**, re-run the upload, then **power-cycle**. Upload speed must be pinned to
@@ -254,6 +291,21 @@ don't re-learn each one on the rider's time. Citations are in *(parens)*.
   (release-stick + detached + retry, no self-kill), `os._exit`-on-setup-failure in the capture scripts, and
   a 60-second pre-flight in `wsl-capture-runbook.md`. A pre-flight + the launcher would have avoided
   essentially the whole mess. *(decisions.md 2026-06-14 "hard-won WSL/USB/process operations lesson".)*
+- **ANT+ stick bring-up here = WSL + usbipd (verified steps + a permission gotcha).** ANT+ runs in WSL
+  (Ubuntu-24.04); BLE is native Windows. Steps: `usbipd list` → the `0fcf:1008 ANTUSB2` is already
+  bind-`Shared`, so `usbipd attach --wsl --busid <id>` (no admin once shared; reaches all WSL2 distros) → it
+  appears in WSL `lsusb` and the udev rule `42-ant-usb-sticks.rules` (MODE 0666, vendor 0fcf) is present →
+  env `python3 -m venv ~/sb20-ant-venv && ~/sb20-ant-venv/bin/pip install -e "/mnt/c/.../code[ble]"` (gets
+  openant 1.3.4) → `02_capture_assioma.py --device-id 17039` (**use the Assioma's explicit ANT id — its
+  BLE-name serial, `ASSIOMA17039L`; the Stages are `62144`/`4963`, so NEVER wildcard or you grab the wrong
+  meter**). **⚠️ GOTCHA (Session 4): the capture dies `[Errno 13] Access denied` despite the udev rule** —
+  WSL doesn't apply udev rules unless **systemd is enabled**, and the usbipd-attached device post-dates the
+  last trigger. Fixes (pre-stage at the desk!): enable systemd (`/etc/wsl.conf` → `[boot] systemd=true`, then
+  `wsl --shutdown` + reopen), **or** `sudo udevadm control --reload-rules && sudo udevadm trigger` after
+  attach, **or** run under `sudo` — but **passwordless sudo was NOT configured**, so a mid-ride agent can't
+  self-fix it. *(Session 4: stick attached + visible + openant installed live in ~3 min, but `[Errno 13]`
+  blocked the live capture; the ESP `src_power_w` + the Garmin `.FIT` covered the Assioma instead. Bring the
+  ANT+ path up AND verified — a libusb claim test — **before** the next ride.)*
 - **The off-loop OLED fix is a measured win — don't regress it.** The OLED I2C render (~94 ms) was blocking
   the hot loop and causing the freeze. Moving the render to its own task cut **loop_max 96 → 12 ms** and
   **stalls (>50 ms) 161 → 0** over a loaded soak, heap flat (no leak). Render-on-change keeps it near-zero
@@ -265,11 +317,14 @@ don't re-learn each one on the rider's time. Citations are in *(parens)*.
 
 ### What worked well (keep doing it)
 
-- **The "rider narrates, agent reads `/log` + captures live" model.** The rider says "battery out",
-  "pairing now", "pressed LEFT-up" while the agent reads `/log` and the JSONL off the machine and confirms
-  against the data. This is the working model precisely *because* interactive terminal input at the bike was
-  unusable (`read failed 5: I/O error`, focus bouncing) — the agent drives from outside, the rider just
-  narrates in chat. *(decisions.md 2026-06-14 §6, 2026-06-18; BIKE-SESSION-2/3 framing.)*
+- **The "agent runs the tooling, rider narrates, agent reads `/log` + captures live" model.** The rider
+  says "battery out", "pairing now", "pressed LEFT-up" while the agent reads `/log` and the JSONL off the
+  machine and confirms against the data. This is the working model precisely *because* interactive terminal
+  input at the bike was unusable (`read failed 5: I/O error`, focus bouncing) — the agent drives from
+  outside, the rider just narrates in chat. **Session 4 sharpened it: the agent also *launches* the capture
+  commands itself (the radio is on the same machine) and tails the line-buffered JSONL live, so the rider's
+  hands never leave the bars except for genuine hardware actions.** *(decisions.md 2026-06-14 §6,
+  2026-06-18; BIKE-SESSION-2/3 framing; Session 4 §C.)*
 - **Opportunistic bonus captures pay off.** The 2-minute "does the SB20 emit BLE on a shifter press?" probe
   at the end of session 2 discovered the SB20 **broadcasts gear state over BLE** (char `0c46be60`, one-hot
   gear bitmap) — now a headline future feature (emulate a Zwift Click). Budget a cheap stretch capture when
