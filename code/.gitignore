@@ -14,6 +14,11 @@ dist/
 # Derived SQLite analysis index — rebuildable from the JSONL captures, never the
 # source of truth (see findings/sqlite-analysis-layer.md). Keep it out of findings/.
 *.sqlite
+# ...except the main analysis index: committed (owner's call, 2026-06-22) so it syncs across
+# machines without a rebuild. JSONL captures remain the source of truth; the DB is still fully
+# regenerable via 13/14_build_*. NB it's a ~44 MB binary, so it bloats history on each rebuild
+# (consider git-lfs / a periodic history squash if that becomes a problem).
+!captures.sqlite
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
