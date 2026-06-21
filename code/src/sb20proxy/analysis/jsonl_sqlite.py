@@ -198,6 +198,13 @@ def connect(db_path: str | Path = ":memory:") -> sqlite3.Connection:
 
 def create_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_SCHEMA)
+    # The annotation layer's table (committed-text sidecars -> derived table) is
+    # created alongside the index so a fresh DB can JOIN annotations against
+    # `power_sample`. Its logic lives in the sibling `annotations` module; the
+    # import is one-directional (annotations never imports jsonl_sqlite).
+    from sb20proxy.analysis.annotations import ANNOTATION_SCHEMA
+
+    conn.executescript(ANNOTATION_SCHEMA)
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     conn.commit()
 

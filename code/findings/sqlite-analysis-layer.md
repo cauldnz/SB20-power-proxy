@@ -1,11 +1,14 @@
 # SQLite analysis layer — a rebuildable index over the JSONL captures
 
-**Status: prototype built + tested (2026-06-21).** Importer, schema, and the reconcile
-helper live in [`src/sb20proxy/analysis/jsonl_sqlite.py`](../src/sb20proxy/analysis/jsonl_sqlite.py),
-the build/query CLI in [`scripts/13_build_sqlite.py`](../scripts/13_build_sqlite.py), and hermetic
-tests in [`tests/test_analysis_sqlite.py`](../tests/test_analysis_sqlite.py). Raised by the owner
+**Status: built + tested (2026-06-21), incl. the annotation layer.** Importer, schema, the reconcile
+helper, and the annotation layer live in
+[`src/sb20proxy/analysis/jsonl_sqlite.py`](../src/sb20proxy/analysis/jsonl_sqlite.py) +
+[`src/sb20proxy/analysis/annotations.py`](../src/sb20proxy/analysis/annotations.py), the build/query
+CLI in [`scripts/13_build_sqlite.py`](../scripts/13_build_sqlite.py), and hermetic tests in
+[`tests/test_analysis_sqlite.py`](../tests/test_analysis_sqlite.py) +
+[`tests/test_analysis_annotations.py`](../tests/test_analysis_annotations.py). Raised by the owner
 during bike session 4: a SQLite store "may make it easier to work with" than raw log files for
-desk-side reconciliation. This note is the design; the code is the prototype.
+desk-side reconciliation. This note is the design; the code implements it.
 
 ## Why, and the one hard rule
 
@@ -128,32 +131,59 @@ Module API: `connect(db)`, `import_capture(conn, path)` / `import_dir(conn, dir)
 `list[ReconRow]` (`.delta`, `.ratio`), with `reconcile_summary()` for the aggregate. The DB is stdlib
 `sqlite3` — **no new dependency**.
 
-## Annotations — post-processing write-back (designed; next step)
+## Annotations — post-processing write-back (✅ built 2026-06-21)
 
-The natural follow-on: during desk-side post-processing, author **annotations** — segment labels
-(`cell_200W_60rpm`, `coast notch`, `erg hold target=150 W`), point flags (`suspect — decode artefact`),
-and derived verdicts (`Δ = +25 W @ 60 rpm`) — then `JOIN` them against `power_sample`. This is the
-machine-queryable form of what `decisions.md` and the session docs already record in prose.
+During desk-side post-processing you author **annotations** — segment labels (`erg_hold_target=150W`,
+`coast`, `cell_200W_60rpm`), point flags (`suspect-artefact`), and notes — then `JOIN` them against
+`power_sample`. This is the machine-queryable form of what `decisions.md` and the session docs already
+record in prose. Implemented in [`annotations.py`](../src/sb20proxy/analysis/annotations.py).
 
 **Annotations are canonical committed *text*; the DB stays derived.** They live in a sidecar —
-`findings/annotations/<capture>.jsonl`, one object per line — keyed to **immutable capture coordinates**
-(the capture filename + a `rec_index` range or a `monotonic_s` range), so they bind to bytes that never
-change. The importer materialises them into an `annotation` table on build; authoring can be DB-first for
-convenience (`annotate()` upserts the table *and* appends the sidecar). Because the canonical copy is the
-committed sidecar, **`--rebuild` re-materialises them and nothing is lost** — the DB stays a disposable
-cache. (The `annotation` table is keyed by filename, not FK-cascaded to `capture_id`, so re-importing a
-capture doesn't drop its annotations.)
+`findings/annotations/<capture-filename>.jsonl`, one JSON object per line — keyed to **immutable capture
+coordinates** (the capture filename + a `rec_index` range *or* a `monotonic_s` range), so they bind to
+bytes that never change. (Because the capture filename already ends in `.jsonl`, the sidecar name carries
+a doubled extension, e.g. `G-sb20-ftms-erg3way-20260621-110555.jsonl.jsonl` — the full capture name is the
+key.) The build materialises them into an `annotation` table; authoring can be DB-first for convenience
+(`annotate()` upserts the table *and* appends the sidecar). Because the canonical copy is the committed
+sidecar, **`--rebuild` re-materialises them and nothing is lost** — the DB stays a disposable cache. The
+`annotation` table is keyed by **filename, not FK-cascaded to `capture_id`**, so re-importing a capture
+(which CASCADE-drops its `record` rows) **does not drop its annotations** — they re-bind to the new
+`capture_id` through the filename on the next JOIN.
+
+Sidecar record schema (one JSON object per line):
+
+| field | req? | meaning |
+|---|---|---|
+| `filename` | yes | the capture this binds to (`*.jsonl` name) |
+| `label` | yes | segment label, e.g. `erg_hold_target=150W`, `coast` |
+| `rec_start` / `rec_end` | one* | inclusive 0-based `rec_index` range |
+| `t_start_s` / `t_end_s` | one* | inclusive `monotonic_s` range (seconds) |
+| `flag` | no | e.g. `suspect-artefact` |
+| `note` | no | free text |
+| `source` | no | provenance, e.g. `auto:erg_hold` / `manual` |
+
+\* at least one coordinate range (`rec_*` and/or `t_*`); the JOIN uses the time range when present, else
+the rec range. `annotated_samples(conn, filename, label, stream=…)` returns the `power_sample` rows inside
+a labelled segment — the API form of the query below.
 
 ```sql
--- median Stages/Assioma ratio inside the labelled 200W@60rpm cell
-SELECT AVG(...) FROM power_sample ps
-  JOIN annotation a ON a.capture = ps.capture
- WHERE a.label = 'cell_200W_60rpm' AND ps.monotonic_s BETWEEN a.t_start_s AND a.t_end_s;
+-- median Stages/Assioma ratio inside the labelled 200W cell (JOIN on filename)
+SELECT a.label, AVG(ps.power_w)
+  FROM power_sample ps
+  JOIN capture c    ON c.capture_id = ps.capture_id
+  JOIN annotation a ON a.filename   = c.filename
+ WHERE a.label = 'erg_hold_target=200W' AND ps.monotonic_s BETWEEN a.t_start_s AND a.t_end_s
+ GROUP BY a.label, ps.stream;
 ```
 
-A post-processing pass can also **derive** annotations automatically — erg holds (captures already log
-`ble_erg_hold`), steady blocks, coast notches — so the labels that drive a calibration fit aren't placed
-by hand.
+**Auto-annotation.** `13_build_sqlite.py --auto-annotate` (and `annotations.auto_annotate()`) **derives**
+annotations from the captures so the labels that drive a calibration fit aren't placed by hand. The first
+deriver is **erg holds**: each `ble_erg_hold` record (`target_w` + `hold_s`) becomes an
+`erg_hold_target=<N>W` segment spanning `[monotonic_s, monotonic_s + hold_s]` (with the matching
+`rec_index` window). Validated against the committed erg captures — `G-sb20-ftms-erg3way-…` yields the
+100/150/200 W holds, `G-sb20-ftms-erg200-…` the single 200 W/60 s hold — so a per-hold SB20-vs-Assioma
+ratio (**power-topology Phase 2**, [`sb20-power-topology.md`](sb20-power-topology.md)) is a single
+`JOIN`. Steady blocks / coast notches are the next derivers (same mechanism).
 
 ### Why the DB itself is derived (gitignored), not committed
 
@@ -181,7 +211,10 @@ the safer default. Flagged for the original session to confirm.
   documented #7 result** — all hermetic, against the real committed captures.
 - ⏳ Use-case-2 cross-capture (`iso`) reconciliation — mechanism tested; awaits the first simultaneous
   SB20-FTMS + ANT+-Assioma capture to validate end-to-end.
-- ↪ Agreed next step (design above, owner-approved 2026-06-21): the **annotation** layer — committed
-  text sidecar + materialised table + auto-annotation pass.
-- ↪ Other follow-ups (out of scope here): a cadence-binned ratio surface view (subsume
-  `08_analyze_grid.py`), and feeding `reconcile()` output into `09_fit_calibration.py`.
+- ✅ **Annotation layer** (built 2026-06-21): committed-text sidecar + filename-keyed `annotation` table +
+  `annotate()` + `--auto-annotate` erg-hold deriver + `power_sample` JOIN — all hermetic, against the real
+  committed erg captures (sidecar round-trip, table materialisation, `--rebuild` survival, re-import keeps
+  annotations, `annotate()` upsert+append, and the real 100/150/200 W holds labelled correctly).
+- ↪ Other follow-ups (out of scope here): more auto-derivers (steady blocks / coast notches), a
+  cadence-binned ratio surface view (subsume `08_analyze_grid.py`), and feeding `reconcile()` output into
+  `09_fit_calibration.py`.
