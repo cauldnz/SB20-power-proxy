@@ -1,0 +1,15 @@
+{
+  "tag": "ride-20260622",
+  "start": "2026-06-22T07:12:52",
+  "duration_s": 5400.0,
+  "sb20": "e4:aa:5a:d6:0e:d4",
+  "ant": "assioma:17039,stagesL:62144,stagesR:4963",
+  "hr": [
+    "hr:54880"
+  ],
+  "fec": true,
+  "outputs": [
+    "C:\\repos\\cauldnz\\SB20-power-proxy\\code\\findings\\captures\\RIDE-ble-sb20-ride-20260622.pcap",
+    "C:\\repos\\cauldnz\\SB20-power-proxy\\code\\findings\\captures\\RIDE-ant-ride-20260622.jsonl"
+  ]
+}
