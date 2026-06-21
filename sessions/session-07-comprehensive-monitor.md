@@ -18,8 +18,9 @@ SQLite analysis index. No behaviour change for the rider — pure monitoring.
 | both | `15_monitor_ride.py` | launches + supervises both, heartbeats health (`growing`/`STALE`/`dead`), clean stop, writes a `MANIFEST` |
 
 **Hard constraint:** one nRF follows **one** BLE connection. The SB20↔crank and Stages-app↔SB20 BLE links
-are *not* sniffed — their power is captured on **ANT+** instead. (Stretch, not yet built: a 2nd ANT stick in
-scan mode = catch-all; the ESP as a 2nd BLE eye.)
+are *not* sniffed — their power is captured on **ANT+** instead. Plus **`16_scan_ant.py`** — a one-stick
+RX-scan that lists *every* ANT+ device (id + type), run pre-ride for **ID confirmation + an "anything blowing
+around" catch-all**. (Further stretch: scan *during* the ride on the 2nd stick; the ESP as a 2nd BLE eye.)
 
 ## Pre-flight — DESK, before the bike ✅ (verified 2026-06-21 night; re-confirm in the morning)
 - **ANT sticks claim:** both `0FCF:1008` flipped to **WinUSB** via Zadig; openant opens + runs a node OK
@@ -41,6 +42,10 @@ C:\repos\nrf52840-mdk-usb-dongle\tools\ble_sniffer\extcap`
    put on the **HR strap**. **Do NOT open qdomyos / the Stages app yet.**
 2. **Claude:** confirm the SB20's advertising MAC — `sniff_ble.py --scan-only --duration 10` (expect
    `e4:aa:5a:d6:0e:d4`; use whatever it actually advertises).
+2b. **Claude — ANT+ ID confirmation (the ANT-side smoke test):** with the bike + meters awake,
+   `python scripts/16_scan_ant.py --duration 30` → confirms **Assioma `17039`**, the **crank IDs**, the
+   **HR id**, and shows *anything else* on ANT+. **If a crank ID differs from `62144`/`4963`, update the
+   `--ant` flag in step 3 to match.** (Confirms we'll receive the right things before the real capture.)
 3. **Claude:** launch the monitor (before any app connects):
    ```
    python scripts/15_monitor_ride.py --sb20 e4:aa:5a:d6:0e:d4 \
