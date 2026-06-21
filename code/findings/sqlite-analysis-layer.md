@@ -56,14 +56,17 @@ to `ble_notification`, so the CP table holds both directions of the erg handshak
 
 ```sql
 CREATE VIEW power_sample AS
-  SELECT capture_id, monotonic_s, iso_time, COALESCE(source,'ant') AS stream,
-         power_w, CAST(cadence_rpm AS REAL) AS cadence_rpm
+  SELECT capture_id, rec_index, monotonic_s, iso_time, COALESCE(source,'ant') AS stream,
+         'ant' AS protocol, power_w, CAST(cadence_rpm AS REAL) AS cadence_rpm
     FROM ant_broadcast WHERE power_w IS NOT NULL
   UNION ALL
-  SELECT capture_id, monotonic_s, iso_time, 'ftms' AS stream,
-         power_w, cadence_rpm
+  SELECT capture_id, rec_index, monotonic_s, iso_time, 'ftms' AS stream,
+         'ftms' AS protocol, power_w, cadence_rpm
     FROM ble_notification WHERE char='indoor_bike_data' AND power_w IS NOT NULL;
 ```
+
+(`rec_index` is load-bearing — the annotation JOIN falls back to a `rec_index` range when a
+capture has no `monotonic_s`; `protocol` tags each row's transport.)
 
 `stream` is the meter identity — the ANT channel label (`stages`, `assioma`, `bike_fec`) or `ftms` for the
 SB20's Indoor Bike Data. `reconcile()` buckets two streams on a time basis and reports the per-bucket
@@ -127,7 +130,7 @@ python scripts/13_build_sqlite.py --rebuild        # from scratch
 ```
 
 Module API: `connect(db)`, `import_capture(conn, path)` / `import_dir(conn, dir)`, and
-`reconcile(conn, stream_a, stream_b, capture=..., basis="mono"|"iso", min_power=, min_cadence=)` →
+`reconcile(conn, stream_a, stream_b, capture=..., basis="mono"|"iso", min_power=, max_power=, min_cadence=)` →
 `list[ReconRow]` (`.delta`, `.ratio`), with `reconcile_summary()` for the aggregate. The DB is stdlib
 `sqlite3` — **no new dependency**.
 
