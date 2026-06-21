@@ -1,7 +1,8 @@
 # SB20 power-topology — does erg run off the right meter, and is "200 W" really 200 W?
 
-**Status: 🔴 OPEN — the headline follow-up from bike session 4 (2026-06-21).** Designed at the desk; needs
-the owner's Garmin `.FIT` + one more on-bike capture to resolve. Companion to
+**Status: 🟠 PHASE 1 DONE (2026-06-21) — single-sided REFUTED.** The dense FIT reconciliation shows the SB20
+reads a fairly flat **~1.3× below the Assioma (~70–75 % of total), not the ~2×** the live spot-read implied.
+Mechanism still open → **Phase 2 (simultaneous multi-device capture)** still needed. Companion to
 [`shifter-erg-control.md`](shifter-erg-control.md) and [`ftms-protocol.md`](ftms-protocol.md).
 
 ## The question
@@ -18,7 +19,35 @@ power read (owner's Garmin = Assioma over ANT+, plus the ESP's `src_power_w`) sh
 So "200 W" on the SB20 erg was a **~260–380 W effort at the pedals**. This breaks the premise that erg
 targets == real watts, and it questions **which meter the SB20 even uses**.
 
-## Hypothesis (owner — strong): single-sided reading
+## Phase 1 RESULT (2026-06-21) — dense FIT reconciliation: single-sided REFUTED; ~1.3× flat under-read
+
+Reconciled the owner's Garmin `.FIT` (dense Assioma over ANT+, *with L/R balance*) against the SB20 erg
+captures (FIT UTC +10 h → machine local, confirmed by FIT lap 2 @ 11:03:50 bracketing the 3-way sweep).
+Per stable hold, **Assioma total / SB20**:
+
+| run / target | SB20 | Assioma (FIT) | ratio | L-balance | SB20 ÷ Assioma-LEFT |
+|---|---|---|---|---|---|
+| **erg200 / 200 W** (n=66, cleanest) | 175 W | 229 W | **1.31×** | 46 % L | 1.65 |
+| erg3way / 100 W | 113 W | 156 W | 1.38× | 47 % L | 1.54 |
+| erg3way / 150 W (n=20, looser) | 153 W | 248 W | 1.62× | 45 % L | 1.37 |
+| erg3way / 200 W (SB20 release-tail-contaminated) | 143 W | 190 W | 1.33× | 48 % L | 1.56 |
+| *ergC / 100 W (idle/coast — FIT started 09:51, after the real holds; discard)* | 37 W | 38 W | 1.04× | 44 % | — |
+
+- **Single-sided is REFUTED.** L/R balance is **~46 % left (roughly even)** and the SB20 reads **~1.5× the
+  Assioma's *left leg*** (not ≈ it), so it is **not** reading one leg. A clean ~2× would require SB20 ≈ one
+  leg; it doesn't hold. (Stages-L doubled would give ~0.9×, single ~2.2× — neither matches either.)
+- **It's a ~1.3× under-read** — SB20 ≈ **70–75 % of Assioma total**, roughly flat 100–200 W. Best estimate
+  from the cleanest/longest hold (erg200, n=66): **1.31×**. Shorter erg3way holds spread 1.3–1.6× (short
+  windows + ±1 s alignment + the 200 W hold's release-tail contamination).
+- **The live "~380 vs 200 ≈ 1.9×" was a transient spot-read**, not the steady ratio — the value of dense
+  data over eyeballing. Steady gap ≈ **30 %**, not 2×.
+- **Mechanism still open:** ~0.73× total is an odd factor — not single/dual-sided, and it *conflicts* with
+  the prior "Stages reads ~5–13 % high vs Assioma" (so the SB20 likely isn't simply echoing a Stages
+  stream). Most consistent with the **SB20's own meter (or its erg-control source) reading ~30 % low** —
+  but that's for Phase 2 to pin. *(Method: `analyze_fit_reconcile` over the committed `.FIT` +
+  `G-sb20-ftms-erg*` captures; ad-hoc, not committed — reproducible from the committed data.)*
+
+## ~~Hypothesis (owner — strong): single-sided reading~~ — ⚠️ REFUTED by Phase 1 (above); kept for the record
 A **~2×** gap is the fingerprint of one meter measuring a **single leg** while the other measures **true
 total**. The Assioma DUO reports dual-sided total (Garmin ~380 W). The SB20's ~200 W ≈ **one leg**. Most
 likely: the SB20 runs erg off the **real Stages LEFT crank, single-sided** — **not** the ESP/Assioma spoof.

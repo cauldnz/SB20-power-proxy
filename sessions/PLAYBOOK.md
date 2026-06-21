@@ -103,6 +103,17 @@ rider starts:
   live-walk capture only when the rider is ready to *act*, and stop it the moment the actions are done** —
   don't let it run through an off-bike discussion. *(Session 4 §B burned a 420 s shifter-probe window
   mid-chat capturing only idle; the button-4/5 map + gestures had to be re-captured.)*
+- **Forking off out-of-scope work mid-ride — use a background sub-task, NOT `/btw`.** When the rider says
+  "we should also look at X," capture it in ONE move and keep the ride going: spawn a **background subagent**
+  (the spawn-task chip / "run this in the background" / Ctrl+B) for self-contained work, or drop a one-liner
+  into the backlog (`code/findings/forward-plan.md`). **`/btw` is the wrong tool for this** — it's a
+  *read-only side chat* (full context, **zero tool access**) for quick clarification questions only, so
+  asking it to "add to the backlog" makes it *describe* the action without doing it (the "it got confused
+  and did a bunch of other stuff" the owner hit). *(Session 4: the owner's "investigate SQLite" → a
+  background subagent that built **and PR'd** the layer without touching the live ride; reviewed + merged at
+  close-out.)* **Gotcha:** a forked task that depends on *this session's* artifacts can land not-ready —
+  Session 4's SQLite PR went CI-red because its tests read a capture not on `main` until the ride's
+  close-out merged. Note the dependency and verify/merge the fork **after** the session's captures land.
 - **State the expected result *before* they act** — "you should see `source:connected` and ~200 W; tell me
   what you see." Make pass/fail something the human **observes**, not **interprets**.
 - **Record actuals inline as you go** — `✅`/`❌`/`⚠️` + the observed bytes/values/`/log` lines, written
@@ -206,7 +217,9 @@ don't re-learn each one on the rider's time. Citations are in *(parens)*.
   step: if `rssi` (in `curl /`) is low or the board is unreachable, power-cycle the ESP** so it re-scans and
   joins the closest AP — and re-check `rssi` after any time the board (or rider) changes floors/rooms.
   *(Session 4: board sat on the upstairs AP after the rider went downstairs → −89 dBm, all Assioma polls
-  timed out, the live cross-check was lost; power-cycle + move-nearer restored it.)*
+  timed out, the live cross-check was lost; power-cycle + move-nearer restored it. **Owner re-confirmed:**
+  two floors down dropped to **−92 dBm**; the **Reset button** reconnected at **−68** on the near AP — the
+  C3 picks its AP only at (re)boot, never roams.)*
 - **USB-JTAG bootloader wedge.** Symptoms: "No serial data received" / "Unable to verify flash chip
   connection" — the C3's native-USB auto-reset didn't enter the bootloader. Recover with **HOLD BOOT,
   TAP RESET, RELEASE BOOT**, re-run the upload, then **power-cycle**. Upload speed must be pinned to
