@@ -64,7 +64,29 @@ prep already done (see the table); the repeatable recipe:
 **To restore the connectivity firmware later:** same DFU flow with the `connectivity_*.hex` (or use nRF
 Connect for Desktop → Programmer, which drives the same Open Bootloader).
 
-## Using it on the SB20
+## Hands-free capture — `scripts/sniff_ble.py` (the primary path; no Wireshark clicking)
+
+For a Claude-driven bike session we don't drive Wireshark by hand — `code/scripts/sniff_ble.py` drives
+Nordic's `SnifferAPI` directly (the same library the extcap uses): **scan → match the target by MAC →
+`follow()` → stream a `.pcap`** (link-type `LINKTYPE_NORDIC_BLE`). It's time-bounded with a hard ceiling and
+shuts the dongle down cleanly — it won't hang.
+
+```bash
+# confirm the dongle + see advertisers (and the SB20's *advertising* MAC, which may differ from
+# the connect-time E4:AA:5A:D6:0E:D4 — always scan first and follow what the sniffer reports):
+python code/scripts/sniff_ble.py --scan-only --duration 12
+
+# follow the SB20 for 7 min, auto-detecting the dongle's COM port (PID 522A):
+python code/scripts/sniff_ble.py --device <SB20_ADV> --duration 420 \
+    --output code/findings/captures/SNIFF-sb20-app-$(date +%Y%m%d-%H%M).pcap
+```
+
+It needs `pyserial` and the staged `SnifferAPI` (found automatically in `%APPDATA%\Wireshark\extcap`, or pass
+`--extcap-dir <makerdiary>\tools\ble_sniffer\extcap`). The pure address helpers are host-tested in
+`code/tests/test_sniffer.py` (`sb20proxy.ble.sniffer`); the serial I/O is the hardware seam in the script.
+The `.pcap` opens straight in Wireshark for analysis. Used by **session 6**.
+
+## Using it on the SB20 — Wireshark GUI (interactive alternative)
 
 1. Open **Wireshark** → double-click the **nRF Sniffer for Bluetooth LE COM13** interface.
 2. In the sniffer toolbar's **Device** dropdown, pick the **SB20** (`E4:AA:5A:D6:0E:D4`) to *follow* it —
