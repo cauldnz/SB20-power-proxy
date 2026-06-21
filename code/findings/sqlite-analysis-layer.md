@@ -21,7 +21,9 @@ hand). SQLite turns those into a `JOIN`.
 So the layer is a **derived index, not a new source of truth**:
 
 - **JSONL stays canonical.** The SQLite DB is a *cache* — delete it and rebuild from the JSONL at any
-  time. It is `.gitignore`d (`*.sqlite`); never committed. The capture format is **unchanged**.
+  time. **As of 2026-06-22 the main `captures.sqlite` IS committed** (owner's call — for cross-machine sync
+  without a rebuild; it stays fully regenerable, and other `*.sqlite` remain ignored). The capture format is
+  **unchanged**.
 - **Lossless.** Every JSONL line is stored verbatim in `record.raw_json`, so even record kinds we don't
   flatten survive, and any flattened table can be re-derived.
 - **Idempotent.** A capture is keyed by `filename`; every row by `(capture_id, rec_index)` — its 0-based
