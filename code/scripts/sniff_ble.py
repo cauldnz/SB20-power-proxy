@@ -184,10 +184,10 @@ def main() -> int:
             out.close()
 
     if out is not None:
-        print(f"\nwrote {written[0]} packets → {args.output}"
-              + ("" if followed else "  (advertising only — target not followed)"))
+        print(f"\nwrote {written[0]} packets -> {args.output}"
+              + ("" if followed else "  (advertising only - target not followed)"))
         if written[0] == 0:
-            print("NOTE: 0 packets — check the dongle, range, and that BLE traffic exists.",
+            print("NOTE: 0 packets - check the dongle, range, and that BLE traffic exists.",
                   file=sys.stderr)
     return 0
 

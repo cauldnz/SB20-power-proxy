@@ -7,13 +7,15 @@ CLAUDE.md → *Session plans & the session ledger* (record Actual against Plan, 
 > **Latest done: session 6 ✅ (2026-06-21)** — **Block S:** the Stages app↔SB20 erg is **cleartext** (no
 > bond) and runs over the **proprietary `0c46be` char, NOT FTMS**; delivered the **pcap+FIT→SQLite** analysis
 > pipeline (tshark). **Power-topology Phase 2 blocked** — the sweep/zero sniffs were *adverts-only* (sniff
-> started after connect → no `CONNECT_IND`); lesson: **sniff before connect.** **Open next:** the
-> **comprehensive passive-sniff** session (the parser works now) + **G1/G2** (needs a USB flash) + the
-> opportunistic **session 5** (track bike — paired XCadey+Assioma). · cold-start:
+> started after connect → no `CONNECT_IND`); lesson: **sniff before connect.** **Open next: session 7
+> (🟢 READY)** — a **comprehensive passive ride monitor** (ANT+ 5-channel + nRF follow-SB20 + a supervising
+> orchestrator; built + smoke-tested 06-21 night). Then **G1/G2** (needs a USB flash) + the opportunistic
+> **session 5** (track bike — paired XCadey+Assioma). · cold-start:
 > [BIKE-SESSION-READY.md](../BIKE-SESSION-READY.md)
 
 | # | Date | Status | Session (Plan + Actual) | Outcome |
 |---|------|--------|--------------------------|---------|
+| 7 | 2026-06-22 | 🟢 READY | [comprehensive passive ride monitor (qdomyos training ride)](session-07-comprehensive-monitor.md) | — *(built + smoke-tested 2026-06-21 night: **ANT+ 5-channel** [Assioma/cranks/HR/FE-C; WinUSB+`libusb-package` on Windows] + **nRF follow-SB20** + a supervising **orchestrator** `15_monitor_ride.py` with live health-checks; runs the morning of 06-22, Claude-driven)* |
 | 6 | 2026-06-21 | ✅ DONE | [sniff the app↔SB20 erg conversation + power-topology Phase 2](session-06-sniff-and-power-topology.md) | **Block S ✅:** app↔SB20 erg is **cleartext** (no `btsmp`/bond) over the **Stages-proprietary `0c46be`** char (handle 0x0039, `02 00 <u16> 00 00`), **not FTMS**; the `<u16>` is an app-side load setpoint (≠ watts). **Pipeline delivered:** `pcap_sqlite`+`fit_sqlite` (tshark→SQLite, both sniffs & FITs; suite 322 green). **Phase 2 ❌ blocked** — sweep/zero sniffs adverts-only (started after connect → no `CONNECT_IND`); topology still open (FIT preliminary: Stages ~10% high, *conflicts* w/ Phase 1). **Lesson: sniff before connect.** |
 | 5 | 2026-06-19 | 🟡 PLANNED | [paired XCadey + Assioma capture (meter-to-meter calibration)](session-05-meter-calibration-capture.md) | — *(track bike on a trainer; structured power×cadence blocks → fit the XCadey→Assioma correction; opportunistic — runs whenever the track bike is available)* |
 | 4 | 2026-06-21 | ✅ DONE | [ground Enhanced-Offset (`0x10`) + FTMS erg + brake-lever probe](session-04-enhanced-offset-and-brake-levers.md) | **§C FTMS erg ✅ PASS** (SB20 holds 3rd-party Set-Target-Power; codec validated) — but surfaced a **power-topology finding** (SB20 erg reads ~½–⅔ of the Assioma, likely single-sided → [`sb20-power-topology.md`](../code/findings/sb20-power-topology.md)). **§B shifter fully mapped** (brakes app-gated; 6 buttons, 4/5≡1/2; chord/double-tap/hold-vs-tap). ANT+ stick up + documented. **G1/G2 + §D deferred** (no flash) |

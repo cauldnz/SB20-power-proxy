@@ -41,12 +41,21 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import signal
 import sys
+import threading
 import time
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from typing import Any, Callable
+
+# openant's USB driver uses pyusb's default libusb backend; on Windows the libusb-1.0
+# DLL isn't on the search path, so wire up the pip-installed `libusb-package` backend
+# first (it bundles the DLL). Without this, Node() fails with "No backend available".
+try:
+    import libusb_package
+    libusb_package.get_libusb1_backend()
+except Exception:  # noqa: BLE001 — fall back to pyusb's default search (Linux/WSL)
+    pass
 
 try:
     from openant.easy.node import Node
@@ -68,9 +77,11 @@ decode_page = _cap.decode_page
 
 DEVTYPE_BIKE_POWER = 0x0B
 DEVTYPE_FEC = 0x11
+DEVTYPE_HR = 0x78
 RF_FREQ_ANT_PLUS = 57
 PERIOD_BIKE_POWER = 8182
 PERIOD_FEC = 8192  # FE-C standard channel period (~4 Hz)
+PERIOD_HR = 8070   # ANT+ HR channel period (~4.06 Hz)
 
 
 def parse_meter_spec(spec: str) -> tuple[str, int]:
@@ -117,6 +128,25 @@ def decode_fec(data: bytes) -> dict[str, Any]:
         })
     # Extended-message tail (source channel id), same layout as bike power.
     if len(data) >= 13:
+        out["ext_flag"] = data[8]
+        out["ext_device_number"] = int.from_bytes(data[9:11], "little")
+        out["ext_device_type"] = data[11]
+        out["ext_transmission_type"] = data[12]
+    return out
+
+
+def decode_hr(data: bytes) -> dict[str, Any]:
+    """Decode an ANT+ Heart Rate page. Byte 7 = computed HR (present in every page)."""
+    if len(data) < 8:
+        return {"page": None, "raw_hex": data.hex(), "error": "short payload"}
+    page = data[0]
+    out: dict[str, Any] = {
+        "page": page & 0x7F, "page_hex": f"0x{page:02X}", "raw_hex": data.hex(),
+        "heart_beat_event_time": int.from_bytes(data[4:6], "little"),
+        "heart_beat_count": data[6],
+        "computed_heart_rate": data[7],
+    }
+    if len(data) >= 13:  # extended-message tail (source channel id)
         out["ext_flag"] = data[8]
         out["ext_device_number"] = int.from_bytes(data[9:11], "little")
         out["ext_device_type"] = data[11]
@@ -189,16 +219,19 @@ class MultiCaptureRunner:
     def run(self, duration_s: float) -> None:
         if self._node is None:
             raise RuntimeError("setup() not called")
+        # Windows has no SIGALRM; stop the blocking node loop from a timer thread.
+        def _expire() -> None:
+            self._log("duration_reached", duration_s=duration_s)
+            self.stop()
+        timer = threading.Timer(duration_s, _expire)
+        timer.daemon = True
+        timer.start()
         try:
-            def _alarm(signum, frame):  # noqa: ARG001
-                self._log("duration_reached", duration_s=duration_s)
-                self.stop()
-            signal.signal(signal.SIGALRM, _alarm)
-            signal.alarm(int(duration_s))
             self._node.start()
         except KeyboardInterrupt:
             self._log("interrupted", reason="ctrl-c")
         finally:
+            timer.cancel()
             self.stop()
 
     def stop(self) -> None:
@@ -233,6 +266,8 @@ def main() -> int:
     p.add_argument("--fec-id", type=int, default=None,
                    help="Bike FE-C device number for the #7 check; 0 = wildcard. "
                         "Omit to skip the bike-output source.")
+    p.add_argument("--hr", action="append", default=[], metavar="LABEL[:ANTID]",
+                   help="An ANT+ HR strap as LABEL or LABEL:ANTID (omit/0 = wildcard). Repeatable.")
     p.add_argument("--duration", type=float, default=1500.0, help="Seconds (default 1500 = 25 min)")
     p.add_argument("--output", type=Path, required=True)
     args = p.parse_args()
@@ -255,6 +290,10 @@ def main() -> int:
                for label, dev in meters]
     if args.fec_id is not None:
         sources.append(Source("bike_fec", args.fec_id, DEVTYPE_FEC, PERIOD_FEC, decode_fec))
+    for spec in args.hr:
+        label, _, num = spec.partition(":")
+        sources.append(Source(label.strip() or "hr", int(num) if num.strip() else 0,
+                               DEVTYPE_HR, PERIOD_HR, decode_hr))
     if len(sources) < 2:
         print("need >=2 sources: use --meter LABEL:ANTID twice (e.g. xcadey + assioma), "
               "or the legacy --stages-id/--assioma-id", file=sys.stderr)
