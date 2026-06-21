@@ -1,6 +1,8 @@
 # 🚴 Bike session 6 — sniff the app↔SB20 erg conversation + resolve the power topology
 
-**Status: 🔵 IN PROGRESS** (started **2026-06-21 17:11** local, UTC+10; prepared 2026-06-21 desk) · tracked
+**Status: ✅ DONE (2026-06-21)** — Block S answered (cleartext; erg over proprietary `0c46be`, **not FTMS**);
+pcap+FIT→SQLite pipeline delivered + tested; power-topology Phase 2 **blocked** (adverts-only sniffs →
+"sniff *before* connect" lesson). Started **17:11** local (UTC+10) · tracked
 in [`sessions/README.md`](README.md) · run via [`sessions/PLAYBOOK.md`](PLAYBOOK.md). Runs **on the bike
 laptop**. Designed to be **driven by a Claude session, hands-free**: the rider only sets up, pedals, and
 works the Stages app when asked; Claude runs every capture + the erg drive and records actuals into this doc.
@@ -101,15 +103,24 @@ works the Stages app when asked; Claude runs every capture + the erg drive and r
   - ⚠️ **opposite** session 4's "SB20 reads ~30 % *low* vs Assioma" → strong evidence **session 4 erged off a
     different / miscalibrated source**, not these freshly-zeroed BTLE cranks.
 
-## Desk phase — parser + reconcile (in progress)
-- **On-bike portion DONE** — rider back at desk; **5 pcaps + 2 FITs** banked, dongle free.
-- **Build `tshark→SQLite` + `FIT→SQLite` importers** (owner's call: get *both* the BLE sniffs **and** the FITs
-  into the SQLite index so the reconcile is a timestamp JOIN — no raw pcap/FIT reads) → validate on tonight's 5
-  pcaps → answer **(a)** is the app's erg control cleartext or bonded (Block S, `app-1713`), **(b)** is the zero
-  always ANT+ (`bleZero` test), **(c)** crank-vs-Assioma scale (confirm the ~10 %-high preliminary). Promote to
-  `decisions.md`.
-- **Tomorrow (gated on the parser working):** comprehensive passive-sniff session over the SB20's whole
-  sniffable surface → a queryable knowledge base.
+## Desk phase — parser + findings ✅
+- **Pipeline DELIVERED (committed + tested):** `analysis/pcap_sqlite.py` (tshark → `pcap_att` raw spine +
+  decoded CPS/FTMS power + `0c46be` control) and `analysis/fit_sqlite.py` (Garmin FIT → `fit_record`/`fit_lap`)
+  load **both** the BLE sniffs *and* the FITs into one SQLite index (reconcile = a timestamp JOIN);
+  `scripts/14_build_pcap_fit.py` is the turnkey build. **tshark** (Wireshark CLI) natively dissects the
+  Nordic-BLE pcaps — it replaced the **stalled pure-Python subagent** (`feat/pcap-sqlite`, abandoned). 11 new
+  hermetic tests; **full suite 322 green, ruff clean.**
+- **(a) Block S — ANSWERED (`app-1713`):** app↔SB20 erg is **cleartext** (zero `btsmp`/bonding, 636 ATT ops)
+  and driven over the **Stages-proprietary `0c46be`** char (handle `0x0039` = `0c46beb1`, write
+  `02 00 <u16-LE> 00 00`), **not FTMS**. The `<u16>` is **not watts** — joined vs the overlapping "earlier"
+  FIT it tracks power loosely (ratio 1.4–5.2×, median ~1.75, cadence-dependent) ⟹ an **app-side
+  resistance/load setpoint** (vs our FTMS path where the SB20 closes the loop).
+- **(b) "zero always ANT?" + (c) crank-vs-Assioma scale — BLOCKED.** `sweep2` / `bleZero` are **adverts-only**
+  (4979 frames, no `CONNECT_IND` → the sniffer never followed the link → no ATT/CPS). **Not encryption.**
+  **Lesson:** start every sniff **before** the device connects (power-cycle / toggle the link). The ~10 %-high
+  topology preliminary (FIT-only; **conflicts with Phase 1**) stays unconfirmed → see `decisions.md`.
+- **Next session:** the comprehensive passive-sniff — now with the parser working **and** the
+  start-before-connect lesson baked in.
 
 ## Why this session — two open questions, one rig
 

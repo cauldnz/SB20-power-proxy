@@ -1394,3 +1394,50 @@ mounts). So it flashes the Nordic way, not by copying a `.uf2`. Path that worked
 `nrfutil dfu usb-serial -pkg sniffer_dfu.zip -p COM<dfu>` → `Device programmed.`. PIDs across the flow:
 app `C00A` → bootloader `521F` → sniffer app `522A`. Tooling: `winget install NordicSemiconductor.nrfutil`
 + `nrfutil install nrf5sdk-tools`. Next: sniff the Stages-app ↔ SB20 conversation (follow `E4:AA:5A:D6:0E:D4`).
+
+## 2026-06-21 — Session 6: passive BLE sniff (Block S) + a pcap/FIT→SQLite pipeline
+
+Ran session 6 on the bike laptop, Claude-driven, with the nRF dongle (passive sniff). Headline results, a
+preliminary that *conflicts* with Phase 1, a capture-method lesson, and a new analysis pipeline.
+
+**Block S — the legitimate Stages-app ↔ SB20 erg conversation** (capture `SNIFF-sb20-app-20260621-1713.pcap`,
+started *before* the app connected):
+- **The app does NOT bond/encrypt.** Zero `btsmp` (Security Manager) packets; all **636 ATT ops dissect in
+  cleartext**. ⟹ our third-party erg needs **no pairing** — the GATT control surface is open. (So any future
+  `control-not-permitted` would not be because the app holds an encrypted bond.)
+- **The app drives erg over the Stages-PROPRIETARY `0c46be` service, NOT FTMS.** Control char =
+  `0c46beb1-9c22-48ff-ae0e-c6eae1a2f4e5` (handle `0x0039`) — the **same `0c46be` family as the session-3
+  shifter**. FTMS (`0x1826`) is present and *we* use it successfully (session 4 PASS), but the native app
+  ignores it. Control write = **`02 00 <u16-LE> 00 00`**, streamed every ~0.5–1 s.
+- **That `<u16>` is NOT raw watts.** Joined against the overlapping Assioma FIT (unified SQLite, below): it
+  tracks power only loosely — ratio **1.4–5.2× (median ~1.75), cadence-dependent**, staying elevated when the
+  rider eases off ⟹ an **app-side resistance/load setpoint** (the app closes the erg loop and commands load),
+  distinct from our FTMS path (we hand the SB20 a power target and *it* closes the loop). Exact unit still open.
+
+**Power topology — a PRELIMINARY that CONFLICTS with Phase 1 (unresolved).** With the SB20 in **BTLE**
+power-meter mode on the **freshly-zeroed** real Stages cranks (zero **903/951**, LHS battery replaced; ≈ the
+ANT+ zero 902/951 ⟹ **offset stable across ANT+/BTLE**) and the ESP spoof OFF, a fresh 100/200/300 W erg sweep
+was recorded on the Garmin (`G-garmin-assioma-sweepShort-20260621.fit`: laps avg **103 / 180 / 274 W** at
+targets 100/200/300). Since the SB20 holds its *source* at the target, Assioma < target ⟹ **the Stages cranks
+read ~10 % HIGH vs the Assioma here** — consistent with the *pre-session-4* "Stages 5–13 % high", but
+**opposite** Phase 1's dense reconcile (SB20 erg ~30 % *low* vs Assioma, ≈0.73×). This figure is weaker
+(lap-avg vs commanded target, assumes a perfect hold), so it does **not** overturn Phase 1; it raises that
+**session 4 likely erged off a different / miscalibrated source than these freshly-zeroed BTLE cranks**.
+**Still unresolved** — the clean confirmation (sniff the crank's own CPS power) was **blocked** (next item).
+
+**Capture-method lesson (critical for the next sniff session).** The **sweep + zero captures are
+adverts-only** — `sweep2` / `bleZero` are ~4979 frames of pure advertising, **no `CONNECT_IND`, no ATT/L2CAP**.
+The nRF sniffer can only *follow* a connection if it catches the `CONNECT_IND`; those sniffs started *after*
+the SB20 was already connected, so they only saw adverts. (It is **not** encryption — the links aren't
+bonded.) Block S worked because it started before the app connected. ⟹ **start every sniff BEFORE the device
+connects** (power-cycle the SB20 / toggle the link). The blocked crank-CPS reconcile is the direct cost — the
+power topology stays open because of it.
+
+**New analysis pipeline (committed, tested).** `tshark` (Wireshark CLI) natively dissects the
+`LINKTYPE_NORDIC_BLE` pcaps, so a pure-Python Nordic-BLE parser was unnecessary (a stalled subagent's path,
+abandoned). `analysis/pcap_sqlite.py` (tshark → a `pcap_att` raw spine + decoded CPS/FTMS power into
+`ble_notification` → the `power_sample` view + control writes into `ble_control_point`) and
+`analysis/fit_sqlite.py` (Garmin FIT → `fit_record` / `fit_lap`) load **both** the BLE sniffs *and* the FITs
+into the **same** index, so reconciliation is a timestamp JOIN. `scripts/14_build_pcap_fit.py` is the turnkey
+build. Tests are hermetic (tshark/fitparse are the I/O seam; parse/decode/load are pure). This is the
+queryable knowledge base for the planned comprehensive passive-sniff session.
