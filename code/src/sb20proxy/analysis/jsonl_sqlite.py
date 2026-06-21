@@ -53,6 +53,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from statistics import median
 
+from sb20proxy.analysis._jsonl import iter_jsonl_lines
 from sb20proxy.ble.ftms import (
     CP_RESPONSE,
     CP_SET_TARGET_POWER,
@@ -61,7 +62,11 @@ from sb20proxy.ble.ftms import (
     decode_indoor_bike_data,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # v2: null-safe annotation dedup (COALESCE unique index)
+
+
+class SchemaVersionError(RuntimeError):
+    """An existing on-disk DB was built by a different schema version — rebuild it."""
 
 # Control-point characteristics: a `ble_notification` on one of these is a CP
 # *response*, routed to `ble_control_point` (not `ble_notification`). Both the
@@ -188,10 +193,22 @@ CREATE VIEW IF NOT EXISTS power_sample AS
 # connection / schema
 # --------------------------------------------------------------------------- #
 def connect(db_path: str | Path = ":memory:") -> sqlite3.Connection:
-    """Open (creating if needed) the analysis DB with the schema applied."""
+    """Open (creating if needed) the analysis DB with the schema applied.
+
+    Refuses to open an existing DB written by a *different* schema version (rather
+    than running ``CREATE TABLE IF NOT EXISTS`` over a stale shape and silently
+    returning wrong data) — rebuild it (delete the .sqlite or use ``--rebuild``).
+    """
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    existing = conn.execute("PRAGMA user_version").fetchone()[0]
+    if existing not in (0, SCHEMA_VERSION):  # 0 = fresh DB; else must match
+        conn.close()
+        raise SchemaVersionError(
+            f"analysis DB schema is v{existing}, this code builds v{SCHEMA_VERSION}; "
+            "rebuild it (delete the .sqlite, or run 13_build_sqlite.py --rebuild)"
+        )
     create_schema(conn)
     return conn
 
@@ -222,6 +239,7 @@ class ImportStats:
     skipped: bool = False          # already imported, unchanged
     replaced: bool = False         # existing rows were dropped and re-imported
     n_unparsed: int = 0            # torn/non-JSON lines kept as kind='_unparsed'
+    error: str | None = None       # this file failed to import (import_dir keeps going)
 
 
 def import_capture(
@@ -249,14 +267,11 @@ def import_capture(
     protocol: str | None = None
     started_iso: str | None = None
     n_unparsed = 0
-    for line in raw.decode("utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
-            records.append((line, None))   # keep torn lines losslessly
+    # lossy decode + tolerant parse: a torn line / stray byte is kept verbatim
+    # (kind='_unparsed'), never aborting the import (the JSONL is the source of truth).
+    for line, rec in iter_jsonl_lines(raw.decode("utf-8", errors="replace")):
+        if rec is None:
+            records.append((line, None))   # keep torn / non-object lines losslessly
             n_unparsed += 1
             continue
         if started_iso is None and rec.get("iso_time"):
@@ -300,10 +315,18 @@ def import_capture(
 def import_dir(
     conn: sqlite3.Connection, captures_dir: str | Path, *, replace: bool = False
 ) -> list[ImportStats]:
-    """Import every ``*.jsonl`` in a directory (sorted). Idempotent."""
+    """Import every ``*.jsonl`` in a directory (sorted). Idempotent.
+
+    Per-file isolated: a file that fails to import (locked, unreadable, …) is
+    recorded as an ``ImportStats`` with ``error`` set and the batch continues, so
+    one bad capture never aborts the whole rebuild.
+    """
     out = []
     for path in sorted(Path(captures_dir).glob("*.jsonl")):
-        out.append(import_capture(conn, path, replace=replace))
+        try:
+            out.append(import_capture(conn, path, replace=replace))
+        except Exception as exc:  # noqa: BLE001 — one bad file must not abort the batch
+            out.append(ImportStats(filename=path.name, error=str(exc)))
     return out
 
 
@@ -400,7 +423,10 @@ def _insert_cp(
         rec_data = rec.get("data")
         data = rec_data if isinstance(rec_data, dict) else {}
     raw_hex = raw_hex or rec.get("raw_hex") or data.get("raw_hex")
-    raw = bytes.fromhex(raw_hex) if raw_hex else b""
+    try:
+        raw = bytes.fromhex(raw_hex) if raw_hex else b""
+    except ValueError:  # malformed hex — keep raw_hex text, skip the byte decode
+        raw = b""
     char = _norm_char(rec.get("char"))
     note = rec.get("note") or rec.get("op")
     is_response = 0 if direction == "write" else 1

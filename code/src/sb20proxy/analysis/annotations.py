@@ -56,6 +56,8 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from sb20proxy.analysis._jsonl import iter_jsonl_lines, read_jsonl_text
+
 # The annotation table is keyed by `filename` (capture coordinates), *not* by a
 # FK to capture(capture_id), so a capture re-import (which CASCADE-drops record
 # rows) never drops its annotations. It is re-materialised from the sidecars on
@@ -71,8 +73,17 @@ CREATE TABLE IF NOT EXISTS annotation (
     t_end_s       REAL,
     flag          TEXT,                    -- e.g. suspect-artefact
     note          TEXT,
-    source        TEXT,                    -- provenance, e.g. auto:erg_hold / manual
-    UNIQUE (filename, label, rec_start, rec_end, t_start_s, t_end_s)
+    source        TEXT                     -- provenance, e.g. auto:erg_hold / manual
+);
+-- Dedup key over the coordinate. Via COALESCE-to-sentinel because a plain
+-- UNIQUE(...) treats NULLs as DISTINCT in SQLite — so a single-basis annotation
+-- (rec-only or time-only, the common manual case) would never dedup and would
+-- duplicate on every re-materialise. rec_index >= 0 and monotonic_s >= 0, so the
+-- negative sentinels can't collide with a real coordinate.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_annotation_coord ON annotation(
+    filename, label,
+    COALESCE(rec_start, -1), COALESCE(rec_end, -1),
+    COALESCE(t_start_s, -1.0), COALESCE(t_end_s, -1.0)
 );
 CREATE INDEX IF NOT EXISTS ix_annotation_file ON annotation(filename);
 CREATE INDEX IF NOT EXISTS ix_annotation_label ON annotation(label);
@@ -113,23 +124,25 @@ class Annotation:
             raise ValueError("annotation needs a capture filename")
         if not self.label:
             raise ValueError("annotation needs a label")
-        has_rec = self.rec_start is not None or self.rec_end is not None
-        has_time = self.t_start_s is not None or self.t_end_s is not None
+        # A range needs BOTH ends — a half-open range silently JOINs to nothing
+        # (`x BETWEEN 5 AND NULL` is never true in SQLite), so reject it at source.
+        if (self.rec_start is None) != (self.rec_end is None):
+            raise ValueError(
+                f"annotation {self.label!r}: a rec range needs both rec_start and rec_end"
+            )
+        if (self.t_start_s is None) != (self.t_end_s is None):
+            raise ValueError(
+                f"annotation {self.label!r}: a time range needs both t_start_s and t_end_s"
+            )
+        has_rec = self.rec_start is not None and self.rec_end is not None
+        has_time = self.t_start_s is not None and self.t_end_s is not None
         if not (has_rec or has_time):
             raise ValueError(
-                f"annotation {self.label!r} needs a rec_index or monotonic_s range"
+                f"annotation {self.label!r} needs a complete rec_index or monotonic_s range"
             )
-        if (
-            self.rec_start is not None
-            and self.rec_end is not None
-            and self.rec_end < self.rec_start
-        ):
+        if has_rec and self.rec_end < self.rec_start:
             raise ValueError(f"annotation {self.label!r}: rec_end < rec_start")
-        if (
-            self.t_start_s is not None
-            and self.t_end_s is not None
-            and self.t_end_s < self.t_start_s
-        ):
+        if has_time and self.t_end_s < self.t_start_s:
             raise ValueError(f"annotation {self.label!r}: t_end_s < t_start_s")
 
     def to_json_obj(self) -> dict:
@@ -166,14 +179,18 @@ def _insert(conn: sqlite3.Connection, ann: Annotation) -> None:
 
 
 def materialise_annotations(conn: sqlite3.Connection, anns: Iterable[Annotation]) -> int:
-    """Upsert annotations into the table (dedup on the coordinate UNIQUE key)."""
+    """Upsert annotations into the table (dedup on the coordinate UNIQUE key).
+
+    Returns the number of rows actually **inserted** (an ``INSERT OR IGNORE`` that
+    hits the UNIQUE key changes nothing and is not counted), not the number tried —
+    so a re-run over already-present annotations correctly reports 0.
+    """
     create_annotation_schema(conn)
-    n = 0
+    before = conn.total_changes
     with conn:
         for ann in anns:
             _insert(conn, ann)
-            n += 1
-    return n
+    return conn.total_changes - before
 
 
 def rematerialise_annotations(
@@ -202,16 +219,18 @@ def sidecar_path(capture_filename: str, annotations_dir: str | Path | None = Non
 
 
 def load_sidecar(path: str | Path) -> list[Annotation]:
-    """Read one sidecar file into :class:`Annotation` objects (skips blank lines)."""
+    """Read one sidecar file into :class:`Annotation` objects.
+
+    Tolerant of a torn / non-object line (it's skipped, not fatal) — a single bad
+    sidecar line must not abort a whole ``--rebuild``.
+    """
     path = Path(path)
-    out: list[Annotation] = []
     if not path.exists():
-        return out
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        out.append(Annotation.from_json_obj(json.loads(line)))
+        return []
+    out: list[Annotation] = []
+    for _line, obj in iter_jsonl_lines(read_jsonl_text(path)):
+        if obj is not None:
+            out.append(Annotation.from_json_obj(obj))
     return out
 
 
@@ -410,9 +429,14 @@ def annotated_samples(
     if stream is not None:
         where.append("ps.stream = ?")
         params.append(stream)
+    # Prefer the time range when it's fully populated, else fall back to the rec
+    # range. Both ends are required per branch (a half-range never matches), and
+    # __post_init__ already rejects partial ranges — this is belt-and-suspenders.
     range_clause = (
-        "((a.t_start_s IS NOT NULL AND ps.monotonic_s BETWEEN a.t_start_s AND a.t_end_s)"
-        " OR (a.t_start_s IS NULL AND a.rec_start IS NOT NULL"
+        "((a.t_start_s IS NOT NULL AND a.t_end_s IS NOT NULL"
+        "  AND ps.monotonic_s BETWEEN a.t_start_s AND a.t_end_s)"
+        " OR ((a.t_start_s IS NULL OR a.t_end_s IS NULL)"
+        "     AND a.rec_start IS NOT NULL AND a.rec_end IS NOT NULL"
         "     AND ps.rec_index BETWEEN a.rec_start AND a.rec_end))"
     )
     sql = (

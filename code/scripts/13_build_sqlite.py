@@ -52,15 +52,19 @@ _COUNT_TABLES = (
 
 
 def _print_build(db_path: Path, stats: list[js.ImportStats]) -> None:
-    imported = [s for s in stats if not s.skipped]
-    skipped = [s for s in stats if s.skipped]
+    errored = [s for s in stats if s.error]
+    ok = [s for s in stats if not s.error]
+    imported = [s for s in ok if not s.skipped]
+    skipped = [s for s in ok if s.skipped]
     print(f"# SQLite analysis index - {db_path}")
     print(f"captures: {len(stats)} found, {len(imported)} imported/updated, "
-          f"{len(skipped)} unchanged\n")
+          f"{len(skipped)} unchanged, {len(errored)} errored\n")
     for s in imported:
         flag = "replaced" if s.replaced else "new"
         extra = f" ({s.n_unparsed} unparsed lines kept)" if s.n_unparsed else ""
         print(f"  + {s.filename:<48} {s.n_records:>5} records [{flag}]{extra}")
+    for s in errored:
+        print(f"  ! {s.filename:<48} FAILED: {s.error}")
     print()
 
 
@@ -141,18 +145,26 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.rebuild and args.db != Path(":memory:") and args.db.exists():
-        args.db.unlink()
+        try:
+            args.db.unlink()
+        except OSError as exc:  # locked by another session / read-only
+            print(f"--rebuild: cannot delete {args.db}: {exc}", file=sys.stderr)
+            return 2
 
     conn = js.connect(args.db)
+    n_errors = 0
     if not args.no_build:
         stats = js.import_dir(conn, args.captures_dir, replace=args.rebuild)
         _print_build(args.db, stats)
         _print_counts(conn)
-        _do_annotations(conn, args)
+        n_errors = sum(1 for s in stats if s.error)
+    # Re-materialise the annotation table from the committed sidecars on every run
+    # (not just on build) so a query path reflects the committed text, not a stale build.
+    _do_annotations(conn, args)
 
     if args.reconcile:
         return _do_reconcile(conn, args)
-    return 0
+    return 1 if n_errors else 0
 
 
 def _do_annotations(conn, args) -> None:
