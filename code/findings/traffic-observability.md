@@ -112,7 +112,8 @@ bonds) — and that becomes the key diagnostic *if* the SB20 ever refuses our th
 topology stays murky. The ESP32 **can't** do this (no promiscuous mode / connection-following); the
 right tool is a **Nordic nRF52840 dongle + the nRF Sniffer for Bluetooth LE + Wireshark** (~AU$15–35).
 Caveat: it only decodes an **unencrypted** connection (if the SB20↔app link is bonded/encrypted, even a
-real sniffer sees ciphertext — capture the pairing to get the keys). ✅ **A Makerdiary nRF52840-MDK USB
-Dongle is on the bike machine; Wireshark + the nRF Sniffer v4.1.1 extcap are staged** — setup, the
-firmware-flash step, and the SB20 usage are in [`nrf-sniffer.md`](nrf-sniffer.md). *(ESP32 = active roles;
-nRF = passive sniff.)*
+real sniffer sees ciphertext — capture the pairing to get the keys). ✅ **Live on the bike machine
+(2026-06-21):** an nRF52840 dongle running the nRF Sniffer v4.1.1 firmware on **COM13**, with Wireshark +
+the matched extcap — setup, the actual flash path (nrfutil DFU, *not* UF2 drag-drop — the dongle has the
+Nordic Open Bootloader), and the SB20 usage are in [`nrf-sniffer.md`](nrf-sniffer.md). *(ESP32 = active
+roles; nRF = passive sniff.)*

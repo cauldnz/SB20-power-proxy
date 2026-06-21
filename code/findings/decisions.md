@@ -1382,3 +1382,15 @@ meter (or erg-control source) reading ~30 % low. → **Phase 2 = the simultaneou
 Also this follow-up: **reviewed + merged the SQLite analysis layer (PR #57).** Its CI had failed only because
 its tests read this session's capture `G-sb20-ftms-erg-20260621-0949.jsonl`, which wasn't on `main` until the
 session-4 close-out merged (`bd80fdb`); fixed by merging `main` into the branch → green → merged (`8695c45`).
+
+## 2026-06-21 — nRF Sniffer dongle flashed + live (passive BLE sniff, Tier 3)
+
+The nRF52840 dongle now runs the **nRF Sniffer for Bluetooth LE v4.1.1** firmware and Wireshark sees it as
+`nRF Sniffer for Bluetooth LE COM13` — the passive-sniff tier (`traffic-observability.md` / `nrf-sniffer.md`)
+is operational. **Key correction:** despite its "MDK" label, this dongle does **not** have a UF2 drag-drop
+bootloader — it carries the **Nordic Open DFU Bootloader** (serial DFU, PID `521F`; no `UF2BOOT` drive ever
+mounts). So it flashes the Nordic way, not by copying a `.uf2`. Path that worked: convert the matched `.uf2`
+(bare app @ `0x1000`) → `.hex` → `nrfutil pkg generate` (unsigned; the Open Bootloader is signature-less) →
+`nrfutil dfu usb-serial -pkg sniffer_dfu.zip -p COM<dfu>` → `Device programmed.`. PIDs across the flow:
+app `C00A` → bootloader `521F` → sniffer app `522A`. Tooling: `winget install NordicSemiconductor.nrfutil`
++ `nrfutil install nrf5sdk-tools`. Next: sniff the Stages-app ↔ SB20 conversation (follow `E4:AA:5A:D6:0E:D4`).
