@@ -325,6 +325,13 @@ bike session. See `decisions.md` 2026-06-17 and `code/scripts/BLE-LOOP.md`.
 
 ## 8. Open research items (not on any critical path)
 
+> **🔴 ELEVATED — [SB20 power-topology](sb20-power-topology.md) (session-4 finding, 2026-06-21).** The SB20
+> erg reads only **~½–⅔ of the Assioma** (likely single-sided / wrong meter — full design in the doc). This
+> is *not* off the critical path: it decides whether erg targets = real watts and whether the spoof is even
+> feeding the SB20. **Phase 1** (cheap): reconcile the owner's Garmin `.FIT` vs the §C captures. **Phase 2**:
+> a *simultaneous* multi-device capture (SB20 + Stages 62144/4963 + Assioma 17039/22428, BLE *and* ANT).
+> Prereqs: the `.FIT`, and the ANT+ permission fix (WSL systemd / udev).
+
 From `phase-0-report.md` §5 — track, don't block on:
 - Crank-length scaling (closed by Lane 2 run-card #3).
 - ANT+ vs BLE offset semantics (903 vs ~0) — **both numbers already captured** (ANT+ from C-0, BLE from the G-* captures); this is a desk reconciliation of *why* they differ, not a new capture.
