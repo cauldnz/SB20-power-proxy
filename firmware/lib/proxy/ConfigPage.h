@@ -163,6 +163,12 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
          htmlEscape(cfg.spoofSerial) + "' placeholder='11821518'>"
          "</details>"
          "<button class='go' type='submit'>Save</button></form>"
+         // Recovery: clear the saved source + identity back to the shipped defaults (for a tester who
+         // mis-picks). Separate form; confirm before it reboots.
+         "<form method='POST' action='/setup/reset' style='margin-top:18px' "
+         "onsubmit='return confirm(\"Reset source and crank identity to defaults?\")'>"
+         "<button type='submit' style='width:100%;padding:10px;background:#fff;border:1px solid #d33;"
+         "color:#d33;border-radius:8px;cursor:pointer'>Reset to defaults</button></form>"
          "<script>function pick(b){"
          "document.getElementById('addr').value=b.getAttribute('data-addr');"
          "var ds=document.querySelectorAll('.dev');for(var i=0;i<ds.length;i++)ds[i].classList.remove('sel');"

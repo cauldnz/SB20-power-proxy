@@ -268,6 +268,19 @@ void WifiLink::addConfigRoutes_() {
         delay(400);
         esp_restart();  // reboot to apply the new source (mirrors /update)
     });
+    // POST /setup/reset -> clear the saved source + identity back to the shipped defaults (recovery
+    // for a tester who mis-picked). Persisting defaults() == clearing: next boot loads the defaults.
+    server_->on("/setup/reset", HTTP_POST, [this]() {
+        if (configSave_) configSave_(RuntimeConfig::defaults());
+        server_->send(200, "text/html",
+                      "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' "
+                      "content='width=device-width,initial-scale=1'><body style='font-family:"
+                      "system-ui,sans-serif;max-width:480px;margin:0 auto;padding:16px'>"
+                      "<h1>Reset &#10003;</h1><p>Source and crank identity restored to defaults &mdash; "
+                      "restarting. Open <a href='/'>the dashboard</a> in a moment to set up again.</p>");
+        delay(400);
+        esp_restart();
+    });
     // GET /diag -> the plain-text tester report (config + status + raw meter frames). A tester saves
     // it and sends it when their meter isn't recognised, so we add support offline (real-data-first).
     server_->on("/diag", HTTP_GET, [this]() {

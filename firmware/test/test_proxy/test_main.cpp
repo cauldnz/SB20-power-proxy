@@ -559,6 +559,7 @@ void test_render_config_page_shows_spoof_identity() {
     TEST_ASSERT_TRUE(h.find("Stages 62144") != std::string::npos);        // pre-filled
     TEST_ASSERT_TRUE(h.find("name='spoof_serial'") != std::string::npos);
     TEST_ASSERT_TRUE(h.find("Crank identity") != std::string::npos);      // the section heading
+    TEST_ASSERT_TRUE(h.find("action='/setup/reset'") != std::string::npos);  // reset-to-defaults form
 }
 
 void test_render_config_page_status_banner() {
