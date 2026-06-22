@@ -1,8 +1,15 @@
 # Pre-beta plan — SB20 meter proxy → ~10 collaborator-testers
 
-**Status: the north-star plan (2026-06-22).** Refocuses [`forward-plan.md`](forward-plan.md) (still the
-technical backlog) onto one goal: get the **SB20 meter proxy** onto ~10 SB20-owner testers from the
+**Status: the north-star plan (updated 2026-06-23).** Refocuses [`forward-plan.md`](forward-plan.md) (still
+the technical backlog) onto one goal: get the **SB20 meter proxy** onto ~10 SB20-owner testers from the
 Facebook group. Read [`decisions.md`](decisions.md) for the grounding; this is *what next, in what order*.
+
+> **Progress:** **Phase 1 (user-configurable: any meter / surviving crank, + spoof identity) ✅ BUILT**
+> and **Phase 2 (ride-mode WiFi-off + coex hardening) ✅ largely done** — the device is now self-service
+> over WiFi, no rebuild (PRs #80–#90, 2026-06-23). **The critical path is now the bike:** Phase 0 (prove
+> the loop as a user) + the open on-bike unknowns — does the SB20 accept an *arbitrary* spoof identity,
+> and does Ride-mode actually eliminate the rare coex hang (1-hour soak). Then Phase 3–5 (collaboration
+> loop is desk-ready; ship pre-flashed; recruit).
 
 ## The product (decided)
 **One core, two headline use cases:** a small ESP32-C3 on the bike reads a BLE power source (Cycling
@@ -52,7 +59,16 @@ feed a real Assioma → ride ~20 min in Zwift → confirm the SB20 **broadcasts 
 and resistance behaves, for the whole ride. Most pieces are proven; this is the clean *user-flow* proof.
 **Exit:** "yes, this is a product." (If erg/resistance interplay surprises us, that's the thing to learn here.)
 
-### Phase 1 — User-configurable: any meter *or* the surviving crank *(desk firmware)*
+### Phase 1 — User-configurable: any meter *or* the surviving crank — ✅ BUILT (2026-06-23, PRs #81–#89)
+The single biggest unlock, now done: a tester sets up their source **and** crank identity over WiFi with
+no rebuild. Web `/setup`: scan → pick the source (meter or surviving crank, with a "crank" tag) or match
+by name → **single-sided ×2** toggle → **Crank identity** (spoof name + serial) → Save → NVS → reboot.
+Dashboard at `/` shows METER IN→CRANK OUT + L/R balance + the connected source name; `/setup` shows a live
+"Reading … ✓" banner. Source pinning by address + the loop guard track the runtime config. Covers
+[`forward-plan.md` §8 "device discovery + identity"] + "single surviving right-crank" + "meter-source
+pinning". *Remaining:* the generic CPS read hardens further as testers send varied real frames.
+
+<details><summary>original plan</summary>
 The single biggest unlock — [`forward-plan.md` §8 "device discovery + pairing + identity"] + the
 "single surviving right-crank proxy" + "meter-source pinning" items (this is where the two use cases meet):
 - Web-UI **BLE scan → pick the source (an external meter, *or* the surviving Stages crank e.g. `4963`) →
@@ -65,12 +81,15 @@ The single biggest unlock — [`forward-plan.md` §8 "device discovery + pairing
 - Harden the **generic CPS read** for meter diversity (already flags-aware: balance/torque/crank-rev
   offsets, sticky balance). Verify against varied real frames as testers send them.
 **Exit:** a tester sets up *their* source (meter or surviving crank) from the web UI with no rebuild.
+</details>
 
-### Phase 2 — Survive an unattended ride *(desk firmware)*
-- **WiFi off during a ride** (BLE-only; WiFi only for setup/update) — cuts the coex load that drives the
-  hang. The proxy's ride-time job is pure BLE central+peripheral.
-- The [`perf-coex-plan.md`] hardening (task watchdog, OLED throttle/render-on-change, reset-reason) + a
-  **1-hour soak** with no hang. **Exit:** a board survives an hour untouched, repeatably.
+### Phase 2 — Survive an unattended ride — ⚙ largely DONE (2026-06-23, PR #90)
+- **"Ride mode": WiFi off on demand** (dashboard → /wifi/off) so the ride is BLE-only — frees the radio
+  from the WiFi+BLE+OLED coex (opt-in, reversible by power-cycle). PR #90.
+- The coex hardening (PerfMonitor + `/stats`, task watchdog + reset-reason, OLED off the hot loop, BLE
+  scan-duty) already landed earlier. **Remaining:** a **1-hour soak** confirming no hang + that Ride mode
+  actually eliminates it (hardware/bench — the one unverified hypothesis). **Exit:** a board survives an
+  hour untouched, repeatably.
 
 ### Phase 3 — The collaboration loop *(desk — the leverage)*
 This is how "any meter" actually scales with testers as partners:

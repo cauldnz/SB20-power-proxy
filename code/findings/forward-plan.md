@@ -407,7 +407,10 @@ From `phase-0-report.md` §5 — track, don't block on:
   for BLE notifications / a control- or HID-like characteristic that changes on a press. If a press
   emits a packet → decode it (a new capture-driven protocol doc) and expose/relay it. Button
   hardware context: PedalSmart.blog's shifter-button repair material (`06-prior-art-and-references.md`).
-- **Single surviving right-crank proxy** — promising use case (owner idea 2026-06-18, seen working
+- **Single surviving right-crank proxy** — ✅ **the desk pieces BUILT (2026-06-23, PRs #81–#90):** the
+  web `/setup` picker pins the surviving crank as the source, the single-sided ×2 doubles it, and the
+  Crank-identity picker re-broadcasts as the master — the full crank-rescue flow, no rebuild. *Remaining:*
+  the on-bike proof. Original note: promising use case (owner idea 2026-06-18, seen working
   by accident in bike-session 2). On the SB20 the LEFT crank is the master; if it fails the rider
   loses power entirely. The proxy can read the surviving RIGHT crank (`Stages 4963`,
   `e3:25:39:38:92:71`) and rebroadcast it as the spoofed master (`Stages 62144`), restoring full
@@ -415,13 +418,18 @@ From `phase-0-report.md` §5 — track, don't block on:
   workarounds (cf. PedalSmart.blog's single-failed-crank post). Depends on the meter-source pinning
   item below; document as a first-class use case in `01-project-brief.md`. Single-sided caveat: a
   right-only crank usually doubles right-leg power to estimate total.
-- **Meter-source pinning (choose which meter to READ)** — `BleMeterClient` matches too broadly:
+- **Meter-source pinning (choose which meter to READ)** — ✅ **BUILT (2026-06-23, PR #81/#84):**
+  `BleMeterClient::setMatch()` pins the source by address from NVS/the `/setup` picker, so the relay is
+  deterministic. Original note: `BleMeterClient` matched too broadly:
   with several meters in range it bounced between `ASSIOMA17039L` (`e6:20:90:8c:f3:fe`),
   `ASSIOMA22428R` (`cc:d2:a0:d6:5c:9d`), and `Stages 4963` (`e3:25:39:38:92:71`) in bike-session 2,
   so the relayed source was non-deterministic. Pin the source by address (or configured name) so the
   relay is deterministic and the single-right-crank use case can target `4963` on purpose. (Distinct
   from the spoof-side `--address` item above, which is about which crank we *impersonate*.)
-- **Device discovery + pairing + identity, from the ESP32 web UI** — backlog (owner, 2026-06-19; serves
+- **Device discovery + pairing + identity, from the ESP32 web UI** — ✅ **BUILT (2026-06-23, PRs #82–#89).**
+  The `/setup` UI does exactly this: BLE-scan → pick the source → choose the advertised crank identity
+  (name + serial) → NVS. Source + identity are no longer `Config`-hardcoded (defaults still seed first
+  boot). See `pre-beta-plan.md` Phase 1. Original note (owner, 2026-06-19; serves
   the meter-to-meter proxy and the SB20 spoof). Today the source meter and the advertised identity are
   **hardcoded in `Config`** (`METER_NAME_FILTER`, `SPOOF_NAME`). Generalise to a **UI flow**: BLE-scan
   nearby power meters → pick the one to READ → choose the advertised identity (a *spoof* like "Stages
