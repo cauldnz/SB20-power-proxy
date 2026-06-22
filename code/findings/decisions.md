@@ -1482,6 +1482,22 @@ ATT). **Open issues filed:** (a) `15_monitor_ride.py` doesn't trap `SIGTERM`, so
 (handle→uuid map miss for 16-bit chars) — decoded from the `pcap_att` raw spine instead. Both are
 hardening follow-ups; the raw capture + the topology result are unaffected.
 
+## 2026-06-22 — Session-7 follow-up (a) RESOLVED: 15_monitor_ride.py traps SIGTERM + Windows job teardown
+
+Open issue (a) above (a harness TaskStop SIGTERM orphaned the `sniff_ble` children — had to kill by PID) is
+fixed in `15_monitor_ride.py`. Two defences, because the right one differs by OS — both verified hands-free
+via `--self-test`:
+- **POSIX/WSL:** trap `SIGTERM`/`SIGBREAK` → raise `KeyboardInterrupt` → the existing `finally` stops the
+  children and finalises the manifest. WSL end-to-end (`kill -TERM`): both producers torn down; manifest gets
+  `stopped_by: "SIGTERM"`.
+- **Windows:** an *external* SIGTERM is an **uncatchable `TerminateProcess`** (verified empirically — the
+  Python handler never fires, exit code 15), so the children are also bound to a **kill-on-close Job Object**;
+  the OS tears them down when the orchestrator dies, even on a hard kill. Verified: hard-killing ONLY the
+  parent (no tree-kill) left zero orphans.
+
+The manifest is now finalised on every clean stop (`end`, `stopped_by` ∈ {duration, all-exited, SIGTERM,
+interrupt}, `final_sizes`). Issue (b) (`pcap_sqlite` 16-bit char decode) stays open. `scripts/` remains out of
+CI lint/test scope (smoke-tested only). PR from branch `fix/monitor-ride-sigterm-cleanup`.
 ## 2026-06-22 — L/R pedal-balance forwarding (firmware) + proxy build-gate fix + bench finding
 
 **Balance forwarding built + host-validated (PR pending).** The spoof now carries the source meter's
