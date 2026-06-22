@@ -931,6 +931,17 @@ void test_app_page_essentials() {
     TEST_ASSERT_TRUE(p.find("fetch('/status'") != std::string::npos);  // polls /status (not /)
     TEST_ASSERT_TRUE(p.find("balance_pct") != std::string::npos);      // shows the L/R balance
     TEST_ASSERT_TRUE(p.find("href='/setup'") != std::string::npos);    // link to pick the source
+    TEST_ASSERT_TRUE(p.find("href='/wifi/off'") != std::string::npos); // ride-mode (WiFi off) link
+}
+
+void test_ride_mode_pages() {
+    std::string c = rideModeConfirmHtml();
+    TEST_ASSERT_TRUE(c.find("WiFi off") != std::string::npos);
+    TEST_ASSERT_TRUE(c.find("action='/wifi/off'") != std::string::npos);  // POSTs to do it
+    TEST_ASSERT_TRUE(c.find("power-cycle") != std::string::npos);         // how to undo it
+    std::string d = rideModeDoneHtml();
+    TEST_ASSERT_TRUE(d.find("Bluetooth-only") != std::string::npos);
+    TEST_ASSERT_TRUE(d.find("Power-cycle") != std::string::npos);  // capitalised in the done page
 }
 
 // --- perf monitor / stats (the load-observability core) -----------------------
@@ -1170,6 +1181,7 @@ int runUnityTests() {
     RUN_TEST(test_saved_page_has_ssid_and_hints);
     RUN_TEST(test_saved_page_escapes_ssid);
     RUN_TEST(test_app_page_essentials);
+    RUN_TEST(test_ride_mode_pages);
     RUN_TEST(test_perf_monitor_basic);
     RUN_TEST(test_perf_monitor_stalls);
     RUN_TEST(test_perf_monitor_reset);

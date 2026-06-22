@@ -68,6 +68,7 @@ public:
 private:
     void startStationServer_();  // OTA + status/update/forget routes (assumes WiFi joined)
     void addConfigRoutes_();     // GET /setup picker + POST /setup/save + GET /setup/scan
+    void addRideModeRoute_();    // GET /wifi/off (confirm) + POST /wifi/off (radio down for riding)
     void startPortal_();         // SoftAP + captive DNS + setup routes
     void addLogRoutes_();        // GET /log + /log/on + /log/off (shared by both modes)
     void addForgetRoute_(const char* msg);  // GET /forget: clear creds + reboot (shared by both modes)
@@ -88,6 +89,7 @@ private:
     std::vector<ScannedNet> networks_;  // APs scanned for the portal picker (RSSI + secured)
     bool healthy_ = false;
     bool portal_ = false;
+    bool radioOff_ = false;  // ride mode: WiFi powered down (BLE-only); handle() then no-ops
     bool logEnabled_ = true;  // serve GET /log? (persisted in NVS via WifiCreds)
 };
 
