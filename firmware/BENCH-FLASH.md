@@ -50,6 +50,13 @@ code/.venv/Scripts/python code/scripts/qa_board.py --no-flash --connect [--ip <b
 A `-live` board with no meter near it is correctly **silent** on CPS (it only notifies on a real
 reading), so "no CPS frames" is non-blocking; only a garbled frame or a missing advert fails the gate.
 
+### Browser flashing (no CLI) — `firmware/webflash/`
+
+For testers (or a quick recovery), there's a browser installer: an **Install** button that flashes
+over Web Serial from Chrome/Edge. Build the combined image with
+`python code/scripts/build_factory_bin.py --env esp32c3-oled-live-ota`, then host
+`firmware/webflash/` over HTTPS (GitHub Pages). See [`webflash/README.md`](webflash/README.md).
+
 ## 1. Build / flash envs (platformio.ini)
 
 | env | what | upload |

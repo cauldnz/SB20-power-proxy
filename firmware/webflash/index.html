@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Install SB20 Proxy</title>
+  <!-- ESP Web Tools: flashes an ESP32 over Web Serial straight from the browser. -->
+  <script type="module"
+          src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+           max-width: 40rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+    h1 { font-size: 1.5rem; }
+    .card { border: 1px solid #8884; border-radius: 12px; padding: 1rem 1.25rem; margin: 1.25rem 0; }
+    ol { padding-left: 1.2rem; }
+    code { background: #8881; padding: 0.1em 0.35em; border-radius: 4px; }
+    .warn { font-size: 0.9rem; color: #b45309; }
+    .muted { color: #6b7280; font-size: 0.9rem; }
+    esp-web-install-button { display: inline-block; margin-top: 0.5rem; }
+    button.unsupported { font: inherit; }
+  </style>
+</head>
+<body>
+  <h1>Install / recover the SB20 Proxy</h1>
+  <p>
+    This flashes the proxy firmware onto an ESP32-C3 board directly from your browser — no command
+    line. Use it to set up a fresh board or recover one that won't update over the air.
+  </p>
+
+  <div class="card">
+    <ol>
+      <li>Use <strong>Chrome</strong> or <strong>Edge</strong> on a desktop (Web Serial isn't in
+        Safari/Firefox or on phones).</li>
+      <li>Plug the board into USB.</li>
+      <li>Click <strong>Install</strong> and pick the board's serial port.</li>
+      <li>If the port doesn't appear or flashing won't start: hold <strong>BOOT</strong>, tap
+        <strong>RESET</strong>, release <strong>BOOT</strong>, then retry.</li>
+    </ol>
+
+    <esp-web-install-button manifest="manifest.json">
+      <button slot="activate">Install SB20 Proxy</button>
+      <span slot="unsupported" class="warn">
+        Your browser can't flash over USB — open this page in desktop Chrome or Edge.
+      </span>
+      <span slot="not-allowed" class="warn">
+        This page must be served over HTTPS to flash.
+      </span>
+    </esp-web-install-button>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:1.1rem;margin-top:0">After it flashes</h2>
+    <ol>
+      <li>The board reboots and creates a Wi-Fi network called <code>SB20-Setup</code>.</li>
+      <li>Join it from your phone; a setup page opens (or browse to
+        <code>http://192.168.4.1/</code>).</li>
+      <li>Pick your home Wi-Fi, then your power meter, and save. The board reconnects on your
+        network and shows a live dashboard.</li>
+    </ol>
+    <p class="muted">Full walkthrough: the onboarding one-pager that came with your board.</p>
+  </div>
+
+  <p class="muted">
+    Experimental, unaffiliated with Stages or Favero — use at your own risk. MIT-licensed.
+  </p>
+</body>
+</html>
