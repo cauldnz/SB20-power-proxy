@@ -7,6 +7,7 @@
 
 #include <unity.h>
 
+#include "ConfigPage.h"
 #include "Correction.h"
 #include "Cps.h"
 #include "Ftms.h"
@@ -448,6 +449,60 @@ void test_runtime_config_malformed_line_falls_back_to_defaults() {
     RuntimeConfig c = RuntimeConfig::fromLine("garbage-no-delimiters");
     TEST_ASSERT_EQUAL_STRING(Config::METER_NAME_FILTER, c.meterNameFilter.c_str());
     TEST_ASSERT_FALSE(RuntimeConfig::fromLine("").singleSidedDouble);
+}
+
+void test_config_form_parse() {
+    RuntimeConfig c = parseConfigForm("addr=e3%3A25%3A39%3A38%3A92%3A71&name=Stages&single=1");
+    TEST_ASSERT_EQUAL_STRING("e3:25:39:38:92:71", c.meterAddress.c_str());  // %3A urldecoded to ':'
+    TEST_ASSERT_EQUAL_STRING("Stages", c.meterNameFilter.c_str());
+    TEST_ASSERT_TRUE(c.singleSidedDouble);
+    // no checkbox -> single false; pinned address empty -> match by name
+    RuntimeConfig d = parseConfigForm("addr=&name=ASSIOMA");
+    TEST_ASSERT_EQUAL_STRING("", d.meterAddress.c_str());
+    TEST_ASSERT_EQUAL_STRING("ASSIOMA", d.meterNameFilter.c_str());
+    TEST_ASSERT_FALSE(d.singleSidedDouble);
+}
+
+void test_config_validation() {
+    RuntimeConfig empty;  // no address, no name
+    TEST_ASSERT_NOT_NULL(configValidationError(empty));
+    RuntimeConfig byAddr; byAddr.meterAddress = "aa:bb:cc:dd:ee:ff";
+    TEST_ASSERT_NULL(configValidationError(byAddr));
+    RuntimeConfig byName; byName.meterNameFilter = "ASSIOMA";
+    TEST_ASSERT_NULL(configValidationError(byName));
+}
+
+void test_dedupe_and_sort_sources() {
+    std::vector<SourceCandidate> in = {
+        {"aa:bb:cc:dd:ee:01", "Weak", -80, true, false},
+        {"aa:bb:cc:dd:ee:02", "Strong", -45, true, false},
+        {"aa:bb:cc:dd:ee:01", "Weak", -60, true, false},  // dup of #1, stronger
+        {"", "no-addr", -50, true, false},                 // dropped (no address)
+    };
+    auto out = dedupeAndSortSources(in);
+    TEST_ASSERT_EQUAL_INT(2, (int)out.size());             // deduped + the no-addr dropped
+    TEST_ASSERT_EQUAL_STRING("aa:bb:cc:dd:ee:02", out[0].address.c_str());  // strongest first
+    TEST_ASSERT_EQUAL_INT(-60, out[1].rssi);               // dup merged to the stronger reading
+}
+
+void test_render_config_page_marks_selected_and_badges() {
+    RuntimeConfig cfg; cfg.meterAddress = "aa:bb:cc:dd:ee:02"; cfg.singleSidedDouble = true;
+    std::vector<SourceCandidate> ds = {
+        {"aa:bb:cc:dd:ee:02", "ASSIOMA17039L", -45, true, false},
+        {"e3:25:39:38:92:71", "Stages 4963", -55, true, true},
+    };
+    std::string h = renderConfigPage(cfg, ds);
+    TEST_ASSERT_TRUE(h.find("ASSIOMA17039L") != std::string::npos);
+    TEST_ASSERT_TRUE(h.find("class='dev sel'") != std::string::npos);   // the pinned one is selected
+    TEST_ASSERT_TRUE(h.find("crank") != std::string::npos);             // the Stages crank badge
+    TEST_ASSERT_TRUE(h.find("checkbox' name='single' value='1' checked") != std::string::npos);
+}
+
+void test_render_config_page_escapes_name() {
+    std::vector<SourceCandidate> ds = {{"aa:bb:cc:dd:ee:02", "<script>x", -45, true, false}};
+    std::string h = renderConfigPage(RuntimeConfig::defaults(), ds);
+    TEST_ASSERT_TRUE(h.find("&lt;script&gt;x") != std::string::npos);
+    TEST_ASSERT_TRUE(h.find("<script>x</") == std::string::npos);       // no raw injection
 }
 
 void test_proxy_set_correction_applies_single_sided_double() {
@@ -997,6 +1052,11 @@ int runUnityTests() {
     RUN_TEST(test_runtime_config_defaults_from_compile_time);
     RUN_TEST(test_runtime_config_line_roundtrip);
     RUN_TEST(test_runtime_config_malformed_line_falls_back_to_defaults);
+    RUN_TEST(test_config_form_parse);
+    RUN_TEST(test_config_validation);
+    RUN_TEST(test_dedupe_and_sort_sources);
+    RUN_TEST(test_render_config_page_marks_selected_and_badges);
+    RUN_TEST(test_render_config_page_escapes_name);
     RUN_TEST(test_proxy_set_correction_applies_single_sided_double);
     RUN_TEST(test_proxy_applies_correction);
     RUN_TEST(test_proxy_preserves_cadence);
