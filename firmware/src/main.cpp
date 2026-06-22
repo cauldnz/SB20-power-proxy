@@ -214,6 +214,20 @@ void setup() {
         perf.reset();
         g_perfWindowStartMs = millis();
     });
+    // Source-setup UI (GET/POST /setup): pick the meter / surviving crank over WiFi, persist to NVS,
+    // reboot to apply. Decoupled via hooks — the candidate list + rescan come from the live central;
+    // a mock build has no sources to offer.
+    wifi.setConfigUi(
+        []() { return ConfigStore::load(); },
+#if USE_MOCK_METER
+        []() { return std::vector<sb20proxy::SourceCandidate>{}; },
+        [](const RuntimeConfig& c) { ConfigStore::save(c); },
+        []() {});
+#else
+        []() { return meter.candidates(); },
+        [](const RuntimeConfig& c) { ConfigStore::save(c); },
+        []() { meter.clearCandidates(); });
+#endif
     ArduinoOTA.onProgress([](unsigned int, unsigned int) { ++g_loopBeat; });  // keep WD fed during OTA
     esp_timer_create_args_t wdArgs = {};
     wdArgs.callback = &stallWatchdogCb;
