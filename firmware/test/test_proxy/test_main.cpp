@@ -17,6 +17,7 @@
 #include "Provisioning.h"
 #include "PerfStats.h"
 #include "ProxyCore.h"
+#include "RuntimeConfig.h"
 #include "Status.h"
 #include "StatusLed.h"
 #include "OledScreen.h"
@@ -216,9 +217,35 @@ void test_meter_match_skips_our_own_spoof() {
 }
 
 void test_meter_match_nameless_winrt_rig_by_cps() {
-    // The WinRT fake_meter rig advertises the CPS UUID with no name.
+    // A genuinely nameless CPS peripheral (e.g. a passive-scan view of the WinRT rig) matches by UUID.
     TEST_ASSERT_TRUE(isTargetMeter("", true, "12:34:56:78:9a:bc", "", "Stages 62144", "ASSIOMA"));
     TEST_ASSERT_FALSE(isTargetMeter("", false, "12:34:56:78:9a:bc", "", "Stages 62144", "ASSIOMA"));
+}
+
+void test_meter_match_winrt_rig_carries_host_name_blocked_in_prod() {
+    // REALITY (decisions.md 2026-06-22): under an ACTIVE scan Windows stamps the PC's name into the
+    // scan response, so the WinRT fake_meter rig is NOT nameless — and that name isn't "ASSIOMA".
+    // In a production build (matchAnyCps default false) the rig is correctly NOT matched.
+    TEST_ASSERT_FALSE(isTargetMeter("CAULDT9H", true, "48:cf:ea:87:24:f3", "",
+                                    "Stages 62144", "ASSIOMA"));
+}
+
+void test_meter_match_any_cps_bench_flag() {
+    // BENCH flag on: the host-named WinRT rig (CPS-advertising) IS matched...
+    TEST_ASSERT_TRUE(isTargetMeter("CAULDT9H", true, "48:cf:ea:87:24:f3", "",
+                                   "Stages 62144", "ASSIOMA", /*matchAnyCps=*/true));
+    // ...and a real Assioma still matches...
+    TEST_ASSERT_TRUE(isTargetMeter("ASSIOMA17039L", true, "e6:20:90:8c:f3:fe", "",
+                                   "Stages 62144", "ASSIOMA", /*matchAnyCps=*/true));
+    // ...but a real "Stages NNNN" crank is STILL rejected (never read the SB20's native cranks)...
+    TEST_ASSERT_FALSE(isTargetMeter("Stages 4963", true, "e3:25:39:38:92:71", "",
+                                    "Stages 62144", "ASSIOMA", /*matchAnyCps=*/true));
+    // ...and our own spoof is STILL skipped (the loop guard wins even in bench mode)...
+    TEST_ASSERT_FALSE(isTargetMeter("Stages 62144", true, "aa:bb:cc:dd:ee:ff", "",
+                                    "Stages 62144", "ASSIOMA", /*matchAnyCps=*/true));
+    // ...and a non-CPS device is never matched.
+    TEST_ASSERT_FALSE(isTargetMeter("CAULDT9H", false, "48:cf:ea:87:24:f3", "",
+                                    "Stages 62144", "ASSIOMA", /*matchAnyCps=*/true));
 }
 
 void test_meter_match_pinned_address_wins() {
@@ -390,6 +417,49 @@ void test_proxy_relays_power() {
     meter.emit(250);
     TEST_ASSERT_EQUAL_INT(1, proxy.forwarded());
     TEST_ASSERT_EQUAL_INT(250, crank.last.power_w);
+}
+
+// --- RuntimeConfig (the NVS-backed user config) + the single-sided ×2 -----------------------
+
+void test_runtime_config_defaults_from_compile_time() {
+    RuntimeConfig c = RuntimeConfig::defaults();
+    TEST_ASSERT_EQUAL_STRING(Config::METER_NAME_FILTER, c.meterNameFilter.c_str());
+    TEST_ASSERT_EQUAL_STRING(Config::METER_ADDRESS, c.meterAddress.c_str());
+    TEST_ASSERT_FALSE(c.singleSidedDouble);
+}
+
+void test_runtime_config_line_roundtrip() {
+    RuntimeConfig c;
+    c.meterAddress = "e3:25:39:38:92:71";  // a surviving R crank, pinned
+    c.meterNameFilter = "Stages";
+    c.singleSidedDouble = true;
+    RuntimeConfig back = RuntimeConfig::fromLine(c.toLine());
+    TEST_ASSERT_EQUAL_STRING("e3:25:39:38:92:71", back.meterAddress.c_str());
+    TEST_ASSERT_EQUAL_STRING("Stages", back.meterNameFilter.c_str());
+    TEST_ASSERT_TRUE(back.singleSidedDouble);
+    // an empty-address (match-by-name) config also round-trips
+    RuntimeConfig n; n.meterNameFilter = "ASSIOMA";
+    RuntimeConfig n2 = RuntimeConfig::fromLine(n.toLine());
+    TEST_ASSERT_EQUAL_STRING("", n2.meterAddress.c_str());
+    TEST_ASSERT_FALSE(n2.singleSidedDouble);
+}
+
+void test_runtime_config_malformed_line_falls_back_to_defaults() {
+    RuntimeConfig c = RuntimeConfig::fromLine("garbage-no-delimiters");
+    TEST_ASSERT_EQUAL_STRING(Config::METER_NAME_FILTER, c.meterNameFilter.c_str());
+    TEST_ASSERT_FALSE(RuntimeConfig::fromLine("").singleSidedDouble);
+}
+
+void test_proxy_set_correction_applies_single_sided_double() {
+    // The runtime single-sided ×2 (a surviving R crank → doubled for total) folds into the
+    // correction; setCorrection swaps it in after NVS load, before any reading is forwarded.
+    MockMeter meter;
+    MockCrank crank;
+    ProxyCore proxy(meter, crank);
+    proxy.begin();
+    proxy.setCorrection(Correction{/*scale=*/2.0f, /*offset=*/0.0f});
+    meter.emit(120);  // one leg
+    TEST_ASSERT_EQUAL_INT(240, crank.last.power_w);  // doubled to total
 }
 
 void test_proxy_applies_correction() {
@@ -906,6 +976,8 @@ int runUnityTests() {
     RUN_TEST(test_meter_match_rejects_real_stages_crank);
     RUN_TEST(test_meter_match_skips_our_own_spoof);
     RUN_TEST(test_meter_match_nameless_winrt_rig_by_cps);
+    RUN_TEST(test_meter_match_winrt_rig_carries_host_name_blocked_in_prod);
+    RUN_TEST(test_meter_match_any_cps_bench_flag);
     RUN_TEST(test_meter_match_pinned_address_wins);
     RUN_TEST(test_meter_match_pin_never_reads_own_spoof);
     RUN_TEST(test_cps_cadence_frame);
@@ -922,6 +994,10 @@ int runUnityTests() {
     RUN_TEST(test_balance_hold_is_sticky_across_balanceless_frames);
     RUN_TEST(test_balance_forwarded_to_spoof_frame);
     RUN_TEST(test_proxy_relays_power);
+    RUN_TEST(test_runtime_config_defaults_from_compile_time);
+    RUN_TEST(test_runtime_config_line_roundtrip);
+    RUN_TEST(test_runtime_config_malformed_line_falls_back_to_defaults);
+    RUN_TEST(test_proxy_set_correction_applies_single_sided_double);
     RUN_TEST(test_proxy_applies_correction);
     RUN_TEST(test_proxy_preserves_cadence);
     RUN_TEST(test_proxy_reset_clears_stale_readings);

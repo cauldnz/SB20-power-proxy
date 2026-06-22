@@ -1556,3 +1556,39 @@ instantaneous-power noise + sub-second skew, but the median over 1000–2600 buc
 **FIT L/R balance:** mean ~**54 % right-referenced** (n=4090) — the rider's real DUO split, the kind of value the
 new balance-forwarding firmware (PRs #74/#75) carries through to the Stages app. Method (offset scan + per-second
 median ratio) is reproducible from the committed `.fit` + `captures.sqlite`; `fitparse` is the `analysis` extra.
+
+## 2026-06-22 — WinRT advert "fake_meter not discoverable" MISDIAGNOSIS corrected + bench match flag
+
+⛔ **OVERTURNS the same-day finding "the WinRT `GattServiceProvider` advert does not expose CPS `0x1818`;
+`fake_meter` shows `uuids=[]`."** That conclusion came from an **active-mode `bleak` scan run on the same
+Windows box as `fake_meter`** — and a single BLE radio is **blind to its own advertisements**. Proven by a
+control: advertised a **unique custom 128-bit UUID** via the same WinRT API → the same-box `bleak` scan saw
+**nothing**, while an **independent nRF52840 sniffer** (COM13) captured it cleanly. So the `bleak`-on-this-box
+result was never valid evidence about what `fake_meter` broadcasts.
+
+**Ground truth, from the nRF sniffer (separate radio) decoding `fake_meter`'s adverts in tshark:**
+- **`ADV_IND`** carries AD type **0x03 (complete 16-bit UUID list) = `0x1818` (CPS)** + `0x180a`. ⟹ **WinRT
+  DOES advertise the CPS service UUID**, in the primary advert (not the scan response).
+- **`SCAN_RSP`** carries AD type **0x09 = the PC's computer name** (here `"CAULDT9H"`). Windows always stamps
+  the machine name into the GATT-server scan response; `GattServiceProviderAdvertisingParameters` has **no
+  name field** (only `is_connectable` / `is_discoverable` / `service_data` / PHY), so it **cannot be set per
+  process** from Python — the task hint was correct.
+
+**Real root cause of `subs=0`:** the firmware does `setActiveScan(true)` (its old comment wrongly claimed
+"WinRT puts the service UUID in the scan response" — it's the *name* that lands there). Active scan harvests
+the scan-response name, so the rig is **not nameless** (misses `isTargetMeter` path 3) and its name isn't
+`"ASSIOMA"` (misses path 5) → never connected. The fix is **not** Python-side (WinRT can't be told to
+advertise "ASSIOMA").
+
+**Fix (firmware, opt-in, production-safe):** new bench flag `-DMETER_MATCH_ANY_CPS=1` → `Config::MATCH_ANY_CPS`
+→ new `isTargetMeter(..., matchAnyCps)` path: when set, read **any** CPS-advertiser that is **not** our spoof
+and **not** a `"Stages "`-named crank (so the host-named rig + a real Assioma match; the SB20's native cranks
+are still excluded). OFF in production (the `"ASSIOMA"` filter still guarantees we read only the configured
+meter, never a stranger's CPS device). New envs `esp32c3-wifi-live-bench[-ota]`. Pure logic stays host-tested:
+added `test_meter_match_winrt_rig_carries_host_name_blocked_in_prod` (prod rejects `"CAULDT9H"`) +
+`test_meter_match_any_cps_bench_flag` (bench matches host rig + Assioma, still rejects Stages cranks + spoof +
+non-CPS). `fake_meter.py` docstring corrected. Diagnostics (`_diag_*.py`) were throwaway, not committed.
+
+**Still to do (next bench session, hardware):** flash the spare board (COM10) with `esp32c3-wifi-live-bench`
+and confirm `fake_meter --balance 65 -> ESP -> crank_reader` reads back **L65 %** end-to-end — the on-air
+balance check that was blocked. The desk-testable layer (the match logic) is covered by the native suite.

@@ -43,6 +43,16 @@ struct Config {
     // appears in /log). "" = match by name/UUID. Set this to stop bouncing between meters (session 2),
     // or to target a specific crank for the single-right-crank use case — e.g. "e3:25:39:38:92:71".
     static constexpr const char* METER_ADDRESS      = "";
+    // BENCH ONLY: built with -DMETER_MATCH_ANY_CPS=1 (the *-bench envs), read ANY CPS-advertising
+    // device that is not our spoof and not a "Stages "-named crank. This is how the WinRT fake_meter
+    // rig is matched — Windows stamps the PC's name (not "ASSIOMA") into the scan response, defeating
+    // the name filter, while still advertising CPS 0x1818 in the primary advert (decisions.md
+    // 2026-06-22). OFF in production: there the name filter ensures we read only the configured meter,
+    // never a stranger's CPS device.
+#ifndef METER_MATCH_ANY_CPS
+#define METER_MATCH_ANY_CPS 0
+#endif
+    static constexpr bool MATCH_ANY_CPS = (METER_MATCH_ANY_CPS != 0);
 
     // --- meter-to-meter correction (linear; a fitted grid lands later) ---
     static constexpr float CORRECTION_SCALE  = 1.0f;

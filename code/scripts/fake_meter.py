@@ -6,8 +6,13 @@ WinRT and notifies a power + cadence stream, so the ESP32 BLE *central* (firmwar
 BleMeterClient) can connect and receive it. This is the test-harness half of **goal #1** —
 the ESP32 receiving power-meter data from the Python app.
 
-The ESP32 matches the meter by the advertised CPS service UUID (WinRT doesn't advertise a
-custom name), so nothing else need be configured on the firmware side.
+This peripheral advertises CPS 0x1818 in its primary advert (confirmed by nRF-sniffer capture),
+BUT Windows stamps the PC's computer name into the scan response — and WinRT gives no way to set
+a custom advertised name (GattServiceProviderAdvertisingParameters has no name field). So under
+the ESP's active scan the rig is neither nameless nor "ASSIOMA"-named, and the production firmware
+name filter rejects it. Flash the ESP with a **bench build** (`esp32c3-wifi-live-bench`, which sets
+-DMETER_MATCH_ANY_CPS=1) to read it. DESK ONLY — don't ride a bench build. See decisions.md
+2026-06-22 ("WinRT advert misdiagnosis").
 
 Usage (PowerShell, from code/, with the venv active):
     python scripts/fake_meter.py                       # 150 W triangle ramp @ 85 rpm, 1 Hz

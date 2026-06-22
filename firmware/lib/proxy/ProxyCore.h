@@ -22,6 +22,9 @@ public:
 
     void loop() { source_.loop(); }
 
+    // Swap the correction at runtime (e.g. apply the single-sided ×2 once NVS config is loaded).
+    void setCorrection(const Correction& c) { correction_ = c; }
+
     // Drop the last readings back to defaults (0 W, unknown cadence) — call when the meter
     // disconnects so the OLED / /stats stop showing stale values. (forwarded_ is a lifetime
     // counter and is intentionally left alone.)

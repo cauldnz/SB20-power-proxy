@@ -40,12 +40,13 @@ class MeterScanCallbacks : public NimBLEScanCallbacks {
         const std::string name = d->getName();
         const std::string addr = d->getAddress().toString();
         const bool cps = d->isAdvertisingService(NimBLEUUID(UUID_CPS));
-        // isTargetMeter (pure, host-tested) picks the source: a PINNED address wins; else a nameless
-        // WinRT rig matches by CPS UUID and a NAMED device must contain METER_NAME_FILTER — so a real
-        // "Stages NNNN" crank (also CPS-advertising) is NOT grabbed (the source-bouncing bug from
-        // bike-session 2), and we never read a copy of our own spoof (which would form a loop).
-        if (!isTargetMeter(name, cps, addr, Config::METER_ADDRESS, Config::SPOOF_NAME,
-                           Config::METER_NAME_FILTER)) {
+        // isTarget (pure, host-tested isTargetMeter under the hood) picks the source from the RUNTIME
+        // config: a PINNED address wins; else a nameless peripheral matches by CPS UUID and a NAMED
+        // device must contain the name filter — so a real "Stages NNNN" crank (also CPS-advertising)
+        // is NOT grabbed (the source-bouncing bug from bike-session 2), and we never read a copy of
+        // our own spoof (a loop). The bench flag MATCH_ANY_CPS loosens the named-device rule for the
+        // WinRT fake_meter rig (advertises under the PC's name, not "ASSIOMA" — decisions.md 2026-06-22).
+        if (!g_meter->isTarget(name, cps, addr)) {
             return;
         }
         NimBLEDevice::getScan()->stop();
@@ -53,6 +54,11 @@ class MeterScanCallbacks : public NimBLEScanCallbacks {
     }
 };
 static MeterScanCallbacks g_scanCb;
+
+bool BleMeterClient::isTarget(const std::string& name, bool cps, const std::string& addr) const {
+    return isTargetMeter(name, cps, addr, matchAddr_, Config::SPOOF_NAME, matchNameFilter_,
+                         Config::MATCH_ANY_CPS);
+}
 
 void BleMeterClient::onFound(const char* addr, uint8_t addrType, const char* name) {
     strncpy(addr_, addr, sizeof(addr_) - 1);
@@ -121,7 +127,7 @@ void BleMeterClient::begin() {
     g_meter = this;
     NimBLEScan* scan = NimBLEDevice::getScan();
     scan->setScanCallbacks(&g_scanCb, false);
-    scan->setActiveScan(true);  // also harvest scan responses (where WinRT puts the service UUID)
+    scan->setActiveScan(true);  // harvest scan responses too (a real meter may carry its name there)
     scan->start(0, false);      // scan continuously
 }
 

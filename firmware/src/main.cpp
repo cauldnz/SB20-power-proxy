@@ -7,6 +7,7 @@
 #include <esp_timer.h>
 
 #include "Config.h"
+#include "ConfigStore.h"  // NVS-backed RuntimeConfig (the user's source/doubling)
 #include "Correction.h"
 #include "PerfMonitor.h"
 #include "PerfStats.h"
@@ -157,10 +158,25 @@ void setup() {
 #endif
 
     NimBLEDevice::init(Config::SPOOF_NAME);
+
+    // Apply the user's saved source/doubling (NVS, set from the web UI) before the source starts.
+    // Defaults to the compile-time Config when nothing is stored. Single-sided ×2 folds into the
+    // correction scale (a surviving R crank / single-sided meter → doubled for total).
+    RuntimeConfig cfg = ConfigStore::load();
+    proxy.setCorrection(Correction{Config::CORRECTION_SCALE * (cfg.singleSidedDouble ? 2.0f : 1.0f),
+                                   Config::CORRECTION_OFFSET});
+#if !USE_MOCK_METER
+    meter.setMatch(cfg.meterAddress, cfg.meterNameFilter);
+#endif
+
     proxy.begin();  // crank advertises; source begins (scan, or nothing for mock)
 
-    Serial.printf("[sb20proxy] advertising as '%s'; source=%s\n",
-                  Config::SPOOF_NAME, USE_MOCK_METER ? "MOCK" : Config::METER_NAME_FILTER);
+    Serial.printf("[sb20proxy] advertising as '%s'; source=%s%s%s\n", Config::SPOOF_NAME,
+                  USE_MOCK_METER ? "MOCK"
+                                 : (cfg.meterAddress.empty() ? cfg.meterNameFilter.c_str()
+                                                             : cfg.meterAddress.c_str()),
+                  cfg.singleSidedDouble ? " (single-sided ×2)" : "",
+                  USE_MOCK_METER ? "" : " [configurable]");
 
 #if USE_WIFI
     pinMode(Config::STATUS_LED_PIN, OUTPUT);  // onboard status LED (active-low)

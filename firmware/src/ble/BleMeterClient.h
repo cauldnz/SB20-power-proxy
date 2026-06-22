@@ -1,7 +1,9 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
+#include "Config.h"       // compile-time defaults for the source match
 #include "Cps.h"          // BalanceHold (sticky pedal-balance)
 #include "IPowerSource.h"
 
@@ -24,6 +26,17 @@ public:
 
     bool connected() const { return connected_; }
 
+    // Set which source to read at RUNTIME (from NVS / the web UI) — a pinned address (""=match by
+    // name) and the name substring. Call before begin(). Falls back to the compile-time defaults.
+    void setMatch(const std::string& addr, const std::string& nameFilter) {
+        matchAddr_ = addr;
+        matchNameFilter_ = nameFilter;
+    }
+
+    // The runtime source-match decision (delegates to the pure, host-tested isTargetMeter). Used by
+    // the scan callback so the matching uses the NVS-configured source, not the compile-time const.
+    bool isTarget(const std::string& name, bool cps, const std::string& addr) const;
+
     // called from NimBLE callbacks
     void onFound(const char* addr, uint8_t addrType, const char* name);
     void onMeasurement(const uint8_t* data, size_t len);  // decode power (+ cadence) and emit
@@ -44,6 +57,8 @@ private:
     uint16_t prevRevs_ = 0;
     uint16_t prevEventTime_ = 0;
     BalanceHold balanceHold_;     // sticky L/R split: hold last good across balance-less frames
+    std::string matchAddr_ = Config::METER_ADDRESS;          // runtime source pin ("" = by name/UUID)
+    std::string matchNameFilter_ = Config::METER_NAME_FILTER; // runtime source name substring
     uint32_t lastReadingMs_ = 0;  // for the staleness watchdog (meter went silent -> rescan)
 };
 
