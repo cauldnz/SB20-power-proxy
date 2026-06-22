@@ -157,21 +157,24 @@ void setup() {
     oled.begin();  // bring the panel up early so it can show portal / connecting
 #endif
 
-    NimBLEDevice::init(Config::SPOOF_NAME);
-
-    // Apply the user's saved source/doubling (NVS, set from the web UI) before the source starts.
-    // Defaults to the compile-time Config when nothing is stored. Single-sided ×2 folds into the
-    // correction scale (a surviving R crank / single-sided meter → doubled for total).
+    // Load the user's saved config FIRST (NVS, set from the web UI) so the BLE stack + crank come up
+    // under the configured identity. Defaults to compile-time Config when nothing is stored.
     RuntimeConfig cfg = ConfigStore::load();
+
+    NimBLEDevice::init(cfg.spoofName.c_str());  // the device name = the spoofed crank identity
+    crank.setIdentity(cfg.spoofName, cfg.spoofSerial);  // advertised name + DIS serial
+
+    // Single-sided ×2 folds into the correction (a surviving R crank / single-sided meter → total).
     proxy.setCorrection(Correction{Config::CORRECTION_SCALE * (cfg.singleSidedDouble ? 2.0f : 1.0f),
                                    Config::CORRECTION_OFFSET});
 #if !USE_MOCK_METER
     meter.setMatch(cfg.meterAddress, cfg.meterNameFilter);
+    meter.setSpoofName(cfg.spoofName);  // keep the loop guard in sync with the runtime identity
 #endif
 
     proxy.begin();  // crank advertises; source begins (scan, or nothing for mock)
 
-    Serial.printf("[sb20proxy] advertising as '%s'; source=%s%s%s\n", Config::SPOOF_NAME,
+    Serial.printf("[sb20proxy] spoofing '%s'; source=%s%s%s\n", cfg.spoofName.c_str(),
                   USE_MOCK_METER ? "MOCK"
                                  : (cfg.meterAddress.empty() ? cfg.meterNameFilter.c_str()
                                                              : cfg.meterAddress.c_str()),
