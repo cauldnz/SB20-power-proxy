@@ -1,5 +1,8 @@
 # Forward Plan — SB20 Power Proxy (post Phase 0)
 
+> **➡️ North star: [`pre-beta-plan.md`](pre-beta-plan.md)** (2026-06-22) — the goal-focused plan to ship the
+> SB20 meter/crank proxy to ~10 collaborator-testers. This doc remains the **technical backlog** it draws on.
+
 **Status: Phase 0 substantially complete and de-risked. This is the operational plan to get from
 "we know it will work" to a working proxy.** Last updated 2026-06-16.
 
