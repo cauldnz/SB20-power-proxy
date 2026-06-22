@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "Cps.h"          // BalanceHold (sticky pedal-balance)
 #include "IPowerSource.h"
 
 class NimBLEClient;  // NimBLE-Arduino (global namespace); kept out of the header
@@ -42,6 +43,7 @@ private:
     bool havePrevCrank_ = false;
     uint16_t prevRevs_ = 0;
     uint16_t prevEventTime_ = 0;
+    BalanceHold balanceHold_;     // sticky L/R split: hold last good across balance-less frames
     uint32_t lastReadingMs_ = 0;  // for the staleness watchdog (meter went silent -> rescan)
 };
 

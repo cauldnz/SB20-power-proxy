@@ -82,11 +82,11 @@ void BleMeterClient::onMeasurement(const uint8_t* data, size_t len) {
     r.power_w = decodeCpsPower(data, len);  // sint16 at bytes 2-3, regardless of flags
     r.t_ms = millis();
 
-    // Forward the source meter's real L/R pedal balance when it carries one (the Assioma DUO
-    // reports it — CPS flags bit0, the byte at offset 4). The spoofed Stages crank re-emits it so
-    // the SB20 / Stages app shows the genuine split instead of an implicit 50/50.
-    const CpsBalance bal = decodeCpsBalance(data, len);
-    if (bal.present) r.balance_half_pct = (int16_t)bal.halfPct;
+    // Forward the source meter's real L/R pedal balance (the Assioma DUO reports it — CPS flags
+    // bit0, the byte at offset 4) so the spoofed crank shows the genuine split, not an implicit
+    // 50/50. Held sticky: a meter that omits balance on some frames keeps its last good split
+    // rather than flapping to the default (balanceHold_ is cleared on disconnect).
+    r.balance_half_pct = balanceHold_.update(decodeCpsBalance(data, len));
 
     // Recover cadence from Crank Revolution Data the way a head unit does. The generic decoder
     // finds the crank-rev fields whatever optional fields precede them — the Assioma sends
@@ -110,6 +110,7 @@ void BleMeterClient::onDisconnected() {
     connected_ = false;
     haveTarget_ = false;
     havePrevCrank_ = false;  // don't carry crank deltas across a reconnect
+    balanceHold_.reset();    // re-learn the new meter's L/R split on reconnect
     loggedFrame_ = false;    // re-log the frame format on the next connection
     lastReadingMs_ = 0;
     wantRescan_ = true;  // restart the scan from loop() (off the callback context)

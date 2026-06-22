@@ -17,7 +17,8 @@ enum class OledMode { Portal, Connecting, Connected };
 // The panel only shows ~3 rows, so a 4th row falls off the bottom: for Connected, power and
 // cadence therefore SHARE row 3 ("230W 85rpm") so the rebroadcast cadence is actually visible.
 inline std::array<std::string, 4> formatOledLines(OledMode mode, const std::string& ip,
-                                                  int watts, int cadenceRpm, int rssi = 0) {
+                                                  int watts, int cadenceRpm, int rssi = 0,
+                                                  int balancePct = -1) {
     switch (mode) {
         case OledMode::Portal:
             return {"SB20 SETUP", "join wifi:", "SB20-Setup", "192.168.4.1"};
@@ -25,11 +26,14 @@ inline std::array<std::string, 4> formatOledLines(OledMode mode, const std::stri
             return {"SB20 PROXY", "connecting", std::string(), std::string()};
         case OledMode::Connected: {
             // Row 3 (lines[2]) = power then cadence, SHARED so both stay visible on the ~3-row
-            // panel (cadence omitted when unknown). Title row = signal strength when connected,
-            // clearly labelled RSSI (handy for positioning the board for a strong-enough OTA);
-            // rssi == 0 (not yet connected) falls back to the brand. Full layout review pending.
+            // panel. When the meter reports an L/R split we append a compact "L44" and drop the
+            // "rpm" unit so it still fits ~12 chars ("230W 85 L44"); no balance -> unchanged
+            // ("230W 85rpm"). Title row = signal strength when connected, clearly labelled RSSI
+            // (handy for positioning the board for a strong-enough OTA); rssi == 0 -> the brand.
             std::string row = std::to_string(watts) + "W";
-            if (cadenceRpm >= 0) row += " " + std::to_string(cadenceRpm) + "rpm";
+            if (cadenceRpm >= 0)
+                row += " " + std::to_string(cadenceRpm) + (balancePct >= 0 ? "" : "rpm");
+            if (balancePct >= 0) row += " L" + std::to_string(balancePct);
             std::string title = rssi < 0 ? "WiFi " + std::to_string(rssi) : std::string("SB20 PROXY");
             return {title, ip, row, std::string()};
         }

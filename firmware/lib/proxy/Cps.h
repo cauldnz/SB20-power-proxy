@@ -128,6 +128,20 @@ inline CpsBalance decodeCpsBalance(const uint8_t* d, size_t len) {
     return b;
 }
 
+// Sticky pedal-balance hold. A meter may carry the balance byte on only SOME frames (alternating
+// frame types, or a dropped optional field); without this the forwarded split would flap back to
+// the 50/50 default on every balance-less frame. Hold the last good split across those frames —
+// the same "don't reset between samples" treatment cadence gets. -1 until the first balance is
+// seen; call reset() on meter disconnect so a new meter re-learns its own split. Pure + host-tested.
+struct BalanceHold {
+    int16_t halfPct = -1;  // last seen left% × 2, -1 = none seen yet
+    int16_t update(const CpsBalance& b) {
+        if (b.present) halfPct = (int16_t)b.halfPct;
+        return halfPct;
+    }
+    void reset() { halfPct = -1; }
+};
+
 // Crank Revolution Data, valid only when no earlier-bit optional field precedes it (true
 // for our crank-rev-only frame). Cumulative revs at 4-5, last crank event time at 6-7.
 inline uint16_t decodeCrankRevs(const uint8_t* d, size_t len) {
