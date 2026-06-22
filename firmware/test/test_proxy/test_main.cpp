@@ -880,6 +880,9 @@ void test_app_page_essentials() {
     TEST_ASSERT_TRUE(p.find("src_power_w") != std::string::npos);  // reads the received power field
     TEST_ASSERT_TRUE(p.find("METER IN") != std::string::npos);     // shows the in->out flow
     TEST_ASSERT_TRUE(p.find("CRANK OUT") != std::string::npos);
+    TEST_ASSERT_TRUE(p.find("fetch('/status'") != std::string::npos);  // polls /status (not /)
+    TEST_ASSERT_TRUE(p.find("balance_pct") != std::string::npos);      // shows the L/R balance
+    TEST_ASSERT_TRUE(p.find("href='/setup'") != std::string::npos);    // link to pick the source
 }
 
 // --- perf monitor / stats (the load-observability core) -----------------------

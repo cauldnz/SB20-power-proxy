@@ -158,12 +158,15 @@ void WifiLink::startStationServer_() {
     ArduinoOTA.begin();
 
     server_ = new WebServer(80);
-    server_->on("/", HTTP_GET, [this]() {
+    // GET / -> the dashboard (what a tester sees opening the board's IP); /ui is kept as an alias.
+    auto serveDash = [this]() { server_->send(200, "text/html", appPageHtml()); };
+    server_->on("/", HTTP_GET, serveDash);
+    server_->on("/ui", HTTP_GET, serveDash);
+    // GET /status -> the status JSON the dashboard polls (was GET /; tools that curled / should
+    // use /status now). Kept compact + unchanged in shape.
+    server_->on("/status", HTTP_GET, [this]() {
         std::string j = provider_ ? renderStatusJson(provider_()) : std::string("{}");
         server_->send(200, "application/json", j.c_str());
-    });
-    server_->on("/ui", HTTP_GET, [this]() {  // streaming dashboard; polls / from the browser
-        server_->send(200, "text/html", appPageHtml());
     });
     // Perf observability (Phase A): loop timing, heap/frag, stack, idle, reboot evidence.
     server_->on("/stats", HTTP_GET, [this]() {
