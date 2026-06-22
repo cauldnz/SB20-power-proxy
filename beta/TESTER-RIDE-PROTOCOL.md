@@ -8,9 +8,11 @@ file afterwards and we do the analysis.
 Do this with the board powered and on WiFi, **before you get on**:
 
 - [ ] Board screen shows its **IP** (not `SB20 SETUP`).
-- [ ] Open the **dashboard** (`http://<board-ip>/`). It shows **METER IN → CRANK OUT**.
-- [ ] **Spin your power source** (pedal the meter / turn the crank by hand): the **METER IN** power moves,
-      and **CRANK OUT** mirrors it. *(Cadence and balance show too, if your meter sends them.)*
+- [ ] Open the **dashboard** (`http://<board-ip>/`). The **Source** tile shows your meter's name
+      (e.g. `ASSIOMA17039L (connected)`) — that's your confirmation the board found *your* source.
+      *(Or tap **⚙ Source**: it reads “**Reading … ✓**” when connected.)*
+- [ ] **Spin your power source** (pedal the meter / turn the crank by hand): **METER IN** power moves
+      and **CRANK OUT** mirrors it. *(Cadence and L/R balance show too, if your meter sends them.)*
 - [ ] In your training app, the **SB20 is paired** and shows power when you spin.
 - [ ] The real left crank battery is **out** (unless we told you otherwise).
 

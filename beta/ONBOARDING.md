@@ -25,10 +25,12 @@ so the SB20 broadcasts **that** power to Zwift/your apps. Two reasons people use
 2. On your phone, **join the WiFi network `SB20-Setup`**. A setup page opens (or visit `http://192.168.4.1`).
 3. **Join your home WiFi** through that page (so we can send you updates later). The board reboots and
    shows its IP on the screen.
-4. Open the board's page (the IP on the screen, or `http://sb20proxy.local/`). Go to **Setup → Source**.
-5. **Tap “Scan”**, then **pick your power source** from the list (your meter, or your surviving crank).
-   Confirm and **Save**. *(If we pre-configured your meter, it may already be selected — just confirm.)*
-6. The dashboard should now show **METER IN → CRANK OUT** with live numbers when you spin the source.
+4. Open the board's **dashboard** in a browser (the IP on the screen, or `http://sb20proxy.local/`).
+5. Tap **⚙ Source** (top right) → **Scan** → **pick your power source** from the list (your meter, or
+   your surviving crank — a Stages crank shows a “crank” tag) → **Save**. The board restarts to apply it.
+   *(If we pre-configured your meter, it may already be selected — just confirm.)*
+6. Back on the dashboard you'll see **METER IN → CRANK OUT** with live numbers (and your L/R balance)
+   when you spin the source, and the **Source** tile shows your meter's name.
 
 ## The crank step (important — read this)
 Your real Stages crank and the board both pretend to be "the crank", so they'd clash on air. Before you
