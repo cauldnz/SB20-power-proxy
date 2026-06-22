@@ -37,6 +37,10 @@ public:
         matchNameFilter_ = nameFilter;
     }
 
+    // Tell the loop guard which name is OUR spoof, so we never read a copy of our own crank (the
+    // spoof identity is now runtime — keep the guard in sync). Call before begin().
+    void setSpoofName(const std::string& s) { matchSpoofName_ = s; }
+
     // The runtime source-match decision (delegates to the pure, host-tested isTargetMeter). Used by
     // the scan callback so the matching uses the NVS-configured source, not the compile-time const.
     bool isTarget(const std::string& name, bool cps, const std::string& addr) const;
@@ -70,6 +74,7 @@ private:
     BalanceHold balanceHold_;     // sticky L/R split: hold last good across balance-less frames
     std::string matchAddr_ = Config::METER_ADDRESS;          // runtime source pin ("" = by name/UUID)
     std::string matchNameFilter_ = Config::METER_NAME_FILTER; // runtime source name substring
+    std::string matchSpoofName_ = Config::SPOOF_NAME;         // our spoof's name (loop-guard exclusion)
     std::vector<SourceCandidate> candidates_;                 // discovered sources for the web picker
     uint32_t lastReadingMs_ = 0;  // for the staleness watchdog (meter went silent -> rescan)
 };

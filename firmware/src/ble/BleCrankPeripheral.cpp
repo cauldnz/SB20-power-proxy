@@ -93,7 +93,7 @@ void BleCrankPeripheral::begin() {
     dis->createCharacteristic(UUID_DIS_FW, NIMBLE_PROPERTY::READ)
         ->setValue(std::string(Config::SPOOF_FW));
     dis->createCharacteristic(UUID_DIS_SERIAL, NIMBLE_PROPERTY::READ)
-        ->setValue(std::string(Config::SPOOF_SERIAL));
+        ->setValue(spoofSerial_);  // runtime (the configured crank's serial); defaults to Config
     dis->start();
 
     // --- Stages proprietary service (the real crank advertises + exposes this; the SB20 likely
@@ -117,7 +117,7 @@ void BleCrankPeripheral::begin() {
     //     128-bit UUID in the primary packet crowds the name out of the 31-byte advert (the real
     //     crank's capture has name+1818 primary, d445fe01 in the scan response). ---
     NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
-    adv->setName(Config::SPOOF_NAME);
+    adv->setName(spoofName_.c_str());  // runtime crank identity; defaults to Config::SPOOF_NAME
     adv->addServiceUUID(UUID_CPS);
     NimBLEAdvertisementData scanResp;
     scanResp.addServiceUUID(Config::STAGES_SVC);

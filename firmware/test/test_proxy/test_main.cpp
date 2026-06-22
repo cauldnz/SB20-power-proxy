@@ -434,15 +434,34 @@ void test_runtime_config_line_roundtrip() {
     c.meterAddress = "e3:25:39:38:92:71";  // a surviving R crank, pinned
     c.meterNameFilter = "Stages";
     c.singleSidedDouble = true;
+    c.spoofName = "Stages 12345";          // a different owner's crank identity
+    c.spoofSerial = "99887766";
     RuntimeConfig back = RuntimeConfig::fromLine(c.toLine());
     TEST_ASSERT_EQUAL_STRING("e3:25:39:38:92:71", back.meterAddress.c_str());
     TEST_ASSERT_EQUAL_STRING("Stages", back.meterNameFilter.c_str());
     TEST_ASSERT_TRUE(back.singleSidedDouble);
+    TEST_ASSERT_EQUAL_STRING("Stages 12345", back.spoofName.c_str());   // identity round-trips
+    TEST_ASSERT_EQUAL_STRING("99887766", back.spoofSerial.c_str());
     // an empty-address (match-by-name) config also round-trips
     RuntimeConfig n; n.meterNameFilter = "ASSIOMA";
     RuntimeConfig n2 = RuntimeConfig::fromLine(n.toLine());
     TEST_ASSERT_EQUAL_STRING("", n2.meterAddress.c_str());
     TEST_ASSERT_FALSE(n2.singleSidedDouble);
+}
+
+void test_runtime_config_defaults_spoof_identity() {
+    RuntimeConfig c = RuntimeConfig::defaults();
+    TEST_ASSERT_EQUAL_STRING(Config::SPOOF_NAME, c.spoofName.c_str());
+    TEST_ASSERT_EQUAL_STRING(Config::SPOOF_SERIAL, c.spoofSerial.c_str());
+}
+
+void test_runtime_config_old_line_keeps_default_identity() {
+    // an old 3-field NVS line (pre-spoof-picker) must still parse, keeping the default identity
+    RuntimeConfig c = RuntimeConfig::fromLine("aa:bb:cc:dd:ee:ff|ASSIOMA|1");
+    TEST_ASSERT_EQUAL_STRING("aa:bb:cc:dd:ee:ff", c.meterAddress.c_str());
+    TEST_ASSERT_TRUE(c.singleSidedDouble);
+    TEST_ASSERT_EQUAL_STRING(Config::SPOOF_NAME, c.spoofName.c_str());     // identity defaulted
+    TEST_ASSERT_EQUAL_STRING(Config::SPOOF_SERIAL, c.spoofSerial.c_str());
 }
 
 void test_runtime_config_malformed_line_falls_back_to_defaults() {
@@ -461,6 +480,13 @@ void test_config_form_parse() {
     TEST_ASSERT_EQUAL_STRING("", d.meterAddress.c_str());
     TEST_ASSERT_EQUAL_STRING("ASSIOMA", d.meterNameFilter.c_str());
     TEST_ASSERT_FALSE(d.singleSidedDouble);
+    // spoof identity round-trips through the form; blank identity falls back to the default
+    RuntimeConfig e = parseConfigForm("addr=&name=ASSIOMA&spoof_name=Stages+12345&spoof_serial=42");
+    TEST_ASSERT_EQUAL_STRING("Stages 12345", e.spoofName.c_str());  // '+' -> space
+    TEST_ASSERT_EQUAL_STRING("42", e.spoofSerial.c_str());
+    RuntimeConfig f = parseConfigForm("addr=&name=ASSIOMA&spoof_name=&spoof_serial=");
+    TEST_ASSERT_EQUAL_STRING(Config::SPOOF_NAME, f.spoofName.c_str());      // blank -> default
+    TEST_ASSERT_EQUAL_STRING(Config::SPOOF_SERIAL, f.spoofSerial.c_str());
 }
 
 void test_config_validation() {
@@ -521,6 +547,17 @@ void test_render_config_page_escapes_name() {
     std::string h = renderConfigPage(RuntimeConfig::defaults(), ds);
     TEST_ASSERT_TRUE(h.find("&lt;script&gt;x") != std::string::npos);
     TEST_ASSERT_TRUE(h.find("<script>x</") == std::string::npos);       // no raw injection
+}
+
+void test_render_config_page_shows_spoof_identity() {
+    RuntimeConfig cfg = RuntimeConfig::defaults();
+    cfg.spoofName = "Stages 62144";
+    cfg.spoofSerial = "11821518";
+    std::string h = renderConfigPage(cfg);
+    TEST_ASSERT_TRUE(h.find("name='spoof_name'") != std::string::npos);   // the identity field
+    TEST_ASSERT_TRUE(h.find("Stages 62144") != std::string::npos);        // pre-filled
+    TEST_ASSERT_TRUE(h.find("name='spoof_serial'") != std::string::npos);
+    TEST_ASSERT_TRUE(h.find("Crank identity") != std::string::npos);      // the section heading
 }
 
 void test_render_config_page_status_banner() {
@@ -1083,6 +1120,8 @@ int runUnityTests() {
     RUN_TEST(test_proxy_relays_power);
     RUN_TEST(test_runtime_config_defaults_from_compile_time);
     RUN_TEST(test_runtime_config_line_roundtrip);
+    RUN_TEST(test_runtime_config_defaults_spoof_identity);
+    RUN_TEST(test_runtime_config_old_line_keeps_default_identity);
     RUN_TEST(test_runtime_config_malformed_line_falls_back_to_defaults);
     RUN_TEST(test_config_form_parse);
     RUN_TEST(test_config_validation);
@@ -1090,6 +1129,7 @@ int runUnityTests() {
     RUN_TEST(test_dedupe_and_sort_sources);
     RUN_TEST(test_render_config_page_marks_selected_and_badges);
     RUN_TEST(test_render_config_page_escapes_name);
+    RUN_TEST(test_render_config_page_shows_spoof_identity);
     RUN_TEST(test_render_config_page_status_banner);
     RUN_TEST(test_proxy_set_correction_applies_single_sided_double);
     RUN_TEST(test_proxy_applies_correction);

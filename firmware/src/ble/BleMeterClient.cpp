@@ -60,13 +60,13 @@ class MeterScanCallbacks : public NimBLEScanCallbacks {
 static MeterScanCallbacks g_scanCb;
 
 bool BleMeterClient::isTarget(const std::string& name, bool cps, const std::string& addr) const {
-    return isTargetMeter(name, cps, addr, matchAddr_, Config::SPOOF_NAME, matchNameFilter_,
+    return isTargetMeter(name, cps, addr, matchAddr_, matchSpoofName_, matchNameFilter_,
                          Config::MATCH_ANY_CPS);
 }
 
 void BleMeterClient::recordCandidate(const char* addr, const char* name, int rssi, bool cps) {
     const std::string n = name ? name : "";
-    if (n == Config::SPOOF_NAME) return;  // never offer our own spoof as a source
+    if (n == matchSpoofName_) return;  // never offer our own spoof as a source
     SourceCandidate c;
     c.address = addr ? addr : "";
     c.name = n;

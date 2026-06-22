@@ -1,7 +1,8 @@
 #pragma once
 #include <cstdint>
+#include <string>
 
-#include "Config.h"  // SPOOF_CRANK_LENGTH_HALFMM default
+#include "Config.h"  // SPOOF_* defaults
 #include "Cps.h"  // pure (no NimBLE): CrankCadence + the measurement codec
 #include "ICrankOutput.h"
 
@@ -18,7 +19,17 @@ public:
     void begin() override;
     void publishPower(const PowerReading& r) override;
 
+    // Set the spoofed crank identity at RUNTIME (from NVS / the web UI) — the advertised name (the
+    // "Stages NNNNN" the SB20 pairs to) and the DIS serial. Call before begin(). Defaults to Config.
+    void setIdentity(const std::string& name, const std::string& serial) {
+        spoofName_ = name;
+        spoofSerial_ = serial;
+    }
+    const std::string& spoofName() const { return spoofName_; }
+
 private:
+    std::string spoofName_ = Config::SPOOF_NAME;      // advertised crank identity
+    std::string spoofSerial_ = Config::SPOOF_SERIAL;  // DIS serial (0x2A25)
     NimBLECharacteristic* meas_ = nullptr;
     CrankCadence cadence_;        // advances crank revs / event time from each reading's rpm
     uint16_t accumTorque_ = 0;    // accumulated torque (1/32 Nm), advanced per completed rev

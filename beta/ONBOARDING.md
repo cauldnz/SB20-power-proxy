@@ -35,8 +35,10 @@ so the SB20 broadcasts **that** power to Zwift/your apps. Two reasons people use
 ## The crank step (important — read this)
 Your real Stages crank and the board both pretend to be "the crank", so they'd clash on air. Before you
 ride, **either**:
-- **Pull the battery** out of your SB20's left crank (the master), **or**
-- (if we set you up that way) leave it — we'll have told you which.
+- **Pull the battery** out of your SB20's left crank (the master) so only the board is "Stages NNNNN", **or**
+- under **⚙ Source → Crank identity (advanced)**, set the board to a **different** crank number, pair the
+  SB20 to *that* one, and leave your real crank alone. *(Set the identity to **your** crank's number if you
+  did pull the battery, so the bike recognises it — that's the default we ship.)*
 
 *Crank-rescue testers:* if your left crank is already dead, there's nothing to pull — you're set.
 
