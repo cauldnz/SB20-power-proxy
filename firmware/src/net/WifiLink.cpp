@@ -18,6 +18,7 @@
 #include <esp_timer.h>
 
 #include "Provisioning.h"      // pure page render + form parse + validation (host-tested)
+#include "DiagReport.h"        // pure tester /diag report (config + status + raw meter frames)
 #include "WebApp.h"            // static streaming dashboard served at GET /ui (renders in the phone)
 #include "net/DebugLog.h"      // recent-log ring served at GET /log (serial is flaky on the C3)
 #include "net/WifiCreds.h"     // NVS-backed credential storage
@@ -266,6 +267,14 @@ void WifiLink::addConfigRoutes_() {
         server_->send(200, "text/html", renderConfigSavedPage(cfg).c_str());
         delay(400);
         esp_restart();  // reboot to apply the new source (mirrors /update)
+    });
+    // GET /diag -> the plain-text tester report (config + status + raw meter frames). A tester saves
+    // it and sends it when their meter isn't recognised, so we add support offline (real-data-first).
+    server_->on("/diag", HTTP_GET, [this]() {
+        const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        const ProxyStatus st = provider_ ? provider_() : ProxyStatus{};
+        const std::vector<std::string> frames = diagFrames_ ? diagFrames_() : std::vector<std::string>{};
+        server_->send(200, "text/plain", renderDiagReport(cfg, st, frames).c_str());
     });
 }
 

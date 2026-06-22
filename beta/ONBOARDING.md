@@ -50,8 +50,9 @@ ride, **either**:
 
 ## If something's not right
 - **Your meter isn't in the scan list**, or the **power looks wrong** → don't fight it on the bike.
-  Grab a log for us: open `http://<board-ip>/log`, **save the page**, and send us the file (plus your
-  meter's exact model). We'll add support and **push you an update over WiFi** — no need to send anything back.
+  Grab a diagnostic for us: open `http://<board-ip>/diag`, **save the page**, and send us the file (plus
+  your meter's exact model). It contains your meter's raw signal — exactly what we need to add support.
+  We'll **push you an update over WiFi** — no need to send anything back.
 - **Screen/board froze** → unplug/replug, and tell us what you were doing.
 
 ## Updates

@@ -17,7 +17,7 @@ Do this with the board powered and on WiFi, **before you get on**:
 - [ ] The real left crank battery is **out** (unless we told you otherwise).
 
 **All five ticked = green. Only then mount the bike.** If any fail → **don't ride yet**, send us a
-[`/log`](#sending-us-a-log) and we'll sort it. Don't troubleshoot in the saddle.
+[diagnostic](#sending-us-a-diagnostic) and we'll sort it. Don't troubleshoot in the saddle.
 
 **Optional (for the most reliable ride):** once green, tap **“Ride mode — turn WiFi off”** at the bottom
 of the dashboard. That frees the board's radio for Bluetooth only (it can't freeze under WiFi+BLE load).
@@ -33,13 +33,14 @@ You don't need to watch screens the whole time or stay on a call. The board logs
 
 ## After the ride (60 seconds)
 - Fill the **short form** we sent (did power match? any freeze? which meter?).
-- If anything looked off, **send us a log** (below). Otherwise you're done.
+- If anything looked off, **send us a diagnostic** (below). Otherwise you're done.
 
-## Sending us a log
-1. Open `http://<board-ip>/log` in a browser.
-2. **Save the page** (Ctrl/Cmd-S) — or copy all the text into a file.
+## Sending us a diagnostic
+1. Open `http://<board-ip>/diag` in a browser.
+2. **Save the page** (Ctrl/Cmd-S) — or copy all the text into a file. It has your config, the live status,
+   and your meter's raw signal (no personal data).
 3. Send it to us with your **meter's exact model**. We decode it offline, add/fix support, and **push you
-   an update over WiFi**. Nothing comes back to us physically.
+   an update over WiFi**. Nothing comes back to us physically. *(The `/log` page is also there if we ask.)*
 
 ## What we will *not* do to you
 - Send you to the bike before it's verified working.
