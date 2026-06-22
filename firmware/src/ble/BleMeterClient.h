@@ -28,6 +28,7 @@ public:
     void loop() override;
 
     bool connected() const { return connected_; }
+    const char* sourceName() const { return name_; }  // the connected meter's advertised name
 
     // Set which source to read at RUNTIME (from NVS / the web UI) — a pinned address (""=match by
     // name) and the name substring. Call before begin(). Falls back to the compile-time defaults.

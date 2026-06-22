@@ -13,6 +13,7 @@ struct ProxyStatus {
     const char* fw = "sb20proxy-esp32";
     bool sourceConnected = false;  // meter linked (always false in mock mode)
     bool mock = false;             // running the synthetic meter, no real source
+    std::string srcName;           // the connected source's advertised name ("" if none)
     int32_t forwarded = 0;         // readings relayed to the crank
     // The proxy carries two power streams; the UI shows both so each direction is visible:
     //   * src*  — what we RECEIVED from the meter (the BLE-central / goal-#1 side)
@@ -30,6 +31,19 @@ struct ProxyStatus {
 
 // Render a ProxyStatus as a compact JSON object. Pure (no Arduino / NimBLE), so it is
 // host-tested exactly like the rest of lib/proxy.
+// Minimal JSON string escape (backslash, double-quote, control chars) so a source name with an
+// odd character can't break the JSON. Pure.
+inline std::string jsonEscape(const std::string& in) {
+    std::string o;
+    o.reserve(in.size() + 2);
+    for (char c : in) {
+        if (c == '"' || c == '\\') { o += '\\'; o += c; }
+        else if ((unsigned char)c < 0x20) { o += ' '; }  // drop control chars
+        else o += c;
+    }
+    return o;
+}
+
 inline std::string renderStatusJson(const ProxyStatus& s) {
     const char* source = s.mock ? "mock" : (s.sourceConnected ? "connected" : "searching");
     std::string j = "{";
@@ -37,7 +51,8 @@ inline std::string renderStatusJson(const ProxyStatus& s) {
     j += s.fw;
     j += "\",\"source\":\"";
     j += source;
-    j += "\",\"forwarded\":" + std::to_string(s.forwarded);
+    j += "\",\"src_name\":\"" + jsonEscape(s.srcName) + "\"";
+    j += ",\"forwarded\":" + std::to_string(s.forwarded);
     // src_* = received from the meter (goal #1); power_w/cadence_rpm = broadcast to the crank (goal #2)
     j += ",\"src_power_w\":" + std::to_string(s.srcPowerW);
     j += ",\"src_cadence_rpm\":" + std::to_string(s.srcCadenceRpm);

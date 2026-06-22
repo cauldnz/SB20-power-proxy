@@ -289,7 +289,10 @@ inline std::string renderSavedPage(const std::string& ssid) {
         "<ul>"
         "<li>the onboard <b>status LED</b> settles into a slow, steady pulse, and</li>"
         "<li>the <b>OLED</b> shows the device&rsquo;s IP address.</li>"
-        "</ul></body></html>";
+        "</ul>"
+        "<p><b>Next:</b> open the dashboard at that IP (or <code>http://sb20proxy.local/</code>) and tap "
+        "<b>&#9881; Source</b> to choose the power meter or crank it should read.</p>"
+        "</body></html>";
 }
 
 }  // namespace sb20proxy
