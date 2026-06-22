@@ -146,10 +146,14 @@ void BleCrankPeripheral::publishPower(const PowerReading& r) {
     lastT_ = r.t_ms;
     haveLastT_ = true;
 
-    // Pedal balance: real crank reports a left-referenced value; we send 50% (raw 100) as the
-    // single source has no L/R split. The SB20 reads instantaneous power, not balance.
+    // Pedal balance: forward the source meter's REAL left-referenced L/R split (the Assioma DUO
+    // reports it via CPS bit0) so the SB20 / Stages app shows the genuine balance. Fall back to
+    // 50 % (raw 100) when the source carries no split (single-sided meter / mock). balance_half_pct
+    // is the left pedal's 1/2-% value, exactly what the Stages 0x2F balance byte expects.
+    const uint8_t balanceOut =
+        (r.balance_half_pct >= 0) ? (uint8_t)r.balance_half_pct : (uint8_t)100;
     std::vector<uint8_t> frame = encodeStagesCpsMeasurement(
-        r.power_w, /*balanceHalfPct=*/100, accumTorque_, cadence_.cumulativeRevs,
+        r.power_w, balanceOut, accumTorque_, cadence_.cumulativeRevs,
         cadence_.lastEventTime);
     meas_->setValue(frame.data(), frame.size());
     meas_->notify();
