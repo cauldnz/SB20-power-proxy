@@ -1530,3 +1530,29 @@ name) would match, but none is at the desk (bike-dependent). ⟹ **the forward i
 golden vectors; the on-air confirmation waits for a real meter or a `fake_meter` advert fix.** (Two boards
 both advertise `Stages 62144`; parked one in its ROM bootloader during the test to remove contention, then
 restored it.) Also installed a host **gcc (WinLibs)** so `pio test -e native` runs on this box.
+
+## 2026-06-22 — Session 7 power-topology CONFIRMED by the owner's Garmin .FIT (independent dense Assioma)
+
+Folded in the owner's Garmin `.FIT` for the session-7 ride — `findings/captures/G-garmin-assioma-session7-20260622.fit`
+(dense **Assioma DUO**: 4403 records @ 1 Hz, 73 min, mean 225 W, full cycling dynamics incl. L/R balance) —
+and reconciled it against the streams already in `captures.sqlite` (imported as `fit_record`, capture_id 36).
+
+**Clock:** the FIT is UTC; the capture box runs **+10 h** (same as session 4). Self-calibrated the offset by
+maximising agreement with the *in-capture* `assioma` stream (same physical meter ⟹ ratio should be 1.0):
+best offset **+9.98 h** gave `assioma` median **1.000** (n=1027) — confirms the alignment + that both Assioma
+recordings agree exactly.
+
+**Per-second median ratio (stream ÷ FIT-Assioma), at the calibrated offset:**
+- `assioma` (in-capture) = **1.000** (n=1027) — sanity ✓
+- `bike_fec` (SB20 FE-C) = **1.111×** (n=2599)
+- `stagesL` (Stages crank) = **1.098×** (n=1838) ≈ `bike_fec` ⟹ SB20 reports the Stages crank ~1:1 ✓
+
+⟹ **Independently CONFIRMS the session-7 resolution: the SB20's erg/display power ≈ 1.11× the Assioma, and
+it reports the native Stages crank ~1:1.** Striking corroboration: **1.111 ≈ 367/330 = 1.112**, exactly the
+owner's empirical dual-FTP workaround (FTP 367 in the bike vs 330 on the Assioma watch) — i.e. a **flat ~1.11×
+constant** is the right correction, not a power-dependent curve. (Per-second IQRs are wide [~0.8–1.5] from
+instantaneous-power noise + sub-second skew, but the median over 1000–2600 buckets is robust.)
+
+**FIT L/R balance:** mean ~**54 % right-referenced** (n=4090) — the rider's real DUO split, the kind of value the
+new balance-forwarding firmware (PRs #74/#75) carries through to the Stages app. Method (offset scan + per-second
+median ratio) is reproducible from the committed `.fit` + `captures.sqlite`; `fitparse` is the `analysis` extra.
