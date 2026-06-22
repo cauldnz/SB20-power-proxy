@@ -116,8 +116,10 @@ static void oledTask(void*) {
         ip = std::string(WiFi.localIP().toString().c_str());
         rssi = wifi.isUp() ? WiFi.RSSI() : 0;
 #endif
+        const int balPct = proxy.lastSource().balance_half_pct >= 0
+                               ? proxy.lastSource().balance_half_pct / 2 : -1;  // left %, -1 = none
         auto lines = formatOledLines(mode, ip, proxy.lastOutput().power_w,
-                                     proxy.lastOutput().cadence_rpm, rssi);
+                                     proxy.lastOutput().cadence_rpm, rssi, balPct);
         if (lines != last) {
             oled.drawLines(lines);
             last = lines;
@@ -174,8 +176,10 @@ void setup() {
         s.forwarded = proxy.forwarded();
         s.srcPowerW = proxy.lastSource().power_w;        // received from the meter
         s.srcCadenceRpm = proxy.lastSource().cadence_rpm;
+        s.srcBalanceHalfPct = proxy.lastSource().balance_half_pct;
         s.lastPowerW = proxy.lastOutput().power_w;        // broadcast to the crank
         s.lastCadenceRpm = proxy.lastOutput().cadence_rpm;
+        s.lastBalanceHalfPct = proxy.lastOutput().balance_half_pct;
         s.rssi = WiFi.RSSI();
         s.freeHeap = ESP.getFreeHeap();
         s.uptimeMs = millis();
