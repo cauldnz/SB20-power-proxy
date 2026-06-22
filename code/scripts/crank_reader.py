@@ -96,8 +96,11 @@ async def run(args: argparse.Namespace) -> None:
                 if rpm > 0:
                     cad = f"   {round(rpm):3d} rpm"
             prev_crank[0] = (m.cumulative_crank_revs, m.last_crank_event_time)
+        bal = ""
+        if m.balance_pct is not None:
+            bal = f"   L{m.balance_pct:.0f}%/R{100 - m.balance_pct:.0f}%"
         count[0] += 1
-        print(f"  [{count[0]:4d}] {m.power_w:4d} W{cad}      raw={raw.hex()}")
+        print(f"  [{count[0]:4d}] {m.power_w:4d} W{cad}{bal}      raw={raw.hex()}")
 
     def on_control_point(_char, data: bytearray) -> None:
         decoded = decode_control_point(bytes(data))

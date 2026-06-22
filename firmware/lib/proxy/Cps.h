@@ -110,6 +110,24 @@ inline uint16_t decodeCpsFlags(const uint8_t* d, size_t len) {
     return (uint16_t)(d[0] | (d[1] << 8));
 }
 
+// Pedal Power Balance (flags bit0) — the byte immediately after instantaneous power, so it sits
+// at a fixed offset 4 (balance is the lowest optional bit, nothing precedes it). When the balance
+// is left-referenced (bit1), the value is the LEFT pedal's contribution in 1/2-% units, so 88 =>
+// 44 % left / 56 % right. The Assioma DUO reports its real L/R split here (captured flags 0x0023,
+// findings/captures/ASSIOMA-ble-cps-20260622.jsonl). present=false when bit0 is clear (no split).
+struct CpsBalance {
+    bool present = false;
+    uint8_t halfPct = 0;  // left% × 2 (ref-left), 0..200
+};
+inline CpsBalance decodeCpsBalance(const uint8_t* d, size_t len) {
+    CpsBalance b;
+    if (!(decodeCpsFlags(d, len) & CPM_PEDAL_BALANCE_PRESENT)) return b;
+    if (len < 5) return b;  // flags(2) + power(2) + balance(1)
+    b.present = true;
+    b.halfPct = d[4];
+    return b;
+}
+
 // Crank Revolution Data, valid only when no earlier-bit optional field precedes it (true
 // for our crank-rev-only frame). Cumulative revs at 4-5, last crank event time at 6-7.
 inline uint16_t decodeCrankRevs(const uint8_t* d, size_t len) {

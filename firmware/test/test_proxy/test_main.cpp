@@ -308,6 +308,63 @@ void test_cadence_from_two_real_stages_frames() {
     TEST_ASSERT_FLOAT_WITHIN(1.0f, 54.5f, rpm);
 }
 
+// --- L/R pedal balance: decode the source split, forward it to the spoof ------------------
+// Golden vectors from the REAL Assioma DUO BLE CPS, flags 0x0023 (balance + ref-left + crank-rev):
+// findings/captures/ASSIOMA-ble-cps-20260622.jsonl. Balance byte sits at a fixed offset 4.
+
+void test_decode_cps_balance_from_real_assioma() {
+    // "23009e005816134e4d": flags 0x0023, power 158 W, balance 0x58=88 (44% L / 56% R).
+    const uint8_t f[] = {0x23, 0x00, 0x9e, 0x00, 0x58, 0x16, 0x13, 0x4e, 0x4d};
+    CpsBalance b = decodeCpsBalance(f, sizeof(f));
+    TEST_ASSERT_TRUE(b.present);
+    TEST_ASSERT_EQUAL_UINT8(88, b.halfPct);            // 88/2 = 44% left
+    TEST_ASSERT_EQUAL_INT(158, decodeCpsPower(f, sizeof(f)));
+    // crank-rev sits right after balance (offset 5) for this flag set — cadence still decodes.
+    TEST_ASSERT_EQUAL_UINT(5, crankRevDataOffset(0x0023));
+    TEST_ASSERT_TRUE(decodeCrankData(f, sizeof(f)).present);
+}
+
+void test_decode_cps_balance_absent_when_bit_clear() {
+    // crank-rev-only frame (flags 0x20): no balance bit -> not present, don't misread byte 4.
+    const uint8_t f[] = {0x20, 0x00, 0x9e, 0x00, 0x16, 0x13, 0x4e, 0x4d};
+    CpsBalance b = decodeCpsBalance(f, sizeof(f));
+    TEST_ASSERT_FALSE(b.present);
+    TEST_ASSERT_EQUAL_UINT8(0, b.halfPct);
+}
+
+void test_decode_cps_balance_truncated_frame_is_safe() {
+    // bit0 set but the frame is too short to hold the balance byte -> not present, no OOB read.
+    const uint8_t f[] = {0x23, 0x00, 0x9e, 0x00};
+    CpsBalance b = decodeCpsBalance(f, sizeof(f));
+    TEST_ASSERT_FALSE(b.present);
+}
+
+void test_balance_survives_correction() {
+    // The correction is power-only; the L/R split must pass through untouched (the SB20 needs the
+    // real balance even when the power is being scaled by a meter-to-meter correction).
+    PowerReading r;
+    r.power_w = 200;
+    r.cadence_rpm = 90;
+    r.balance_half_pct = 88;  // 44% L
+    PowerReading out = Correction{/*scale=*/1.1f, /*offset=*/0.0f}.apply(r);
+    TEST_ASSERT_EQUAL_INT(220, out.power_w);          // power scaled
+    TEST_ASSERT_EQUAL_INT(88, out.balance_half_pct);  // balance untouched
+    TEST_ASSERT_EQUAL_INT(90, out.cadence_rpm);
+}
+
+void test_balance_forwarded_to_spoof_frame() {
+    // Read the Assioma's real split, re-emit it on the spoofed Stages 0x2F crank: the spoof's
+    // balance byte (also offset 4) must equal the source's (88), not the old fixed 50% (100).
+    const uint8_t src[] = {0x23, 0x00, 0x9e, 0x00, 0x58, 0x16, 0x13, 0x4e, 0x4d};
+    CpsBalance b = decodeCpsBalance(src, sizeof(src));
+    std::vector<uint8_t> out = encodeStagesCpsMeasurement(
+        decodeCpsPower(src, sizeof(src)), b.halfPct, /*torque=*/0, /*revs=*/0, /*evt=*/0);
+    TEST_ASSERT_EQUAL_UINT8(88, out[4]);               // forwarded split, not 100
+    CpsBalance round = decodeCpsBalance(out.data(), out.size());
+    TEST_ASSERT_TRUE(round.present);
+    TEST_ASSERT_EQUAL_UINT8(88, round.halfPct);        // decode(encode(x)) == x
+}
+
 // --- ProxyCore relay (the loopback, in firmware) ------------------------------
 
 void test_proxy_relays_power() {
@@ -826,6 +883,11 @@ int runUnityTests() {
     RUN_TEST(test_stages_frame_flags_and_power);
     RUN_TEST(test_decode_crank_data_behind_preceding_fields);
     RUN_TEST(test_cadence_from_two_real_stages_frames);
+    RUN_TEST(test_decode_cps_balance_from_real_assioma);
+    RUN_TEST(test_decode_cps_balance_absent_when_bit_clear);
+    RUN_TEST(test_decode_cps_balance_truncated_frame_is_safe);
+    RUN_TEST(test_balance_survives_correction);
+    RUN_TEST(test_balance_forwarded_to_spoof_frame);
     RUN_TEST(test_proxy_relays_power);
     RUN_TEST(test_proxy_applies_correction);
     RUN_TEST(test_proxy_preserves_cadence);

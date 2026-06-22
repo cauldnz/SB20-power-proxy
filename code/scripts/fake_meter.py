@@ -28,7 +28,7 @@ import asyncio
 import sys
 import time
 
-from sb20proxy.ble.cps import CrankCadence, encode_cps_measurement
+from sb20proxy.ble.cps import F_BALANCE_REF_LEFT, CrankCadence, encode_cps_measurement
 
 try:
     from sb20proxy.ble.winrt_peripheral import WinrtCpsPeripheral
@@ -73,6 +73,10 @@ async def _stream(periph: WinrtCpsPeripheral, args: argparse.Namespace) -> None:
                 "cumulative_crank_revs": cadence.cumulative_revs,
                 "last_crank_event_time": cadence.last_event_time,
             }
+        if args.balance is not None:
+            # left-referenced L/R split, like the Assioma DUO: byte = left% × 2 (1/2-% units).
+            fields["pedal_balance"] = round(args.balance * 2)
+            fields["extra_flags"] = F_BALANCE_REF_LEFT
         await periph.notify(encode_cps_measurement(watts, **fields))
 
         if periph.subscriber_count != last_subs:
@@ -80,7 +84,9 @@ async def _stream(periph: WinrtCpsPeripheral, args: argparse.Namespace) -> None:
             state = "connected" if last_subs else "no subscribers yet"
             print(f"\n[subscribers={last_subs}] {state}")
         cad = f"{args.cadence:3d} rpm" if args.cadence > 0 else " (no cadence)"
-        print(f"  tx {watts:4d} W  {cad}   subs={periph.subscriber_count}   ", end="\r", flush=True)
+        bal = f"  L{args.balance:.0f}%" if args.balance is not None else ""
+        print(f"  tx {watts:4d} W  {cad}{bal}   subs={periph.subscriber_count}   ",
+              end="\r", flush=True)
 
         tick += 1
         await asyncio.sleep(period)
@@ -92,6 +98,9 @@ def main() -> None:
     ap.add_argument("--cadence", type=int, default=85,
                     help="cadence in rpm; 0 = send power only, no crank data (default 85)")
     ap.add_argument("--steady", action="store_true", help="constant power (no triangle ramp)")
+    ap.add_argument("--balance", type=float, default=None,
+                    help="left pedal %% to emit as L/R balance (e.g. 44 = 44%%L/56%%R); "
+                         "omit = no balance field (single-sided)")
     ap.add_argument("--hz", type=float, default=1.0, help="notifications per second (default 1)")
     ap.add_argument("--duration", type=float, default=0.0,
                     help="stop advertising and exit cleanly after N seconds (0 = run until Ctrl-C)")
