@@ -10,6 +10,7 @@
 #include "ConfigPage.h"
 #include "Correction.h"
 #include "Cps.h"
+#include "DiagReport.h"
 #include "Ftms.h"
 #include "MeterMatch.h"
 #include "LogBuffer.h"
@@ -934,6 +935,28 @@ void test_app_page_essentials() {
     TEST_ASSERT_TRUE(p.find("href='/wifi/off'") != std::string::npos); // ride-mode (WiFi off) link
 }
 
+void test_diag_report() {
+    RuntimeConfig cfg = RuntimeConfig::defaults();
+    cfg.meterAddress = "e6:20:90:8c:f3:fe";
+    cfg.spoofName = "Stages 62144";
+    ProxyStatus st;
+    st.sourceConnected = true;
+    st.srcName = "ASSIOMA17039L";
+    st.srcPowerW = 158;
+    st.srcBalanceHalfPct = 88;  // 44 %
+    std::vector<std::string> frames = {"23009e005816134e4d", "23009f005a1a13915a"};
+    std::string r = renderDiagReport(cfg, st, frames);
+    TEST_ASSERT_TRUE(r.find("SB20 Proxy diagnostic") != std::string::npos);
+    TEST_ASSERT_TRUE(r.find("source_addr=e6:20:90:8c:f3:fe") != std::string::npos);  // config
+    TEST_ASSERT_TRUE(r.find("spoof_name=Stages 62144") != std::string::npos);
+    TEST_ASSERT_TRUE(r.find("ASSIOMA17039L") != std::string::npos);                  // status
+    TEST_ASSERT_TRUE(r.find("src_balance_pct=44") != std::string::npos);
+    TEST_ASSERT_TRUE(r.find("23009e005816134e4d") != std::string::npos);            // raw frames
+    TEST_ASSERT_TRUE(r.find("23009f005a1a13915a") != std::string::npos);
+    // empty frame set -> a helpful note, not a crash
+    TEST_ASSERT_TRUE(renderDiagReport(cfg, st, {}).find("none yet") != std::string::npos);
+}
+
 void test_ride_mode_pages() {
     std::string c = rideModeConfirmHtml();
     TEST_ASSERT_TRUE(c.find("WiFi off") != std::string::npos);
@@ -1181,6 +1204,7 @@ int runUnityTests() {
     RUN_TEST(test_saved_page_has_ssid_and_hints);
     RUN_TEST(test_saved_page_escapes_ssid);
     RUN_TEST(test_app_page_essentials);
+    RUN_TEST(test_diag_report);
     RUN_TEST(test_ride_mode_pages);
     RUN_TEST(test_perf_monitor_basic);
     RUN_TEST(test_perf_monitor_stalls);

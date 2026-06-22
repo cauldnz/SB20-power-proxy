@@ -100,6 +100,11 @@ void BleMeterClient::onMeasurement(const uint8_t* data, size_t len) {
              b0.present ? (int)b0.halfPct : -1, toHex(data, len).c_str());
     }
 
+    // Keep the last few RAW frames for the /diag report — the exact bytes we need to add a new
+    // meter's codec offline (real-data-first). A small bounded ring; oldest drops off.
+    recentFrames_.push_back(toHex(data, len));
+    if (recentFrames_.size() > 8) recentFrames_.erase(recentFrames_.begin());
+
     PowerReading r;
     r.power_w = decodeCpsPower(data, len);  // sint16 at bytes 2-3, regardless of flags
     r.t_ms = millis();

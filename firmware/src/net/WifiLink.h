@@ -58,6 +58,10 @@ public:
         configScan_ = scan;
     }
 
+    // The raw recent meter frames for the GET /diag tester report (the bytes we need to add a meter).
+    using DiagFramesProvider = std::function<std::vector<std::string>()>;
+    void setDiagFrames(DiagFramesProvider frames) { diagFrames_ = frames; }
+
     // Call from loop(): services HTTP + OTA (station) or the captive DNS + portal (setup), and
     // promotes to healthy (which cancels the boot-guard and validates the running OTA image).
     void handle();
@@ -84,6 +88,7 @@ private:
     SourcesProvider sourcesProvider_;
     ConfigSaveHook configSave_;
     ScanHook configScan_;
+    DiagFramesProvider diagFrames_;
     IProvisioningDisplay* display_ = nullptr;
     const char* hostname_ = "sb20proxy";
     std::vector<ScannedNet> networks_;  // APs scanned for the portal picker (RSSI + secured)

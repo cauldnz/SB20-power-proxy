@@ -52,6 +52,10 @@ public:
     std::vector<SourceCandidate> candidates() const { return candidates_; }
     void clearCandidates() { candidates_.clear(); }
 
+    // The most recent RAW source-meter CPS frames (hex, oldest→newest) for the /diag report — what
+    // we need to add a new meter's codec offline. Bounded ring filled in onMeasurement().
+    std::vector<std::string> recentFrames() const { return recentFrames_; }
+
     // called from NimBLE callbacks
     void onFound(const char* addr, uint8_t addrType, const char* name);
     void onMeasurement(const uint8_t* data, size_t len);  // decode power (+ cadence) and emit
@@ -76,6 +80,7 @@ private:
     std::string matchNameFilter_ = Config::METER_NAME_FILTER; // runtime source name substring
     std::string matchSpoofName_ = Config::SPOOF_NAME;         // our spoof's name (loop-guard exclusion)
     std::vector<SourceCandidate> candidates_;                 // discovered sources for the web picker
+    std::vector<std::string> recentFrames_;                   // recent raw CPS frames (hex) for /diag
     uint32_t lastReadingMs_ = 0;  // for the staleness watchdog (meter went silent -> rescan)
 };
 

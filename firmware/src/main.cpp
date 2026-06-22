@@ -232,6 +232,12 @@ void setup() {
         [](const RuntimeConfig& c) { ConfigStore::save(c); },
         []() { meter.clearCandidates(); });
 #endif
+    // The tester /diag report's raw meter frames (the bytes we add a new meter from). Live only.
+#if USE_MOCK_METER
+    wifi.setDiagFrames([]() { return std::vector<std::string>{}; });
+#else
+    wifi.setDiagFrames([]() { return meter.recentFrames(); });
+#endif
     ArduinoOTA.onProgress([](unsigned int, unsigned int) { ++g_loopBeat; });  // keep WD fed during OTA
     esp_timer_create_args_t wdArgs = {};
     wdArgs.callback = &stallWatchdogCb;
