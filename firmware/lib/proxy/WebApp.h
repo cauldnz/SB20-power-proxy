@@ -56,7 +56,7 @@ function tick(){fetch('/status',{cache:'no-store'}).then(function(r){return r.js
 $('dot').classList.add('on');
 $('pw').textContent=d.power_w;$('cad').textContent=(d.cadence_rpm<0?'--':d.cadence_rpm);
 $('in').textContent=(d.src_power_w===undefined?'--':d.src_power_w);$('out').textContent=d.power_w;
-$('src').textContent=d.source;$('rssi').textContent=d.rssi+' dBm';
+$('src').textContent=(d.src_name?d.src_name+' ('+d.source+')':d.source);$('rssi').textContent=d.rssi+' dBm';
 $('bal').textContent=(d.balance_pct===undefined||d.balance_pct<0?'--':('L'+d.balance_pct+' / R'+(100-d.balance_pct)));
 $('up').textContent=fmtUp(d.ms);$('fwd').textContent=d.forwarded;$('fw').textContent=d.fw;
 hist.push(d.power_w);if(hist.length>MAX){hist.shift();}draw();

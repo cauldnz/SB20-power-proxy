@@ -188,6 +188,7 @@ void setup() {
         s.mock = true;
 #else
         s.sourceConnected = meter.connected();  // real BLE-central link to the meter (goal #1)
+        if (meter.connected()) s.srcName = meter.sourceName();  // show which meter on the dashboard
 #endif
         s.forwarded = proxy.forwarded();
         s.srcPowerW = proxy.lastSource().power_w;        // received from the meter

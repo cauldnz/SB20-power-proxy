@@ -576,6 +576,7 @@ void test_status_json_mock() {
     s.forwarded = 5;
     s.srcPowerW = 220;
     s.srcCadenceRpm = 88;
+    s.srcName = "ASSIOMA \"L\"";  // includes a quote -> must be JSON-escaped
     s.srcBalanceHalfPct = 88;   // 44 % left
     s.lastPowerW = 200;
     s.lastCadenceRpm = 90;
@@ -587,6 +588,7 @@ void test_status_json_mock() {
     TEST_ASSERT_TRUE(j.find("\"src_power_w\":220") != std::string::npos);   // received from meter
     TEST_ASSERT_TRUE(j.find("\"src_cadence_rpm\":88") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"src_balance_pct\":44") != std::string::npos);  // 88/2 = 44 % left
+    TEST_ASSERT_TRUE(j.find("\"src_name\":\"ASSIOMA \\\"L\\\"\"") != std::string::npos);  // escaped
     TEST_ASSERT_TRUE(j.find("\"power_w\":200") != std::string::npos);       // broadcast to crank
     TEST_ASSERT_TRUE(j.find("\"cadence_rpm\":90") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"balance_pct\":44") != std::string::npos);
@@ -861,6 +863,7 @@ void test_saved_page_has_ssid_and_hints() {
     TEST_ASSERT_TRUE(p.find("LED") != std::string::npos);          // LED hint present
     TEST_ASSERT_TRUE(p.find("OLED") != std::string::npos);         // OLED / IP hint present
     TEST_ASSERT_TRUE(p.find("restart") != std::string::npos);      // tells the user it reboots
+    TEST_ASSERT_TRUE(p.find("Source") != std::string::npos);       // first-run handoff to /setup
 }
 
 void test_saved_page_escapes_ssid() {
