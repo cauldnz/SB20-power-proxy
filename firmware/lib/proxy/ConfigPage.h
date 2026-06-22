@@ -56,7 +56,8 @@ inline const char* configValidationError(const RuntimeConfig& c) {
 inline std::string renderConfigPage(const RuntimeConfig& cfg,
                                     const std::vector<SourceCandidate>& devices = {},
                                     const std::string& message = std::string(),
-                                    bool scanning = false, int logState = -1) {
+                                    bool scanning = false, int logState = -1,
+                                    const std::string& currentStatus = std::string()) {
     const std::vector<SourceCandidate> ds = dedupeAndSortSources(devices);
     std::string h =
         "<!DOCTYPE html><html><head><meta charset='utf-8'>"
@@ -91,9 +92,14 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
          "button.go{width:100%;padding:12px;font-size:1rem;font-weight:600;color:#fff;"
          "background:#2a6df4;border:0;border-radius:8px;cursor:pointer}"
          "a{color:#2a6df4}.hint{color:#666;font-size:.85rem}"
+         ".ok{background:#e7f5ec;border:1px solid #b7e0c4;color:#1d6b34;padding:8px 12px;"
+         "border-radius:6px;margin:8px 0}"
          "</style></head><body>"
          "<h1>Choose your power source</h1>"
          "<p class='hint'>Pick the meter (or surviving crank) the SB20 should read.</p>";
+    // Live "currently reading X" / "searching" banner — lets a tester verify the source is
+    // connected before riding (the pre-flight-verify principle), straight from this page.
+    if (!currentStatus.empty()) h += "<p class='ok'>" + htmlEscape(currentStatus) + "</p>";
     if (!message.empty()) h += "<p class='msg'>" + htmlEscape(message) + "</p>";
 
     h += "<div class='row'><label>Nearby sources</label><a href='/setup/scan'>";

@@ -523,6 +523,14 @@ void test_render_config_page_escapes_name() {
     TEST_ASSERT_TRUE(h.find("<script>x</") == std::string::npos);       // no raw injection
 }
 
+void test_render_config_page_status_banner() {
+    std::string h = renderConfigPage(RuntimeConfig::defaults(), {}, "", false, -1, "Reading ASSIOMA");
+    TEST_ASSERT_TRUE(h.find("class='ok'") != std::string::npos);        // the live status banner
+    TEST_ASSERT_TRUE(h.find("Reading ASSIOMA") != std::string::npos);
+    // no banner when no status passed
+    TEST_ASSERT_TRUE(renderConfigPage(RuntimeConfig::defaults()).find("class='ok'") == std::string::npos);
+}
+
 void test_proxy_set_correction_applies_single_sided_double() {
     // The runtime single-sided ×2 (a surviving R crank → doubled for total) folds into the
     // correction; setCorrection swaps it in after NVS load, before any reading is forwarded.
@@ -1082,6 +1090,7 @@ int runUnityTests() {
     RUN_TEST(test_dedupe_and_sort_sources);
     RUN_TEST(test_render_config_page_marks_selected_and_badges);
     RUN_TEST(test_render_config_page_escapes_name);
+    RUN_TEST(test_render_config_page_status_banner);
     RUN_TEST(test_proxy_set_correction_applies_single_sided_double);
     RUN_TEST(test_proxy_applies_correction);
     RUN_TEST(test_proxy_preserves_cadence);
