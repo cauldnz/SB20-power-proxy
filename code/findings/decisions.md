@@ -1498,3 +1498,35 @@ via `--self-test`:
 The manifest is now finalised on every clean stop (`end`, `stopped_by` ∈ {duration, all-exited, SIGTERM,
 interrupt}, `final_sizes`). Issue (b) (`pcap_sqlite` 16-bit char decode) stays open. `scripts/` remains out of
 CI lint/test scope (smoke-tested only). PR from branch `fix/monitor-ride-sigterm-cleanup`.
+## 2026-06-22 — L/R pedal-balance forwarding (firmware) + proxy build-gate fix + bench finding
+
+**Balance forwarding built + host-validated (PR pending).** The spoof now carries the source meter's
+REAL left/right split instead of an implicit 50/50, so the Stages app's balance display is genuine.
+Chain: `BleMeterClient` reads CPS Pedal-Power-Balance (flags bit0, fixed byte offset 4, left% × 2 when
+ref-left) → `PowerReading.balance_half_pct` (-1 = unknown) → passes through `Correction` untouched →
+`BleCrankPeripheral` emits it in the Stages `0x2F` balance byte (falls back to raw 100 = 50 % when the
+source has none). New `Cps.h::decodeCpsBalance()`. **Grounded** in `captures/ASSIOMA-ble-cps-20260622.jsonl`
+(flags `0x0023`; e.g. `23009e005816134e4d` = 158 W, balance `0x58`=88 = L44 %/R56 %). Tests: firmware
+**85/85** native (decode real Assioma frame, absent/truncated safety, survives-correction, forward→spoof
+byte) + Python **324** (`test_ble_cps.py` real-frame decode + forward round-trip). `fake_meter --balance`
++ `crank_reader` balance readout added for the bench.
+
+**Pre-existing proxy build was RED on `main` — fixed (PR #73, merged).** `esp32c3-supermini` (and every
+proxy env extending it) compiled ALL of `src/`, so `main.cpp` + `ftms_server_main.cpp` +
+`ftms_client_main.cpp` each contributed a `setup()/loop()` → "multiple definition" link error. The FTMS
+test mains (F5) shipped with their own `build_src_filter` but the proxy envs had none. **CI only runs
+`pio test -e native`** (filter `-<*>`, excludes `src/`), so it never links a proxy ESP env and never saw
+the break — the pre-flash gate `pio run -e esp32c3-oled-live-ota` was failing on `main`. Fix: base proxy
+env excludes the two FTMS mains (`--gc-sections` drops the unused seam classes). Now links (55.6 % flash).
+*Gap noted:* CI does not exercise any ESP32 proxy build, so proxy-link regressions can recur.
+
+**On-air balance bench: attempted, BLOCKED by the harness (not the code).** Flashed COM10 (spare) with the
+balance firmware (`esp32c3-wifi-live`; spoof advert verified). `fake_meter --balance 65` advertised
+177 W/90 rpm/L65 % correctly but **no ESP ever subscribed (`subs=0`)**. Root cause, confirmed by an
+active-mode bleak scan: the WinRT `GattServiceProvider` advert does **not expose the CPS `0x1818` service
+UUID** (only the ESP's own spoof advertises 1818; `fake_meter` shows `uuids=[]`), so the ESP's
+nameless-match-by-CPS (`isTargetMeter` path 3) can't see it. A real Assioma (advertises CPS + an "ASSIOMA"
+name) would match, but none is at the desk (bike-dependent). ⟹ **the forward is proven by the real-capture
+golden vectors; the on-air confirmation waits for a real meter or a `fake_meter` advert fix.** (Two boards
+both advertise `Stages 62144`; parked one in its ROM bootloader during the test to remove contention, then
+restored it.) Also installed a host **gcc (WinLibs)** so `pio test -e native` runs on this box.

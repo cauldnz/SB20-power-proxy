@@ -40,6 +40,8 @@ ATT_WRITE_REQ = 0x12
 ATT_WRITE_CMD = 0x52
 ATT_NOTIFY = 0x1B
 ATT_INDICATE = 0x1D
+ATT_FIND_INFO_RSP = 0x05        # discovery: handle/uuid pairs (descriptors, CCCDs)
+ATT_READ_BY_TYPE_RSP = 0x09     # discovery: characteristic declarations
 _WRITE_OPS = frozenset({ATT_WRITE_REQ, ATT_WRITE_CMD})
 _NOTIFY_OPS = frozenset({ATT_NOTIFY, ATT_INDICATE})
 
@@ -71,6 +73,10 @@ UUID16_CHARS = {
 _CP_CHARS = frozenset({"fitness_machine_control_point", "cycling_power_control_point"})
 # the Stages-proprietary 0c46be... base, in both wire orders (tshark prints either)
 _STAGES_MARKERS = ("c6eae1a2f4e5", "e5f4a2e1eac6")
+# GATT declaration attribute types (service / include / characteristic). In a
+# read_by_type_rsp these are the *declaration* attributes interleaved with the real
+# char UUIDs — skip them when mapping value handles to characteristics.
+_GATT_DECL_UUIDS = frozenset({"2800", "2801", "2802", "2803"})
 
 # tshark -T fields order (parse_att_row depends on it)
 TSHARK_FIELDS = (
@@ -141,11 +147,28 @@ def parse_att_row(line: str) -> dict | None:
     }
 
 
+def _norm_uuid16(uuid16: str | None) -> str | None:
+    """Normalise a 16-bit UUID to the bare lowercase form ``UUID16_CHARS`` is keyed by.
+
+    tshark prints ``btatt.uuid16`` as ``0x2ad2`` (and, under ``-E occurrence=a``,
+    comma-joins every occurrence in a packet); the lookup table is keyed ``2ad2``.
+    Strip the ``0x`` prefix and take the first value so the lookup hits — without
+    this the 16-bit FTMS/CPS chars never resolve (they fall through to ``uuid16_…``).
+    """
+    if not uuid16:
+        return None
+    u = uuid16.strip().lower().split(",")[0]
+    if u.startswith("0x"):
+        u = u[2:]
+    return u or None
+
+
 def resolve_char(uuid16: str | None, uuid128: str | None,
                  handle: int | None, handle_map: dict[int, str]) -> str | None:
     """Map a UUID (or, failing that, a learned handle) to a characteristic label."""
-    if uuid16:
-        return UUID16_CHARS.get(uuid16, f"uuid16_{uuid16}")
+    u16 = _norm_uuid16(uuid16)
+    if u16:
+        return UUID16_CHARS.get(u16, f"uuid16_{u16}")
     if uuid128:
         if any(m in uuid128 for m in _STAGES_MARKERS):
             # distinguishing byte is the 4th from the 0c46beXX end (wire order varies);
@@ -218,39 +241,96 @@ def discovery_handle_map(pcap_path: str | Path, tshark: str | None = None) -> di
     """Second tshark pass: learn value-handle -> char from GATT discovery responses.
 
     The 128-bit proprietary chars don't carry their UUID on data ops, so we map them
-    here. read_by_type_rsp (0x09) char declarations arrive as ``<decl>,<value>`` + the
-    char UUID; find_information_rsp (0x05) as ``<handle>`` + UUID. We key the *value*
-    handle (what notifications/writes use) to the resolved char name.
+    here (and 16-bit chars too, as a fallback for ops tshark can't back-fill). We
+    emit the opcode so ``parse_handle_map`` can tell the two discovery shapes apart:
+    read_by_type_rsp (0x09) char declarations vs find_information_rsp (0x05) pairs.
     """
     binp = tshark_bin(tshark)
     cmd = [binp, "-r", str(pcap_path), "-Y", "btatt.opcode==0x09 || btatt.opcode==0x05",
            "-T", "fields", "-E", "separator=\t", "-E", "occurrence=a", "-E", "aggregator=,",
-           "-e", "btatt.handle", "-e", "btatt.uuid16", "-e", "btatt.uuid128"]
+           "-e", "btatt.opcode", "-e", "btatt.handle", "-e", "btatt.uuid16", "-e", "btatt.uuid128"]
     proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
     return parse_handle_map(proc.stdout.splitlines())
 
 
+def _parse_handle_list(handles_s: str) -> list[int] | None:
+    """Parse a comma-joined ``0x…`` handle list; None if any entry is malformed."""
+    out: list[int] = []
+    for h in handles_s.split(","):
+        h = h.strip()
+        if not h:
+            continue
+        try:
+            out.append(int(h, 16))
+        except ValueError:
+            return None
+    return out
+
+
+def _record(hmap: dict[int, str], handle: int, char: str | None) -> None:
+    """Key ``handle -> char`` unless the char is unknown (a bare ``handle_…`` label)."""
+    if char and not char.startswith("handle_"):
+        hmap[handle] = char
+
+
+def _map_char_declarations(hmap: dict[int, str], handles: list[int],
+                           uuid16s: list[str], uuid128s: list[str]) -> None:
+    """Map the value handles of a read_by_type_rsp's characteristic declarations.
+
+    A single packet can carry several chars (16-bit UUIDs pack tight — the SB20's
+    whole FTMS service arrives in one frame). tshark emits the handles as
+    ``decl, value, decl, value, …`` so the value handles (what notifications/writes
+    use) are ``handles[1::2]``. A Read-By-Type response holds only same-length
+    elements, so a packet is either all-16-bit-UUID chars (UUID in ``uuid16``, the
+    ``0x2803`` declaration type interleaved and filtered) or all-128-bit (UUID in
+    ``uuid128``, one per char).
+    """
+    # strict=False: a malformed/truncated discovery packet drops its extra entries
+    # rather than aborting the whole import.
+    value_handles = handles[1::2]
+    if uuid128s:
+        for vh, u128 in zip(value_handles, uuid128s, strict=False):
+            _record(hmap, vh, resolve_char(None, u128, None, {}))
+    else:
+        char_uuids = [u for u in uuid16s if u not in _GATT_DECL_UUIDS]
+        for vh, u16 in zip(value_handles, char_uuids, strict=False):
+            _record(hmap, vh, resolve_char(u16, None, None, {}))
+
+
+def _map_find_info(hmap: dict[int, str], handles: list[int],
+                   uuid16s: list[str], uuid128s: list[str]) -> None:
+    """Map find_information_rsp ``handle, uuid`` pairs (1:1; descriptors / CCCDs)."""
+    if uuid128s:
+        for h, u128 in zip(handles, uuid128s, strict=False):
+            _record(hmap, h, resolve_char(None, u128, None, {}))
+    else:
+        for h, u16 in zip(handles, uuid16s, strict=False):
+            _record(hmap, h, resolve_char(u16, None, None, {}))
+
+
 def parse_handle_map(lines: Iterable[str]) -> dict[int, str]:
-    """Pure: build ``{value_handle -> char}`` from discovery-response TSV lines."""
+    """Pure: build ``{value_handle -> char}`` from discovery-response TSV lines.
+
+    Columns (``-E occurrence=a -E aggregator=,``): ``opcode \\t handles \\t uuid16
+    \\t uuid128``, each field the comma-joined list of every occurrence in that
+    packet. read_by_type_rsp (0x09) packets carry one *or more* characteristic
+    declarations; find_information_rsp (0x05) carries ``handle, uuid`` pairs.
+    """
     hmap: dict[int, str] = {}
     for line in lines:
         if not line.strip():
             continue
-        handles_s, uuid16s, uuid128s = (line.split("\t") + ["", "", ""])[:3]
-        handles = [h for h in handles_s.split(",") if h.strip()]
-        uuid16 = (uuid16s.split(",")[0].strip().lower() or None)
-        uuid128 = _clean_hex(uuid128s).split(",")[0] or None
-        char = resolve_char(uuid16, uuid128, None, {})
-        if not char or char.startswith("handle_"):
+        opcode_s, handles_s, uuid16_s, uuid128_s = (line.split("\t") + ["", "", "", ""])[:4]
+        opcode = _int(opcode_s.split(",")[0], 16)
+        handles = _parse_handle_list(handles_s)
+        if not handles:
             continue
-        try:
-            hh = [int(h, 16) for h in handles]
-        except ValueError:
-            continue
-        if not hh:
-            continue
-        # char declaration -> (decl, value): value handle is the 2nd; find_info: the only one
-        hmap[hh[1] if len(hh) >= 2 else hh[0]] = char
+        uuid16s = [u for u in (_norm_uuid16(x) for x in uuid16_s.split(",")) if u]
+        uuid128s = [h for h in (_clean_hex(x) for x in uuid128_s.split(",")) if h]
+        if opcode == ATT_FIND_INFO_RSP:
+            _map_find_info(hmap, handles, uuid16s, uuid128s)
+        elif opcode == ATT_READ_BY_TYPE_RSP:
+            _map_char_declarations(hmap, handles, uuid16s, uuid128s)
     return hmap
 
 

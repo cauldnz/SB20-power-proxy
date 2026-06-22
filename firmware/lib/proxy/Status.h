@@ -19,8 +19,10 @@ struct ProxyStatus {
     //   * last* — what we BROADCAST to the crank after correction (the peripheral / goal-#2 side)
     int16_t srcPowerW = 0;         // last power received from the source meter
     int16_t srcCadenceRpm = -1;    // -1 = unknown
+    int16_t srcBalanceHalfPct = -1;   // left% × 2 received from the meter; -1 = none reported
     int16_t lastPowerW = 0;        // last corrected power published to the crank
     int16_t lastCadenceRpm = -1;   // -1 = unknown
+    int16_t lastBalanceHalfPct = -1;  // left% × 2 forwarded to the crank; -1 = none (crank sends 50/50)
     int32_t rssi = 0;              // WiFi RSSI (0 when not applicable)
     uint32_t freeHeap = 0;         // ESP.getFreeHeap()
     uint32_t uptimeMs = 0;         // millis()
@@ -39,8 +41,12 @@ inline std::string renderStatusJson(const ProxyStatus& s) {
     // src_* = received from the meter (goal #1); power_w/cadence_rpm = broadcast to the crank (goal #2)
     j += ",\"src_power_w\":" + std::to_string(s.srcPowerW);
     j += ",\"src_cadence_rpm\":" + std::to_string(s.srcCadenceRpm);
+    // left-pedal % (half-pct / 2), -1 when the meter reports no L/R split. balance passes through
+    // the correction unchanged, so src_ and the broadcast value match when present.
+    j += ",\"src_balance_pct\":" + std::to_string(s.srcBalanceHalfPct < 0 ? -1 : s.srcBalanceHalfPct / 2);
     j += ",\"power_w\":" + std::to_string(s.lastPowerW);
     j += ",\"cadence_rpm\":" + std::to_string(s.lastCadenceRpm);
+    j += ",\"balance_pct\":" + std::to_string(s.lastBalanceHalfPct < 0 ? -1 : s.lastBalanceHalfPct / 2);
     j += ",\"rssi\":" + std::to_string(s.rssi);
     j += ",\"heap\":" + std::to_string(s.freeHeap);
     j += ",\"ms\":" + std::to_string(s.uptimeMs);

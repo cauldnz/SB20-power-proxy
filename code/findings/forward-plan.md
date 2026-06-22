@@ -325,12 +325,12 @@ bike session. See `decisions.md` 2026-06-17 and `code/scripts/BLE-LOOP.md`.
 
 ## 8. Open research items (not on any critical path)
 
-> **🔴 ELEVATED — [SB20 power-topology](sb20-power-topology.md) (session-4 finding, 2026-06-21).** The SB20
-> erg reads only **~½–⅔ of the Assioma** (likely single-sided / wrong meter — full design in the doc). This
-> is *not* off the critical path: it decides whether erg targets = real watts and whether the spoof is even
-> feeding the SB20. **Phase 1** (cheap): reconcile the owner's Garmin `.FIT` vs the §C captures. **Phase 2**:
-> a *simultaneous* multi-device capture (SB20 + Stages 62144/4963 + Assioma 17039/22428, BLE *and* ANT).
-> Prereqs: the `.FIT`, and the ANT+ permission fix (WSL systemd / udev).
+> **✅ RESOLVED — [SB20 power-topology](sb20-power-topology.md) (session 7, 2026-06-22).** The SB20 reports
+> the **Stages crank 1:1**, and both the SB20 and the Stages crank read **~11 % high vs the Assioma (≈1.11×)** —
+> overturning session-4's "~½–⅔ / ~30 % low" (a transient spot-read, not the steady ratio). Settled by the
+> simultaneous multi-device capture now indexed in `captures.sqlite` (see `decisions.md` 2026-06-22). Erg
+> targets therefore track the Stages crank (~11 % above the Assioma); no spoof-feed mystery remains. Open
+> follow-up is only the Garmin `.FIT` cross-check against the streams already in `captures.sqlite`.
 
 From `phase-0-report.md` §5 — track, don't block on:
 - Crank-length scaling (closed by Lane 2 run-card #3).

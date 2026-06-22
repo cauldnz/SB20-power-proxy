@@ -59,5 +59,19 @@ jobs:
       - name: Install PlatformIO
         run: pip install platformio
 
+      - name: Cache PlatformIO toolchains
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
       - name: Test (native)
         run: pio test -e native
+
+      # Link a real proxy ESP32 env so a multiple-definition / src_filter break (e.g. the FTMS
+      # mains colliding with main.cpp, fixed in PR #73) can't reach main: the native env excludes
+      # src/ entirely, so it never catches a proxy-link regression. esp32c3-supermini is the
+      # minimal proxy build (mock meter, no WiFi/OLED deps) and still links main.cpp + ble/*.
+      - name: Compile proxy firmware (link guard)
+        run: pio run -e esp32c3-supermini

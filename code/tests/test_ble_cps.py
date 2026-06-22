@@ -32,6 +32,32 @@ def test_encode_reproduces_real_crank_frame():
     assert out.hex() == CRANK_FRAME  # byte-for-byte the captured frame
 
 
+# Real Assioma DUO BLE CPS frame (flags 0x0023 = balance + ref-left + crank-rev), from
+# findings/captures/ASSIOMA-ble-cps-20260622.jsonl — the grounding for L/R balance forwarding.
+ASSIOMA_FRAME = "23009e005816134e4d"  # 158 W, balance 88 (44% L / 56% R), crank-rev at offset 5
+
+
+def test_decode_real_assioma_balance_frame():
+    m = cps.decode_cps_measurement(bytes.fromhex(ASSIOMA_FRAME))
+    assert m.flags == 0x0023
+    assert m.power_w == 158
+    assert m.pedal_balance == 88 and m.balance_pct == 44.0   # left-referenced split
+    assert m.cumulative_crank_revs is not None               # cadence still decodes behind balance
+
+
+def test_balance_forwarded_through_spoof_frame():
+    # The proxy reads the Assioma's split and re-emits it on the spoofed Stages crank: the balance
+    # byte must survive decode -> forward -> re-encode unchanged (firmware does the same).
+    src = cps.decode_cps_measurement(bytes.fromhex(ASSIOMA_FRAME))
+    spoof = cps.encode_cps_measurement(
+        src.power_w, pedal_balance=src.pedal_balance, accumulated_torque=0,
+        cumulative_crank_revs=0, last_crank_event_time=0,
+        extra_flags=cps.F_BALANCE_REF_LEFT | cps.F_TORQUE_SOURCE_CRANK,
+    )
+    assert spoof[4] == 88                                    # forwarded split, not a 50/50 default
+    assert cps.decode_cps_measurement(spoof).balance_pct == 44.0
+
+
 def test_decode_zero_power_frame():
     m = cps.decode_cps_measurement(bytes.fromhex(CRANK_ZERO))
     assert m.power_w == 0

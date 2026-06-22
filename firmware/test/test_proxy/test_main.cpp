@@ -308,6 +308,76 @@ void test_cadence_from_two_real_stages_frames() {
     TEST_ASSERT_FLOAT_WITHIN(1.0f, 54.5f, rpm);
 }
 
+// --- L/R pedal balance: decode the source split, forward it to the spoof ------------------
+// Golden vectors from the REAL Assioma DUO BLE CPS, flags 0x0023 (balance + ref-left + crank-rev):
+// findings/captures/ASSIOMA-ble-cps-20260622.jsonl. Balance byte sits at a fixed offset 4.
+
+void test_decode_cps_balance_from_real_assioma() {
+    // "23009e005816134e4d": flags 0x0023, power 158 W, balance 0x58=88 (44% L / 56% R).
+    const uint8_t f[] = {0x23, 0x00, 0x9e, 0x00, 0x58, 0x16, 0x13, 0x4e, 0x4d};
+    CpsBalance b = decodeCpsBalance(f, sizeof(f));
+    TEST_ASSERT_TRUE(b.present);
+    TEST_ASSERT_EQUAL_UINT8(88, b.halfPct);            // 88/2 = 44% left
+    TEST_ASSERT_EQUAL_INT(158, decodeCpsPower(f, sizeof(f)));
+    // crank-rev sits right after balance (offset 5) for this flag set — cadence still decodes.
+    TEST_ASSERT_EQUAL_UINT(5, crankRevDataOffset(0x0023));
+    TEST_ASSERT_TRUE(decodeCrankData(f, sizeof(f)).present);
+}
+
+void test_decode_cps_balance_absent_when_bit_clear() {
+    // crank-rev-only frame (flags 0x20): no balance bit -> not present, don't misread byte 4.
+    const uint8_t f[] = {0x20, 0x00, 0x9e, 0x00, 0x16, 0x13, 0x4e, 0x4d};
+    CpsBalance b = decodeCpsBalance(f, sizeof(f));
+    TEST_ASSERT_FALSE(b.present);
+    TEST_ASSERT_EQUAL_UINT8(0, b.halfPct);
+}
+
+void test_decode_cps_balance_truncated_frame_is_safe() {
+    // bit0 set but the frame is too short to hold the balance byte -> not present, no OOB read.
+    const uint8_t f[] = {0x23, 0x00, 0x9e, 0x00};
+    CpsBalance b = decodeCpsBalance(f, sizeof(f));
+    TEST_ASSERT_FALSE(b.present);
+}
+
+void test_balance_survives_correction() {
+    // The correction is power-only; the L/R split must pass through untouched (the SB20 needs the
+    // real balance even when the power is being scaled by a meter-to-meter correction).
+    PowerReading r;
+    r.power_w = 200;
+    r.cadence_rpm = 90;
+    r.balance_half_pct = 88;  // 44% L
+    PowerReading out = Correction{/*scale=*/1.1f, /*offset=*/0.0f}.apply(r);
+    TEST_ASSERT_EQUAL_INT(220, out.power_w);          // power scaled
+    TEST_ASSERT_EQUAL_INT(88, out.balance_half_pct);  // balance untouched
+    TEST_ASSERT_EQUAL_INT(90, out.cadence_rpm);
+}
+
+void test_balance_hold_is_sticky_across_balanceless_frames() {
+    // Once a split is seen, hold it through frames that drop the balance byte (no flap to 50/50);
+    // reset() clears it so a new meter re-learns. Mirrors how cadence state isn't reset per-frame.
+    BalanceHold h;
+    TEST_ASSERT_EQUAL_INT(-1, h.halfPct);                          // nothing seen yet
+    const uint8_t withBal[] = {0x23, 0x00, 0x9e, 0x00, 0x58};      // flags 0x0023, balance 88
+    TEST_ASSERT_EQUAL_INT(88, h.update(decodeCpsBalance(withBal, sizeof(withBal))));
+    const uint8_t noBal[] = {0x20, 0x00, 0x9e, 0x00, 0x16, 0x13};  // crank-rev only, no balance
+    TEST_ASSERT_EQUAL_INT(88, h.update(decodeCpsBalance(noBal, sizeof(noBal))));  // held, not -1
+    h.reset();
+    TEST_ASSERT_EQUAL_INT(-1, h.update(decodeCpsBalance(noBal, sizeof(noBal))));  // re-learn
+}
+
+void test_balance_forwarded_to_spoof_frame() {
+    // Read the Assioma's real split, re-emit it on the spoofed Stages 0x2F crank: the spoof's
+    // balance byte (also offset 4) must equal the source's (88), not the old fixed 50% (100).
+    const uint8_t src[] = {0x23, 0x00, 0x9e, 0x00, 0x58, 0x16, 0x13, 0x4e, 0x4d};
+    CpsBalance b = decodeCpsBalance(src, sizeof(src));
+    std::vector<uint8_t> out = encodeStagesCpsMeasurement(
+        decodeCpsPower(src, sizeof(src)), b.halfPct, /*torque=*/0, /*revs=*/0, /*evt=*/0);
+    TEST_ASSERT_EQUAL_UINT8(88, out[4]);               // forwarded split, not 100
+    CpsBalance round = decodeCpsBalance(out.data(), out.size());
+    TEST_ASSERT_TRUE(round.present);
+    TEST_ASSERT_EQUAL_UINT8(88, round.halfPct);        // decode(encode(x)) == x
+}
+
 // --- ProxyCore relay (the loopback, in firmware) ------------------------------
 
 void test_proxy_relays_power() {
@@ -363,17 +433,28 @@ void test_status_json_mock() {
     s.forwarded = 5;
     s.srcPowerW = 220;
     s.srcCadenceRpm = 88;
+    s.srcBalanceHalfPct = 88;   // 44 % left
     s.lastPowerW = 200;
     s.lastCadenceRpm = 90;
+    s.lastBalanceHalfPct = 88;
     s.uptimeMs = 12345;
     std::string j = renderStatusJson(s);
     TEST_ASSERT_TRUE(j.find("\"source\":\"mock\"") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"forwarded\":5") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"src_power_w\":220") != std::string::npos);   // received from meter
     TEST_ASSERT_TRUE(j.find("\"src_cadence_rpm\":88") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"src_balance_pct\":44") != std::string::npos);  // 88/2 = 44 % left
     TEST_ASSERT_TRUE(j.find("\"power_w\":200") != std::string::npos);       // broadcast to crank
     TEST_ASSERT_TRUE(j.find("\"cadence_rpm\":90") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"balance_pct\":44") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"ms\":12345") != std::string::npos);
+}
+
+void test_status_json_no_balance_is_minus_one() {
+    ProxyStatus s;  // defaults: no source balance
+    std::string j = renderStatusJson(s);
+    TEST_ASSERT_TRUE(j.find("\"src_balance_pct\":-1") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"balance_pct\":-1") != std::string::npos);
 }
 
 void test_status_json_source_state() {
@@ -605,6 +686,14 @@ void test_oled_connected_lines() {
     TEST_ASSERT_EQUAL_STRING("", l[3].c_str());
 }
 
+void test_oled_connected_shows_balance_compact() {
+    // With an L/R split, row 3 appends a compact "L44" and drops the "rpm" unit so it still fits
+    // the ~12-char panel; the IP stays put.
+    auto l = formatOledLines(OledMode::Connected, "192.168.1.82", 230, 85, 0, /*balancePct=*/44);
+    TEST_ASSERT_EQUAL_STRING("230W 85 L44", l[2].c_str());
+    TEST_ASSERT_TRUE(l[2].size() <= 12);
+}
+
 void test_oled_connected_unknown_cadence_omitted() {
     auto l = formatOledLines(OledMode::Connected, "10.0.0.5", 120, -1);
     TEST_ASSERT_EQUAL_STRING("120W", l[2].c_str());  // cadence unknown -> power only, no rpm suffix
@@ -826,11 +915,18 @@ int runUnityTests() {
     RUN_TEST(test_stages_frame_flags_and_power);
     RUN_TEST(test_decode_crank_data_behind_preceding_fields);
     RUN_TEST(test_cadence_from_two_real_stages_frames);
+    RUN_TEST(test_decode_cps_balance_from_real_assioma);
+    RUN_TEST(test_decode_cps_balance_absent_when_bit_clear);
+    RUN_TEST(test_decode_cps_balance_truncated_frame_is_safe);
+    RUN_TEST(test_balance_survives_correction);
+    RUN_TEST(test_balance_hold_is_sticky_across_balanceless_frames);
+    RUN_TEST(test_balance_forwarded_to_spoof_frame);
     RUN_TEST(test_proxy_relays_power);
     RUN_TEST(test_proxy_applies_correction);
     RUN_TEST(test_proxy_preserves_cadence);
     RUN_TEST(test_proxy_reset_clears_stale_readings);
     RUN_TEST(test_status_json_mock);
+    RUN_TEST(test_status_json_no_balance_is_minus_one);
     RUN_TEST(test_status_json_source_state);
     RUN_TEST(test_status_json_unknown_cadence);
     RUN_TEST(test_form_parse_basic);
@@ -858,6 +954,7 @@ int runUnityTests() {
     RUN_TEST(test_status_led_searching_blinks_faster_than_connected);
     RUN_TEST(test_oled_portal_lines);
     RUN_TEST(test_oled_connected_lines);
+    RUN_TEST(test_oled_connected_shows_balance_compact);
     RUN_TEST(test_oled_connected_unknown_cadence_omitted);
     RUN_TEST(test_oled_connected_shows_rssi);
     RUN_TEST(test_saved_page_has_ssid_and_hints);
