@@ -52,8 +52,9 @@ Windows needs USB passthrough to WSL (`START-HERE.md` / `07-hardware-and-environ
   pre-flash gate** — always do it before flashing.
 - Flash: `firmware/flash.ps1` (OTA — RSSI pre-flight + auto-retry + reboot verify) or `flash.ps1 -Mode usb`;
   raw `pio run -e <env> -t upload`. Envs + on-bike checklist: `firmware/BENCH-FLASH.md`.
-- Observe a running board: `curl http://sb20proxy.local/` (status JSON) · `/ui` (dashboard) · `/log`
-  (serial-over-HTTP — the main live-session instrument) · `/stats` (loop-perf).
+- Observe a running board: `http://sb20proxy.local/` (dashboard; `/ui` aliases it) · `curl …/status`
+  (status JSON) · `/setup` (pick the meter/crank source over WiFi → NVS) · `/log` (serial-over-HTTP
+  — the main live-session instrument) · `/stats` (loop-perf).
 
 ## Architecture (big picture)
 
