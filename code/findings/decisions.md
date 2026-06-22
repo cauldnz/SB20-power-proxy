@@ -1592,3 +1592,35 @@ non-CPS). `fake_meter.py` docstring corrected. Diagnostics (`_diag_*.py`) were t
 **Still to do (next bench session, hardware):** flash the spare board (COM10) with `esp32c3-wifi-live-bench`
 and confirm `fake_meter --balance 65 -> ESP -> crank_reader` reads back **L65 %** end-to-end — the on-air
 balance check that was blocked. The desk-testable layer (the match logic) is covered by the native suite.
+
+---
+
+## 2026-06-23 — End-to-end bench proof: fake_meter → ESP32 → spoof crank (the on-air balance check, DONE)
+
+**The desk-only end-to-end loop the 2026-06-22 entry left pending now passes.** Built
+`esp32c3-wifi-live-bench` (55% flash) and flashed the **spare COM10** board via `flash_c3.py` (clean,
+no USB-JTAG wedge; advert verified). Ran `fake_meter.py --watts 200 --steady --balance 44 --cadence 90`
+(a WinRT CPS peripheral on the PC). The board (`METER_MATCH_ANY_CPS`) connected + subscribed within ~2 s
+(`subs=1`). Then read the board's spoofed Stages crank back with a bleak central:
+
+```
+fake_meter (CPS 200 W / 44 %L / 90 rpm)
+   → ESP32 COM10 reads it (central, BleMeterClient)
+   → re-broadcasts as "Stages 62144" (peripheral, BleCrankPeripheral)
+   → PC reads off the crank: power=200 W, balance=44.0 %L  (5/5 frames identical)
+```
+
+**Result — the full proxy chain works on the bench, no bike:**
+- **Goal #1 (read a BLE meter):** ESP connected to fake_meter and subscribed to CPS 0x2A63. ✅
+- **Goal #2 (rebroadcast as the spoofed crank):** the crank carried the meter's power. ✅
+- **L/R balance forwarding (the priority-#1 feature):** `44 %L` preserved end-to-end, byte-faithful. ✅
+- **Power is 1:1** (200→200): correct — fake_meter sends *total* power + a balance field (Assioma-DUO
+  shape), so no single-sided ×2 is applied. (A left-only source would need the ×2 toggle.)
+
+**Disambiguation:** two boards advertise `Stages 62144` on the desk. Connecting to each, only
+`E0:72:A1:70:02:7E` (COM10) streamed the steady 200 W/44 % tracer; `38:44:BE:45:E9:A6` (the COM9 OLED
+**bike** board) returned **no frames** — correctly silent with no source meter, and left untouched.
+
+**What this does and doesn't prove:** it proves the read→correct→rebroadcast data path + the CPS/balance
+framing on real hardware. It does **not** prove the **SB20 itself accepts** the spoof crank or closes its
+erg loop on it — that remains the bike-session gate (Phase 0). Bench build is desk-only; don't ride it.
