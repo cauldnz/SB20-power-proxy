@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "ConfigPage.h"               // pure source-config page (RuntimeConfig + SourceCandidate + render)
 #include "Provisioning.h"             // pure ScannedNet + page render/parse/validate (host-tested)
 #include "Status.h"                   // pure ProxyStatus + renderStatusJson (host-tested)
 #include "net/ProvisioningDisplay.h"  // injectable setup-UX seam (Serial default)
@@ -42,6 +43,21 @@ public:
         perfReset_ = reset;
     }
 
+    // Wire the source-setup UI (GET /setup picker, POST /setup/save, GET /setup/scan). Optional;
+    // call after begin(). Kept decoupled from the BLE layer via hooks: `cfg` returns the stored
+    // RuntimeConfig, `sources` the discovered candidates, `save` persists a new config (WifiLink
+    // then reboots to apply it), `scan` clears + refreshes the candidate list.
+    using ConfigProvider = std::function<RuntimeConfig()>;
+    using SourcesProvider = std::function<std::vector<SourceCandidate>()>;
+    using ConfigSaveHook = std::function<void(const RuntimeConfig&)>;
+    using ScanHook = std::function<void()>;
+    void setConfigUi(ConfigProvider cfg, SourcesProvider sources, ConfigSaveHook save, ScanHook scan) {
+        configProvider_ = cfg;
+        sourcesProvider_ = sources;
+        configSave_ = save;
+        configScan_ = scan;
+    }
+
     // Call from loop(): services HTTP + OTA (station) or the captive DNS + portal (setup), and
     // promotes to healthy (which cancels the boot-guard and validates the running OTA image).
     void handle();
@@ -51,6 +67,7 @@ public:
 
 private:
     void startStationServer_();  // OTA + status/update/forget routes (assumes WiFi joined)
+    void addConfigRoutes_();     // GET /setup picker + POST /setup/save + GET /setup/scan
     void startPortal_();         // SoftAP + captive DNS + setup routes
     void addLogRoutes_();        // GET /log + /log/on + /log/off (shared by both modes)
     void addForgetRoute_(const char* msg);  // GET /forget: clear creds + reboot (shared by both modes)
@@ -62,6 +79,10 @@ private:
     StatusProvider provider_;
     PerfProvider perfProvider_;
     PerfResetHook perfReset_;
+    ConfigProvider configProvider_;
+    SourcesProvider sourcesProvider_;
+    ConfigSaveHook configSave_;
+    ScanHook configScan_;
     IProvisioningDisplay* display_ = nullptr;
     const char* hostname_ = "sb20proxy";
     std::vector<ScannedNet> networks_;  // APs scanned for the portal picker (RSSI + secured)

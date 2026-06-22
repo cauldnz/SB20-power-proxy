@@ -199,8 +199,41 @@ void WifiLink::startStationServer_() {
         });
     // Re-provision from the station too: forget creds, reboot into the portal.
     addForgetRoute_("credentials cleared - rebooting into setup\n");
+    addConfigRoutes_();  // GET /setup picker + POST /setup/save + GET /setup/scan
     addLogRoutes_();
     server_->begin();
+}
+
+// The source-setup UI: pick which power meter / surviving crank the proxy reads, over WiFi. The
+// page + form parse + validation are the pure, host-tested ConfigPage.h; here we just wire the
+// hooks (current config, discovered sources, persist, rescan) and reboot on save to apply it.
+void WifiLink::addConfigRoutes_() {
+    server_->on("/setup", HTTP_GET, [this]() {
+        const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        const std::vector<SourceCandidate> srcs = sourcesProvider_ ? sourcesProvider_()
+                                                                    : std::vector<SourceCandidate>{};
+        server_->send(200, "text/html", renderConfigPage(cfg, srcs).c_str());
+    });
+    server_->on("/setup/scan", HTTP_GET, [this]() {  // clear + let the central refill, back to /setup
+        if (configScan_) configScan_();
+        server_->sendHeader("Location", "/setup");
+        server_->send(303, "text/plain", "scanning\n");
+    });
+    server_->on("/setup/save", HTTP_POST, [this]() {
+        const std::string body(server_->arg("plain").c_str());
+        RuntimeConfig cfg = parseConfigForm(body);
+        const char* err = configValidationError(cfg);
+        if (err) {
+            const std::vector<SourceCandidate> srcs =
+                sourcesProvider_ ? sourcesProvider_() : std::vector<SourceCandidate>{};
+            server_->send(200, "text/html", renderConfigPage(cfg, srcs, err).c_str());
+            return;
+        }
+        if (configSave_) configSave_(cfg);  // persist to NVS
+        server_->send(200, "text/html", renderConfigSavedPage(cfg).c_str());
+        delay(400);
+        esp_restart();  // reboot to apply the new source (mirrors /update)
+    });
 }
 
 // Turn a finished WiFi scan (n entries; n<0 = scan failed) into the portal's picker model: skip
