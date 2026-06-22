@@ -1,0 +1,15 @@
+{
+  "name": "SB20 Proxy (OLED, live)",
+  "version": "41ff7da",
+  "builds": [
+    {
+      "chipFamily": "ESP32-C3",
+      "parts": [
+        {
+          "path": "firmware-factory.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}
