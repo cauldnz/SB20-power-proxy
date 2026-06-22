@@ -203,8 +203,27 @@ void WifiLink::startStationServer_() {
     // Re-provision from the station too: forget creds, reboot into the portal.
     addForgetRoute_("credentials cleared - rebooting into setup\n");
     addConfigRoutes_();  // GET /setup picker + POST /setup/save + GET /setup/scan
+    addRideModeRoute_();  // GET/POST /wifi/off — turn WiFi off for a BLE-only ride
     addLogRoutes_();
     server_->begin();
+}
+
+// Ride mode: turn WiFi off so the C3 is BLE-only for the ride (frees the radio; avoids the rare
+// WiFi+BLE+OLED coex freeze). Opt-in + reversible — a power-cycle brings WiFi back. We reply first,
+// then power the radio down; handle() then no-ops so nothing touches the dead network.
+void WifiLink::addRideModeRoute_() {
+    server_->on("/wifi/off", HTTP_GET, [this]() {
+        server_->send(200, "text/html", rideModeConfirmHtml());
+    });
+    server_->on("/wifi/off", HTTP_POST, [this]() {
+        server_->send(200, "text/html", rideModeDoneHtml());
+        delay(400);            // let the reply flush before the radio drops (mirrors /update)
+        ArduinoOTA.end();
+        WiFi.disconnect(true, false);
+        WiFi.mode(WIFI_OFF);
+        radioOff_ = true;
+        logf("[wifi] ride mode: WiFi off (BLE-only) until power-cycle");
+    });
 }
 
 // The source-setup UI: pick which power meter / surviving crank the proxy reads, over WiFi. The
@@ -363,6 +382,7 @@ void WifiLink::startPortal_() {
 }
 
 void WifiLink::handle() {
+    if (radioOff_) return;  // ride mode: WiFi is down, BLE-only — nothing to service
     if (portal_) {
         if (dns_) dns_->processNextRequest();
         if (server_) server_->handleClient();

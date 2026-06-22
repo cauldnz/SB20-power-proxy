@@ -19,6 +19,10 @@ Do this with the board powered and on WiFi, **before you get on**:
 **All five ticked = green. Only then mount the bike.** If any fail → **don't ride yet**, send us a
 [`/log`](#sending-us-a-log) and we'll sort it. Don't troubleshoot in the saddle.
 
+**Optional (for the most reliable ride):** once green, tap **“Ride mode — turn WiFi off”** at the bottom
+of the dashboard. That frees the board's radio for Bluetooth only (it can't freeze under WiFi+BLE load).
+The dashboard goes away until you **power-cycle** the board — that's expected; the power proxy keeps working.
+
 ## The ride (we'll send you a specific short script; the default is)
 1. **5 minutes easy**, steady. Glance once: the power in your app should track your meter's own app/head
    unit (if you have it visible). They won't be identical second-to-second — that's normal.

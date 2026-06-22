@@ -47,6 +47,7 @@ a.set{color:#3b82f6;text-decoration:none;font-size:.85rem;border:1px solid #2b36
 <div class='stat'><b>Forwarded</b><span id='fwd'>--</span></div>
 <div class='stat'><b>Firmware</b><span id='fw'>--</span></div>
 </div>
+<p style='text-align:center;margin-top:14px'><a href='/wifi/off' style='color:#8b93a7;font-size:.8rem'>Ride mode &mdash; turn WiFi off to free the radio</a></p>
 <script>
 var $=function(i){return document.getElementById(i)};
 var hist=[],MAX=90;
@@ -63,6 +64,39 @@ hist.push(d.power_w);if(hist.length>MAX){hist.shift();}draw();
 }).catch(function(){$('dot').classList.remove('on');});}
 setInterval(tick,1000);tick();window.addEventListener('resize',draw);
 </script></body></html>)HTML";
+}
+
+// "Ride mode" — turn WiFi off so the C3's radio is BLE-only for the ride (WiFi+BLE+OLED coex is
+// what intermittently hangs it under load). Opt-in + reversible: a power-cycle brings WiFi back.
+// The confirm page POSTs to /wifi/off; the seam (WifiLink) shuts the radio down after replying.
+// Pure constants — host-tested like appPageHtml.
+inline const char* rideModeConfirmHtml() {
+    return R"HTML(<!DOCTYPE html><html><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>SB20 Proxy &mdash; Ride mode</title>
+<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:16px;color:#111;background:#fafafa}h1{font-size:1.3rem}
+button.go{width:100%;padding:12px;font-size:1rem;font-weight:600;color:#fff;background:#2a6df4;border:0;border-radius:8px;cursor:pointer}a{color:#2a6df4}.hint{color:#666}</style></head><body>
+<h1>Ride mode</h1>
+<p>This turns <b>WiFi off</b> so the board runs Bluetooth-only for your ride &mdash; it frees the radio and
+avoids the rare mid-ride freeze under WiFi+BLE load. The power proxy keeps working the whole time.</p>
+<p class='hint'>Do this <b>after</b> you've checked the dashboard shows your source connected. To bring WiFi
+back (for the dashboard or updates), just <b>power-cycle</b> the board.</p>
+<form method='POST' action='/wifi/off'><button class='go' type='submit'>Turn WiFi off &amp; ride</button></form>
+<p><a href='/'>Cancel &mdash; back to the dashboard</a></p>
+</body></html>)HTML";
+}
+
+inline const char* rideModeDoneHtml() {
+    return R"HTML(<!DOCTYPE html><html><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>SB20 Proxy &mdash; WiFi off</title>
+<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;padding:16px;color:#111;background:#fafafa}h1{font-size:1.3rem}
+.ok{background:#e7f5ec;border:1px solid #b7e0c4;color:#1d6b34;padding:10px 14px;border-radius:8px}</style></head><body>
+<h1>WiFi off &mdash; ride mode &#10003;</h1>
+<p class='ok'>The board is now Bluetooth-only. Your power source keeps relaying to the SB20 the whole ride.</p>
+<p>This page won't refresh (WiFi is off). <b>Power-cycle</b> the board when you want WiFi back for the
+dashboard or an update.</p>
+</body></html>)HTML";
 }
 
 }  // namespace sb20proxy
