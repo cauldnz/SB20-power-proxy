@@ -43,9 +43,11 @@ ship pre-flashed ─▶ tester sets up (off bike) ─▶ pre-flight verify (dash
 ```
 - **Works first try** (common for mainstream meters): tester confirms on the dashboard, does one short
   ride, done. Minimal of their time.
-- **Meter not recognised / power looks wrong**: tester grabs the board's `/log` (one capture of their
-  meter's CPS frames) and sends it. **We** decode it, add support (golden-vector test from their real
-  bytes — the real-data-first discipline), and **OTA** the update. Their next ride confirms.
+- **Meter not recognised / power looks wrong**: tester saves the board's **`/diag`** report (config +
+  status + their meter's raw CPS frames) and sends it. **We** run `python code/scripts/parse_diag.py
+  <their-diag.txt>` — it decodes the frames, says whether our codec already handles the meter, and emits
+  a golden-vector test stub — then add support (the real-data-first discipline) and **OTA** the update.
+  Their next ride confirms.
 - Each new meter that lands this way grows the supported-meter + twin/calibration library — the whole
   point of testers-as-partners.
 
