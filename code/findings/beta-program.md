@@ -2,7 +2,8 @@
 
 **Status: the operating doc for the pre-beta (2026-06-22).** The "how we run it" companion to
 [`pre-beta-plan.md`](pre-beta-plan.md) (the "what we're building"). Tester-facing material lives in
-[`/beta`](../../beta/) (onboarding, ride protocol).
+[`/beta`](../../beta/) (onboarding, ride protocol); meter compatibility + the meter-screening detail
+live in [`supported-meters.md`](supported-meters.md).
 
 > **The one principle that shapes everything: a tester's time on the bike is the scarcest, most
 > precious resource we have. We never send anyone to pedal until we have verified, off the bike, that
@@ -12,7 +13,8 @@
 Both pools are SB20 owners active in the Facebook group, willing to be **collaborators** (gather data,
 trial meters we don't own), comfortable joining a WiFi network and following a short guide.
 - **Accuracy-seekers** — own a BLE pedal meter (Assioma, Garmin Rally, Wahoo Powrlink, Favero, 4iiii,
-  etc.) they trust, want the SB20 to read *that* (the ~11%-high finding is the hook).
+  etc. — see [`supported-meters.md`](supported-meters.md)) they trust, want the SB20 to read *that*
+  (the ~11%-high finding is the hook).
 - **Crank-rescue** — a dead/dying Stages crank; highly motivated, unambiguous value ("my bike works
   again"). Often the most engaged testers.
 
@@ -22,6 +24,7 @@ Aim for a spread of **meter brands** (that's how we grow support) and at least 2
 1. SB20 confirmed? Firmware version (Stages app → about)?
 2. Which use case — your own meter, or a failing crank?
 3. If a meter: exact brand + model, and does it broadcast **Bluetooth** (not just ANT+)? (We read BLE.)
+   Check it against the tiers + the ×2/sidedness note in [`supported-meters.md`](supported-meters.md).
 4. If crank-rescue: which crank is dead (L/R)? Does the surviving one still broadcast?
 5. Training app(s) you use (Zwift, etc.).
 6. Willing to: join a setup WiFi, pull a crank battery if needed, send us a log file after a ride,
