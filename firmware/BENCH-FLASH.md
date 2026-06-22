@@ -36,6 +36,20 @@ USB auto-detect + bootloader guidance). From `firmware/` (Windows PowerShell):
   enter the bootloader. Recover: **HOLD BOOT, TAP RESET, RELEASE BOOT**, re-run `-Mode usb`, then
   power-cycle the board. (This is the only reliable path once OTA is unavailable.)
 
+### Pre-ship acceptance gate — `code/scripts/qa_board.py`
+
+Before a beta board ships, run the acceptance test: it flashes (delegating to the hang-resistant
+`flash_c3.py`), then verifies off the air that the board advertises as the spoof crank, answers
+`/status` healthily, and emits decodable CPS — printing a PASS/FAIL **acceptance card**.
+```bash
+# full gate: flash + accept (one board on air at a time)
+code/.venv/Scripts/python code/scripts/qa_board.py --port COM10 --env esp32c3-oled-live --connect
+# validate a board already running, zero flash risk:
+code/.venv/Scripts/python code/scripts/qa_board.py --no-flash --connect [--ip <board-ip>]
+```
+A `-live` board with no meter near it is correctly **silent** on CPS (it only notifies on a real
+reading), so "no CPS frames" is non-blocking; only a garbled frame or a missing advert fails the gate.
+
 ## 1. Build / flash envs (platformio.ini)
 
 | env | what | upload |

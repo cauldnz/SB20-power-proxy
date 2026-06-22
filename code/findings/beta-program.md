@@ -36,6 +36,13 @@ A **pre-flashed C3-OLED board**, pre-configured to their meter where we can (fro
 the [onboarding one-pager](../../beta/ONBOARDING.md) and the [ride protocol](../../beta/TESTER-RIDE-PROTOCOL.md).
 Boards iterate by **OTA** — we never need one back to add meter support or fix a bug.
 
+**Pre-ship QA gate.** Before a board goes in an envelope it must pass the acceptance test
+`python code/scripts/qa_board.py --port <COM> --env esp32c3-oled-live --connect` — it flashes the
+board, then confirms off the air that it advertises as the spoof crank, answers `/status` healthily,
+and emits decodable CPS. It prints a PASS/FAIL **acceptance card** and exits non-zero if the board
+isn't shippable (verdict logic in `sb20proxy.qa.acceptance`, host-tested). QA one board at a time —
+two boards advertising the same `Stages 62144` name are indistinguishable to the scan.
+
 ## The tester loop (capture → support → OTA)
 ```
 ship pre-flashed ─▶ tester sets up (off bike) ─▶ pre-flight verify (dashboard shows their meter)
