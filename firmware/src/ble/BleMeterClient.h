@@ -3,9 +3,12 @@
 #include <cstdint>
 #include <string>
 
-#include "Config.h"       // compile-time defaults for the source match
-#include "Cps.h"          // BalanceHold (sticky pedal-balance)
+#include <vector>
+
+#include "Config.h"            // compile-time defaults for the source match
+#include "Cps.h"               // BalanceHold (sticky pedal-balance)
 #include "IPowerSource.h"
+#include "SourceCandidate.h"   // discovered-source list for the web picker
 
 class NimBLEClient;  // NimBLE-Arduino (global namespace); kept out of the header
 
@@ -37,6 +40,13 @@ public:
     // the scan callback so the matching uses the NVS-configured source, not the compile-time const.
     bool isTarget(const std::string& name, bool cps, const std::string& addr) const;
 
+    // Discovered-source list for the web picker: the scan callback records every advertiser it sees
+    // (skipping our own spoof) into a bounded, deduped list; the /setup page reads it. clear() before
+    // a fresh discovery pass. The dedup/cap logic is the pure addCandidate (SourceCandidate.h).
+    void recordCandidate(const char* addr, const char* name, int rssi, bool cps);
+    std::vector<SourceCandidate> candidates() const { return candidates_; }
+    void clearCandidates() { candidates_.clear(); }
+
     // called from NimBLE callbacks
     void onFound(const char* addr, uint8_t addrType, const char* name);
     void onMeasurement(const uint8_t* data, size_t len);  // decode power (+ cadence) and emit
@@ -59,6 +69,7 @@ private:
     BalanceHold balanceHold_;     // sticky L/R split: hold last good across balance-less frames
     std::string matchAddr_ = Config::METER_ADDRESS;          // runtime source pin ("" = by name/UUID)
     std::string matchNameFilter_ = Config::METER_NAME_FILTER; // runtime source name substring
+    std::vector<SourceCandidate> candidates_;                 // discovered sources for the web picker
     uint32_t lastReadingMs_ = 0;  // for the staleness watchdog (meter went silent -> rescan)
 };
 

@@ -3,8 +3,9 @@
 #include <string>
 #include <vector>
 
-#include "Provisioning.h"  // reuse urlDecode / htmlEscape / rssiBars (the captive-portal helpers)
+#include "Provisioning.h"     // reuse urlDecode / htmlEscape / rssiBars (the captive-portal helpers)
 #include "RuntimeConfig.h"
+#include "SourceCandidate.h"  // SourceCandidate + dedupeAndSortSources (the scanned-source model)
 
 namespace sb20proxy {
 
@@ -13,41 +14,7 @@ namespace sb20proxy {
 // WiFi. Mirrors Provisioning.h: HTML rendering + form parsing + validation here (host-tested);
 // the BLE scan + HTTP routing + NVS save are the seam in src/. The page pins the source by BLE
 // ADDRESS (deterministic), with an optional name-substring fallback and a single-sided ×2 toggle.
-
-// One device seen by the source scan (a BLE central discovery pass). `isStagesCrank` marks a
-// "Stages …" advertiser so the page can label a surviving crank (the crank-rescue use case) and
-// warn that our own spoof must not be selected. Filled by BleMeterClient; the dedup/sort/render
-// below is pure + host-tested.
-struct SourceCandidate {
-    std::string address;   // lowercase colon-separated BLE address (what gets pinned)
-    std::string name;      // advertised name ("" if nameless, e.g. a WinRT rig)
-    int rssi = -100;       // dBm, closer to 0 = stronger
-    bool isCps = false;    // advertises Cycling Power Service 0x1818
-    bool isStagesCrank = false;  // name starts with "Stages " (a native crank)
-};
-
-// Collapse a raw discovery list into what the picker shows: drop entries with no address, merge
-// duplicates by address (keep the strongest RSSI), sort strongest-first. Pure; the renderer calls
-// it so the page is correct regardless of scan order. Stable: equal-RSSI ties keep scan order.
-inline std::vector<SourceCandidate> dedupeAndSortSources(const std::vector<SourceCandidate>& in) {
-    std::vector<SourceCandidate> out;
-    for (const auto& d : in) {
-        if (d.address.empty()) continue;
-        bool merged = false;
-        for (auto& e : out) {
-            if (e.address == d.address) {
-                if (d.rssi > e.rssi) e.rssi = d.rssi;
-                if (e.name.empty()) e.name = d.name;  // keep a name if any pass had one
-                merged = true;
-                break;
-            }
-        }
-        if (!merged) out.push_back(d);
-    }
-    std::stable_sort(out.begin(), out.end(),
-                     [](const SourceCandidate& a, const SourceCandidate& b) { return a.rssi > b.rssi; });
-    return out;
-}
+// SourceCandidate + dedupeAndSortSources live in SourceCandidate.h (shared with the scan seam).
 
 // Parse the source-setup form. Keys: `addr` (the pinned BLE address; "" = match by name), `name`
 // (the name-substring fallback), `single` (checkbox; present/"1"/"on" = true). Unknown keys

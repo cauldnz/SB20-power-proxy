@@ -40,6 +40,10 @@ class MeterScanCallbacks : public NimBLEScanCallbacks {
         const std::string name = d->getName();
         const std::string addr = d->getAddress().toString();
         const bool cps = d->isAdvertisingService(NimBLEUUID(UUID_CPS));
+        // Record every advertiser for the web picker (the scan runs continuously until a match
+        // connects, so the list fills during setup). Done before the match check so the page can
+        // offer sources even when none is configured yet.
+        g_meter->recordCandidate(addr.c_str(), name.c_str(), d->getRSSI(), cps);
         // isTarget (pure, host-tested isTargetMeter under the hood) picks the source from the RUNTIME
         // config: a PINNED address wins; else a nameless peripheral matches by CPS UUID and a NAMED
         // device must contain the name filter — so a real "Stages NNNN" crank (also CPS-advertising)
@@ -58,6 +62,18 @@ static MeterScanCallbacks g_scanCb;
 bool BleMeterClient::isTarget(const std::string& name, bool cps, const std::string& addr) const {
     return isTargetMeter(name, cps, addr, matchAddr_, Config::SPOOF_NAME, matchNameFilter_,
                          Config::MATCH_ANY_CPS);
+}
+
+void BleMeterClient::recordCandidate(const char* addr, const char* name, int rssi, bool cps) {
+    const std::string n = name ? name : "";
+    if (n == Config::SPOOF_NAME) return;  // never offer our own spoof as a source
+    SourceCandidate c;
+    c.address = addr ? addr : "";
+    c.name = n;
+    c.rssi = rssi;
+    c.isCps = cps;
+    c.isStagesCrank = (n.rfind("Stages ", 0) == 0);  // a native crank (incl. the surviving-crank case)
+    addCandidate(candidates_, c, 16);  // pure, host-tested dedup + cap
 }
 
 void BleMeterClient::onFound(const char* addr, uint8_t addrType, const char* name) {

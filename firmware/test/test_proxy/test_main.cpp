@@ -472,6 +472,24 @@ void test_config_validation() {
     TEST_ASSERT_NULL(configValidationError(byName));
 }
 
+void test_add_candidate_dedup_and_cap() {
+    std::vector<SourceCandidate> list;
+    addCandidate(list, {"aa:bb:cc:dd:ee:01", "M1", -70, true, false}, 2);
+    addCandidate(list, {"aa:bb:cc:dd:ee:01", "", -55, true, false}, 2);  // dup: stronger rssi wins
+    TEST_ASSERT_EQUAL_INT(1, (int)list.size());
+    TEST_ASSERT_EQUAL_INT(-55, list[0].rssi);
+    TEST_ASSERT_EQUAL_STRING("M1", list[0].name.c_str());                // name kept across passes
+    addCandidate(list, {"aa:bb:cc:dd:ee:02", "M2", -80, true, false}, 2);   // fills the cap
+    addCandidate(list, {"aa:bb:cc:dd:ee:03", "weak", -90, true, false}, 2); // full + weaker -> dropped
+    TEST_ASSERT_EQUAL_INT(2, (int)list.size());
+    addCandidate(list, {"aa:bb:cc:dd:ee:04", "near", -40, true, false}, 2); // full + stronger -> evicts weakest
+    bool has04 = false, has02 = false;
+    for (auto& e : list) { if (e.address == "aa:bb:cc:dd:ee:04") has04 = true;
+                           if (e.address == "aa:bb:cc:dd:ee:02") has02 = true; }
+    TEST_ASSERT_TRUE(has04);   // the close newcomer is in
+    TEST_ASSERT_FALSE(has02);  // the weakest (-80) was evicted
+}
+
 void test_dedupe_and_sort_sources() {
     std::vector<SourceCandidate> in = {
         {"aa:bb:cc:dd:ee:01", "Weak", -80, true, false},
@@ -1054,6 +1072,7 @@ int runUnityTests() {
     RUN_TEST(test_runtime_config_malformed_line_falls_back_to_defaults);
     RUN_TEST(test_config_form_parse);
     RUN_TEST(test_config_validation);
+    RUN_TEST(test_add_candidate_dedup_and_cap);
     RUN_TEST(test_dedupe_and_sort_sources);
     RUN_TEST(test_render_config_page_marks_selected_and_badges);
     RUN_TEST(test_render_config_page_escapes_name);
