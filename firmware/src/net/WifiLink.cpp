@@ -215,7 +215,18 @@ void WifiLink::addConfigRoutes_() {
         const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
         const std::vector<SourceCandidate> srcs = sourcesProvider_ ? sourcesProvider_()
                                                                     : std::vector<SourceCandidate>{};
-        server_->send(200, "text/html", renderConfigPage(cfg, srcs).c_str());
+        // Live status banner so the tester can verify the source is connected before riding.
+        std::string status;
+        if (provider_) {
+            const ProxyStatus st = provider_();
+            if (st.mock) status = "Running a simulated meter (test build).";
+            else if (st.sourceConnected)
+                status = "Reading " + (st.srcName.empty() ? std::string("your source") : st.srcName) +
+                         " \xE2\x9C\x93";  // checkmark
+            else status = "Searching for your source\xE2\x80\xA6";  // ellipsis
+        }
+        server_->send(200, "text/html",
+                      renderConfigPage(cfg, srcs, std::string(), false, -1, status).c_str());
     });
     server_->on("/setup/scan", HTTP_GET, [this]() {  // clear + let the central refill, back to /setup
         if (configScan_) configScan_();
