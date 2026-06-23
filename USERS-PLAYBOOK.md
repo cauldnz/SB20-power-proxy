@@ -30,10 +30,10 @@ to the *job*, not "anyone with an SB20":
   (Assioma, Rally, Powrlink, SRM EXAKT…) and are bothered the SB20 reads ~11% off them. Hook: *the SB20
   reads your pedals, natively, in erg.* The working crank is a known-good reference to validate against —
   the right first cohort.
-- **Crank-rescue** *(the eventual headline — hint it, hold it)* — a dead/dying Stages crank replaced by
-  their pedals. Hook: *your bike works again* — the most motivated pool, but a fresh round-one tester with
-  no working crank has no reference to check against, so **waitlist them for a later round** and reassure
-  ("don't bin your bike — the rescue is coming").
+- **Crank-rescue** *(take 2–3 in round one — the clearest win)* — a dead/dying Stages crank replaced by
+  their pedals. Hook: *your bike works again* — the most motivated pool, and they prove the headline
+  directly. Take a couple this round (keep *most* of the cohort working-crank, for the validation
+  reference); reassure everyone else ("you're who this is for — hold while we prove it, don't bin the bike").
 - **Tease the roadmap, don't lead with it:** erg-target control from the SB20 shifter buttons, Zwift
   integration. They build excitement and shape what's next — but pedals first; promise only what's shipped.
 

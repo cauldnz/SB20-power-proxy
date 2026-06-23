@@ -24,18 +24,18 @@ and pedal-brand spread and still land 10 good ones.
 **Non-negotiable: the user owns a Bluetooth power-meter PEDAL set.** The product is pedals → crank
 replacement; crank-arm and spider meters are out of scope.
 
-**Round-one focus: accuracy-seekers with WORKING Stages cranks.** A working crank gives a known-good
-reference to validate the device against (compare the corrected pedal power to the real crank), which is
-exactly what a first cohort needs. So we recruit:
+**Round-one mix: mostly working-crank accuracy-seekers, plus 2–3 deliberate dead-crank rescues.** A
+working crank gives a known-good reference to validate the device against (compare the corrected pedal
+power to the real crank) — so keep *most* of the cohort there; and take **2–3 dead-crank cases** because
+they're the clearest value and they prove the headline rescue directly. So we recruit:
 
-- **Accuracy-seekers** *(round one)* — own **Bluetooth power pedals** they trust (Favero Assioma, Garmin
-  Rally, Wahoo Powrlink, SRM EXAKT…) **and a still-working SB20 crank**, bothered the SB20 reads ~11% off
-  the pedals. Want the SB20 to read *their pedals* natively in erg.
-- **Crank-rescue** *(the eventual headline — hinted, not recruited yet)* — a dead/dying Stages crank
-  replaced by their pedals. The most motivated pool, but **hold them for a later round** once the core is
-  proven; for now, in the pitch, reassure them ("don't bin your bike — the rescue version is coming") and
-  **waitlist** them rather than shipping into a setup with no reference. (Pitch: Variant A hints this;
-  Variant B is the held copy.)
+- **Accuracy-seekers with a working crank** *(most of round one)* — own **Bluetooth power pedals** they
+  trust (Favero Assioma, Garmin Rally, Wahoo Powrlink, SRM EXAKT…) **and a still-working SB20 crank**,
+  bothered the SB20 reads ~11% off the pedals. The working crank is the validation reference.
+- **Crank-rescue** *(2–3 slots — the clearest win, proves the headline)* — a dead/dying Stages crank
+  replaced by their pedals; the most motivated pool. Take a couple this round; reassure everyone else
+  ("don't bin your bike — you're exactly who this is for, just hold while we prove it"). (Pitch: Variant A
+  invites a couple; Variant B is the targeted post for finding them.)
 
 Aim for a **spread of pedal brands** (each new brand that works grows the library — the whole point), and
 where it's easy, testers you can **ship to fast** (the device is tiny → worldwide is fine, but **AU/NZ is
@@ -48,7 +48,7 @@ Score each applicant; pick the best fit + brand spread, not the fastest to reply
 | Signal | Strong fit | Screen out / hold |
 |---|---|---|
 | **Owns Bluetooth power-meter PEDALS** (the hard requirement) | yes — pedals, BLE | no pedals (crank-arm/spider) → *out of scope*; ANT+-only → *can't read*; say so kindly |
-| **Stages cranks still WORK** (round-one reference) | yes — a known-good reference to validate against | dead/dying crank → **hold for a later round** (waitlist, not "no") |
+| **Stages cranks still WORK** (round-one reference) | yes — a known-good reference to validate against | dead/dying crank → **wanted, but only ~2–3 slots** (clearest value); fill the rest with working cranks |
 | **Comfortable with experimental/DIY, at-own-risk, unaffiliated** | yes | wants a polished consumer product *now* |
 | **Willing to do the async loop** | join 2.4 GHz WiFi · pop crank batteries if needed · ride + send a log · take an OTA | wants live hand-holding / can't send a file |
 | **Pedal brand we don't have yet** | **bonus** — promotes those pedals to Verified | (still fine, just lower novelty) |
@@ -68,9 +68,9 @@ Host on a **Microsoft/Google Form** (zero infra — see Hosting). Questions (mir
    ANT+)? *(If they pair to a phone app over Bluetooth, or Zwift sees them as a Bluetooth power source →
    yes.)* **No power pedals = not a fit** (crank-arm/spider meters are out of scope).
 3. **Single-sided or dual?** (left-only pedal vs dual — sets the ×2 doubling toggle.)
-4. **Do your SB20 Stages cranks still work?** *(For this first round we prefer working cranks — they give a
-   reference to validate against. If yours are dead/dying, say so and we'll **waitlist** you for the
-   rescue round; don't bin the bike.)*
+4. **Do your SB20 Stages cranks still work?** *(Most of round one is working cranks — they give a reference
+   to validate against — but we're taking **2–3 dead-crank rescues** too, so if yours are dead/dying say so:
+   you might grab one of those slots. Either way, don't bin the bike.)*
 5. **Where are you (country)?** *(We ship worldwide; **Australia/NZ fastest**.)*
 6. **Training app(s)** you use (Zwift, qdomyos, etc.).
 7. **Willing to:** join a 2.4 GHz WiFi · pop a crank battery if needed · ride + send a log (you can review

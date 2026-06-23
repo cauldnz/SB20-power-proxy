@@ -6,11 +6,11 @@ Ready-to-post copy for recruiting ~10 pre-beta collaborators. Governed by
 The product is **power-meter pedals becoming the crank replacement** — so the ask is for owners of
 **Bluetooth power pedals**. Describe the hardware generically (a small USB-powered device), not by chip.
 
-> **For this first round:** lead with the **accuracy** angle and prefer testers whose Stages cranks
-> **still work** — so there's a known-good reference to validate the device against. The **dead-crank
-> rescue** is the eventual headline, but it's *hinted as coming*, not recruited yet (don't have someone
-> bin their bike before the core is proven). **Shipping:** worldwide is fine (it's tiny); **Australia/NZ
-> preferred** (fastest to ship). **Variant A is the post to use**; B is held for a later round.
+> **For this first round:** lead with the **accuracy** angle and keep *most* of the cohort on bikes whose
+> Stages cranks **still work** — they give a known-good reference to validate the device against — **plus
+> 2–3 deliberate dead-crank rescues** (the clearest value, and they prove the headline directly).
+> **Shipping:** worldwide is fine (it's tiny); **Australia/NZ preferred** (fastest to ship). **Variant A is
+> the main post**; Variant B is the targeted post/DM to find the couple of dead-crank rescues.
 
 > **Before posting:** read the group's rules — many ban selling / self-promo. This is **free, experimental,
 > seeking unpaid collaborators** — not a sale. If unsure, ask a mod how to share it within the rules.
@@ -39,17 +39,18 @@ The product is **power-meter pedals becoming the crank replacement** — so the 
 > **controlling erg target power from the SB20 shifter buttons** and **Zwift integration for button control** — but step one
 > is nailing the pedals.
 >
-> A couple of notes: if your Stages crank is **already dead or dying**, hang in there — this is exactly the lifeboat, so *don't* throw your bike in the trash! But for this first round I'm prioritising bikes with a **working** crank, so I've got a known-good reference to validate against; the full rescue version is coming. And since it's a tiny device I'll **ship worldwide** — if you happen to be in **Australia / NZ** you'll get it fastest (that's where I am).
+> A couple of notes: if your Stages crank is **already dead or dying** — honestly that's the real prize, and I'd love a couple of you in this first round to prove the rescue works, so *don't* throw your bike in the trash, shout instead! (Most of this round will be bikes with a **working** crank, just so I've got a known-good reference to check the device against — but dead cranks very welcome too.) And since it's a tiny device I'll **ship worldwide** — if you happen to be in **Australia / NZ** you'll get it fastest (that's where I am).
 >
 > Interested? Comment or DM and I'll send a quick 2-minute form → **[FORM LINK]**
 
 ---
 
-## Variant B — crank-rescue (HOLD — for a later round, once the core is proven)
+## Variant B — crank-rescue (use to find the 2–3 dead-crank cases for round one)
 
-> **Not for the first round.** Right now we prefer testers whose cranks still work (Variant A), so we have a
-> reference to validate against. Keep this copy for when we open dead-crank recruiting — and even then, lead
-> honestly ("no promises it'll save every setup").
+> **For a couple of slots, not the whole cohort.** Round one is *mostly* working-crank bikes (Variant A —
+> they give a reference to validate against) **plus 2–3 deliberate dead-crank rescues** (the clearest value
+> and they prove the headline). Use this post/DM to find those few; lead honestly ("no promises it'll save
+> every setup").
 
 > **Stages crank on your SB20 dead or dying? I'm testing a way to bring the bike back to life with your
 > power pedals.**
@@ -90,10 +91,10 @@ Keep replies short, honest, and warm. Common ones:
 - **"How much / where do I buy it?"** → "It's not for sale yet — it's an experimental project and I'm
   looking for collaborators, not customers right now. I'll send you a pre-set-up device; in return you ride once and
   send me a log. (It's a small USB-powered gadget — aiming for it to be cheap to make.)"
-- **"My Stages crank is already dead — can I still join?"** → "That's exactly where this is headed, and
-  you'll be near the front of the queue for the rescue version — but for this first round I'm prioritising
-  bikes with a *working* crank so I've got a known-good reference to validate against. Hang onto your bike;
-  don't bin it — the rescue version is coming."
+- **"My Stages crank is already dead — can I still join?"** → "Yes — honestly that's the *real* prize, and
+  I want a couple of dead-crank rescues in this first round to prove it works. Most of the round is
+  working-crank bikes (so I've got a reference to check against), but yours is exactly the case I most want
+  — pop it in the form. Either way, don't bin your bike!"
 - **"Where are you / will you ship to me?"** → "It's a tiny device, so I'll post it worldwide. If you're in
   **Australia or NZ** you'll get it fastest (that's where I am), but anywhere is fine."
 - **"Is this a Stages / Favero / official thing?"** → "Nope — totally independent, I built it myself. No
@@ -120,7 +121,7 @@ Keep replies short, honest, and warm. Common ones:
   me prove it, so expect a rough edge or two and an update or two. If you want a polished product today,
   this isn't it yet."
 
-If someone's clearly a **good fit** (a **working** SB20 + Bluetooth power pedals, ideally AU/NZ for the
-first round), send them the form + the welcome flow in [`comms-templates.md`](comms-templates.md). If a
-**bad fit** (no pedals, ANT+-only, dead crank for *this* round, wants a finished product), be kind and clear
-about why — a "not yet" protects you both (USERS-PLAYBOOK §1).
+If someone's clearly a **good fit** (an SB20 + Bluetooth power pedals — working crank preferred for most
+of the round, but a couple of dead-crank rescues are wanted too; AU/NZ ships fastest), send them the form +
+the welcome flow in [`comms-templates.md`](comms-templates.md). If a **bad fit** (no pedals, ANT+-only,
+wants a finished product), be kind and clear about why — a "not yet" protects you both (USERS-PLAYBOOK §1).
