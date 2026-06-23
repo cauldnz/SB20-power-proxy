@@ -158,6 +158,11 @@ rider starts:
   JSONL **days later**, not at the bike.)*
 - **Leave the next gate explicit:** what this result unblocks, and what **desk work must precede** the next
   visit (so the next session is also pre-staged turnkey).
+- **Retarget the cold-start to the next READY ride(s).** `BIKE-SESSION-READY.md` is the first thing the
+  bike-machine assistant reads — if it still names the session you just closed, the next rider gets walked
+  through finished work. Closing a session is not done until the cold-start (and the ledger's `Latest done`
+  header) point at the next 🟢 READY session(s), with current device coordinates + restore values. *(2026-06-23:
+  the cold-start sat on session 4 for days after it went DONE while sessions 8 + 5 became the live rides — PR #120.)*
 
 ## 4 · Retro (the part that compounds — never skip it)
 
