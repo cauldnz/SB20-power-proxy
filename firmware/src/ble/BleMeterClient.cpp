@@ -5,6 +5,7 @@
 
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "Config.h"
 #include "Cps.h"
@@ -19,45 +20,76 @@ using namespace sb20proxy;
 // at the controller with no notifications, so we force a disconnect to recover and rescan.
 static constexpr uint32_t kMeterStaleMs = 6000;
 
-static BleMeterClient* g_meter = nullptr;
+// The NimBLE scan is a single shared resource, so every active client routes through ONE scan
+// callback (and one registry). For the spoof this is exactly one client; the meter-to-meter
+// calibrator runs two (a DUT + a reference) concurrently. Clients are static-lifetime (never removed).
+static std::vector<BleMeterClient*> g_clients;
 
-static void powerNotifyCB(NimBLERemoteCharacteristic* /*c*/, uint8_t* data, size_t len,
-                          bool /*isNotify*/) {
-    if (g_meter) g_meter->onMeasurement(data, len);
+// True when no registered client still needs to discover a meter (all connected or already targeted)
+// — the cue to stop the shared scan, exactly as the single-client path did on its one match.
+static bool noClientNeedsScan() {
+    for (auto* c : g_clients) {
+        if (c->wantsTarget()) return false;
+    }
+    return true;
 }
 
-// Resume scanning when the meter link drops, so unplug/replug (or a flaky meter) recovers.
-class MeterClientCallbacks : public NimBLEClientCallbacks {
-    void onDisconnect(NimBLEClient* /*c*/, int /*reason*/) override {
-        if (g_meter) g_meter->onDisconnected();
+// An advertiser is claimed if some OTHER client has already locked onto its address — so two clients
+// reading two different meters never both grab the same one.
+static bool addrClaimedByOther(const BleMeterClient* self, const std::string& addr) {
+    for (auto* c : g_clients) {
+        if (c != self && addr == c->claimedAddr() && !addr.empty()) return true;
     }
+    return false;
+}
+
+// Resume scanning when a meter link drops, so unplug/replug (or a flaky meter) recovers. Per-instance:
+// each client owns one of these so a disconnect routes to the right client (not a shared global).
+class MeterClientCallbacks : public NimBLEClientCallbacks {
+ public:
+    explicit MeterClientCallbacks(BleMeterClient* owner) : owner_(owner) {}
+    void onDisconnect(NimBLEClient* /*c*/, int /*reason*/) override {
+        if (owner_) owner_->onDisconnected();
+    }
+
+ private:
+    BleMeterClient* owner_;
 };
-static MeterClientCallbacks g_clientCb;
 
 class MeterScanCallbacks : public NimBLEScanCallbacks {
     void onResult(const NimBLEAdvertisedDevice* d) override {
-        if (!g_meter) return;
         const std::string name = d->getName();
         const std::string addr = d->getAddress().toString();
         const bool cps = d->isAdvertisingService(NimBLEUUID(UUID_CPS));
-        // Record every advertiser for the web picker (the scan runs continuously until a match
-        // connects, so the list fills during setup). Done before the match check so the page can
-        // offer sources even when none is configured yet.
-        g_meter->recordCandidate(addr.c_str(), name.c_str(), d->getRSSI(), cps);
-        // isTarget (pure, host-tested isTargetMeter under the hood) picks the source from the RUNTIME
-        // config: a PINNED address wins; else a nameless peripheral matches by CPS UUID and a NAMED
-        // device must contain the name filter — so a real "Stages NNNN" crank (also CPS-advertising)
-        // is NOT grabbed (the source-bouncing bug from bike-session 2), and we never read a copy of
-        // our own spoof (a loop). The bench flag MATCH_ANY_CPS loosens the named-device rule for the
-        // WinRT fake_meter rig (advertises under the PC's name, not "ASSIOMA" — decisions.md 2026-06-22).
-        if (!g_meter->isTarget(name, cps, addr)) {
-            return;
+        const int rssi = d->getRSSI();
+        // Record every advertiser for the web picker on each client (the scan runs continuously until
+        // a match connects, so the list fills during setup). Done before the match check so the page
+        // can offer sources even when none is configured yet.
+        for (auto* c : g_clients) c->recordCandidate(addr.c_str(), name.c_str(), rssi, cps);
+        // Assign the advertiser to the FIRST client that wants it and isn't being claimed elsewhere.
+        // isTarget (pure, host-tested isTargetMeter) picks per RUNTIME config: a PINNED address wins;
+        // else a nameless peripheral matches by CPS UUID and a NAMED device must contain the name
+        // filter — so a real "Stages NNNN" crank is NOT grabbed (the source-bouncing bug from
+        // bike-session 2), and we never read a copy of our own spoof (a loop). MATCH_ANY_CPS loosens
+        // the named-device rule for the WinRT fake_meter rig (decisions.md 2026-06-22).
+        for (auto* c : g_clients) {
+            if (c->wantsTarget() && c->isTarget(name, cps, addr) && !addrClaimedByOther(c, addr)) {
+                c->onFound(addr.c_str(), d->getAddress().getType(), name.c_str());
+                break;  // one advertiser feeds one client
+            }
         }
-        NimBLEDevice::getScan()->stop();
-        g_meter->onFound(addr.c_str(), d->getAddress().getType(), name.c_str());
+        // Stop the shared scan only once every client has its meter (single-client: its one match).
+        if (noClientNeedsScan()) NimBLEDevice::getScan()->stop();
     }
 };
 static MeterScanCallbacks g_scanCb;
+static bool g_scanCallbacksSet = false;
+
+// Start the shared scan if it isn't already running (a no-op guard so two clients don't double-start).
+static void ensureScanning() {
+    NimBLEScan* scan = NimBLEDevice::getScan();
+    if (!scan->isScanning()) scan->start(0, false);
+}
 
 bool BleMeterClient::isTarget(const std::string& name, bool cps, const std::string& addr) const {
     return isTargetMeter(name, cps, addr, matchAddr_, matchSpoofName_, matchNameFilter_,
@@ -145,17 +177,20 @@ void BleMeterClient::onDisconnected() {
 }
 
 void BleMeterClient::begin() {
-    g_meter = this;
+    g_clients.push_back(this);  // register with the shared scan (one client for the spoof; two for cal)
     NimBLEScan* scan = NimBLEDevice::getScan();
-    scan->setScanCallbacks(&g_scanCb, false);
-    scan->setActiveScan(true);  // harvest scan responses too (a real meter may carry its name there)
-    scan->start(0, false);      // scan continuously
+    if (!g_scanCallbacksSet) {
+        scan->setScanCallbacks(&g_scanCb, false);
+        scan->setActiveScan(true);  // harvest scan responses too (a meter may carry its name there)
+        g_scanCallbacksSet = true;
+    }
+    ensureScanning();  // continuous scan; shared across all registered clients
 }
 
 void BleMeterClient::loop() {
     if (wantRescan_) {
         wantRescan_ = false;
-        NimBLEDevice::getScan()->start(0, false);
+        ensureScanning();  // a meter dropped; resume the shared scan to re-find it
     }
     // Staleness watchdog: a connected meter that stops notifying is gone — drop the link and
     // rescan. We reset state HERE rather than waiting on the onDisconnect callback, because an
@@ -170,14 +205,18 @@ void BleMeterClient::loop() {
 
     if (!client_) {
         client_ = NimBLEDevice::createClient();
-        client_->setClientCallbacks(&g_clientCb, false);
+        clientCb_ = new MeterClientCallbacks(this);  // per-instance (static-lifetime client)
+        client_->setClientCallbacks(clientCb_, false);
     }
     if (client_->connect(NimBLEAddress(std::string(addr_), addrType_))) {
         NimBLERemoteService* svc = client_->getService(UUID_CPS);
         if (svc) {
             NimBLERemoteCharacteristic* ch = svc->getCharacteristic(UUID_CP_MEAS);
             if (ch && ch->canNotify()) {
-                ch->subscribe(true, powerNotifyCB);
+                // Per-instance notify (the std::function captures this), so two clients route their
+                // own meter's frames to the right BleMeterClient — no shared global.
+                ch->subscribe(true, [this](NimBLERemoteCharacteristic*, uint8_t* data, size_t len,
+                                           bool) { onMeasurement(data, len); });
                 connected_ = true;
             }
         }
@@ -185,6 +224,6 @@ void BleMeterClient::loop() {
     if (!connected_) {
         client_->disconnect();
         haveTarget_ = false;
-        NimBLEDevice::getScan()->start(0, false);  // resume scanning
+        ensureScanning();  // resume the shared scan
     }
 }
