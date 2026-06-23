@@ -6,6 +6,10 @@ bike is set up first**:
 - **[Session 8 — SB20 spoof calibration handshake (G1 + G2)](sessions/session-08-sb20-spoof-calibration.md)** —
   on the **SB20**. Capture the real Stages crank's `0x10` Enhanced-Offset reply (G1) → test whether the
   Stages app's zero-reset now **completes** against our spoof (G2). ~25–35 min.
+  **🟡 STAGED 2026-06-24 → read the doc's "RESUME HERE" first:** pivoted to the **own-unique-ID** approach —
+  the board is already on **`Stages 62145`** (runtime, no reflash); the plan is app **L=`62145` / R=`4964`
+  (phantom), real cranks stay powered, no battery pull**. First gate: does the SB20 connect to our ESP at
+  `62145`? Original G1/G2 fold in as bonus/payoff. (Restore POST + values are in the session doc.)
 - **[Session 5 — meter-to-meter calibration ride (XCadey → reads like Assioma)](sessions/session-05-meter-calibration-capture.md)** —
   on the **track bike** (both meters fitted). Drive the on-device `/calibrate` wizard so the XCadey reads
   like the Assioma, then leave the proxy rebroadcasting the corrected XCadey for the Garmin. ~20–30 min.
@@ -75,7 +79,7 @@ while($true){(iwr http://sb20proxy.local/log).Content; sleep 3}
 | | |
 |---|---|
 | **Proxy board** | `sb20proxy.local` → `192.168.1.165` (mDNS is the safe bet) · `/` `/ui` `/log` `/stats` `/status` `/calibrate` · **COM9** = OLED bike board |
-| **SB20 spoof (session 8)** | advertises `Stages 62144` (CPS crank) · **reads** the meter named `ASSIOMA` · BLE cal-offset **0** (captured `200c010000`; **not** the ANT+ `903`) · Enhanced `0x10` reply ships spec-shape `20 10 01 <offset> <mfgId>` — **G1 grounds the mfg-id** |
+| **SB20 spoof (session 8)** | **🟡 staged on `Stages 62145`** (2026-06-24 own-unique-ID pivot; was `62144` — restore POST in the session doc) · **reads** `ASSIOMA` · BLE cal-offset **0** (`200c010000`; **not** ANT+ `903`) · Enhanced `0x10` reply spec-shape `20 10 01 <offset> <mfgId>` · plan: app **L=`62145` / R=`4964` phantom** |
 | **Corrector (session 5)** | on-device `/calibrate`: **XCadey = DUT**, **Assioma = Ref** → fit → rebroadcast corrected XCadey under its own name for the **Garmin**. Run path bench-proven; the bike proves **2-meter coex** + the real fit |
 | **The SB20 itself** | `Stages Bike 0105`, addr **`E4:AA:5A:D6:0E:D4`** · shifter char `0c46be60` · FTMS `0x1826` |
 

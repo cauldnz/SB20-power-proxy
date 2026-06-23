@@ -1678,3 +1678,45 @@ drove the `/calibrate` wizard over WiFi from the desk. Findings:
   collection on the C3. Run-sheet: `sessions/session-05-meter-calibration-capture.md`.
 
 Both boards left on current firmware, clean default config (COM9 = Stages 62144 / ASSIOMA spoof).
+
+---
+
+## 2026-06-24 — Session 8 desk-staging: pivot the SB20 spoof to its OWN crank id (no battery pull)
+
+Desk-only day (no bike time — rider ran out of time before going downstairs). Staged a **simpler
+approach** to the SB20 spoof and captured the app surface that enables it. Run-sheet + RESUME-HERE:
+`sessions/session-08-sb20-spoof-calibration.md` (status 🟡 STAGED). Not yet bike-confirmed.
+
+**The pivot (owner decision):** instead of the byte-faithful `Stages 62144` spoof that needs the real
+left-crank battery **pulled** (to dodge the duplicate-`62144` collision), put the ESP on its **own**
+Stages id — **`Stages 62145`** — and re-point the SB20 to it in the Stages app. The real cranks stay
+**powered**; **no battery pull**. This is the 2026-06-16 Phase-1B plan, now trivial via runtime config.
+
+- **Fully runtime-supported — NO reflash.** `spoof_name`/`spoof_serial` are editable from `/setup`
+  ("Crank identity"), persisted to NVS (`RuntimeConfig`), and drive `NimBLEDevice::init` + the advert
+  name (`BleCrankPeripheral` `adv->setName`) + DIS serial. Set with `POST /setup/save`
+  (`name=ASSIOMA&single=1&spoof_name=Stages 62145&spoof_serial=11821518`) → 200 + reboot ~2 s. Verified
+  on-air: ESP advertises **`Stages 62145`** at −59 dBm; the surviving `Stages 62144` (real L crank) is
+  thereby disambiguated at `E0:72:A1:70:02:7E`. **BLE addresses rotate** — the 2026-06-15 real-crank addr
+  `E8:CF:D8:D9:3A:20` no longer matched, so disambiguate by **power-state / name**, not stored address.
+- **Stages-app crank-pairing recon (durable):** the pairing screen has **two separate, free-TYPE
+  Left/Right id fields** — you **type** the number; there is **no scan-list** and **no single-sided /
+  left-only option**. ⇒ ids aren't validated against a present device at entry. Plan: type **L=`62145`**
+  (our ESP) + **R=`4964`** (a **phantom** — nothing advertises it, so the bike runs left-only off the ESP
+  and ignores the still-powered real right crank `4963`). Since the SB20 **sums L+R** as independent
+  meters, leaving R=`4963` real risks a **double-count** against the ESP's doubled-total output — hence
+  the phantom R.
+- **Tooling:** this machine had **no `code/.venv` and no `bleak`** (system Py **3.14**). Created the venv,
+  installed **bleak 3.0.2** (winrt **cp314** wheels exist); `06_capture_ble.py`'s BLE path verified
+  against 3.0.2 (`client.services` property; `start_notify` before `write_gatt_char(response=True)`; CP op
+  `enhanced-offset-compensation`=`0x10`, char `0x2A66`, reply expected `20 10 01 …`). G1 (real crank
+  `0x10`) becomes a **free bonus** on resume — the real crank stays awake (no pull).
+- **Process rule (owner):** the rider is **always explicit about being at the bike**; physical steps wait
+  for the explicit cue (the agent pre-empted an in-app step while the rider was still upstairs). Captured
+  to `sessions/PLAYBOOK.md` §2 + memory `rider-explicit-at-bike`.
+
+**Open / first gate on resume:** does the SB20 **connect to our ESP at `62145`** when the app L-id is set
+to it (real `62144` still powered)? Then: is the power sane (no double-count), and does the app
+**calibrate/zero-reset complete** (the old G2 payoff)? **Board left staged at `Stages 62145`** (NVS);
+restore to baseline with `POST /setup/save` `…spoof_name=Stages 62144…` + app L=`62144`/R=`4963`. Docs
+landed: PR #123 + the close-out PR carrying this entry.
