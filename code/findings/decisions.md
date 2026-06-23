@@ -1624,3 +1624,33 @@ fake_meter (CPS 200 W / 44 %L / 90 rpm)
 **What this does and doesn't prove:** it proves the read→correct→rebroadcast data path + the CPS/balance
 framing on real hardware. It does **not** prove the **SB20 itself accepts** the spoof crank or closes its
 erg loop on it — that remains the bike-session gate (Phase 0). Bench build is desk-only; don't ride it.
+
+---
+
+## 2026-06-23 — Meter-to-meter corrector built (on-device BLE calibration → corrected rebroadcast)
+
+The project's second product (`meter-to-meter-proxy.md`) is built: make a DUT meter (XCadey crank) read
+like a reference (Assioma pedals), fully on the ESP32, no laptop. One firmware, a runtime **mode toggle**
+(NVS/web UI): SPOOF (SB20 crank) | CORRECTOR (this). Merged across PRs #99–#104:
+
+- **M1** — `CalibrationFit.h` (PairAccumulator + grid/scale-offset fit), `RuntimeConfig` mode/curve.
+  The fit is **parity-locked to `calibration.py`** (shared golden dataset asserted in both
+  `test_main.cpp` and `test_calibration_parity.py`) so on-device and desk fits can't drift.
+- **M2** — `BleCrankPeripheral::setMode()`: CORRECTOR advertises a generic CPS meter under our own name,
+  **no Stages proprietary service**, applies the stored curve. **Bench-proven on COM10:** `fake_meter`
+  200 W → rebroadcast **220 W as "SB20 Corrector"** (1.10× curve), GATT carries only standard services.
+- **M3** — instance-routed `BleMeterClient` (was a file-global singleton) so two centrals (DUT + ref)
+  run concurrently. Spoof path **regression-verified** (175 W still flows unchanged).
+- **M4** — `CalibrationSession` (Idle→Collecting→Fitted state machine), `CalibrationPage.h` wizard
+  (pick DUT+ref → coverage-guided ride → review fit → save), wired live via WifiLink `/calibrate` routes
+  + a 2nd meter in `main`, with **reboot-into-calibration** mode (fixed meter roles per boot, low-risk to
+  the shipping spoof). Save → corrector mode under an editable device name.
+
+**Decisions taken (owner):** runtime toggle in one firmware; on-device self-contained fit; power-only
+correction first; coverage-guided Finish; editable corrector device name.
+
+**State:** corrector *run* path bench-proven; the calibration *wizard* compiles + its pure logic is
+host-tested (native 129). **Pending — the calibration ride:** the live two-meter `/calibrate`
+walk-through + the 2-concurrent-central coex behaviour on the C3, with the owner's real XCadey + Assioma.
+If coex is unstable, fall back to capture-then-fit (the pure fit core is unchanged). Runbook in
+`meter-to-meter-proxy.md` §Calibration ride runbook.

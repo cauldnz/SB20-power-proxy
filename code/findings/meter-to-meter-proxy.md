@@ -1,6 +1,56 @@
 # Meter-to-meter proxy — read XCadey, rebroadcast it like the Assioma
 
-**Status:** plan + Phase 1 built (capture). The rest is **real-data-first** — gated on a paired ride.
+**Status (2026-06-23): the on-device BLE corrector is built** — a fully self-contained, UI-guided
+calibration + correction runs on the ESP32 (no laptop, no ANT+). The original ANT+-capture→desk-fit
+flow below is superseded by this; see [§Built](#built--on-device-ble-corrector-2026-06-23). What
+remains is the **real paired-fit proof** with the owner's two meters (the calibration ride) — the
+real-data-first gate, now run *through the device* instead of `07_capture_multi.py`.
+
+## Built — on-device BLE corrector (2026-06-23)
+
+One firmware, a runtime **mode toggle** (NVS, web UI): **SPOOF** (the SB20 crank) or **CORRECTOR**
+(this). Built and merged across PRs #99–#104; the corrector *run* path is bench-proven, the
+calibration *wizard* is wired + compiles (its live walk-through is the pending ride).
+
+**The flow (all on the device):**
+1. **Calibrate** — open `http://sb20proxy.local/calibrate`, pick the **DUT** (XCadey, to correct) and
+   a **reference** (Assioma) from the BLE scan, Start. The board reboots into a calibration session
+   reading **both** meters (instance-routed dual central), pairing their streams.
+2. **Ride a sweep** — easy→hard; the wizard shows live paired-sample count + per-power-band coverage,
+   enabling **Finish** once the range is covered (coverage-guided). Finish fits a power→factor curve
+   on-device (the C++ mirror of `calibration.fit_grid`, parity-tested).
+3. **Save** — review the fit + residual, name the device (default "SB20 Corrector"), Save → reboot
+   into corrector mode. Remove the Assioma; the XCadey, corrected in real time, is rebroadcast as a
+   standard CPS meter under that name. **A Garmin pairs to it** and sees corrected watts.
+
+**Bench-proven (COM10, `decisions.md` 2026-06-23):** `fake_meter` 200 W → corrector applies a 1.10×
+curve → rebroadcasts **220 W as "SB20 Corrector"** with **no Stages proprietary service** (a clean CPS
+meter). The spoof path is unchanged (regression-verified).
+
+**Key code:** `CalibrationFit.h` (fit, parity-locked to `calibration.py`), `CalibrationSession.h`
+(state machine), `CalibrationPage.h` (wizard), `RuntimeConfig.h` (`mode`/`curve`/`calibrating`),
+`BleMeterClient.{h,cpp}` (instance-routed dual central), `BleCrankPeripheral.{h,cpp}` (`setMode`
+generic CPS). All pure logic host-tested (`test_main.cpp`, `test_calibration_parity.py`).
+
+**Pending (the ride):** the live two-meter calibration walk-through + the 2-concurrent-central coex
+behaviour on the C3 (watch heap/watchdog). If coex proves unstable, the fallback is capture-then-fit
+(the pure fit core is unchanged). → see [§Calibration ride runbook](#calibration-ride-runbook-owner).
+
+## Calibration ride runbook (owner)
+
+A short, scripted session — verify before you pedal (the project's discipline):
+1. **Pre-flight (off the bike):** power the board; join its WiFi / your network; open `/calibrate`.
+   Tap **Scan**; confirm **both** the XCadey and the Assioma appear. Pick XCadey = **DUT**, Assioma =
+   **Ref**. Start (the board reboots; reopen `/calibrate` — it should say *Collecting*, both connected).
+2. **The sweep (~5–10 min):** ride easy→hard so the coverage bands fill — a minute or two each around
+   ~120 / 180 / 240 / 300 W (whatever your range is). Watch the bands light up; **Finish** enables once
+   there's enough spread. A few hard efforts help the high-power bands.
+3. **Finish → review:** check the residual is small (a few watts) and the curve looks monotonic. Name
+   the device, **Save**. The board reboots into corrector mode.
+4. **Confirm:** take the Assioma off; pair your Garmin to the corrector; ride — the watts should track
+   what the Assioma *would* read. (Optional: re-mount the Assioma once to spot-check agreement.)
+5. **If anything's off:** the dashboard `/diag` captures config + frames; recalibrate from `/calibrate`
+   any time (it overwrites the curve).
 
 ## Use case (owner, 2026-06-19)
 
@@ -93,3 +143,9 @@ firmware work. Not chosen.)*
 - **P3 — fit + validate (gated on P2):** run the fit/analyse/compare on the real data; pick the model.
 - **P4 — deploy (gated on P3):** wire the fitted model into the proxy (firmware grid-load + read/spoof
   config, or the Python proxy); bench-test against a replayed capture, then ride.
+
+> **Superseded (2026-06-23):** P2–P4 above describe the *desk* ANT+ path. The shipped realization does
+> P2 (capture), P3 (fit) and P4 (deploy) **all on the device over BLE** via the calibration wizard — see
+> [§Built](#built--on-device-ble-corrector-2026-06-23). The desk path remains valid as an alternative
+> (and `09_fit_calibration.py` is the oracle the on-device fit is parity-tested against), but the owner's
+> calibration is now a single on-bike `/calibrate` session, not a capture-then-desk-fit round trip.
