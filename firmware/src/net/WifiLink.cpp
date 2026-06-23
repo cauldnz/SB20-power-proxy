@@ -204,6 +204,7 @@ void WifiLink::startStationServer_() {
     // Re-provision from the station too: forget creds, reboot into the portal.
     addForgetRoute_("credentials cleared - rebooting into setup\n");
     addConfigRoutes_();  // GET /setup picker + POST /setup/save + GET /setup/scan
+    addCalibrationRoutes_();  // GET /calibrate + POST start/finish/save/cancel — the meter-to-meter wizard
     addRideModeRoute_();  // GET/POST /wifi/off — turn WiFi off for a BLE-only ride
     addLogRoutes_();
     server_->begin();
@@ -288,6 +289,68 @@ void WifiLink::addConfigRoutes_() {
         const ProxyStatus st = provider_ ? provider_() : ProxyStatus{};
         const std::vector<std::string> frames = diagFrames_ ? diagFrames_() : std::vector<std::string>{};
         server_->send(200, "text/plain", renderDiagReport(cfg, st, frames).c_str());
+    });
+}
+
+// The meter-to-meter calibration wizard (GET /calibrate + the POST actions). Pure render/parse live
+// in CalibrationPage.h; here we route + bridge to the BLE/session hooks. start/save/cancel persist
+// then REBOOT (the wizard moves in/out of a dedicated calibration boot — see main); finish fits in
+// place (no reboot) so the rider can review before saving.
+void WifiLink::addCalibrationRoutes_() {
+    auto render = [this](const std::string& message) {
+        CalWizardView v = calView_ ? calView_() : CalWizardView{};
+        if (!message.empty()) v.message = message;
+        server_->send(200, "text/html", renderCalibrationPage(v).c_str());
+    };
+    server_->on("/calibrate", HTTP_GET, [this, render]() { render(""); });
+    server_->on("/calibrate/scan", HTTP_GET, [this]() {
+        if (calScan_) calScan_();
+        server_->sendHeader("Location", "/calibrate");
+        server_->send(303, "text/plain", "scanning\n");
+    });
+    server_->on("/calibrate/start", HTTP_POST, [this, render]() {
+        const CalForm f = parseCalibrationForm(std::string(server_->arg("plain").c_str()));
+        const char* err = calibrationStartError(f);
+        if (err) { render(err); return; }
+        if (calStart_) calStart_(f.dutAddr, f.refAddr);  // persists the calibration boot config
+        server_->send(200, "text/html",
+                      "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' "
+                      "content='width=device-width,initial-scale=1'><body style='font-family:"
+                      "system-ui,sans-serif;max-width:480px;margin:0 auto;padding:16px'>"
+                      "<h1>Starting calibration&hellip;</h1><p>Connecting to both meters &mdash; the "
+                      "device is restarting. Reopen <a href='/calibrate'>the wizard</a> in a moment "
+                      "and start your power sweep.</p>");
+        delay(400);
+        esp_restart();
+    });
+    server_->on("/calibrate/finish", HTTP_POST, [this, render]() {
+        if (calFinish_) calFinish_();  // fit (or no-op if too few pairs); the view shows the result
+        server_->sendHeader("Location", "/calibrate");
+        server_->send(303, "text/plain", "fitting\n");
+    });
+    server_->on("/calibrate/save", HTTP_POST, [this]() {
+        const CalForm f = parseCalibrationForm(std::string(server_->arg("plain").c_str()));
+        if (calSave_) calSave_(f.deviceName);  // persist the corrector config
+        server_->send(200, "text/html",
+                      "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' "
+                      "content='width=device-width,initial-scale=1'><body style='font-family:"
+                      "system-ui,sans-serif;max-width:480px;margin:0 auto;padding:16px'>"
+                      "<h1>Saved &#10003;</h1><p>Switching to corrector mode &mdash; restarting. Now "
+                      "remove the reference meter; the corrected meter is rebroadcast under your "
+                      "chosen name. Open <a href='/'>the dashboard</a> in a moment.</p>");
+        delay(400);
+        esp_restart();
+    });
+    server_->on("/calibrate/cancel", HTTP_POST, [this]() {
+        if (calCancel_) calCancel_();  // clear the calibration marker
+        server_->send(200, "text/html",
+                      "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' "
+                      "content='width=device-width,initial-scale=1'><body style='font-family:"
+                      "system-ui,sans-serif;max-width:480px;margin:0 auto;padding:16px'>"
+                      "<h1>Calibration cancelled</h1><p>Restarting. Open <a href='/'>the dashboard</a> "
+                      "in a moment.</p>");
+        delay(400);
+        esp_restart();
     });
 }
 

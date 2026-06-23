@@ -739,6 +739,43 @@ void test_calibration_page_fitted_shows_curve_and_name() {
     TEST_ASSERT_TRUE(h.find("/calibrate/save") != std::string::npos);
 }
 
+void test_runtime_config_calibrating_roundtrip() {
+    RuntimeConfig c = RuntimeConfig::defaults();
+    c.calibrating = true;
+    c.meterAddress = "d1:d2:d3:d4:d5:d6";
+    c.refMeterAddress = "r1:r2:r3:r4:r5:r6";
+    RuntimeConfig back = RuntimeConfig::fromLine(c.toLine());
+    TEST_ASSERT_TRUE(back.calibrating);
+    TEST_ASSERT_EQUAL_STRING("r1:r2:r3:r4:r5:r6", back.refMeterAddress.c_str());
+    // a 9-field line (pre-calibrating) parses with calibrating = false (backward compatible)
+    RuntimeConfig old = RuntimeConfig::fromLine("a|ASSIOMA|0|Stages 62144|11821518|0|||");
+    TEST_ASSERT_FALSE(old.calibrating);
+}
+
+void test_correction_to_curve_passthrough_and_linear() {
+    Correction curveC;
+    curveC.curve.add(100, 0.95f);
+    curveC.curve.add(300, 0.91f);
+    TEST_ASSERT_EQUAL_INT(2, (int)correctionToCurve(curveC).points.size());  // a curve stored as-is
+    Correction lin;
+    lin.scale = 1.10f;  // a pure scale -> factor 1.10 at every power
+    CorrectionCurve b = correctionToCurve(lin);
+    TEST_ASSERT_TRUE(b.points.size() >= 2);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 1.10f, b.factorAt(200));
+}
+
+void test_proxycore_tap_sees_raw_source_reading() {
+    MockMeter m;
+    MockCrank ck;
+    ProxyCore pc(m, ck, Correction{2.0f, 0.0f});  // doubles power
+    int tapped = -1;
+    pc.setTap([&](const PowerReading& r) { tapped = r.power_w; });
+    pc.begin();
+    m.emit(150, 90, 1000);
+    TEST_ASSERT_EQUAL_INT(150, tapped);            // the tap sees the RAW (pre-correction) DUT power
+    TEST_ASSERT_EQUAL_INT(300, ck.last.power_w);   // the crank still gets the corrected value
+}
+
 void test_config_form_parse() {
     RuntimeConfig c = parseConfigForm("addr=e3%3A25%3A39%3A38%3A92%3A71&name=Stages&single=1");
     TEST_ASSERT_EQUAL_STRING("e3:25:39:38:92:71", c.meterAddress.c_str());  // %3A urldecoded to ':'
@@ -1508,6 +1545,9 @@ int runUnityTests() {
     RUN_TEST(test_calibration_page_idle_lists_meters_and_pickers);
     RUN_TEST(test_calibration_page_collecting_shows_coverage_and_gates_finish);
     RUN_TEST(test_calibration_page_fitted_shows_curve_and_name);
+    RUN_TEST(test_runtime_config_calibrating_roundtrip);
+    RUN_TEST(test_correction_to_curve_passthrough_and_linear);
+    RUN_TEST(test_proxycore_tap_sees_raw_source_reading);
     return UNITY_END();
 }
 

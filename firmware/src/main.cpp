@@ -20,7 +20,11 @@
   static sb20proxy::MockMeter meter;
 #else
   #include "ble/BleMeterClient.h"
+  #include "CalibrationSession.h"  // on-device meter-to-meter calibration orchestration
   static sb20proxy::BleMeterClient meter;
+  static sb20proxy::BleMeterClient refMeter;    // calibration REFERENCE (2nd BLE central; live only)
+  static sb20proxy::CalibrationSession g_cal;    // the wizard's session (Idle/Collecting/Fitted)
+  static bool g_calibrating = false;             // this boot is a live calibration session
 #endif
 
 #if USE_WIFI
@@ -188,9 +192,25 @@ void setup() {
 #if !USE_MOCK_METER
     meter.setMatch(cfg.meterAddress, cfg.meterNameFilter);
     meter.setSpoofName(cfg.spoofName);  // keep the loop guard in sync with the runtime identity
+
+    // Calibration wiring: the DUT (primary meter) feeds the session via the proxy tap; the reference
+    // (2nd central) feeds it directly. Both no-op unless a session is collecting, so this is inert in
+    // normal spoof/corrector runs. On a calibration boot (cfg.calibrating, set by /calibrate/start)
+    // the reference is pinned + begun and the session starts — both meters then stream into it.
+    proxy.setTap([](const PowerReading& r) { g_cal.onDut(r.power_w, r.t_ms); });
+    refMeter.onReading([](const PowerReading& r) { g_cal.onRef(r.power_w, r.t_ms); });
+    g_calibrating = cfg.calibrating;
+    if (g_calibrating) {
+        refMeter.setMatch(cfg.refMeterAddress, cfg.refMeterNameFilter);
+        refMeter.setSpoofName(cfg.spoofName);  // never read our own crank as the reference
+        g_cal.start();
+    }
 #endif
 
     proxy.begin();  // crank advertises; source begins (scan, or nothing for mock)
+#if !USE_MOCK_METER
+    if (g_calibrating) refMeter.begin();  // 2nd central joins the shared scan, pinned to the reference
+#endif
 
     Serial.printf("[sb20proxy] %s as '%s'; source=%s%s%s\n",
                   cfg.mode == ProxyMode::Corrector ? "corrector" : "spoofing", cfg.spoofName.c_str(),
@@ -256,6 +276,56 @@ void setup() {
     wifi.setDiagFrames([]() { return std::vector<std::string>{}; });
 #else
     wifi.setDiagFrames([]() { return meter.recentFrames(); });
+
+    // The meter-to-meter calibration wizard (GET /calibrate). The view reflects the live session;
+    // start/save/cancel persist + reboot (the wizard moves in/out of a calibration boot). Live only.
+    wifi.setCalibrationUi(
+        []() {  // build the wizard view from the live session + meter state
+            CalWizardView v;
+            const RuntimeConfig c = ConfigStore::load();
+            if (!c.calibrating) {
+                v.state = CalState::Idle;
+                v.devices = meter.candidates();
+            } else if (g_cal.fitted()) {
+                v.state = CalState::Fitted;
+                const Correction& fit = g_cal.fit();
+                v.residualW = g_cal.residualW();
+                if (fit.curve.empty()) { v.linear = true; v.scale = fit.scale; v.offset = fit.offset; }
+                else { v.curve = fit.curve; }
+            } else {
+                v.state = CalState::Collecting;
+                v.dutConnected = meter.connected();
+                v.refConnected = refMeter.connected();
+                v.pairCount = (int)g_cal.pairCount();
+                v.minPairs = g_cal.minPairs();
+                v.enoughToFit = g_cal.enoughToFit();
+                v.coverage = g_cal.coverage();
+            }
+            return v;
+        },
+        [](const std::string& dut, const std::string& ref) {  // start: persist a calibration boot
+            RuntimeConfig c = ConfigStore::load();
+            c.calibrating = true;
+            c.meterAddress = dut; c.meterNameFilter = "";       // primary meter = DUT
+            c.refMeterAddress = ref; c.refMeterNameFilter = "";  // reference = ref
+            ConfigStore::save(c);
+        },
+        []() { return g_cal.finish(); },                         // fit the collected pairs
+        [](const std::string& name) {                            // save: persist the corrector config
+            RuntimeConfig c = ConfigStore::load();
+            c.mode = ProxyMode::Corrector;
+            c.spoofName = name.empty() ? std::string(Config::CORRECTOR_NAME) : name;
+            c.curve = correctionToCurve(g_cal.fit());            // store the fit as a curve
+            c.calibrating = false;
+            c.refMeterAddress = ""; c.refMeterNameFilter = "";   // (meterAddress stays = the DUT)
+            ConfigStore::save(c);
+        },
+        []() {                                                   // cancel: clear the calibration marker
+            RuntimeConfig c = ConfigStore::load();
+            c.calibrating = false;
+            ConfigStore::save(c);
+        },
+        []() { meter.clearCandidates(); });                      // scan: refresh the candidate list
 #endif
     ArduinoOTA.onProgress([](unsigned int, unsigned int) { ++g_loopBeat; });  // keep WD fed during OTA
     esp_timer_create_args_t wdArgs = {};
@@ -277,6 +347,9 @@ void loop() {
     ++g_loopBeat;                       // feed the stall watchdog (Phase B)
     perf.sample(esp_timer_get_time());  // record this loop's period (Phase A)
     proxy.loop();
+#if !USE_MOCK_METER
+    if (g_calibrating) refMeter.loop();  // service the 2nd central during a calibration session
+#endif
 
 #if !USE_MOCK_METER
     // Meter just dropped -> clear the last readings so the OLED / /stats don't show stale numbers

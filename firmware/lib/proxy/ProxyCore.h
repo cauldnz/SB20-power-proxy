@@ -1,4 +1,6 @@
 #pragma once
+#include <functional>
+
 #include "Correction.h"
 #include "ICrankOutput.h"
 #include "IPowerSource.h"
@@ -25,6 +27,10 @@ public:
     // Swap the correction at runtime (e.g. apply the single-sided ×2 once NVS config is loaded).
     void setCorrection(const Correction& c) { correction_ = c; }
 
+    // Optional tap on every RAW source reading (before correction) — used by the calibration wizard
+    // to feed the DUT stream to a CalibrationSession without disturbing the relay. No-op when unset.
+    void setTap(std::function<void(const PowerReading&)> tap) { tap_ = tap; }
+
     // Drop the last readings back to defaults (0 W, unknown cadence) — call when the meter
     // disconnects so the OLED / /stats stop showing stale values. (forwarded_ is a lifetime
     // counter and is intentionally left alone.)
@@ -41,6 +47,7 @@ public:
 private:
     void forward(const PowerReading& r) {
         lastSource_ = r;
+        if (tap_) tap_(r);  // raw DUT reading -> calibration session (when collecting)
         lastOutput_ = correction_.apply(r);
         ++forwarded_;
         crank_.publishPower(lastOutput_);
@@ -49,6 +56,7 @@ private:
     IPowerSource& source_;
     ICrankOutput& crank_;
     Correction correction_;
+    std::function<void(const PowerReading&)> tap_;
     int forwarded_ = 0;
     PowerReading lastSource_;
     PowerReading lastOutput_;
