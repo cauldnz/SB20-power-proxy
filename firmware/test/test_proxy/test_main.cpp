@@ -7,6 +7,7 @@
 
 #include <unity.h>
 
+#include "CalibrationFit.h"
 #include "ConfigPage.h"
 #include "Correction.h"
 #include "Cps.h"
@@ -469,6 +470,148 @@ void test_runtime_config_malformed_line_falls_back_to_defaults() {
     RuntimeConfig c = RuntimeConfig::fromLine("garbage-no-delimiters");
     TEST_ASSERT_EQUAL_STRING(Config::METER_NAME_FILTER, c.meterNameFilter.c_str());
     TEST_ASSERT_FALSE(RuntimeConfig::fromLine("").singleSidedDouble);
+}
+
+void test_runtime_config_defaults_to_spoof_mode() {
+    RuntimeConfig c = RuntimeConfig::defaults();
+    TEST_ASSERT_TRUE(c.mode == ProxyMode::Spoof);
+    TEST_ASSERT_TRUE(c.curve.empty());
+}
+
+void test_runtime_config_old_line_keeps_spoof_mode_and_no_curve() {
+    // a 5-field line (pre-corrector) must still parse: SPOOF, no reference, no curve.
+    RuntimeConfig c = RuntimeConfig::fromLine("aa:bb:cc:dd:ee:ff|ASSIOMA|0|Stages 62144|11821518");
+    TEST_ASSERT_TRUE(c.mode == ProxyMode::Spoof);
+    TEST_ASSERT_TRUE(c.curve.empty());
+    TEST_ASSERT_EQUAL_STRING("", c.refMeterAddress.c_str());
+}
+
+void test_runtime_config_corrector_roundtrip_with_curve() {
+    RuntimeConfig c = RuntimeConfig::defaults();
+    c.mode = ProxyMode::Corrector;
+    c.meterAddress = "c1:c2:c3:c4:c5:c6";   // the XCadey (DUT)
+    c.meterNameFilter = "XCADEY";
+    c.spoofName = "SB20 Corrector";          // our own advertised identity
+    c.refMeterAddress = "a1:a2:a3:a4:a5:a6"; // the Assioma (reference)
+    c.refMeterNameFilter = "ASSIOMA";
+    c.curve.add(100, 0.95f);
+    c.curve.add(300, 0.91f);
+    RuntimeConfig back = RuntimeConfig::fromLine(c.toLine());
+    TEST_ASSERT_TRUE(back.mode == ProxyMode::Corrector);
+    TEST_ASSERT_EQUAL_STRING("c1:c2:c3:c4:c5:c6", back.meterAddress.c_str());
+    TEST_ASSERT_EQUAL_STRING("SB20 Corrector", back.spoofName.c_str());
+    TEST_ASSERT_EQUAL_STRING("a1:a2:a3:a4:a5:a6", back.refMeterAddress.c_str());
+    TEST_ASSERT_EQUAL_STRING("ASSIOMA", back.refMeterNameFilter.c_str());
+    TEST_ASSERT_EQUAL_INT(2, (int)back.curve.points.size());
+    // the curve survives to its stored precision, so Correction.apply matches before/after save.
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.95f, back.curve.factorAt(100));
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.91f, back.curve.factorAt(300));
+}
+
+// --- meter-to-meter calibration fit (the C++ mirror of calibration.py) --------
+
+// The shared golden dataset: XCadey-like DUT reads high; true ref = dut*(1.10 - 0.0003*dut). The
+// SAME pairs + expected breakpoints are checked by code/tests/test_calibration_parity.py against the
+// Python fit_grid oracle, so firmware and desk agree to the stored digits.
+static std::vector<CalPair> goldenCalPairs() {
+    const int duts[] = {60, 70, 80, 110, 120, 130, 160, 170, 180,
+                        210, 220, 230, 260, 270, 280, 310, 320, 330};
+    std::vector<CalPair> pairs;
+    for (int d : duts) {
+        const float ref = (float)d * (1.10f - 0.0003f * d);
+        pairs.push_back({(float)d, ref});
+    }
+    return pairs;
+}
+
+void test_fit_curve_matches_python_grid() {
+    CorrectionCurve curve = fitCurve(goldenCalPairs(), 6, 3);
+    TEST_ASSERT_EQUAL_INT(6, (int)curve.points.size());
+    const float bp[6][2] = {{70, 1.079f}, {120, 1.064f}, {170, 1.049f},
+                            {220, 1.034f}, {270, 1.019f}, {320, 1.004f}};
+    for (int i = 0; i < 6; ++i) {
+        TEST_ASSERT_FLOAT_WITHIN(0.05f, bp[i][0], curve.points[i].power_w);
+        TEST_ASSERT_FLOAT_WITHIN(1e-3f, bp[i][1], curve.points[i].factor);
+    }
+}
+
+void test_fit_scale_offset_matches_python() {
+    ScaleOffset so = fitScaleOffset(goldenCalPairs());
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 0.983f, so.scale);
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 9.2f, so.offset);
+}
+
+void test_fit_correction_prefers_curve_and_corrects() {
+    Correction c = fitCorrection(goldenCalPairs(), 6, 3);
+    TEST_ASSERT_FALSE(c.curve.empty());  // the auto fit picks the curve when the data supports it
+    // the corrected DUT should read close to the reference: residual is sub-watt on clean data.
+    TEST_ASSERT_TRUE(residualMeanW(c, goldenCalPairs()) < 1.0f);
+    // a raw 200 W DUT corrects upward (DUT reads ~3% high here -> factor > 1).
+    PowerReading r;
+    r.power_w = 200;
+    TEST_ASSERT_TRUE(c.apply(r).power_w > 200);
+}
+
+void test_fit_correction_falls_back_to_linear_when_sparse() {
+    // samples cluster in ONE power band (only that bin reaches minPerBin) -> fewer than 2
+    // breakpoints -> fall back to a linear scale/offset instead of a curve. Ratio is a clean 1.10.
+    std::vector<CalPair> pairs = {{100, 110}, {140, 154}, {150, 165}, {160, 176}, {300, 330}};
+    Correction c = fitCorrection(pairs, 6, 3);
+    TEST_ASSERT_TRUE(c.curve.empty());          // no curve (too few populated bins)
+    TEST_ASSERT_TRUE(c.scale > 1.0f);           // but a real linear correction was fit (~1.10x)
+}
+
+void test_pair_accumulator_pairs_fresh_streams_only() {
+    PairAccumulator acc(2000, 1200);
+    acc.onRef(150.0f, 1000);
+    acc.onDut(160.0f, 1500);   // ref 500 ms old -> paired
+    TEST_ASSERT_EQUAL_INT(1, (int)acc.count());
+    acc.onDut(170.0f, 4000);   // ref now 3000 ms old (> skew) -> dropped
+    TEST_ASSERT_EQUAL_INT(1, (int)acc.count());
+    acc.onRef(180.0f, 4200);
+    acc.onDut(175.0f, 4300);   // fresh ref again -> paired
+    TEST_ASSERT_EQUAL_INT(2, (int)acc.count());
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 160.0f, acc.pairs()[0].dut);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 150.0f, acc.pairs()[0].ref);
+}
+
+void test_pair_accumulator_drops_implausible_and_caps() {
+    PairAccumulator acc(2000, 2);
+    acc.onRef(5.0f, 0);
+    acc.onDut(150.0f, 100);    // ref 5 W < min -> dropped (implausible)
+    TEST_ASSERT_EQUAL_INT(0, (int)acc.count());
+    acc.onRef(150.0f, 200);
+    acc.onDut(150.0f, 200);
+    acc.onDut(151.0f, 300);
+    acc.onDut(152.0f, 400);    // cap is 2 -> third pair dropped
+    TEST_ASSERT_EQUAL_INT(2, (int)acc.count());
+    TEST_ASSERT_TRUE(acc.full());
+}
+
+void test_pair_accumulator_coverage_bins() {
+    PairAccumulator acc;
+    acc.onRef(100.0f, 0);
+    acc.onDut(60.0f, 0);
+    acc.onDut(160.0f, 0);
+    acc.onDut(260.0f, 0);
+    std::vector<float> edges = {0, 100, 200, 300};  // 3 bands: [0,100),[100,200),[200,300)
+    std::vector<int> cov = acc.coverage(edges);
+    TEST_ASSERT_EQUAL_INT(3, (int)cov.size());
+    TEST_ASSERT_EQUAL_INT(1, cov[0]);  // 60
+    TEST_ASSERT_EQUAL_INT(1, cov[1]);  // 160
+    TEST_ASSERT_EQUAL_INT(1, cov[2]);  // 260
+}
+
+void test_curve_string_roundtrip() {
+    CorrectionCurve curve;
+    curve.add(70, 1.079f);
+    curve.add(320, 1.004f);
+    CorrectionCurve back = curveFromString(curveToString(curve));
+    TEST_ASSERT_EQUAL_INT(2, (int)back.points.size());
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 70.0f, back.points[0].power_w);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.079f, back.points[0].factor);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.004f, back.points[1].factor);
+    TEST_ASSERT_TRUE(curveFromString("").empty());   // empty string -> no curve
 }
 
 void test_config_form_parse() {
@@ -1220,6 +1363,17 @@ int runUnityTests() {
     RUN_TEST(test_ftms_cp_decode_set_target_power_request);
     RUN_TEST(test_ftms_cp_decode_response);
     RUN_TEST(test_ftms_feature_and_power_range_and_status);
+    RUN_TEST(test_runtime_config_defaults_to_spoof_mode);
+    RUN_TEST(test_runtime_config_old_line_keeps_spoof_mode_and_no_curve);
+    RUN_TEST(test_runtime_config_corrector_roundtrip_with_curve);
+    RUN_TEST(test_fit_curve_matches_python_grid);
+    RUN_TEST(test_fit_scale_offset_matches_python);
+    RUN_TEST(test_fit_correction_prefers_curve_and_corrects);
+    RUN_TEST(test_fit_correction_falls_back_to_linear_when_sparse);
+    RUN_TEST(test_pair_accumulator_pairs_fresh_streams_only);
+    RUN_TEST(test_pair_accumulator_drops_implausible_and_caps);
+    RUN_TEST(test_pair_accumulator_coverage_bins);
+    RUN_TEST(test_curve_string_roundtrip);
     return UNITY_END();
 }
 
