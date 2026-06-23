@@ -10,7 +10,7 @@ Read a power meter → correct it → re-broadcast it so a consumer accepts it a
 
 - **`code/findings/decisions.md`** — append-only chronological log; the source of truth for what's decided/found (every numeric value, refuted hypothesis, "it works now").
 - **`code/findings/phase-0-report.md`** — the spoof spec + state of knowledge.
-- **`sessions/README.md`** — the session ledger (physical sessions run / planned); **`sessions/PLAYBOOK.md`** — how to run an on-bike one; **`DEV-PLAYBOOK.md`** — the desk dev loop (how we slice/prove/ship software together; living — extend it).
+- **`sessions/README.md`** — the session ledger (physical sessions run / planned); **`sessions/PLAYBOOK.md`** — how to run an on-bike one; **`DEV-PLAYBOOK.md`** — the desk dev loop (how we slice/prove/ship software); **`USERS-PLAYBOOK.md`** — how we work with testers/users/customers. The DEV/USERS playbooks are **living** — extend them as we learn.
 - **Protocol/feature references in `code/findings/`** — `shifter-ble-protocol.md`, `stages-app-config.md`, `meter-to-meter-proxy.md`, `zwift-controls-research.md`, `forward-plan.md` (backlog).
 - The numbered root docs (`01-…`–`10-…`, `HANDOFF.md`, `START-HERE.md`) are the **pre-pivot brief** — useful background, but superseded by the findings docs above (per `README.md`).
 
