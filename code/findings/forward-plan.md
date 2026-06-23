@@ -337,7 +337,10 @@ bike session. See `decisions.md` 2026-06-17 and `code/scripts/BLE-LOOP.md`.
 
 From `phase-0-report.md` §5 — track, don't block on:
 - Crank-length scaling (closed by Lane 2 run-card #3).
-- ANT+ vs BLE offset semantics (903 vs ~0) — **both numbers already captured** (ANT+ from C-0, BLE from the G-* captures); this is a desk reconciliation of *why* they differ, not a new capture.
+- ANT+ vs BLE offset semantics (903 vs ~0) — ✅ **RESOLVED (decisions.md 2026-06-19).** Same calibrated
+  state in two representations: ANT+ page-0x01 reports the **raw zero-offset** (903); BLE Start/Enhanced
+  Offset Compensation returns the **post-comp residual** (~0, captured `200c010000`). Our ESP32 is the BLE
+  crank, so it answers **0** (`SPOOF_CAL_OFFSET` 903→0, PR #7); the ANT+/openant path keeps 903.
 - Does the SB20 BLE pair accept any CPS peripheral or only Stages-branded? — needs hardware after Part C.
 - Power×cadence calibration grid — research-only; the proxy eliminates the discrepancy without it.
 - **Captive-portal SSID picker UX (ESP32 firmware)** — ✅ **done (2026-06-16).** The portal now
