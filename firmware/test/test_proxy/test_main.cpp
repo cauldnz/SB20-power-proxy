@@ -23,6 +23,7 @@
 #include "PerfStats.h"
 #include "ProxyCore.h"
 #include "RuntimeConfig.h"
+#include "Shifter.h"
 #include "Status.h"
 #include "StatusLed.h"
 #include "OledScreen.h"
@@ -614,6 +615,41 @@ void test_curve_string_roundtrip() {
     TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.079f, back.points[0].factor);
     TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.004f, back.points[1].factor);
     TEST_ASSERT_TRUE(curveFromString("").empty());   // empty string -> no curve
+}
+
+// --- SB20 shifter decode + debounce (the C++ mirror of shifter_erg.py) --------
+
+void test_shifter_decode_golden_buttons() {
+    // the real session-3 `01`-frames, one per button (shifter-ble-protocol.md): `01 00 <bit LE>`
+    const uint8_t l_up[4] = {0x01, 0x00, 0x01, 0x00};
+    const uint8_t r_3rd[4] = {0x01, 0x00, 0x20, 0x00};
+    TEST_ASSERT_EQUAL_INT(SHIFTER_LEFT_UP, decodeShifterButtonBit(l_up, 4));
+    TEST_ASSERT_EQUAL_INT(SHIFTER_RIGHT_3RD, decodeShifterButtonBit(r_3rd, 4));
+    TEST_ASSERT_TRUE(shifterButtonFromBit(SHIFTER_LEFT_UP) == ShifterButton::LeftUp);
+    TEST_ASSERT_TRUE(shifterButtonFromBit(SHIFTER_RIGHT_3RD) == ShifterButton::Right3);
+    TEST_ASSERT_TRUE(shifterButtonFromBit(0x0040) == ShifterButton::None);  // unknown bit
+    const uint8_t too_short[2] = {0x01, 0x00};
+    TEST_ASSERT_EQUAL_INT(0, decodeShifterButtonBit(too_short, 2));
+    TEST_ASSERT_EQUAL_STRING("RIGHT 3rd", shifterButtonName(ShifterButton::Right3));
+}
+
+void test_shifter_debounce_one_event_per_press() {
+    ShifterDebounce d;
+    const uint8_t held_r3[4] = {0x01, 0x00, 0x20, 0x00};            // RIGHT-3rd, held (streams)
+    const uint8_t commit_r3[6] = {0x03, 0x00, 0x20, 0x00, 0x20, 0x00};
+    const uint8_t term04_r3[4] = {0x04, 0x00, 0x20, 0x00};
+    const uint8_t held_lup[4] = {0x01, 0x00, 0x01, 0x00};          // LEFT-up, held
+    // a held run collapses to ONE event on the rising edge; repeats are suppressed
+    TEST_ASSERT_TRUE(d.feed(held_r3, 4) == ShifterButton::Right3);
+    TEST_ASSERT_TRUE(d.feed(held_r3, 4) == ShifterButton::None);
+    TEST_ASSERT_TRUE(d.feed(held_r3, 4) == ShifterButton::None);
+    // commit + terminator end the press (boundary)
+    TEST_ASSERT_TRUE(d.feed(commit_r3, 6) == ShifterButton::None);
+    TEST_ASSERT_TRUE(d.feed(term04_r3, 4) == ShifterButton::None);
+    // a fresh press of the SAME button fires again
+    TEST_ASSERT_TRUE(d.feed(held_r3, 4) == ShifterButton::Right3);
+    // a DIFFERENT button mid-stream is a new edge (no terminator needed)
+    TEST_ASSERT_TRUE(d.feed(held_lup, 4) == ShifterButton::LeftUp);
 }
 
 // --- calibration session (the on-device wizard's orchestration) ---------------
@@ -1574,6 +1610,8 @@ int runUnityTests() {
     RUN_TEST(test_pair_accumulator_drops_implausible_and_caps);
     RUN_TEST(test_pair_accumulator_coverage_bins);
     RUN_TEST(test_curve_string_roundtrip);
+    RUN_TEST(test_shifter_decode_golden_buttons);
+    RUN_TEST(test_shifter_debounce_one_event_per_press);
     RUN_TEST(test_calibration_session_lifecycle_and_fit);
     RUN_TEST(test_calibration_session_finish_needs_enough_pairs);
     RUN_TEST(test_calibration_session_cancel_resets);
