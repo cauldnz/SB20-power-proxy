@@ -8,6 +8,7 @@
 #include <unity.h>
 
 #include "CalibrationFit.h"
+#include "CalibrationPage.h"
 #include "CalibrationSession.h"
 #include "ConfigPage.h"
 #include "Correction.h"
@@ -671,6 +672,71 @@ void test_calibration_session_coverage_guides_the_rider() {
     TEST_ASSERT_EQUAL_INT(1, cov[0]);
     TEST_ASSERT_EQUAL_INT(1, cov[2]);
     TEST_ASSERT_EQUAL_INT(1, cov[4]);
+}
+
+// --- calibration wizard page (pure render/parse) ------------------------------
+
+void test_calibration_form_parse() {
+    CalForm f = parseCalibrationForm("action=start&dut=aa%3Abb%3Acc%3Add%3Aee%3Aff&ref=11%3A22%3A33%3A44%3A55%3A66&name=My+Meter");
+    TEST_ASSERT_EQUAL_STRING("start", f.action.c_str());
+    TEST_ASSERT_EQUAL_STRING("aa:bb:cc:dd:ee:ff", f.dutAddr.c_str());  // urldecoded
+    TEST_ASSERT_EQUAL_STRING("11:22:33:44:55:66", f.refAddr.c_str());
+    TEST_ASSERT_EQUAL_STRING("My Meter", f.deviceName.c_str());        // '+' -> space
+}
+
+void test_calibration_start_validation() {
+    CalForm none;  // nothing picked
+    TEST_ASSERT_NOT_NULL(calibrationStartError(none));
+    CalForm same; same.dutAddr = "aa"; same.refAddr = "aa";  // same meter
+    TEST_ASSERT_NOT_NULL(calibrationStartError(same));
+    CalForm ok; ok.dutAddr = "aa"; ok.refAddr = "bb";
+    TEST_ASSERT_NULL(calibrationStartError(ok));
+}
+
+void test_calibration_page_idle_lists_meters_and_pickers() {
+    CalWizardView v;  // Idle
+    SourceCandidate a; a.address = "aa:bb:cc:dd:ee:ff"; a.name = "XCADEY"; a.isCps = true;
+    SourceCandidate b; b.address = "11:22:33:44:55:66"; b.name = "ASSIOMA17039L"; b.isCps = true;
+    v.devices = {a, b};
+    std::string h = renderCalibrationPage(v);
+    TEST_ASSERT_TRUE(h.find("XCADEY") != std::string::npos);
+    TEST_ASSERT_TRUE(h.find("ASSIOMA17039L") != std::string::npos);
+    TEST_ASSERT_TRUE(h.find("/calibrate/start") != std::string::npos);
+    TEST_ASSERT_TRUE(h.find(">DUT<") != std::string::npos);   // the per-row role buttons
+    TEST_ASSERT_TRUE(h.find(">Ref<") != std::string::npos);
+}
+
+void test_calibration_page_collecting_shows_coverage_and_gates_finish() {
+    CalWizardView v;
+    v.state = CalState::Collecting;
+    v.dutConnected = true;
+    v.refConnected = true;
+    v.pairCount = 12;
+    v.minPairs = 30;
+    v.enoughToFit = false;
+    v.coverage = {3, 2, 4, 1, 0, 0};
+    std::string h = renderCalibrationPage(v);
+    TEST_ASSERT_TRUE(h.find("12") != std::string::npos);          // pair count shown
+    TEST_ASSERT_TRUE(h.find("/calibrate/finish") != std::string::npos);
+    TEST_ASSERT_TRUE(h.find("submit' disabled") != std::string::npos);  // Finish button gated
+    v.enoughToFit = true;
+    std::string h2 = renderCalibrationPage(v);
+    TEST_ASSERT_TRUE(h2.find("Finish") != std::string::npos);
+    TEST_ASSERT_TRUE(h2.find("submit' disabled") == std::string::npos);  // now enabled
+}
+
+void test_calibration_page_fitted_shows_curve_and_name() {
+    CalWizardView v;
+    v.state = CalState::Fitted;
+    v.residualW = 0.7f;
+    v.curve.add(70, 1.079f);
+    v.curve.add(320, 1.004f);
+    v.deviceName = "XCadey-corrected";
+    std::string h = renderCalibrationPage(v);
+    TEST_ASSERT_TRUE(h.find("0.7 W") != std::string::npos);            // residual
+    TEST_ASSERT_TRUE(h.find("1.079") != std::string::npos);           // a curve factor
+    TEST_ASSERT_TRUE(h.find("XCadey-corrected") != std::string::npos);  // editable name prefilled
+    TEST_ASSERT_TRUE(h.find("/calibrate/save") != std::string::npos);
 }
 
 void test_config_form_parse() {
@@ -1437,6 +1503,11 @@ int runUnityTests() {
     RUN_TEST(test_calibration_session_finish_needs_enough_pairs);
     RUN_TEST(test_calibration_session_cancel_resets);
     RUN_TEST(test_calibration_session_coverage_guides_the_rider);
+    RUN_TEST(test_calibration_form_parse);
+    RUN_TEST(test_calibration_start_validation);
+    RUN_TEST(test_calibration_page_idle_lists_meters_and_pickers);
+    RUN_TEST(test_calibration_page_collecting_shows_coverage_and_gates_finish);
+    RUN_TEST(test_calibration_page_fitted_shows_curve_and_name);
     return UNITY_END();
 }
 
