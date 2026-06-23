@@ -76,6 +76,18 @@ inline std::string urlEncode(const std::string& in) {
     return out;
 }
 
+// Strip the NVS line delimiter '|' from a free-text field (a crank / device / meter name). Those
+// names are user-supplied and land in '|'-delimited fields of RuntimeConfig::toLine — a literal '|'
+// would inject an extra delimiter and shift every later field (mode/curve/calibrating) on reload.
+inline std::string stripConfigDelims(const std::string& s) {
+    std::string o;
+    o.reserve(s.size());
+    for (char c : s) {
+        if (c != '|') o += c;
+    }
+    return o;
+}
+
 // Parse an application/x-www-form-urlencoded body into credentials. Recognises the keys
 // `ssid` and `pass` (also accepts `password`); unknown keys are ignored. Missing keys yield
 // empty strings — validation is the caller's job (credValidationError).

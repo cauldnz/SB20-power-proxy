@@ -46,7 +46,10 @@ public:
 
     void onDut(float power, uint32_t t_ms) {
         if (!haveRef_) return;
-        const uint32_t age = (t_ms >= refT_) ? (t_ms - refT_) : (refT_ - t_ms);
+        // Unsigned modular subtraction is already correct across a millis() rollover; take the smaller
+        // of the two directions so the magnitude is right whichever reading is newer (a plain >= guard
+        // would mis-read a near-simultaneous pair straddling the 2^32 wrap as ~49 days apart).
+        const uint32_t age = std::min<uint32_t>(t_ms - refT_, refT_ - t_ms);
         if (age > maxSkewMs_) return;  // streams drifted apart — skip rather than pair stale data
         if (!plausible(power) || !plausible(refPower_)) return;
         if (pairs_.size() < cap_) pairs_.push_back({power, refPower_});
@@ -130,7 +133,7 @@ inline CorrectionCurve fitCurve(const std::vector<CalPair>& pairs, int nBins = 6
     }
     if (hi <= lo) return curve;  // no spread — a curve is meaningless
     const float width = (hi - lo) / nBins;
-    std::vector<int> cnt(nBins, 0);
+    std::vector<int> cnt(nBins, 0), ratioCnt(nBins, 0);
     std::vector<double> sumDut(nBins, 0.0), sumRatio(nBins, 0.0);
     for (const auto& p : pairs) {
         int idx = (int)((p.dut - lo) / width);
@@ -138,12 +141,18 @@ inline CorrectionCurve fitCurve(const std::vector<CalPair>& pairs, int nBins = 6
         if (idx < 0) idx = 0;
         cnt[idx]++;
         sumDut[idx] += p.dut;
-        if (p.dut > 0) sumRatio[idx] += (double)p.ref / p.dut;
+        if (p.dut > 0) {
+            sumRatio[idx] += (double)p.ref / p.dut;
+            ratioCnt[idx]++;
+        }
     }
     for (int i = 0; i < nBins; ++i) {
         if (cnt[i] < minPerBin) continue;
-        curve.add(calRound1((float)(sumDut[i] / cnt[i])),
-                  calRound4((float)(sumRatio[i] / cnt[i])));
+        // center = mean DUT power over ALL bin members; factor = mean(ref/dut) over the d>0 members —
+        // matching calibration.fit_grid exactly (the ratio is averaged over its own denominator, not
+        // the bin count, so a stray dut==0 pair can't bias the factor low).
+        const double factor = (ratioCnt[i] > 0) ? (sumRatio[i] / ratioCnt[i]) : 1.0;
+        curve.add(calRound1((float)(sumDut[i] / cnt[i])), calRound4((float)factor));
     }
     if (curve.points.size() < 2) return CorrectionCurve{};  // too sparse — caller uses linear
     return curve;
@@ -171,8 +180,13 @@ inline Correction fitCorrection(const std::vector<CalPair>& pairs, int nBins = 6
 // representation. Powers chosen to span typical riding; factor flat-held outside by CorrectionCurve.
 inline CorrectionCurve correctionToCurve(const Correction& c) {
     if (!c.curve.empty()) return c.curve;
+    // A linear fit corrected = p*scale + offset is factor(p) = scale + offset/p — a hyperbola the
+    // curve approximates with line segments. Sample DENSELY and across a WIDE range (incl. low powers)
+    // so the piecewise-linear error is small and the flat-held tails sit at extreme powers the rider
+    // won't visit — keeping the saved curve close to the linear fit the residual was judged against.
     CorrectionCurve out;
-    const float samples[] = {50.0f, 100.0f, 150.0f, 200.0f, 300.0f, 400.0f};
+    const float samples[] = {25.0f,  50.0f,  75.0f,  100.0f, 125.0f, 150.0f,
+                             200.0f, 250.0f, 300.0f, 350.0f, 450.0f, 600.0f};
     for (float p : samples) {
         float corrected = p * c.scale + c.offset;
         if (corrected < 0.0f) corrected = 0.0f;

@@ -31,10 +31,10 @@ inline RuntimeConfig parseConfigForm(const std::string& body) {
         std::string key = urlDecode(eq == std::string::npos ? pair : pair.substr(0, eq));
         std::string val = urlDecode(eq == std::string::npos ? std::string() : pair.substr(eq + 1));
         if (key == "addr") c.meterAddress = val;
-        else if (key == "name") c.meterNameFilter = val;
+        else if (key == "name") c.meterNameFilter = stripConfigDelims(val);
         else if (key == "single") single = (val == "1" || val == "on" || val.empty());
-        else if (key == "spoof_name") c.spoofName = val;
-        else if (key == "spoof_serial") c.spoofSerial = val;
+        else if (key == "spoof_name") c.spoofName = stripConfigDelims(val);
+        else if (key == "spoof_serial") c.spoofSerial = stripConfigDelims(val);
         if (amp == std::string::npos) break;
         pos = amp + 1;
     }

@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -36,8 +37,14 @@ inline CorrectionCurve curveFromString(const std::string& s) {
         const size_t colon = tok.find(':');
         if (colon != std::string::npos) {
             const float p = (float)std::atof(tok.substr(0, colon).c_str());
-            const float f = (float)std::atof(tok.substr(colon + 1).c_str());
-            if (f != 0.0f) curve.add(p, f);  // a 0 factor is never valid — skip a corrupt token
+            // Accept any WELL-FORMED factor (incl. 0.0 — a low-power point clamped to 0 by a
+            // negative-offset fit is legitimate). strtof's end pointer distinguishes a real number
+            // from a corrupt token (atof can't: "abc" and "0" both give 0.0), so we don't silently
+            // drop a valid breakpoint and lose the curve's anchor.
+            const std::string fstr = tok.substr(colon + 1);
+            char* end = nullptr;
+            const float f = std::strtof(fstr.c_str(), &end);
+            if (end != fstr.c_str() && *end == '\0') curve.add(p, f);
         }
         if (comma == std::string::npos) break;
         i = comma + 1;

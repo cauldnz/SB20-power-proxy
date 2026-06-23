@@ -64,7 +64,7 @@ inline CalForm parseCalibrationForm(const std::string& body) {
         if (key == "action") f.action = val;
         else if (key == "dut") f.dutAddr = val;
         else if (key == "ref") f.refAddr = val;
-        else if (key == "name") f.deviceName = val;
+        else if (key == "name") f.deviceName = stripConfigDelims(val);
         if (amp == std::string::npos) break;
         pos = amp + 1;
     }
@@ -107,6 +107,7 @@ inline std::string calStyle() {
 
 // Band label like "150-200" / "<100" / "300+" from the coverage edges.
 inline std::string bandLabel(const std::vector<float>& edges, size_t i) {
+    if (i + 1 >= edges.size()) return "";  // need edges[i] and edges[i+1] — guard a short edges list
     char buf[32];
     const long lo = (long)edges[i];
     if (i == 0) {

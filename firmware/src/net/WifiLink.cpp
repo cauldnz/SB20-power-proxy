@@ -332,7 +332,10 @@ void WifiLink::addCalibrationRoutes_() {
         const CalForm f = parseCalibrationForm(formBody(server_));
         const char* err = calibrationStartError(f);
         if (err) { render(err); return; }
-        if (calStart_) calStart_(f.dutAddr, f.refAddr);  // persists the calibration boot config
+        if (calStart_ && !calStart_(f.dutAddr, f.refAddr)) {  // rejected (already calibrating)
+            render("A calibration is already in progress \xE2\x80\x94 reopen the wizard to continue it.");
+            return;
+        }
         server_->send(200, "text/html",
                       "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' "
                       "content='width=device-width,initial-scale=1'><body style='font-family:"
@@ -348,9 +351,12 @@ void WifiLink::addCalibrationRoutes_() {
         server_->sendHeader("Location", "/calibrate");
         server_->send(303, "text/plain", "fitting\n");
     });
-    server_->on("/calibrate/save", HTTP_POST, [this]() {
+    server_->on("/calibrate/save", HTTP_POST, [this, render]() {
         const CalForm f = parseCalibrationForm(formBody(server_));
-        if (calSave_) calSave_(f.deviceName);  // persist the corrector config
+        if (calSave_ && !calSave_(f.deviceName)) {  // rejected (not fitted yet) — don't reboot
+            render("Finish the calibration first \xE2\x80\x94 there's no fitted correction to save yet.");
+            return;
+        }
         server_->send(200, "text/html",
                       "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' "
                       "content='width=device-width,initial-scale=1'><body style='font-family:"
