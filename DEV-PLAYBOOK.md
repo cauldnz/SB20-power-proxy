@@ -55,6 +55,13 @@ CI, and merged the same session. Don't open a 10-file branch and hope.
   not "works on hardware." State which you have, and when something is hardware-gated, say so plainly
   *and* say what would prove it (e.g. "the live two-meter walk-through + coex check needs the board on
   WiFi + both real meters — that's the calibration ride"). Defer honestly; don't imply done.
+- **Host-testing a parser ≠ testing the route that feeds it.** A whole class of bugs lives in the thin
+  glue between the framework and your pure code — green CI sails right past it. The form-POST bug (the
+  routes read `arg("plain")`, empty for a browser's urlencoded body) is the canonical example: the
+  parser had passing tests; the *live route* was never hit. When you add an HTTP route / CLI / file
+  handler, exercise it end-to-end against a real board at least once — `code/scripts/route_smoke.py
+  --ip <board>` does this for the device's routes (incl. POSTing a real urlencoded form and confirming
+  `/diag` reflects it), so that regression can't recur silently.
 
 ## 3 · Decide at the right altitude — ask or plan, don't guess
 
