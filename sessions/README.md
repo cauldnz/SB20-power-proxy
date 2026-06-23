@@ -10,13 +10,16 @@ CLAUDE.md → *Session plans & the session ledger* (record Actual against Plan, 
 > — **overturns session-4's ~30%-low** (a cross-capture FIT-alignment artifact). Also: qdomyos drives erg
 > over **standard FTMS** (vs the Stages app's proprietary `0c46be`, session 6); the shifter came through; and
 > we grabbed the Assioma BLE **L/R balance** (grounding for the proxy-forward backlog). **Open next:**
-> **G1/G2** (needs a USB flash) + the now-**🟢 READY session 5** — the **on-device meter-to-meter
-calibration ride** (track bike; the `/calibrate` wizard, desk-derisked 2026-06-23 incl. a ride-blocking
-form-POST fix, PR #107).
+> **two 🟢 READY rides, both desk-derisked 2026-06-23 with the board already flashed current:**
+**session 8** — the SB20 spoof's **G1/G2 calibration handshake** (capture the real crank's `0x10`
+Enhanced-Offset reply → test the app's zero-reset against our spoof); and **session 5** — the
+**on-device meter-to-meter calibration ride** (track bike; the `/calibrate` wizard, incl. the
+ride-blocking form-POST fix, PR #107). Whichever bike is set up first.
 > · cold-start: [BIKE-SESSION-READY.md](../BIKE-SESSION-READY.md)
 
 | # | Date | Status | Session (Plan + Actual) | Outcome |
 |---|------|--------|--------------------------|---------|
+| 8 | 2026-06-23 | 🟢 READY | [SB20 spoof calibration handshake (G1 + G2)](session-08-sb20-spoof-calibration.md) | Carries forward session-4's deferred **G1** (capture the real Stages crank's `0x10` Enhanced-Offset reply → ground `SPOOF_MFG_COMPANY_ID`) + **G2** (does the Stages app's zero-reset complete against our spoof?). Desk-ready: COM9 already runs current firmware with the spec-correct Enhanced `0x10` reply, so G2 runs immediately; reflash only if G1 yields new bytes. Bring a fresh CR2032. |
 | 7 | 2026-06-22 | ✅ DONE | [comprehensive passive ride monitor (qdomyos training ride)](session-07-comprehensive-monitor.md) | **Power topology RESOLVED:** one-clock ANT+ — **SB20 = Stages crank 1:1**, both **~11% high vs Assioma** (≈1.11×); **overturns session-4's ~30%-low**. **Block S:** qdomyos ergs over **standard FTMS** (vs the app's proprietary `0c46be`) + shifter captured. **Assioma BLE L/R balance** grabbed (proxy-forward grounding). Sniff-before-connect caught the `CONNECT_IND` (44k ATT, 39k ANT records). → `decisions.md` 2026-06-22 |
 | 6 | 2026-06-21 | ✅ DONE | [sniff the app↔SB20 erg conversation + power-topology Phase 2](session-06-sniff-and-power-topology.md) | **Block S ✅:** app↔SB20 erg is **cleartext** (no `btsmp`/bond) over the **Stages-proprietary `0c46be`** char (handle 0x0039, `02 00 <u16> 00 00`), **not FTMS**; the `<u16>` is an app-side load setpoint (≠ watts). **Pipeline delivered:** `pcap_sqlite`+`fit_sqlite` (tshark→SQLite, both sniffs & FITs; suite 322 green). **Phase 2 ❌ blocked** — sweep/zero sniffs adverts-only (started after connect → no `CONNECT_IND`); topology still open (FIT preliminary: Stages ~10% high, *conflicts* w/ Phase 1). **Lesson: sniff before connect.** |
 | 5 | 2026-06-23 | 🟢 READY | [meter-to-meter calibration ride (XCadey → reads like Assioma)](session-05-meter-calibration-capture.md) | **Re-scoped to the on-device wizard** (replaces the old ANT+ capture→desk-fit plan): a single `/calibrate` session does it all. Desk-derisked 2026-06-23 — wizard renders + routes work over WiFi, **ride-blocking form-POST bug found + fixed** (PR #107), both boards on current firmware. **Bike proves:** 2-meter coex on the C3 + the real fit. Opportunistic — track bike on a trainer. |
