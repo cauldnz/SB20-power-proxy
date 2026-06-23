@@ -25,6 +25,13 @@
   static sb20proxy::BleMeterClient refMeter;    // calibration REFERENCE (2nd BLE central; live only)
   static sb20proxy::CalibrationSession g_cal;    // the wizard's session (Idle/Collecting/Fitted)
   static bool g_calibrating = false;             // this boot is a live calibration session
+  // The DUT/ref readings arrive on the NimBLE host task; g_cal is otherwise only touched from loop()
+  // (the drain below + the HTTP handlers, which run inside wifi.handle()). So the notify callbacks just
+  // stash the latest sample in these single-writer/single-reader volatiles and the loop drains them
+  // into g_cal — keeping ALL g_cal access on the loop context (no cross-task race on its pairs vector).
+  static volatile bool g_pendDut = false, g_pendRef = false;
+  static volatile int16_t g_pendDutP = 0, g_pendRefP = 0;
+  static volatile uint32_t g_pendDutT = 0, g_pendRefT = 0;
 #endif
 
 #if USE_WIFI
@@ -180,10 +187,11 @@ void setup() {
     crank.setIdentity(cfg.spoofName, cfg.spoofSerial);  // advertised name + DIS serial
 
     // The correction between source and crank: CORRECTOR applies the fitted calibration curve
-    // (DUT → reference); otherwise the linear path + single-sided ×2 (a surviving R crank → total).
+    // (DUT → reference) — and with an EMPTY curve falls through to identity (1.0×), NEVER the spoof's
+    // linear scale / single-sided ×2 (those belong to SPOOF mode: a surviving R crank → total).
     Correction corr;
-    if (cfg.mode == ProxyMode::Corrector && !cfg.curve.empty()) {
-        corr.curve = cfg.curve;
+    if (cfg.mode == ProxyMode::Corrector) {
+        corr.curve = cfg.curve;  // empty -> Correction.apply uses scale 1.0 / offset 0.0 (passthrough)
     } else {
         corr.scale = Config::CORRECTION_SCALE * (cfg.singleSidedDouble ? 2.0f : 1.0f);
         corr.offset = Config::CORRECTION_OFFSET;
@@ -197,8 +205,9 @@ void setup() {
     // (2nd central) feeds it directly. Both no-op unless a session is collecting, so this is inert in
     // normal spoof/corrector runs. On a calibration boot (cfg.calibrating, set by /calibrate/start)
     // the reference is pinned + begun and the session starts — both meters then stream into it.
-    proxy.setTap([](const PowerReading& r) { g_cal.onDut(r.power_w, r.t_ms); });
-    refMeter.onReading([](const PowerReading& r) { g_cal.onRef(r.power_w, r.t_ms); });
+    // Stash each reading (NimBLE-task context) for the loop to drain into g_cal — never touch g_cal here.
+    proxy.setTap([](const PowerReading& r) { g_pendDutP = r.power_w; g_pendDutT = r.t_ms; g_pendDut = true; });
+    refMeter.onReading([](const PowerReading& r) { g_pendRefP = r.power_w; g_pendRefT = r.t_ms; g_pendRef = true; });
     g_calibrating = cfg.calibrating;
     if (g_calibrating) {
         refMeter.setMatch(cfg.refMeterAddress, cfg.refMeterNameFilter);
@@ -303,15 +312,18 @@ void setup() {
             }
             return v;
         },
-        [](const std::string& dut, const std::string& ref) {  // start: persist a calibration boot
+        [](const std::string& dut, const std::string& ref) -> bool {  // start: persist a calibration boot
+            if (ConfigStore::load().calibrating) return false;   // already calibrating — don't discard it
             RuntimeConfig c = ConfigStore::load();
             c.calibrating = true;
             c.meterAddress = dut; c.meterNameFilter = "";       // primary meter = DUT
             c.refMeterAddress = ref; c.refMeterNameFilter = "";  // reference = ref
             ConfigStore::save(c);
+            return true;
         },
         []() { return g_cal.finish(); },                         // fit the collected pairs
-        [](const std::string& name) {                            // save: persist the corrector config
+        [](const std::string& name) -> bool {                    // save: persist the corrector config
+            if (!g_cal.fitted()) return false;                   // never ship an un-fit (1.0×) corrector
             RuntimeConfig c = ConfigStore::load();
             c.mode = ProxyMode::Corrector;
             c.spoofName = name.empty() ? std::string(Config::CORRECTOR_NAME) : name;
@@ -319,10 +331,12 @@ void setup() {
             c.calibrating = false;
             c.refMeterAddress = ""; c.refMeterNameFilter = "";   // (meterAddress stays = the DUT)
             ConfigStore::save(c);
+            return true;
         },
         []() {                                                   // cancel: clear the calibration marker
             RuntimeConfig c = ConfigStore::load();
             c.calibrating = false;
+            c.refMeterAddress = ""; c.refMeterNameFilter = "";   // clear the stale calibration ref pins
             ConfigStore::save(c);
         },
         []() { meter.clearCandidates(); });                      // scan: refresh the candidate list
@@ -348,7 +362,13 @@ void loop() {
     perf.sample(esp_timer_get_time());  // record this loop's period (Phase A)
     proxy.loop();
 #if !USE_MOCK_METER
-    if (g_calibrating) refMeter.loop();  // service the 2nd central during a calibration session
+    if (g_calibrating) {
+        refMeter.loop();  // service the 2nd central during a calibration session
+        // Drain the meters' stashed readings into g_cal HERE (loop context), before wifi.handle()
+        // reads it — ref first so the accumulator has a reference when the DUT sample pairs.
+        if (g_pendRef) { g_pendRef = false; g_cal.onRef(g_pendRefP, g_pendRefT); }
+        if (g_pendDut) { g_pendDut = false; g_cal.onDut(g_pendDutP, g_pendDutT); }
+    }
 #endif
 
 #if !USE_MOCK_METER

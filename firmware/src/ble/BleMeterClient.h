@@ -1,4 +1,5 @@
 #pragma once
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -42,6 +43,10 @@ public:
     // name) and the name substring. Call before begin(). Falls back to the compile-time defaults.
     void setMatch(const std::string& addr, const std::string& nameFilter) {
         matchAddr_ = addr;
+        // NimBLE advertises addresses lowercase; a pin from NVS/the web UI may be upper/mixed case.
+        // Lowercase it so the exact-match in isTargetMeter actually fires (else a pinned source silently
+        // never connects).
+        for (char& ch : matchAddr_) ch = (char)std::tolower((unsigned char)ch);
         matchNameFilter_ = nameFilter;
     }
 

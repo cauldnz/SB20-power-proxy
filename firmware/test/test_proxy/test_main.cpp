@@ -776,6 +776,31 @@ void test_proxycore_tap_sees_raw_source_reading() {
     TEST_ASSERT_EQUAL_INT(300, ck.last.power_w);   // the crank still gets the corrected value
 }
 
+void test_strip_config_delims_protects_the_nvs_line() {
+    TEST_ASSERT_EQUAL_STRING("ABSB20", stripConfigDelims("A|B|SB20").c_str());  // all '|' removed
+    // a device name with '|' must NOT corrupt the config line: the parsers strip it first
+    CalForm f = parseCalibrationForm("action=save&name=Chris%7CSB20");  // %7C = '|'
+    TEST_ASSERT_EQUAL_STRING("ChrisSB20", f.deviceName.c_str());
+    RuntimeConfig c = parseConfigForm("name=AS%7CSIOMA&spoof_name=St%7Cages");
+    TEST_ASSERT_EQUAL_STRING("ASSIOMA", c.meterNameFilter.c_str());
+    TEST_ASSERT_EQUAL_STRING("Stages", c.spoofName.c_str());
+}
+
+void test_curve_string_keeps_zero_factor_rejects_garbage() {
+    // a legitimately-clamped low-power point (factor 0.0) must survive the round-trip, not be dropped
+    CorrectionCurve k = curveFromString("50.0:0.0000,300.0:1.0500");
+    TEST_ASSERT_EQUAL_INT(2, (int)k.points.size());
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.0f, k.points[0].factor);
+    // a malformed factor token is rejected (not silently read as 0)
+    CorrectionCurve g = curveFromString("100.0:abc,300.0:1.05");
+    TEST_ASSERT_EQUAL_INT(1, (int)g.points.size());  // only the well-formed point survives
+}
+
+void test_band_label_guards_short_edges() {
+    TEST_ASSERT_EQUAL_STRING("", sb20proxy::detail::bandLabel({}, 0).c_str());        // empty
+    TEST_ASSERT_EQUAL_STRING("", sb20proxy::detail::bandLabel({100.0f}, 0).c_str());  // single edge
+}
+
 void test_url_encode_roundtrips_with_decode() {
     // urlEncode rebuilds a form body from the WebServer's already-decoded named args; the values our
     // forms carry (spaces, ':', '&', '%') must survive urlDecode(urlEncode(x)) == x.
@@ -1472,6 +1497,9 @@ int runUnityTests() {
     RUN_TEST(test_runtime_config_defaults_spoof_identity);
     RUN_TEST(test_runtime_config_old_line_keeps_default_identity);
     RUN_TEST(test_runtime_config_malformed_line_falls_back_to_defaults);
+    RUN_TEST(test_strip_config_delims_protects_the_nvs_line);
+    RUN_TEST(test_curve_string_keeps_zero_factor_rejects_garbage);
+    RUN_TEST(test_band_label_guards_short_edges);
     RUN_TEST(test_url_encode_roundtrips_with_decode);
     RUN_TEST(test_config_form_parse);
     RUN_TEST(test_config_validation);

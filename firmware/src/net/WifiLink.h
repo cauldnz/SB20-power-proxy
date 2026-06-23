@@ -70,9 +70,11 @@ public:
     // (WifiLink reboots); `cancel` clears the calibration marker (WifiLink reboots); `scan` refreshes
     // the candidate list. All decoupled from the BLE layer via hooks.
     using CalViewProvider = std::function<CalWizardView()>;
-    using CalStartHook = std::function<void(const std::string& dutAddr, const std::string& refAddr)>;
+    // start/save return false if rejected (already calibrating / not yet fitted) — the route then
+    // re-renders an error instead of rebooting.
+    using CalStartHook = std::function<bool(const std::string& dutAddr, const std::string& refAddr)>;
     using CalFinishHook = std::function<bool()>;
-    using CalSaveHook = std::function<void(const std::string& deviceName)>;
+    using CalSaveHook = std::function<bool(const std::string& deviceName)>;
     using CalSimpleHook = std::function<void()>;
     void setCalibrationUi(CalViewProvider view, CalStartHook start, CalFinishHook finish,
                           CalSaveHook save, CalSimpleHook cancel, CalSimpleHook scan) {
