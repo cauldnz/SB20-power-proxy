@@ -9,11 +9,12 @@ CLAUDE.md → *Engineering disciplines* (the invariants) and *Git & branch hygie
 *before* the session ends. A lesson that isn't written down gets re-learned. (Same ethos as the
 on-bike playbook's retro step.)
 
-Three rules above the detail:
+Four rules above the detail:
 
 1. **Slice big work into small, independently-mergeable PRs — pure core first, hardware seam last.**
 2. **Prove it with the cheapest sufficient test, then say exactly what's proven vs still pending.**
 3. **At a real fork, ask or plan — don't guess.**
+4. **Harden what you shipped before you build on it** — green CI doesn't cover the untested live seam (§6).
 
 ---
 
@@ -101,3 +102,35 @@ is CLAUDE.md → *Git & branch hygiene*; it works — follow it every time, incl
   after exactly this.)*
 - **Background a long `fake_meter`/soak with a `--duration`** so it self-terminates and frees the radio;
   poll its log for `subs=1` to confirm the board connected before reading back.
+- **Leave the hardware in a known-good state after bench work.** Reset config to defaults and flash the
+  *current* build on every board you touched, so a run-sheet's "both boards on current firmware, clean
+  config" stays *true*. A board left mid-experiment (a renamed spoof, a stale build) silently breaks the
+  next session's assumptions. *(This session left a board one build behind; reflashing it kept the
+  session-5 run-sheet honest.)*
+
+## 6 · Hunt bugs adversarially in code you just shipped — before you build on it
+
+Green CI means *the tests you wrote* pass; it says nothing about the bugs you didn't think to test —
+and a just-built feature's **untested live seam** (HTTP routes, NVS round-trips, cross-task state,
+hardware wiring) is where they hide. So when a feature lands, do a hardening pass *before* extending
+it. **Harden before you extend** — when the ask is "do all four," sequence the bug-hunt first.
+
+- **Fan out parallel review agents, one per focused slice** (the wiring · the protocol/serialization ·
+  the concurrency · the pure logic) — not one agent over everything. Give each the feature context, the
+  file list, and a known example of the bug class ("the form-POST routes read `arg(\"plain\")`, empty for
+  a browser body — find more like it"). Tell them to be **skeptical, assume bugs exist**, and report
+  `file:line · severity · concrete trigger · fix`, most-serious first.
+- **A good review retracts its own false alarms.** An agent that chases a hypothesis, finds it's
+  actually fine, and *says so* is doing it right — that's signal its other findings are weighed, not
+  padded. (This pass flagged a `clientCb_` "leak" and a millis() "wraparound bug" that were both benign
+  on inspection — alongside 11 that were real.)
+- **You triage; the agents don't fix.** Dedup overlapping findings, rank by severity × ride-relevance,
+  **verify each before fixing** (some are false positives), and *defer* the ones pre-existing in a proven
+  path or merely cosmetic — say so explicitly rather than destabilising working code right before a ride.
+- **Close the loop:** fix the real ones in one cohesive PR (host-test the pure fixes); and where a bug
+  was a whole *class* (the form-POST body), build the guard that stops it recurring (→ §2, `route_smoke`)
+  so the next regression fails loudly instead of silently.
+
+*(This session: a 4-agent review of the just-shipped corrector surfaced 11 real bugs — a silently
+"Saved" 1.0× passthrough, a name that corrupted the NVS line, a data race on the calibration buffer —
+none of which CI saw, all fixed + hardware-verified before the ride.)*
