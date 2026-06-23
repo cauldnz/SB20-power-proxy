@@ -84,26 +84,32 @@ void BleCrankPeripheral::begin() {
     cp->setCallbacks(new ControlPointCallbacks(&crankLengthHalfMm_));
     cps->start();
 
-    // --- Device Information Service (present as the real Stages SPM2) ---
+    const bool corrector = (mode_ == ProxyMode::Corrector);
+
+    // --- Device Information Service. SPOOF presents as the real Stages SPM2; CORRECTOR presents our
+    //     own honest identity (a head unit / Garmin accepts any CPS meter, so we don't impersonate). ---
     NimBLEService* dis = server->createService(UUID_DIS);
     dis->createCharacteristic(UUID_DIS_MANUF, NIMBLE_PROPERTY::READ)
-        ->setValue(std::string(Config::SPOOF_MANUFACTURER));
+        ->setValue(std::string(corrector ? Config::CORRECTOR_MANUFACTURER : Config::SPOOF_MANUFACTURER));
     dis->createCharacteristic(UUID_DIS_MODEL, NIMBLE_PROPERTY::READ)
-        ->setValue(std::string(Config::SPOOF_MODEL));
+        ->setValue(std::string(corrector ? Config::CORRECTOR_MODEL : Config::SPOOF_MODEL));
     dis->createCharacteristic(UUID_DIS_FW, NIMBLE_PROPERTY::READ)
         ->setValue(std::string(Config::SPOOF_FW));
     dis->createCharacteristic(UUID_DIS_SERIAL, NIMBLE_PROPERTY::READ)
-        ->setValue(spoofSerial_);  // runtime (the configured crank's serial); defaults to Config
+        ->setValue(spoofSerial_);  // runtime serial; defaults to Config
     dis->start();
 
-    // --- Stages proprietary service (the real crank advertises + exposes this; the SB20 likely
-    //     checks for it to confirm a genuine Stages). Contents opaque — presence is the point. ---
-    NimBLEService* stages = server->createService(Config::STAGES_SVC);
-    stages->createCharacteristic(Config::STAGES_CHAR_CTRL,
-                                 NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::WRITE)
-        ->setCallbacks(new PropWriteCallbacks());
-    stages->createCharacteristic(Config::STAGES_CHAR_DATA, NIMBLE_PROPERTY::NOTIFY);
-    stages->start();
+    // --- Stages proprietary service: SPOOF only. The real crank advertises + exposes this and the
+    //     SB20 likely checks for it to confirm a genuine Stages; a CORRECTOR meter must NOT pretend
+    //     to be a Stages, so it omits this service entirely. Contents opaque — presence is the point. ---
+    if (!corrector) {
+        NimBLEService* stages = server->createService(Config::STAGES_SVC);
+        stages->createCharacteristic(Config::STAGES_CHAR_CTRL,
+                                     NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::WRITE)
+            ->setCallbacks(new PropWriteCallbacks());
+        stages->createCharacteristic(Config::STAGES_CHAR_DATA, NIMBLE_PROPERTY::NOTIFY);
+        stages->start();
+    }
 
     // --- Battery Service (the real crank exposes 180F/2A19; the SB20 may read crank battery) ---
     NimBLEService* bat = server->createService("180F");
@@ -117,12 +123,17 @@ void BleCrankPeripheral::begin() {
     //     128-bit UUID in the primary packet crowds the name out of the 31-byte advert (the real
     //     crank's capture has name+1818 primary, d445fe01 in the scan response). ---
     NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
-    adv->setName(spoofName_.c_str());  // runtime crank identity; defaults to Config::SPOOF_NAME
+    adv->setName(spoofName_.c_str());  // runtime identity; defaults to Config::SPOOF_NAME
     adv->addServiceUUID(UUID_CPS);
-    NimBLEAdvertisementData scanResp;
-    scanResp.addServiceUUID(Config::STAGES_SVC);
-    adv->enableScanResponse(true);
-    adv->setScanResponseData(scanResp);
+    if (!corrector) {
+        // SPOOF: the 128-bit Stages proprietary UUID rides in the scan response (mirrors the real
+        // crank's capture: name+1818 primary, d445fe01 in the scan response). CORRECTOR omits it —
+        // a plain CPS advert with just our name + 0x1818, which is all a Garmin needs.
+        NimBLEAdvertisementData scanResp;
+        scanResp.addServiceUUID(Config::STAGES_SVC);
+        adv->enableScanResponse(true);
+        adv->setScanResponseData(scanResp);
+    }
     adv->start();
 }
 
