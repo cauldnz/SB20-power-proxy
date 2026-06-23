@@ -3,8 +3,12 @@
 **Status:** **fully mapped (read side) in bike session 3 (2026-06-19)** — all 6 shifter buttons decoded,
 the frame model confirmed, and the key behaviour established: the SB20 emits **stateless button-events**,
 not a gear index. Session 2 (2026-06-18) found the channel; session 3 completed and *corrected* the model
-(the bitmask is the **button pressed**, not a one-hot gear). This is a *future* capability (after the
-power proxy) — read, and potentially re-present, shifts. Source captures:
+(the bitmask is the **button pressed**, not a one-hot gear). **On-device decode built (2026-06-23):**
+`firmware/lib/proxy/Shifter.h` — the pure, host-tested decoder + edge-debounce (the C++ mirror of
+`code/src/sb20proxy/ble/shifter_erg.py`), grounded in the golden frames below; the foundation for the
+read-and-re-present path. **Next increments:** the BLE seam (a central subscribing to `0c46be60` →
+`ShifterDebounce`), then re-broadcast as a **Zwift Click** controller (`zwift-controls-research.md`)
+and/or nudge erg (`shifter-erg-control.md`). Source captures:
 `captures/SHIFTER-probe-3-20260619-0838.jsonl` (session 3, authoritative) and
 `captures/SHIFTER-probe-20260618.jsonl` (session 2). MIT / clean-room — do not copy GPL prior art.
 
