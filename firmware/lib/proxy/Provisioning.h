@@ -55,6 +55,27 @@ inline std::string urlDecode(const std::string& in) {
     return out;
 }
 
+// Percent-encode a string for an application/x-www-form-urlencoded body (RFC 3986 unreserved kept;
+// everything else -> %XX, including space -> %20). The inverse of urlDecode for our purposes
+// (urlDecode also accepts '+' as space, which we don't emit). Used to rebuild a form body from the
+// WebServer's already-parsed named args when the raw body isn't available (see WifiLink formBody).
+inline std::string urlEncode(const std::string& in) {
+    static const char* hex = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(in.size() * 3);
+    for (unsigned char c : in) {
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '~') {
+            out += static_cast<char>(c);
+        } else {
+            out += '%';
+            out += hex[c >> 4];
+            out += hex[c & 0x0F];
+        }
+    }
+    return out;
+}
+
 // Parse an application/x-www-form-urlencoded body into credentials. Recognises the keys
 // `ssid` and `pass` (also accepts `password`); unknown keys are ignored. Missing keys yield
 // empty strings — validation is the caller's job (credValidationError).

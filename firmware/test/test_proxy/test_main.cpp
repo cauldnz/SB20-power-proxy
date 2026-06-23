@@ -776,6 +776,15 @@ void test_proxycore_tap_sees_raw_source_reading() {
     TEST_ASSERT_EQUAL_INT(300, ck.last.power_w);   // the crank still gets the corrected value
 }
 
+void test_url_encode_roundtrips_with_decode() {
+    // urlEncode rebuilds a form body from the WebServer's already-decoded named args; the values our
+    // forms carry (spaces, ':', '&', '%') must survive urlDecode(urlEncode(x)) == x.
+    const char* cases[] = {"SB20 Corrector", "aa:bb:cc:dd:ee:ff", "a&b=c", "100%done", "XCadey-corrected"};
+    for (auto* s : cases) TEST_ASSERT_EQUAL_STRING(s, urlDecode(urlEncode(s)).c_str());
+    TEST_ASSERT_EQUAL_STRING("SB20%20Corrector", urlEncode("SB20 Corrector").c_str());  // space -> %20
+    TEST_ASSERT_EQUAL_STRING("a%3Ab", urlEncode("a:b").c_str());                         // reserved ':'
+}
+
 void test_config_form_parse() {
     RuntimeConfig c = parseConfigForm("addr=e3%3A25%3A39%3A38%3A92%3A71&name=Stages&single=1");
     TEST_ASSERT_EQUAL_STRING("e3:25:39:38:92:71", c.meterAddress.c_str());  // %3A urldecoded to ':'
@@ -1463,6 +1472,7 @@ int runUnityTests() {
     RUN_TEST(test_runtime_config_defaults_spoof_identity);
     RUN_TEST(test_runtime_config_old_line_keeps_default_identity);
     RUN_TEST(test_runtime_config_malformed_line_falls_back_to_defaults);
+    RUN_TEST(test_url_encode_roundtrips_with_decode);
     RUN_TEST(test_config_form_parse);
     RUN_TEST(test_config_validation);
     RUN_TEST(test_add_candidate_dedup_and_cap);

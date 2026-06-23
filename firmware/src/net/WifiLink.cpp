@@ -45,6 +45,26 @@ using namespace sb20proxy;
 
 static const char* kPortalUrl = "http://192.168.4.1/";
 
+// Recover the POST body for our form routes. The ESP32 WebServer fills arg("plain") with the RAW
+// body ONLY when the content type is NOT application/x-www-form-urlencoded — but a real <form> POST
+// (and `curl --data`) sends exactly that, in which case the body is parsed into NAMED args and
+// arg("plain") is EMPTY. So: use the raw body when present (text/plain, fetch), else rebuild a
+// urlencoded body from the parsed named args, re-encoding the (already-decoded) values so the pure
+// parser (parseConfigForm / parseCalibrationForm) decodes them back correctly. (The captive-portal
+// save reads named args directly for the same reason — this generalises that fix to every form route.)
+static std::string formBody(WebServer* s) {
+    const std::string plain(s->arg("plain").c_str());
+    if (!plain.empty()) return plain;
+    std::string body;
+    for (int i = 0; i < s->args(); ++i) {
+        const std::string key(s->argName(i).c_str());
+        if (key == "plain") continue;
+        if (!body.empty()) body += "&";
+        body += key + "=" + urlEncode(std::string(s->arg(i).c_str()));
+    }
+    return body;
+}
+
 // Boot-guard: if we never become healthy in time, reset and retry — a bad OTA that can't
 // rejoin the network recovers on its own (the raedian-probe failsafe). Armed only on the
 // station path; the portal disarms it (see startPortal_).
@@ -255,7 +275,7 @@ void WifiLink::addConfigRoutes_() {
         server_->send(303, "text/plain", "scanning\n");
     });
     server_->on("/setup/save", HTTP_POST, [this]() {
-        const std::string body(server_->arg("plain").c_str());
+        const std::string body = formBody(server_);
         RuntimeConfig cfg = parseConfigForm(body);
         const char* err = configValidationError(cfg);
         if (err) {
@@ -309,7 +329,7 @@ void WifiLink::addCalibrationRoutes_() {
         server_->send(303, "text/plain", "scanning\n");
     });
     server_->on("/calibrate/start", HTTP_POST, [this, render]() {
-        const CalForm f = parseCalibrationForm(std::string(server_->arg("plain").c_str()));
+        const CalForm f = parseCalibrationForm(formBody(server_));
         const char* err = calibrationStartError(f);
         if (err) { render(err); return; }
         if (calStart_) calStart_(f.dutAddr, f.refAddr);  // persists the calibration boot config
@@ -329,7 +349,7 @@ void WifiLink::addCalibrationRoutes_() {
         server_->send(303, "text/plain", "fitting\n");
     });
     server_->on("/calibrate/save", HTTP_POST, [this]() {
-        const CalForm f = parseCalibrationForm(std::string(server_->arg("plain").c_str()));
+        const CalForm f = parseCalibrationForm(formBody(server_));
         if (calSave_) calSave_(f.deviceName);  // persist the corrector config
         server_->send(200, "text/html",
                       "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' "
