@@ -6,9 +6,9 @@ How we go from "an SB20 Facebook group" to **~10 well-chosen collaborators**. Go
 ready-to-post copy is [`pitch-posts.md`](pitch-posts.md); the message templates are
 [`comms-templates.md`](comms-templates.md).
 
-> **Goal of the pre-beta:** ~10 SB20 owners reading their own meter (or restored from a dead crank), a
-> live capture→fix→OTA loop, and a growing supported-meter library — *not* scale. Quality of fit and of
-> the experience beats headcount. It's fine to ship 6 great ones and hold the rest.
+> **Goal of the pre-beta:** ~10 SB20 owners reading their own **power pedals** (or restored from a dead
+> crank by their pedals), a live capture→fix→OTA loop, and a growing supported-**pedal** library — *not*
+> scale. Quality of fit and of the experience beats headcount. It's fine to ship 6 great ones, hold the rest.
 
 ## The funnel
 
@@ -21,16 +21,17 @@ Expect heavy drop-off (that's healthy): a recruiting post may draw 30–50 react
 maybe 15 form starts → you *select* ~10. Over-recruit slightly (12–14 forms) so you can pick for fit
 and meter-brand spread and still land 10 good ones.
 
-## Who we're selecting for (two pools)
+**Non-negotiable: the user owns a Bluetooth power-meter PEDAL set.** The product is pedals → crank
+replacement; crank-arm and spider meters are out of scope. Two pools, both pedal owners:
 
-- **Accuracy-seekers** — own a **Bluetooth** power meter they trust (Assioma, Garmin Rally, Wahoo
-  Powrlink, Favero, 4iiii, Quarq, Power2Max…), bothered the SB20 reads ~11% off it. Want the SB20 to read
-  *that* meter natively in erg.
-- **Crank-rescue** — a **dead/dying Stages crank**; want their bike working again. Most motivated, most
-  engaged, unambiguous value.
+- **Accuracy-seekers** — own **Bluetooth power pedals** they trust (Favero Assioma, Garmin Rally, Wahoo
+  Powrlink, SRM EXAKT…), bothered the SB20 reads ~11% off them. Want the SB20 to read *their pedals*
+  natively in erg.
+- **Crank-rescue** — a **dead/dying Stages crank**, replaced by their **pedals**; want their bike working
+  again. Most motivated, most engaged, unambiguous value.
 
-Aim for **≥2–3 crank-rescue** (the clearest win) and a **spread of meter brands** among the accuracy
-pool (each new brand that works grows the library — the whole point).
+Aim for **≥2–3 crank-rescue** (the clearest win) and a **spread of pedal brands** among the accuracy pool
+(each new brand that works grows the library — the whole point).
 
 ## Selection criteria (a fit judgement, not first-come)
 
@@ -38,16 +39,16 @@ Score each applicant; pick the best fit + brand spread, not the fastest to reply
 
 | Signal | Strong fit | Screen out / hold |
 |---|---|---|
-| **Meter broadcasts Bluetooth LE** (we read BLE, not ANT+) | yes, dual or BLE | ANT+-only → *can't support*, say so kindly |
+| **Owns Bluetooth power-meter PEDALS** (the hard requirement) | yes — pedals, BLE | no pedals (crank-arm/spider) → *out of scope*; ANT+-only → *can't read*; say so kindly |
 | **Use case is clear** | accuracy *or* crank-rescue, stated | "just curious", no real need |
 | **Comfortable with experimental/DIY, at-own-risk, unaffiliated** | yes | wants a polished consumer product *now* |
-| **Willing to do the async loop** | join WiFi · pull a crank battery if needed · send a log · take an OTA | wants live hand-holding / can't send a file |
-| **Meter brand we don't have yet** | **bonus** — promotes a meter to Verified | (still fine, just lower novelty) |
+| **Willing to do the async loop** | join WiFi · pull the dead crank's battery if needed · send a log · take an OTA | wants live hand-holding / can't send a file |
+| **Pedal brand we don't have yet** | **bonus** — promotes those pedals to Verified | (still fine, just lower novelty) |
 | **Crank-rescue case** | bonus (motivation + clear value) | — |
 
-Cross-check the meter against [`supported-meters.md`](../code/findings/supported-meters.md): **Verified**
-(Assioma, Stages crank) = lowest risk; **Expected** (mainstream BLE CPS) = high value (their `/diag`
-promotes it); **Not supported** (ANT+-only / non-CPS) = decline at screening, with the reason.
+Cross-check the pedals against [`supported-meters.md`](../code/findings/supported-meters.md): **Verified**
+(Assioma) = lowest risk; **Expected** (mainstream BLE power pedals) = high value (their `/diag` promotes
+the brand); **Out of scope** (crank-arm/spider, ANT+-only) = decline at screening, with the reason.
 
 ## The screening form (~7 questions)
 
@@ -55,11 +56,13 @@ Host on a **Microsoft/Google Form** (zero infra — see Hosting). Questions (mir
 `beta-program.md` §Screening):
 
 1. **SB20 confirmed?** Firmware version (Stages app → About)?
-2. **Which use case** — read your own meter, or rescue a failing crank?
-3. **If a meter:** exact **brand + model**, and does it broadcast **Bluetooth** (not just ANT+)? *(If it
-   pairs to a phone app over Bluetooth, or Zwift sees it as a Bluetooth power source → yes.)*
-4. **Single-sided or dual/total?** (left-only pedal/arm vs dual or spider — sets the ×2 toggle.)
-5. **If crank-rescue:** which side is dead (L/R)? Does the surviving one still broadcast?
+2. **Which use case** — read your pedals natively, or rescue a failing crank with your pedals?
+3. **Your power pedals (required):** exact **brand + model**, and do they broadcast **Bluetooth** (not just
+   ANT+)? *(If they pair to a phone app over Bluetooth, or Zwift sees them as a Bluetooth power source →
+   yes.)* **No power pedals = not a fit** (crank-arm/spider meters are out of scope).
+4. **Single-sided or dual?** (left-only pedal vs dual — sets the ×2 doubling toggle.)
+5. **If crank-rescue:** which crank is dead (L/R)? *(Your pedals replace it; the dead crank just gets its
+   battery pulled so the SB20 pairs to our device.)*
 6. **Training app(s)** you use (Zwift, etc.).
 7. **Willing to:** join a setup WiFi · pull a crank battery if needed · send a log file after a ride ·
    take an OTA update? And **comfortable that this is experimental, unaffiliated with Stages/Favero, use

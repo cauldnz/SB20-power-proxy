@@ -12,27 +12,31 @@ Facebook group. Read [`decisions.md`](decisions.md) for the grounding; this is *
 > loop is desk-ready; ship pre-flashed; recruit).
 
 ## The product (decided)
-**One core, two headline use cases:** a small ESP32-C3 on the bike reads a BLE power source (Cycling
-Power Service `0x1818`) and re-presents it as the Stages L crank (`Stages 62144`, byte-faithful `0x2F`),
-which the SB20 accepts as its own. The two reasons an SB20 owner wants that:
+**Power-meter pedals becoming the crank replacement.** A small, low-cost USB-powered device on the bike
+reads your **Bluetooth power-meter pedals** (Cycling Power Service `0x1818`) and re-presents them as the
+Stages L crank (`Stages 62144`, byte-faithful `0x2F`), which the SB20 accepts as its own. The source is
+**a power-meter pedal set** (Assioma, Garmin Rally, Wahoo Powrlink, SRM EXAKT…); crank-arm and spider
+meters are out of scope (the meter-to-meter corrector is the separate path for those). The two reasons
+an SB20 owner wants that:
 
-1. **Correct power, natively** — make the SB20 read/broadcast the meter you *trust* (e.g. an Assioma)
+1. **Correct power, natively** — make the SB20 read/broadcast the **pedals you trust** (e.g. an Assioma)
    instead of its native Stages crank. Hook: *the SB20 reads ~11 % high vs the Assioma (≈1.11×, = the
-   367/330 dual-FTP workaround); the proxy makes it read your meter.*
+   367/330 dual-FTP workaround); the proxy makes it read your pedals.*
 2. **Crank rescue** — a **dead or dying SB20 Stages crank** kills the bike's power (the L crank is the
-   master). The proxy reads the **surviving crank** (e.g. the right, `Stages 4963`) — or *any* meter —
-   and rebroadcasts it as the master, **restoring full SB20 function** for the price of a tiny board
-   instead of an expensive crank replacement / re-pairing hacks. A *highly motivated* tester pool ("my
-   bike is broken, this fixes it").
+   master). The proxy reads your **power pedals** and rebroadcasts them as the master crank,
+   **restoring full SB20 function** for the price of a tiny device instead of an expensive crank
+   replacement. A *highly motivated* tester pool ("my bike is broken, this fixes it").
 
-Both run the identical proxy — only the configured *source* differs (external meter vs surviving crank).
+Both run the identical proxy on the same pedal source — only *why* the owner wants it differs.
+*(The firmware can technically also read a surviving crank, but the product + pre-beta are pedals.)*
 **Long tail (post-beta):** shifter/button relay (the SB20 shifter is fully mapped → Zwift-Click-ready),
 virtual shifting, the training-director / erg path, the meter-to-meter corrector for non-SB20 bikes.
 
 **Decisions locked** (owner, 2026-06-22):
 - **Value-prop = the meter/crank proxy** (the two use cases above) — *not* the training-director/erg path,
   which is long-tail.
-- **Any BLE pedal-based meter** (and the surviving crank), but **pre-beta testers are collaborators** —
+- **Any Bluetooth power-meter PEDAL set** (crank-arm/spider meters out of scope), but **pre-beta testers
+  are collaborators** —
   prepared to gather data and trial meters we don't own. ⟹ the **data-collaboration loop is a first-class
   feature**, not an afterthought.
 - **Ship pre-flashed boards** (owner flashes ~10 C3-OLED boards and mails them ready) + **iterate by OTA**

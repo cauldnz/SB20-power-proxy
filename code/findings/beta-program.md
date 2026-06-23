@@ -14,22 +14,26 @@ compatibility + the meter-screening detail live in [`supported-meters.md`](suppo
 > everything is ready — and we do the analysis, not them.** Every decision below serves that.
 
 ## Who we want (~10, two pools)
-Both pools are SB20 owners active in the Facebook group, willing to be **collaborators** (gather data,
-trial meters we don't own), comfortable joining a WiFi network and following a short guide.
-- **Accuracy-seekers** — own a BLE pedal meter (Assioma, Garmin Rally, Wahoo Powrlink, Favero, 4iiii,
-  etc. — see [`supported-meters.md`](supported-meters.md)) they trust, want the SB20 to read *that*
-  (the ~11%-high finding is the hook).
-- **Crank-rescue** — a dead/dying Stages crank; highly motivated, unambiguous value ("my bike works
-  again"). Often the most engaged testers.
+The product is **power-meter pedals becoming the crank replacement**, so **every tester must own a
+Bluetooth power-meter pedal set** (Assioma, Garmin Rally, Wahoo Powrlink, Favero, SRM EXAKT… — see
+[`supported-meters.md`](supported-meters.md)). Crank-arm / spider meters are out of scope. Both pools are
+SB20 owners active in the Facebook group, willing to be **collaborators** (gather data, trial pedal
+brands we don't own), comfortable joining a WiFi network and following a short guide.
+- **Accuracy-seekers** — own power pedals they trust and want the SB20 to read *that* meter natively in
+  erg (the ~11%-high finding is the hook).
+- **Crank-rescue** — a dead/dying Stages crank, replaced by their **power pedals**; highly motivated,
+  unambiguous value ("my bike works again"). Often the most engaged testers.
 
-Aim for a spread of **meter brands** (that's how we grow support) and at least 2–3 crank-rescue cases.
+Aim for a spread of **pedal brands** (that's how we grow support) and at least 2–3 crank-rescue cases.
 
 ## Screening (a short form before we ship a board)
 1. SB20 confirmed? Firmware version (Stages app → about)?
-2. Which use case — your own meter, or a failing crank?
-3. If a meter: exact brand + model, and does it broadcast **Bluetooth** (not just ANT+)? (We read BLE.)
-   Check it against the tiers + the ×2/sidedness note in [`supported-meters.md`](supported-meters.md).
-4. If crank-rescue: which crank is dead (L/R)? Does the surviving one still broadcast?
+2. Which use case — your pedals reading natively, or rescuing a failing crank with your pedals?
+3. **Your power pedals** (required): exact brand + model, and do they broadcast **Bluetooth** (not just
+   ANT+)? *(No power pedals = not a fit — crank-arm/spider meters are out of scope.)* Check against the
+   tiers + the ×2/sidedness note in [`supported-meters.md`](supported-meters.md).
+4. If crank-rescue: which crank is dead (L/R)? *(The pedals replace it; the dead crank just gets its
+   battery pulled so the SB20 pairs to our device.)*
 5. Training app(s) you use (Zwift, etc.).
 6. Willing to: join a setup WiFi, pull a crank battery if needed, send us a log file after a ride,
    take an OTA update? (All yes = a good fit.)
