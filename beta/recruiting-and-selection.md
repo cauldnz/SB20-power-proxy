@@ -19,19 +19,27 @@ Facebook post ─▶ interested comment/DM ─▶ screening form ─▶ selectio
 
 Expect heavy drop-off (that's healthy): a recruiting post may draw 30–50 reactions, ~10–20 comments,
 maybe 15 form starts → you *select* ~10. Over-recruit slightly (12–14 forms) so you can pick for fit
-and meter-brand spread and still land 10 good ones.
+and pedal-brand spread and still land 10 good ones.
 
 **Non-negotiable: the user owns a Bluetooth power-meter PEDAL set.** The product is pedals → crank
-replacement; crank-arm and spider meters are out of scope. Two pools, both pedal owners:
+replacement; crank-arm and spider meters are out of scope.
 
-- **Accuracy-seekers** — own **Bluetooth power pedals** they trust (Favero Assioma, Garmin Rally, Wahoo
-  Powrlink, SRM EXAKT…), bothered the SB20 reads ~11% off them. Want the SB20 to read *their pedals*
-  natively in erg.
-- **Crank-rescue** — a **dead/dying Stages crank**, replaced by their **pedals**; want their bike working
-  again. Most motivated, most engaged, unambiguous value.
+**Round-one focus: accuracy-seekers with WORKING Stages cranks.** A working crank gives a known-good
+reference to validate the device against (compare the corrected pedal power to the real crank), which is
+exactly what a first cohort needs. So we recruit:
 
-Aim for **≥2–3 crank-rescue** (the clearest win) and a **spread of pedal brands** among the accuracy pool
-(each new brand that works grows the library — the whole point).
+- **Accuracy-seekers** *(round one)* — own **Bluetooth power pedals** they trust (Favero Assioma, Garmin
+  Rally, Wahoo Powrlink, SRM EXAKT…) **and a still-working SB20 crank**, bothered the SB20 reads ~11% off
+  the pedals. Want the SB20 to read *their pedals* natively in erg.
+- **Crank-rescue** *(the eventual headline — hinted, not recruited yet)* — a dead/dying Stages crank
+  replaced by their pedals. The most motivated pool, but **hold them for a later round** once the core is
+  proven; for now, in the pitch, reassure them ("don't bin your bike — the rescue version is coming") and
+  **waitlist** them rather than shipping into a setup with no reference. (Pitch: Variant A hints this;
+  Variant B is the held copy.)
+
+Aim for a **spread of pedal brands** (each new brand that works grows the library — the whole point), and
+where it's easy, testers you can **ship to fast** (the device is tiny → worldwide is fine, but **AU/NZ is
+fastest** since that's where the owner is).
 
 ## Selection criteria (a fit judgement, not first-come)
 
@@ -40,11 +48,11 @@ Score each applicant; pick the best fit + brand spread, not the fastest to reply
 | Signal | Strong fit | Screen out / hold |
 |---|---|---|
 | **Owns Bluetooth power-meter PEDALS** (the hard requirement) | yes — pedals, BLE | no pedals (crank-arm/spider) → *out of scope*; ANT+-only → *can't read*; say so kindly |
-| **Use case is clear** | accuracy *or* crank-rescue, stated | "just curious", no real need |
+| **Stages cranks still WORK** (round-one reference) | yes — a known-good reference to validate against | dead/dying crank → **hold for a later round** (waitlist, not "no") |
 | **Comfortable with experimental/DIY, at-own-risk, unaffiliated** | yes | wants a polished consumer product *now* |
-| **Willing to do the async loop** | join WiFi · pull the dead crank's battery if needed · send a log · take an OTA | wants live hand-holding / can't send a file |
+| **Willing to do the async loop** | join 2.4 GHz WiFi · pop crank batteries if needed · ride + send a log · take an OTA | wants live hand-holding / can't send a file |
 | **Pedal brand we don't have yet** | **bonus** — promotes those pedals to Verified | (still fine, just lower novelty) |
-| **Crank-rescue case** | bonus (motivation + clear value) | — |
+| **Easy/fast to ship to** | bonus — **AU/NZ fastest** (where the owner is) | worldwide is fine, just slower — not a dealbreaker |
 
 Cross-check the pedals against [`supported-meters.md`](../code/findings/supported-meters.md): **Verified**
 (Assioma) = lowest risk; **Expected** (mainstream BLE power pedals) = high value (their `/diag` promotes
@@ -56,17 +64,18 @@ Host on a **Microsoft/Google Form** (zero infra — see Hosting). Questions (mir
 `beta-program.md` §Screening):
 
 1. **SB20 confirmed?** Firmware version (Stages app → About)?
-2. **Which use case** — read your pedals natively, or rescue a failing crank with your pedals?
-3. **Your power pedals (required):** exact **brand + model**, and do they broadcast **Bluetooth** (not just
+2. **Your power pedals (required):** exact **brand + model**, and do they broadcast **Bluetooth** (not just
    ANT+)? *(If they pair to a phone app over Bluetooth, or Zwift sees them as a Bluetooth power source →
    yes.)* **No power pedals = not a fit** (crank-arm/spider meters are out of scope).
-4. **Single-sided or dual?** (left-only pedal vs dual — sets the ×2 doubling toggle.)
-5. **If crank-rescue:** which crank is dead (L/R)? *(Your pedals replace it; the dead crank just gets its
-   battery pulled so the SB20 pairs to our device.)*
-6. **Training app(s)** you use (Zwift, etc.).
-7. **Willing to:** join a setup WiFi · pull a crank battery if needed · send a log file after a ride ·
-   take an OTA update? And **comfortable that this is experimental, unaffiliated with Stages/Favero, use
-   at own risk?** (All yes = a good fit.)
+3. **Single-sided or dual?** (left-only pedal vs dual — sets the ×2 doubling toggle.)
+4. **Do your SB20 Stages cranks still work?** *(For this first round we prefer working cranks — they give a
+   reference to validate against. If yours are dead/dying, say so and we'll **waitlist** you for the
+   rescue round; don't bin the bike.)*
+5. **Where are you (country)?** *(We ship worldwide; **Australia/NZ fastest**.)*
+6. **Training app(s)** you use (Zwift, qdomyos, etc.).
+7. **Willing to:** join a 2.4 GHz WiFi · pop a crank battery if needed · ride + send a log (you can review
+   it first) · take an OTA update? And **comfortable that this is experimental, unaffiliated with
+   Stages/Favero, use at own risk?** (All yes = a good fit.)
 + a contact handle (DM / email) and a consent checkbox (see `USERS-PLAYBOOK` §6 / `beta-program.md`
   §Data & consent).
 

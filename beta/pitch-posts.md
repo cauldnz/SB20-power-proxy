@@ -5,14 +5,19 @@ Ready-to-post copy for recruiting ~10 pre-beta collaborators. Governed by
 (Stages/Favero/Zwift), **no medical/performance claims, no guarantees**, experimental framing up front.
 The product is **power-meter pedals becoming the crank replacement** — so the ask is for owners of
 **Bluetooth power pedals**. Describe the hardware generically (a small USB-powered device), not by chip.
-Pick **one** variant for your group, post **once**, reply genuinely. Fill the `[brackets]`.
+
+> **For this first round:** lead with the **accuracy** angle and prefer testers whose Stages cranks
+> **still work** — so there's a known-good reference to validate the device against. The **dead-crank
+> rescue** is the eventual headline, but it's *hinted as coming*, not recruited yet (don't have someone
+> bin their bike before the core is proven). **Shipping:** worldwide is fine (it's tiny); **Australia/NZ
+> preferred** (fastest to ship). **Variant A is the post to use**; B is held for a later round.
 
 > **Before posting:** read the group's rules — many ban selling / self-promo. This is **free, experimental,
 > seeking unpaid collaborators** — not a sale. If unsure, ask a mod how to share it within the rules.
 
 ---
 
-## Variant A — accuracy-seekers (the ~11% hook)
+## Variant A — the main post (accuracy-led, working cranks, rescue hinted)
 
 > **Does your SB20's power feel "off" vs your power pedals? I built something and I'm looking for a few
 > testers.**
@@ -32,15 +37,19 @@ Pick **one** variant for your group, post **once**, reply genuinely. Fill the `[
 > You get a pre-set-up device for your bike and (hopefully) an SB20 that finally reads your pedals and gives you consistent power zone workouts. You'll also get to keep the device and hopefully if I can evolve this thing you'll end up with a super useful capability long term. In
 > return I get real data across different pedal brands. There's more coming too — next on my list is
 > **controlling erg target power from the SB20 shifter buttons** and **Zwift integration for button control** — but step one
-> is nailing the pedals. Interested? Comment or DM and I'll send a quick 2-minute form → **[FORM LINK]**
-
-TODO: I'd combine content from Variant A and Variant B... But right now I would prefer Beta testers to still have a working set of SB20 cranks... But we can hint that we are working on a solution which will also help people who have dead cranks... so *don't* throw your bike in the trash just becuase the power meters died!
-
-TODO: Given I need to ship the devices I'd ideally like to find folks that are easy enough to ship to. it's a tiny device so I will ship world wide, but if you are in Australia/NZ then that's also awesome for me as you will get the device nice and fast...
+> is nailing the pedals.
+>
+> A couple of notes: if your Stages crank is **already dead or dying**, hang in there — this is exactly the lifeboat, so *don't* throw your bike in the trash! But for this first round I'm prioritising bikes with a **working** crank, so I've got a known-good reference to validate against; the full rescue version is coming. And since it's a tiny device I'll **ship worldwide** — if you happen to be in **Australia / NZ** you'll get it fastest (that's where I am).
+>
+> Interested? Comment or DM and I'll send a quick 2-minute form → **[FORM LINK]**
 
 ---
 
-## Variant B — crank-rescue (the dead-Stages hook)
+## Variant B — crank-rescue (HOLD — for a later round, once the core is proven)
+
+> **Not for the first round.** Right now we prefer testers whose cranks still work (Variant A), so we have a
+> reference to validate against. Keep this copy for when we open dead-crank recruiting — and even then, lead
+> honestly ("no promises it'll save every setup").
 
 > **Stages crank on your SB20 dead or dying? I'm testing a way to bring the bike back to life with your
 > power pedals.**
@@ -60,16 +69,17 @@ TODO: Given I need to ship the devices I'd ideally like to find folks that are e
 
 ---
 
-## Variant C — short combined teaser
+## Variant C — short teaser
 
-> **SB20 owners with power pedals: testing a DIY device that makes the bike read *your* pedals (or rescues
-> a dead crank). Want in?**
+> **SB20 owners with power pedals: testing a DIY device that makes the bike read *your* pedals — natively,
+> in erg. Want in?**
 >
 > Small USB-powered gadget that reads your **Bluetooth power pedals** and feeds them to the SB20 as the
-> crank — so the bike trains off the pedals you trust, or keeps working after a Stages crank dies.
-> Experimental, DIY, unaffiliated with Stages/Favero. More coming (shifter-button erg control, Zwift
-> integration), but pedals first. Looking for ~10 testers with Bluetooth power pedals who'll do one short
-> ride + send a log (I do the rest). Comment/DM → **[FORM LINK]**
+> crank — so the bike trains off the pedals you trust (and if a Stages crank ever dies, it's the lifeboat
+> too — don't bin your bike!). Experimental, DIY, unaffiliated with Stages/Favero. More coming
+> (shifter-button erg control, Zwift integration), but pedals first. Looking for ~10 testers with a
+> **working** SB20 + Bluetooth power pedals who'll do a few short rides + send a log (I do the rest). I'll
+> ship worldwide — AU/NZ fastest. Comment/DM → **[FORM LINK]**
 
 ---
 
@@ -80,6 +90,12 @@ Keep replies short, honest, and warm. Common ones:
 - **"How much / where do I buy it?"** → "It's not for sale yet — it's an experimental project and I'm
   looking for collaborators, not customers right now. I'll send you a pre-set-up device; in return you ride once and
   send me a log. (It's a small USB-powered gadget — aiming for it to be cheap to make.)"
+- **"My Stages crank is already dead — can I still join?"** → "That's exactly where this is headed, and
+  you'll be near the front of the queue for the rescue version — but for this first round I'm prioritising
+  bikes with a *working* crank so I've got a known-good reference to validate against. Hang onto your bike;
+  don't bin it — the rescue version is coming."
+- **"Where are you / will you ship to me?"** → "It's a tiny device, so I'll post it worldwide. If you're in
+  **Australia or NZ** you'll get it fastest (that's where I am), but anywhere is fine."
 - **"Is this a Stages / Favero / official thing?"** → "Nope — totally independent, I built it myself. No
   affiliation with Stages, Favero or Zwift. Use at your own risk... But it is pretty low risk, I don't write anything to the SB20 cranks."
 - **"I don't have pedals — I've got a [crank-arm / spider] power meter, will that work?"** → "Not for this
@@ -95,7 +111,7 @@ Keep replies short, honest, and warm. Common ones:
   sees the SB20 as normal. Controlling the erg target from the SB20's shifter buttons, and tighter Zwift
   integration, are what I'm building next. This means it is truely running in the SB20 erg mode, power goes Pedals -> My Box -> SB20 which then knows how to send the right reistance... This is quite different than the pattern of Pedals -> Zwift -> SB20 and I think a btter approach as it also works with other apps like Qdomyous or any other app you know and love to use with your SB20"
 - **"How accurate is the correction?"** → "It can do a calibrated model which means if you actually want to do things like match the pedals to your cranks you can do a calibration right across a range of torque/cadence levels and we build a calibration model to match them up... interesting data in any event. It's calibrated against *your* pedals on a short ride, so it
-  ends up reading like them. But, for most users you'll just want to pass the known good power value from the pedals through to the SB20 itself... and basically the Stages power meters become redundant...
+  ends up reading like them. But, for most users you'll just want to pass the known good power value from the pedals through to the SB20 itself... and basically the Stages power meters become redundant..."
 - **"What do you collect?"** → "Just the power data + ride power/cadence — no personal or location data. I
   use captures to add pedal support; anything I keep is anonymised. It's all opt-in and you'll be able to view the logfile before it's uploaded."
 - **"What's coming next?"** → "Once the pedals are rock-solid: erg-target control from the SB20 shifter
@@ -104,6 +120,7 @@ Keep replies short, honest, and warm. Common ones:
   me prove it, so expect a rough edge or two and an update or two. If you want a polished product today,
   this isn't it yet."
 
-If someone's clearly a **good fit** (SB20 + Bluetooth power pedals), send them the form + the welcome flow
-in [`comms-templates.md`](comms-templates.md). If a **bad fit** (no pedals, ANT+-only, wants a finished
-product), be kind and clear about why — a "not yet" protects you both (USERS-PLAYBOOK §1).
+If someone's clearly a **good fit** (a **working** SB20 + Bluetooth power pedals, ideally AU/NZ for the
+first round), send them the form + the welcome flow in [`comms-templates.md`](comms-templates.md). If a
+**bad fit** (no pedals, ANT+-only, dead crank for *this* round, wants a finished product), be kind and clear
+about why — a "not yet" protects you both (USERS-PLAYBOOK §1).

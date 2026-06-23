@@ -19,12 +19,15 @@ Bluetooth power-meter pedal set** (Assioma, Garmin Rally, Wahoo Powrlink, Favero
 [`supported-meters.md`](supported-meters.md)). Crank-arm / spider meters are out of scope. Both pools are
 SB20 owners active in the Facebook group, willing to be **collaborators** (gather data, trial pedal
 brands we don't own), comfortable joining a WiFi network and following a short guide.
-- **Accuracy-seekers** — own power pedals they trust and want the SB20 to read *that* meter natively in
-  erg (the ~11%-high finding is the hook).
-- **Crank-rescue** — a dead/dying Stages crank, replaced by their **power pedals**; highly motivated,
-  unambiguous value ("my bike works again"). Often the most engaged testers.
+- **Accuracy-seekers** *(round one)* — own power pedals they trust **and a still-working Stages crank**,
+  and want the SB20 to read *the pedals* natively in erg (the ~11%-high finding is the hook). The working
+  crank is a known-good reference to validate the device against — exactly what a first cohort needs.
+- **Crank-rescue** *(the eventual headline — hinted, not recruited yet)* — a dead/dying Stages crank
+  replaced by their pedals; the most motivated pool, but **held for a later round** once the core is
+  proven (shipping into a setup with no reference is the wrong first step). Reassure + waitlist them.
 
-Aim for a spread of **pedal brands** (that's how we grow support) and at least 2–3 crank-rescue cases.
+Round one: recruit working-crank accuracy-seekers, a spread of **pedal brands**, and — where easy —
+testers you can ship to fast (the device is tiny → worldwide ok, **AU/NZ fastest**).
 
 ## Screening (a short form before we ship a board)
 1. SB20 confirmed? Firmware version (Stages app → about)?

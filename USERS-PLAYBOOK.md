@@ -26,10 +26,14 @@ Four rules above the detail:
 The product is **power-meter pedals becoming the crank replacement** — so the one non-negotiable is that
 the user owns a **Bluetooth power-meter pedal set**. Two real jobs, two different people; pitch and screen
 to the *job*, not "anyone with an SB20":
-- **Accuracy-seekers** — own power pedals they trust (Assioma, Rally, Powrlink, SRM EXAKT…) and are
-  bothered that the SB20 reads ~11% off them. Hook: *the SB20 reads your pedals, natively, in erg.*
-- **Crank-rescue** — a dead or dying Stages crank, replaced by their **pedals**. Hook: *your bike works
-  again* — unambiguous, the most motivated, usually the most engaged.
+- **Accuracy-seekers with a *working* crank** *(recruit these first)* — own power pedals they trust
+  (Assioma, Rally, Powrlink, SRM EXAKT…) and are bothered the SB20 reads ~11% off them. Hook: *the SB20
+  reads your pedals, natively, in erg.* The working crank is a known-good reference to validate against —
+  the right first cohort.
+- **Crank-rescue** *(the eventual headline — hint it, hold it)* — a dead/dying Stages crank replaced by
+  their pedals. Hook: *your bike works again* — the most motivated pool, but a fresh round-one tester with
+  no working crank has no reference to check against, so **waitlist them for a later round** and reassure
+  ("don't bin your bike — the rescue is coming").
 - **Tease the roadmap, don't lead with it:** erg-target control from the SB20 shifter buttons, Zwift
   integration. They build excitement and shape what's next — but pedals first; promise only what's shipped.
 
