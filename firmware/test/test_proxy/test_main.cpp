@@ -8,6 +8,7 @@
 #include <unity.h>
 
 #include "CalibrationFit.h"
+#include "CalibrationSession.h"
 #include "ConfigPage.h"
 #include "Correction.h"
 #include "Cps.h"
@@ -612,6 +613,64 @@ void test_curve_string_roundtrip() {
     TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.079f, back.points[0].factor);
     TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.004f, back.points[1].factor);
     TEST_ASSERT_TRUE(curveFromString("").empty());   // empty string -> no curve
+}
+
+// --- calibration session (the on-device wizard's orchestration) ---------------
+
+void test_calibration_session_lifecycle_and_fit() {
+    CalibrationSession s(5);  // small min for the test
+    TEST_ASSERT_TRUE(s.state() == CalState::Idle);
+    s.onDut(100, 1000);       // readings before start are ignored
+    TEST_ASSERT_EQUAL_INT(0, (int)s.pairCount());
+
+    s.start();
+    TEST_ASSERT_TRUE(s.collecting());
+    uint32_t t = 1000;
+    for (const auto& p : goldenCalPairs()) {  // feed the shared golden DUT/ref dataset, paired in time
+        s.onRef(p.ref, t);
+        s.onDut(p.dut, t);
+        t += 1000;
+    }
+    TEST_ASSERT_EQUAL_INT(18, (int)s.pairCount());
+    TEST_ASSERT_TRUE(s.enoughToFit());
+    TEST_ASSERT_TRUE(s.finish());
+    TEST_ASSERT_TRUE(s.fitted());
+    TEST_ASSERT_FALSE(s.fit().curve.empty());      // a real curve came out of the session
+    TEST_ASSERT_TRUE(s.residualW() < 1.0f);        // and it corrects the DUT to ~the reference
+}
+
+void test_calibration_session_finish_needs_enough_pairs() {
+    CalibrationSession s(10);
+    s.start();
+    s.onRef(150, 0);
+    s.onDut(150, 0);  // 1 pair, need 10
+    TEST_ASSERT_FALSE(s.enoughToFit());
+    TEST_ASSERT_FALSE(s.finish());   // too few -> stays collecting, no fit
+    TEST_ASSERT_TRUE(s.collecting());
+}
+
+void test_calibration_session_cancel_resets() {
+    CalibrationSession s(2);
+    s.start();
+    s.onRef(150, 0);
+    s.onDut(150, 0);
+    s.cancel();
+    TEST_ASSERT_TRUE(s.state() == CalState::Idle);
+    TEST_ASSERT_EQUAL_INT(0, (int)s.pairCount());
+}
+
+void test_calibration_session_coverage_guides_the_rider() {
+    CalibrationSession s(2);
+    s.start();
+    s.onRef(100, 0);
+    s.onDut(60, 0);    // band 0 (<100)
+    s.onDut(160, 0);   // band 2 (150-200)
+    s.onDut(260, 0);   // band 4 (250-300)
+    std::vector<int> cov = s.coverage();  // edges {0,100,150,200,250,300,2000}
+    TEST_ASSERT_EQUAL_INT(6, (int)cov.size());
+    TEST_ASSERT_EQUAL_INT(1, cov[0]);
+    TEST_ASSERT_EQUAL_INT(1, cov[2]);
+    TEST_ASSERT_EQUAL_INT(1, cov[4]);
 }
 
 void test_config_form_parse() {
@@ -1374,6 +1433,10 @@ int runUnityTests() {
     RUN_TEST(test_pair_accumulator_drops_implausible_and_caps);
     RUN_TEST(test_pair_accumulator_coverage_bins);
     RUN_TEST(test_curve_string_roundtrip);
+    RUN_TEST(test_calibration_session_lifecycle_and_fit);
+    RUN_TEST(test_calibration_session_finish_needs_enough_pairs);
+    RUN_TEST(test_calibration_session_cancel_resets);
+    RUN_TEST(test_calibration_session_coverage_guides_the_rider);
     return UNITY_END();
 }
 
