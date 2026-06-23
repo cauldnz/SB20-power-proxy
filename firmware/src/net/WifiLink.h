@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "CalibrationPage.h"          // pure calibration wizard page (CalWizardView + render/parse)
 #include "ConfigPage.h"               // pure source-config page (RuntimeConfig + SourceCandidate + render)
 #include "Provisioning.h"             // pure ScannedNet + page render/parse/validate (host-tested)
 #include "Status.h"                   // pure ProxyStatus + renderStatusJson (host-tested)
@@ -62,6 +63,27 @@ public:
     using DiagFramesProvider = std::function<std::vector<std::string>()>;
     void setDiagFrames(DiagFramesProvider frames) { diagFrames_ = frames; }
 
+    // Wire the meter-to-meter calibration wizard (GET /calibrate + POST start/finish/save/cancel +
+    // GET /calibrate/scan). `view` renders the current wizard state; `start` persists the chosen
+    // DUT+reference and marks this a calibration boot (WifiLink reboots to apply); `finish` fits the
+    // collected pairs (returns false if too few); `save` persists the fitted corrector config
+    // (WifiLink reboots); `cancel` clears the calibration marker (WifiLink reboots); `scan` refreshes
+    // the candidate list. All decoupled from the BLE layer via hooks.
+    using CalViewProvider = std::function<CalWizardView()>;
+    using CalStartHook = std::function<void(const std::string& dutAddr, const std::string& refAddr)>;
+    using CalFinishHook = std::function<bool()>;
+    using CalSaveHook = std::function<void(const std::string& deviceName)>;
+    using CalSimpleHook = std::function<void()>;
+    void setCalibrationUi(CalViewProvider view, CalStartHook start, CalFinishHook finish,
+                          CalSaveHook save, CalSimpleHook cancel, CalSimpleHook scan) {
+        calView_ = view;
+        calStart_ = start;
+        calFinish_ = finish;
+        calSave_ = save;
+        calCancel_ = cancel;
+        calScan_ = scan;
+    }
+
     // Call from loop(): services HTTP + OTA (station) or the captive DNS + portal (setup), and
     // promotes to healthy (which cancels the boot-guard and validates the running OTA image).
     void handle();
@@ -72,6 +94,7 @@ public:
 private:
     void startStationServer_();  // OTA + status/update/forget routes (assumes WiFi joined)
     void addConfigRoutes_();     // GET /setup picker + POST /setup/save + GET /setup/scan
+    void addCalibrationRoutes_();  // GET /calibrate + POST start/finish/save/cancel + GET scan
     void addRideModeRoute_();    // GET /wifi/off (confirm) + POST /wifi/off (radio down for riding)
     void startPortal_();         // SoftAP + captive DNS + setup routes
     void addLogRoutes_();        // GET /log + /log/on + /log/off (shared by both modes)
@@ -89,6 +112,12 @@ private:
     ConfigSaveHook configSave_;
     ScanHook configScan_;
     DiagFramesProvider diagFrames_;
+    CalViewProvider calView_;
+    CalStartHook calStart_;
+    CalFinishHook calFinish_;
+    CalSaveHook calSave_;
+    CalSimpleHook calCancel_;
+    CalSimpleHook calScan_;
     IProvisioningDisplay* display_ = nullptr;
     const char* hostname_ = "sb20proxy";
     std::vector<ScannedNet> networks_;  // APs scanned for the portal picker (RSSI + secured)

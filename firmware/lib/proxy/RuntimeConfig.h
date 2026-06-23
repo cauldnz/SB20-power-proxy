@@ -61,6 +61,9 @@ struct RuntimeConfig {
     std::string refMeterAddress;         // CORRECTOR: reference meter pinned by address (calibration)
     std::string refMeterNameFilter;      // CORRECTOR: reference meter name substring
     CorrectionCurve curve;               // CORRECTOR: fitted DUT->reference correction (empty = none)
+    bool calibrating = false;            // transient: this boot is a live calibration session (both
+                                         // meters pinned, feeding the wizard) — set by /calibrate/start,
+                                         // cleared on save/cancel. The wizard reboots in/out of it.
 
     // The factory defaults, from compile-time Config (used when nothing is stored in NVS yet).
     static RuntimeConfig defaults() {
@@ -81,7 +84,8 @@ struct RuntimeConfig {
     std::string toLine() const {
         return meterAddress + "|" + meterNameFilter + "|" + (singleSidedDouble ? "1" : "0") + "|" +
                spoofName + "|" + spoofSerial + "|" + (mode == ProxyMode::Corrector ? "1" : "0") +
-               "|" + refMeterAddress + "|" + refMeterNameFilter + "|" + curveToString(curve);
+               "|" + refMeterAddress + "|" + refMeterNameFilter + "|" + curveToString(curve) + "|" +
+               (calibrating ? "1" : "0");
     }
 
     // Parse a stored line. Backward-compatible: an old line (no mode/ref/curve) keeps SPOOF + no
@@ -108,6 +112,7 @@ struct RuntimeConfig {
         if (f.size() >= 7) c.refMeterAddress = f[6];
         if (f.size() >= 8) c.refMeterNameFilter = f[7];
         if (f.size() >= 9) c.curve = curveFromString(f[8]);
+        if (f.size() >= 10) c.calibrating = (f[9] == "1");
         return c;
     }
 };

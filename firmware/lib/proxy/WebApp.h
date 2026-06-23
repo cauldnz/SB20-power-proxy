@@ -47,7 +47,7 @@ a.set{color:#3b82f6;text-decoration:none;font-size:.85rem;border:1px solid #2b36
 <div class='stat'><b>Forwarded</b><span id='fwd'>--</span></div>
 <div class='stat'><b>Firmware</b><span id='fw'>--</span></div>
 </div>
-<p style='text-align:center;margin-top:14px;font-size:.8rem'><a href='/wifi/off' style='color:#8b93a7'>Ride mode &mdash; WiFi off</a> &nbsp;&middot;&nbsp; <a href='/diag' style='color:#8b93a7'>Diagnostic</a></p>
+<p style='text-align:center;margin-top:14px;font-size:.8rem'><a href='/calibrate' style='color:#8b93a7'>Calibrate a meter</a> &nbsp;&middot;&nbsp; <a href='/wifi/off' style='color:#8b93a7'>Ride mode &mdash; WiFi off</a> &nbsp;&middot;&nbsp; <a href='/diag' style='color:#8b93a7'>Diagnostic</a></p>
 <script>
 var $=function(i){return document.getElementById(i)};
 var hist=[],MAX=90;

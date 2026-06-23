@@ -165,6 +165,22 @@ inline Correction fitCorrection(const std::vector<CalPair>& pairs, int nBins = 6
     return c;
 }
 
+// Reduce any fitted Correction to a power->factor curve for storage in RuntimeConfig (the corrector
+// run-mode applies a curve). A curve fit is stored as-is; a linear scale/offset fallback is sampled
+// into a few breakpoints (factor = corrected/power at each), so the corrector always carries one
+// representation. Powers chosen to span typical riding; factor flat-held outside by CorrectionCurve.
+inline CorrectionCurve correctionToCurve(const Correction& c) {
+    if (!c.curve.empty()) return c.curve;
+    CorrectionCurve out;
+    const float samples[] = {50.0f, 100.0f, 150.0f, 200.0f, 300.0f, 400.0f};
+    for (float p : samples) {
+        float corrected = p * c.scale + c.offset;
+        if (corrected < 0.0f) corrected = 0.0f;
+        out.add(p, p > 0.0f ? corrected / p : c.scale);
+    }
+    return out;
+}
+
 // Mean absolute residual (watts) of a correction over the pairs — the wizard shows it so the rider
 // can judge the fit (mirror calibration.residual_watts mean_w).
 inline float residualMeanW(const Correction& c, const std::vector<CalPair>& pairs) {
