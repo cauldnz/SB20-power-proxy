@@ -10,7 +10,8 @@
 #include "IPowerSource.h"
 #include "SourceCandidate.h"   // discovered-source list for the web picker
 
-class NimBLEClient;  // NimBLE-Arduino (global namespace); kept out of the header
+class NimBLEClient;           // NimBLE-Arduino (global namespace); kept out of the header
+class NimBLEClientCallbacks;  // per-instance disconnect callback (routes to the owning client)
 
 namespace sb20proxy {
 
@@ -29,6 +30,13 @@ public:
 
     bool connected() const { return connected_; }
     const char* sourceName() const { return name_; }  // the connected meter's advertised name
+
+    // Scan coordination (the NimBLE scan is a shared singleton, so multiple clients route through one
+    // callback — see the registry in the .cpp). wantsTarget(): still looking for a meter to read.
+    // claimedAddr(): the address this client has locked onto ("" if none), so another client doesn't
+    // grab the same advertiser. Pure accessors over existing state — no behaviour change for one client.
+    bool wantsTarget() const { return !connected_ && !haveTarget_; }
+    const char* claimedAddr() const { return (haveTarget_ || connected_) ? addr_ : ""; }
 
     // Set which source to read at RUNTIME (from NVS / the web UI) — a pinned address (""=match by
     // name) and the name substring. Call before begin(). Falls back to the compile-time defaults.
@@ -64,6 +72,7 @@ public:
 private:
     ReadingCb cb_;
     NimBLEClient* client_ = nullptr;
+    NimBLEClientCallbacks* clientCb_ = nullptr;  // per-instance disconnect routing (created in loop)
     bool haveTarget_ = false;
     bool connected_ = false;
     bool wantRescan_ = false;
