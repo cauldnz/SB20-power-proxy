@@ -1,9 +1,13 @@
 # Beta program — running the pre-beta with ~10 SB20 testers
 
 **Status: the operating doc for the pre-beta (2026-06-22).** The "how we run it" companion to
-[`pre-beta-plan.md`](pre-beta-plan.md) (the "what we're building"). Tester-facing material lives in
-[`/beta`](../../beta/) (onboarding, ride protocol); meter compatibility + the meter-screening detail
-live in [`supported-meters.md`](supported-meters.md).
+[`pre-beta-plan.md`](pre-beta-plan.md) (the "what we're building"); the *principles* are
+[`USERS-PLAYBOOK.md`](../../USERS-PLAYBOOK.md). Tester-facing material lives in [`/beta`](../../beta/):
+the recruiting kit — [`recruiting-and-selection.md`](../../beta/recruiting-and-selection.md) (funnel +
+selection + screening form + hosting), [`pitch-posts.md`](../../beta/pitch-posts.md) (ready-to-post
+Facebook copy), [`comms-templates.md`](../../beta/comms-templates.md) (lifecycle messages) — plus
+[onboarding](../../beta/ONBOARDING.md) + [ride protocol](../../beta/TESTER-RIDE-PROTOCOL.md). Meter
+compatibility + the meter-screening detail live in [`supported-meters.md`](supported-meters.md).
 
 > **The one principle that shapes everything: a tester's time on the bike is the scarcest, most
 > precious resource we have. We never send anyone to pedal until we have verified, off the bike, that
