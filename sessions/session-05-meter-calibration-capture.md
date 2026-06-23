@@ -1,63 +1,67 @@
-# 🚴 Session 5 — paired XCadey + Assioma capture (meter-to-meter calibration)
+# 🚴 Session 5 — meter-to-meter calibration ride (XCadey → reads like Assioma)
 
-**Status: 🟡 PLANNED** · tracked in [`sessions/README.md`](sessions/README.md). Run via
-[`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md) — record actuals inline, **⏱ timestamp from the start**,
-retro at the end. *(Independent of session 4 — different bike/kit; do whichever is set up.)*
+**Status: 🟢 READY** · tracked in [`sessions/README.md`](README.md). Run via [`PLAYBOOK.md`](PLAYBOOK.md)
+(record actuals inline, **⏱ timestamp from the start**, retro at the end). Opportunistic — runs whenever
+the track bike (both meters fitted) is set up.
 
-**Goal:** capture the **XCadey** (track-bike spider) and the **Assioma** (reference pedals) **at the same
-time** so we can fit the correction that lets the proxy rebroadcast XCadey power on the Assioma scale
-(`code/findings/meter-to-meter-proxy.md`). This is a **data-capture ride**, not an agent-guided live test —
-the protocol below is what makes a *good* fit; send me the JSONL after.
+**Goal:** calibrate on the device so the **XCadey** crank reads like the **Assioma** pedals, then leave
+the proxy rebroadcasting the corrected XCadey under its own name for the **Garmin** to pair to. This is
+now a **single on-bike `/calibrate` session** — the on-device wizard replaces the old ANT+
+capture→desk-fit→deploy plan (see [`meter-to-meter-proxy.md`](../code/findings/meter-to-meter-proxy.md)).
 
-**~35–45 min** (set-up ~10 · structured efforts ~20 · easy spin ~10). Easiest on a **trainer** (track bike
-+ both meters, laptop + ANT+ stick stationary) — the velodrome makes capture awkward.
+**~20–30 min** (set-up ~10 · sweep ~10 · confirm ~5). Easiest on a **trainer** (track bike + both meters,
+your phone for the wizard).
+
+## What's already verified (desk — so the bike is only for what needs it)
+- The corrector **run path** is bench-proven (`fake_meter` → corrected rebroadcast as a clean CPS meter).
+- The wizard **renders + its routes work over WiFi** (`/calibrate`, scan, the candidate list).
+- A **ride-blocking form-POST bug was found + fixed** (PR #107) — the wizard's Start/Save now actually
+  save. Both boards are on current firmware.
+- **The one thing the bike proves:** two meters connected **at once** (coex on the C3) + a real fit. ⤵
 
 ## Bring / set up
-- Track bike with **both** meters fitted and awake: the **XCadey spider** *and* the **Assioma pedals**.
-- Laptop + the **ANT+ USB stick** (this capture is ANT+, on one stick — both meters broadcast ANT+).
-- **Both meters' ANT+ device ids** written down (from each meter's app, or a quick scan). I need these.
+- Track bike with **both** meters fitted + awake: the **XCadey** (DUT, to correct) *and* the **Assioma**
+  (reference). Pedal to wake them.
+- A **proxy board** (COM10 or COM9 — both on current firmware) powered on the bike.
+- Your **phone** (joins the board's WiFi / your network to drive the wizard) and the **Garmin**.
 
-## Pre-flight (desk, ~2 min — per the playbook)
-```bash
-# WSL: attach the stick (doesn't survive reboot) — see code/findings/wsl-capture-runbook.md
-usbipd list && usbipd attach --wsl --busid <BUSID>
-cd code && source .venv/bin/activate
-python -c "import openant; print('openant ok')"          # sanity
-python scripts/07_capture_multi.py --meter test:1 --output /tmp/x.jsonl --duration 0.1 || true  # arg-path smoke
-```
+## Pre-flight (off the bike — the hard gate; don't pedal until green)
+1. Power the board; open **`http://sb20proxy.local/`** (or its IP) on your phone. Dashboard loads.
+2. Tap **Calibrate a meter** → `/calibrate`. Tap **Scan**; **confirm BOTH meters appear** (the XCadey and
+   the Assioma — pedal them if not). *If only one shows, the other isn't advertising — wake it; don't start.*
+3. Set **XCadey = DUT**, **Assioma = Ref** (the per-row buttons), then **Connect both & start**. The board
+   reboots; reopen `/calibrate` — it should say **Collecting**, **both connected**. ← *the coex gate.*
+   *(If it can't hold both connections — wedges / reboots / heap falls — stop and tell me; the fallback is
+   capture-then-fit, the pure fit core is unchanged. Watch `/status` `heap` if unsure.)*
 
-## The capture
-Start it (run detached if you like — `run_capture.sh`), then ride:
-```bash
-python code/scripts/07_capture_multi.py \
-  --meter xcadey:<XCADEY_ANT_ID> --meter assioma:<ASSIOMA_ANT_ID> \
-  --duration 2400 \
-  --output code/findings/captures/CAL-xcadey-vs-assioma-$(date +%Y%m%d-%H%M).jsonl
-```
-**Wake both meters (pedal) if no broadcasts appear in ~30 s.** Confirm both `source` labels are landing
-(`xcadey` *and* `assioma`) before you commit to the efforts.
+## The ride — a power sweep (this is what makes a good fit)
+Ride **easy → hard** so the coverage bands fill; the wizard lights each band as you cover it:
+1. Warm up ~3 min easy.
+2. **Steady-ish blocks ~60–90 s** across your range — roughly **~120 / 160 / 200 / 240 / 280 W** (your
+   numbers). A minute each is plenty; the bands just need samples. **Finish** enables once enough bands
+   are covered.
+3. A couple of **short hard efforts** (10–20 s) to fill the top, if comfortable.
 
-### Ride protocol — cover the power × cadence space (this is what fits well)
-The fit is only as good as the range it sees. Aim for **steady blocks** so each (XCadey, Assioma) pair is
-clean, and **vary cadence at the same power** so we can see whether the error is cadence-dependent (it was
-for Stages↔Assioma — ~13% @60 rpm vs ~5% @100 rpm; XCadey may differ):
+## Finish → save → confirm
+4. Tap **Finish & fit**. Review: the **residual** should be a few watts and the curve monotonic. Name the
+   device (default "SB20 Corrector", or e.g. "XCadey-corrected"), **Save** → reboots into corrector mode.
+5. **Take the Assioma off** (or just stop pedaling it). Pair the **Garmin** to the corrector name; ride —
+   the watts should track what the Assioma *would* read. (Optional: re-mount the Assioma once to spot-check
+   agreement at a couple of powers — that's the real proof the correction is right.)
+6. If anything's off, `/diag` captures config + frames; recalibrate from `/calibrate` any time.
 
-1. **Warm up** ~5 min easy.
-2. **Steady blocks, ~60–90 s each**, across your range — e.g. **~120 / 160 / 200 / 240 / 280 W** (adjust
-   to your numbers). **At each power, do it at two cadences** — e.g. **~75 rpm** then **~95 rpm**. Hold
-   each block steady; narrate/note the target so I can line up the blocks. *(This grid is the high-value
-   part — front-load it while fresh.)*
-3. **A few short hard efforts** (10–20 s) to extend the top of the curve, if comfortable.
-4. **Easy spin** to finish; some natural/unstructured riding is fine too (more real-world points).
+## ✅ Pass / record
+- **Coex:** the board held **both** meters connected through the sweep without wedging (heap stable). ← *primary*
+- **Fit:** residual small; the saved corrector rebroadcasts corrected XCadey power the Garmin reads.
+- Note the fitted **curve breakpoints + residual** (from the Fitted screen) and whether the Garmin agreed
+  with the Assioma on the spot-check. → promote to `decisions.md`.
 
-## ✅ Pass / after
-- The JSONL has **both** meters' `instantaneous_power_w` (+ cadence) across a good range. **Commit it** to
-  `code/findings/captures/` — then I run `09_fit_calibration.py --target xcadey --ref assioma` +
-  `08_analyze_grid.py` + `12_compare_fit.py`, and tell you whether power-only fits or it wants cadence.
-- If a meter never appears: check its ANT+ id, that it's awake, and that nothing else holds the stick
-  (`run_capture.sh` releases it; see `wsl-capture-runbook.md`).
+## Fallback (if on-device coex won't hold)
+The old desk path still works: capture both meters together and fit on the desk —
+`07_capture_multi.py` → `09_fit_calibration.py --target xcadey --ref assioma` (the on-device fit is
+parity-tested against it). The pure fit is identical either way; only *where it runs* changes.
 
-## Retro (fill in at the end — see [`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md) §4)
+## Retro (fill in at the end — see [`PLAYBOOK.md`](PLAYBOOK.md) §4)
 - **Went well:**
 - **Went wrong / slow / confusing (+ root cause):**
 - **Planned vs actual (timestamps):**

@@ -1654,3 +1654,27 @@ host-tested (native 129). **Pending — the calibration ride:** the live two-met
 walk-through + the 2-concurrent-central coex behaviour on the C3, with the owner's real XCadey + Assioma.
 If coex is unstable, fall back to capture-then-fit (the pure fit core is unchanged). Runbook in
 `meter-to-meter-proxy.md` §Calibration ride runbook.
+
+---
+
+## 2026-06-23 — Bench-derisked the calibration wizard over HTTP (+ fixed a ride-blocking form bug)
+
+Prepping the corrector calibration ride, brought both boards onto current firmware (COM9 + COM10) and
+drove the `/calibrate` wizard over WiFi from the desk. Findings:
+
+- ✅ **The wizard renders + routes respond over HTTP** on real hardware (`GET /calibrate`,
+  `/calibrate/scan`); the candidate list works (COM10 advertising "Stages 62144" shows up via the same
+  `meter.candidates()` path `/setup` uses).
+- 🐞 **Found + fixed a real, ride-blocking bug (PR #107):** every form-POST route (`/setup/save`,
+  `/calibrate/start`, `/calibrate/save`) read the body via `arg("plain")`, which the ESP32 WebServer
+  leaves **empty for `application/x-www-form-urlencoded`** — i.e. for any real browser `<form>` submit.
+  So config-save and the **entire wizard's start/save were dead on arrival**; host tests only fed the
+  pure parser a string, never the live body. Fix: a `formBody()` helper (raw body, else rebuild from
+  named args via a new `urlEncode`) — generalises the captive-portal save's existing named-args
+  pattern. **Verified on COM9:** a urlencoded `POST /setup/save` now persists (was ignored).
+- ⏳ **Still bench-pending (the ride's watch-item):** the live **two-concurrent-central** pairing +
+  coex behaviour. The desk has one reliable `fake_meter` (WinRT) source and it flaked mid-test; a
+  proper 2-source pairing needs the owner's real XCadey + Assioma. Watch heap / watchdog during
+  collection on the C3. Run-sheet: `sessions/session-05-meter-calibration-capture.md`.
+
+Both boards left on current firmware, clean default config (COM9 = Stages 62144 / ASSIOMA spoof).
