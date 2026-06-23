@@ -82,6 +82,7 @@ rider starts:
 
 ## 2 · Execute (live, you driving)
 
+- **The rider tells you, explicitly, when they're AT THE BIKE — never infer it from the conversation.** Direct a physical step (pedal, pair, pull a battery, press a button) **only after** an explicit "I'm at the bike"; until then, treat every request as **desk prep**. The rider routinely asks for prep *before* heading downstairs ("set the ESP id", "stage the capture") and then says, explicitly, when they've arrived — so staging is **not** permission to start the bike steps. Pre-empting it ("now type L=… in the app") wastes the moment and cuts across their workflow. Stage everything desk-side; **hold the physical steps for the explicit cue.** *(Session 8: the agent issued an app-pairing step while the rider was still upstairs; owner: "I will always be explicit about being at the bike.")*
 - **Feed one step; wait for the narrated result; confirm against the data** (`curl` / `/log` / the capture
   file) **before advancing.** Never assume a step passed because it "should have." *(In session 2 the
   SB20's interactive protocol — control-point writes, the proprietary `fe02` token, disconnect reasons —
