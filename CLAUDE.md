@@ -8,6 +8,7 @@ Read a power meter → correct it → re-broadcast it so a consumer accepts it a
 
 ## Where to start (current canonical docs)
 
+- **`code/findings/domain-primer.md`** — **new to smart bikes / power meters / BLE fitness protocols? Start here.** General concepts + verified spec facts (CPS/FTMS/ANT+, erg, calibration, pedal meters) so you're grounded without relying on model-inherent knowledge; the project's *measured* bytes live in the docs below and win on conflict.
 - **`code/findings/decisions.md`** — append-only chronological log; the source of truth for what's decided/found (every numeric value, refuted hypothesis, "it works now").
 - **`code/findings/phase-0-report.md`** — the spoof spec + state of knowledge.
 - **`sessions/README.md`** — the session ledger (physical sessions run / planned); **`sessions/PLAYBOOK.md`** — how to run an on-bike one; **`DEV-PLAYBOOK.md`** — the desk dev loop (how we slice/prove/ship software); **`USERS-PLAYBOOK.md`** — how we work with testers/users/customers. The DEV/USERS playbooks are **living** — extend them as we learn.
