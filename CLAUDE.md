@@ -10,7 +10,7 @@ Read a power meter → correct it → re-broadcast it so a consumer accepts it a
 
 - **`code/findings/decisions.md`** — append-only chronological log; the source of truth for what's decided/found (every numeric value, refuted hypothesis, "it works now").
 - **`code/findings/phase-0-report.md`** — the spoof spec + state of knowledge.
-- **`sessions/README.md`** — the session ledger (physical sessions run / planned); **`sessions/PLAYBOOK.md`** — how to run one.
+- **`sessions/README.md`** — the session ledger (physical sessions run / planned); **`sessions/PLAYBOOK.md`** — how to run an on-bike one; **`DEV-PLAYBOOK.md`** — the desk dev loop (how we slice/prove/ship software together; living — extend it).
 - **Protocol/feature references in `code/findings/`** — `shifter-ble-protocol.md`, `stages-app-config.md`, `meter-to-meter-proxy.md`, `zwift-controls-research.md`, `forward-plan.md` (backlog).
 - The numbered root docs (`01-…`–`10-…`, `HANDOFF.md`, `START-HERE.md`) are the **pre-pivot brief** — useful background, but superseded by the findings docs above (per `README.md`).
 
@@ -92,6 +92,10 @@ as its own.** Both mirror a `ProxyCore` (`source → correction → target`) wit
 references for the shifter, FTMS, and app surfaces. Nothing is built ahead of the capture that grounds it.
 
 ## Engineering disciplines
+
+These are the **invariants** (non-negotiable). For the *working process* that applies them — how to
+slice a feature, prove it, and ship it across small PRs — see **[`DEV-PLAYBOOK.md`](DEV-PLAYBOOK.md)**,
+and fold each session's lessons back into it so the next session starts ahead.
 
 Invariants this project depends on — follow them:
 
