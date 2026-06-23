@@ -160,13 +160,31 @@ void setup() {
     // Load the user's saved config FIRST (NVS, set from the web UI) so the BLE stack + crank come up
     // under the configured identity. Defaults to compile-time Config when nothing is stored.
     RuntimeConfig cfg = ConfigStore::load();
+#if defined(CORRECTOR_DEMO) && CORRECTOR_DEMO
+    // Bench/demo only (the *-corrector-bench env): seed a CORRECTOR config so the corrector identity +
+    // run-mode correction can be validated on real hardware before the calibration wizard (M4) exists.
+    // A flat 1.10× curve makes the rebroadcast easy to verify (200 W in → 220 W out). Never in prod.
+    cfg.mode = ProxyMode::Corrector;
+    cfg.spoofName = Config::CORRECTOR_NAME;
+    cfg.curve = CorrectionCurve{};
+    cfg.curve.add(50.0f, 1.10f);
+    cfg.curve.add(600.0f, 1.10f);
+#endif
 
-    NimBLEDevice::init(cfg.spoofName.c_str());  // the device name = the spoofed crank identity
+    NimBLEDevice::init(cfg.spoofName.c_str());  // the device name = our advertised identity
+    crank.setMode(cfg.mode);                    // SPOOF crank vs CORRECTOR (own honest CPS identity)
     crank.setIdentity(cfg.spoofName, cfg.spoofSerial);  // advertised name + DIS serial
 
-    // Single-sided ×2 folds into the correction (a surviving R crank / single-sided meter → total).
-    proxy.setCorrection(Correction{Config::CORRECTION_SCALE * (cfg.singleSidedDouble ? 2.0f : 1.0f),
-                                   Config::CORRECTION_OFFSET});
+    // The correction between source and crank: CORRECTOR applies the fitted calibration curve
+    // (DUT → reference); otherwise the linear path + single-sided ×2 (a surviving R crank → total).
+    Correction corr;
+    if (cfg.mode == ProxyMode::Corrector && !cfg.curve.empty()) {
+        corr.curve = cfg.curve;
+    } else {
+        corr.scale = Config::CORRECTION_SCALE * (cfg.singleSidedDouble ? 2.0f : 1.0f);
+        corr.offset = Config::CORRECTION_OFFSET;
+    }
+    proxy.setCorrection(corr);
 #if !USE_MOCK_METER
     meter.setMatch(cfg.meterAddress, cfg.meterNameFilter);
     meter.setSpoofName(cfg.spoofName);  // keep the loop guard in sync with the runtime identity
@@ -174,7 +192,8 @@ void setup() {
 
     proxy.begin();  // crank advertises; source begins (scan, or nothing for mock)
 
-    Serial.printf("[sb20proxy] spoofing '%s'; source=%s%s%s\n", cfg.spoofName.c_str(),
+    Serial.printf("[sb20proxy] %s as '%s'; source=%s%s%s\n",
+                  cfg.mode == ProxyMode::Corrector ? "corrector" : "spoofing", cfg.spoofName.c_str(),
                   USE_MOCK_METER ? "MOCK"
                                  : (cfg.meterAddress.empty() ? cfg.meterNameFilter.c_str()
                                                              : cfg.meterAddress.c_str()),

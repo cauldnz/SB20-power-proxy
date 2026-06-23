@@ -31,6 +31,14 @@ struct Config {
     // 345 = 172.5 mm — the real crank's captured Request-Crank-Length value (`20 05 59 01`).
     static constexpr uint16_t    SPOOF_CRANK_LENGTH_HALFMM = 345;
 
+    // --- corrector mode: our OWN, honest identity (NOT a spoof). A head unit / Garmin accepts any
+    //     standard CPS meter, so the meter-to-meter corrector advertises as itself — no Stages
+    //     proprietary service, generic DIS. The advertised name is runtime (RuntimeConfig.spoofName,
+    //     set by the calibration wizard); these are the fixed DIS strings + the default name. ---
+    static constexpr const char* CORRECTOR_NAME         = "SB20 Corrector";
+    static constexpr const char* CORRECTOR_MANUFACTURER = "SB20Proxy";
+    static constexpr const char* CORRECTOR_MODEL        = "Corrector";
+
     // Stages proprietary service + chars (captured GATT) — advertised + exposed so the SB20
     // recognises us as a genuine Stages crank. (Contents still opaque; presence is the point.)
     static constexpr const char* STAGES_SVC       = "d445fe01-d139-9a5d-6707-1cc6a58b6303";
