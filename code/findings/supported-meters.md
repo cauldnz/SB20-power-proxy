@@ -7,10 +7,17 @@ the real CPS codec ([`code/src/sb20proxy/ble/cps.py`](../src/sb20proxy/ble/cps.p
 [`captures/`](captures/) — **not** vendor marketing. Real-data-first: a meter is only **Verified** once
 we hold its real frames.
 
-> **The one hard requirement: the meter must broadcast over *Bluetooth LE* as a standard Cycling Power
-> Service (`0x1818`) device.** We read BLE, not ANT+. Most modern pedal/crank meters dual-broadcast
-> (BLE + ANT+) — that's fine, we use the BLE side and your watch/head-unit can keep the ANT+ side. A
-> meter that is **ANT+-only** cannot be used. This is the single most important screening question.
+> **Product scope: power-meter PEDALS.** This product is *power-meter pedals becoming the crank
+> replacement* — the SB20 reads your pedals instead of its (inaccurate / dead / dying) Stages crank. So
+> the supported source is a **power-meter pedal set**; testers must have one. Crank-arm and spider
+> meters are **out of scope** for this product (a separate, experimental *meter-to-meter corrector* mode
+> handles a non-pedal source — see [`meter-to-meter-proxy.md`](meter-to-meter-proxy.md) — but that is
+> not the SB20 pedal-replacement product or the pre-beta).
+>
+> **The hard technical requirement: the pedals must broadcast over *Bluetooth LE* as a standard Cycling
+> Power Service (`0x1818`) device.** We read BLE, not ANT+. Most power pedals dual-broadcast (BLE + ANT+)
+> — fine, we use the BLE side and your watch/head-unit keeps the ANT+ side. **ANT+-only** pedals cannot
+> be used. Pedals + Bluetooth are the two screening musts.
 
 ## What the proxy actually requires
 
@@ -41,22 +48,27 @@ The proxy is a BLE *central* that subscribes to the source meter's Cycling Power
 
 These two are decode-pinned by committed golden vectors; their flag layouts are exercised on every CI run.
 
-### 🟢 Expected to work — standard BLE CPS, pending a tester capture to promote to Verified
+### 🟢 Expected to work — power pedals, standard BLE CPS, pending a tester capture to promote to Verified
 
-Mainstream BLE power meters expose the exact `0x1818`/`0x2A63` surface above. We have **no committed
+Mainstream **power-meter pedals** expose the exact `0x1818`/`0x2A63` surface above. We have **no committed
 frames yet**, so we list them as *expected* and want one `/diag` capture each to promote them (and lock
-golden vectors). Recruiting a spread of these is a primary beta goal.
+golden vectors). Recruiting a spread of these pedal brands is a primary beta goal.
 
-| Meter | Form | Sidedness | Watch-outs |
-|---|---|---|---|
-| **Favero Assioma Duo-Shi** | pedal-axle (own cranks) | dual / total | Same firmware family as Assioma — high confidence. |
-| **Garmin Rally** (RS / RK / XC) | pedal | single (left-only SKUs) → ×2; dual → no | Garmin's CPS is standard; single-sided SKUs are common — confirm sidedness when screening. |
-| **Wahoo Powrlink Zero** | pedal | single or dual | Standard CPS. Single → ×2. |
-| **4iiii Precision** | crank-arm (left) | single → ×2 | Left-arm meter; almost always needs ×2. |
-| **Stages** (Gen 2/3, L or L/R) | crank-arm | L-only → ×2; L/R → total | Same vendor family as our Verified crank. |
-| **Quarq / SRAM** | spider/chainring | total | No doubling. |
-| **Power2Max** | spider | total | No doubling. |
-| **Shimano** (R9200P etc.) | crank | total | Standard CPS; total. |
+| Pedals | Sidedness | Watch-outs |
+|---|---|---|
+| **Favero Assioma Duo-Shi** (pedal-axle) | dual / total | Same firmware family as Assioma — high confidence. |
+| **Garmin Rally** (RS / RK / XC) | single (left-only SKUs) → ×2; dual → no | Garmin's CPS is standard; single-sided SKUs common — confirm sidedness when screening. |
+| **Wahoo Powrlink Zero** | single or dual | Standard CPS. Single → ×2. |
+| **SRM EXAKT** | dual / total | Standard CPS; total. |
+| **Magene PES P505** | dual / total | Standard CPS; confirm on first capture. |
+
+### ❌ Out of scope for this product — crank-arm & spider meters
+
+The SB20 product is pedals → crank replacement, so a **crank-arm** meter (4iiii, Stages, Shimano) or a
+**spider/chainring** meter (Quarq/SRAM, Power2Max) is **not** what we recruit or support here — even
+though the firmware *could* read its BLE CPS. (Reading a non-pedal meter and rebroadcasting it corrected
+is the separate, experimental **meter-to-meter corrector** mode — [`meter-to-meter-proxy.md`](meter-to-meter-proxy.md)
+— not the SB20 pedal-replacement product.) Decline these at screening, kindly, with the reason.
 
 > "Expected" ≠ tested. We don't claim a meter works until we hold its frames — that's the whole point
 > of the tester loop. Screen for these, ship, capture, promote.

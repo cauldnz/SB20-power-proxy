@@ -18,8 +18,8 @@ bad news delivered early and plainly. Keep them async; never require a live sess
 > **What I'll collect:** just your power-meter data + ride power/cadence — no personal or location data.
 > Anything I keep to add meter support is anonymised. All opt-in, and you can stop any time.
 >
-> If you're good with that, reply "yes" and I'll get a board set up for your **[meter / crank-rescue]**
-> setup. Anything change since the form (meter model, firmware)?
+> If you're good with that, reply "yes" and I'll get a device set up for your **[pedals / crank-rescue]**
+> setup. Anything change since the form (pedal model, firmware)?
 
 ## 2 · Board on the way / ready
 

@@ -23,16 +23,20 @@ Four rules above the detail:
 
 ## 1 · Who this product is for (and who it isn't)
 
-Two real jobs, two different people — pitch and screen to the *job*, not "anyone with an SB20":
-- **Accuracy-seekers** — own a power meter they trust (Assioma, Rally, Powrlink, 4iiii…) and are bothered
-  that the SB20 reads ~11% off it. Hook: *the SB20 reads your meter, natively, in erg.*
-- **Crank-rescue** — a dead or dying Stages crank. Hook: *your bike works again* — unambiguous, the most
-  motivated, usually the most engaged.
-- **Long-tail** (later): shifter/button support. Don't lead with it.
+The product is **power-meter pedals becoming the crank replacement** — so the one non-negotiable is that
+the user owns a **Bluetooth power-meter pedal set**. Two real jobs, two different people; pitch and screen
+to the *job*, not "anyone with an SB20":
+- **Accuracy-seekers** — own power pedals they trust (Assioma, Rally, Powrlink, SRM EXAKT…) and are
+  bothered that the SB20 reads ~11% off them. Hook: *the SB20 reads your pedals, natively, in erg.*
+- **Crank-rescue** — a dead or dying Stages crank, replaced by their **pedals**. Hook: *your bike works
+  again* — unambiguous, the most motivated, usually the most engaged.
+- **Tease the roadmap, don't lead with it:** erg-target control from the SB20 shifter buttons, Zwift
+  integration. They build excitement and shape what's next — but pedals first; promise only what's shipped.
 
-Screen *out* honestly too: ANT+-only meters (we read BLE), people who want a polished consumer product
-today, anyone uncomfortable that this is experimental and unaffiliated with Stages/Favero. A bad-fit
-user is a frustrated user and a support sink — saying "not yet, here's why" protects both sides.
+Screen *out* honestly too: **no power pedals** (crank-arm / spider meters are out of scope for this
+product), **ANT+-only** pedals (we read BLE), people who want a polished consumer product today, anyone
+uncomfortable that this is experimental and unaffiliated with Stages/Favero. A bad-fit user is a
+frustrated user and a support sink — "not yet, here's why" protects both sides.
 
 ## 2 · Recruit & set expectations at the door
 
