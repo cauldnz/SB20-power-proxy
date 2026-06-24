@@ -18,9 +18,14 @@ enum class OledMode { Portal, Connecting, Connected };
 // cadence therefore SHARE row 3 ("230W 85rpm") so the rebroadcast cadence is actually visible.
 inline std::array<std::string, 4> formatOledLines(OledMode mode, const std::string& ip,
                                                   int watts, int cadenceRpm, int rssi = 0,
-                                                  int balancePct = -1) {
+                                                  int balancePct = -1,
+                                                  const std::string& setupPin = std::string()) {
     switch (mode) {
         case OledMode::Portal:
+            // When the AP is WPA2-protected the rider needs the SSID + PIN to join (the captive portal
+            // then auto-pops, so the IP falls off the bottom). Open AP -> the old "join + URL" layout.
+            if (!setupPin.empty())
+                return {"SB20 SETUP", "SB20-Setup", "PIN " + setupPin, "192.168.4.1"};
             return {"SB20 SETUP", "join wifi:", "SB20-Setup", "192.168.4.1"};
         case OledMode::Connecting:
             return {"SB20 PROXY", "connecting", std::string(), std::string()};

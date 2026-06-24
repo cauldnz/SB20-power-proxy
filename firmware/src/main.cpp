@@ -121,17 +121,19 @@ static void oledTask(void*) {
     for (;;) {
         OledMode mode = OledMode::Connected;
         std::string ip;
+        std::string setupPin;
         int rssi = 0;
 #if USE_WIFI
         mode = wifi.inPortal() ? OledMode::Portal
              : (wifi.isUp() ? OledMode::Connected : OledMode::Connecting);
         ip = std::string(WiFi.localIP().toString().c_str());
         rssi = wifi.isUp() ? WiFi.RSSI() : 0;
+        if (mode == OledMode::Portal) setupPin = wifi.setupPin();  // shown so the rider can join the AP
 #endif
         const int balPct = proxy.lastSource().balance_half_pct >= 0
                                ? proxy.lastSource().balance_half_pct / 2 : -1;  // left %, -1 = none
         auto lines = formatOledLines(mode, ip, proxy.lastOutput().power_w,
-                                     proxy.lastOutput().cadence_rpm, rssi, balPct);
+                                     proxy.lastOutput().cadence_rpm, rssi, balPct, setupPin);
         if (lines != last) {
             oled.drawLines(lines);
             last = lines;

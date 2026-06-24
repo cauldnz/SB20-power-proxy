@@ -27,6 +27,7 @@
 #include "PerfStats.h"
 #include "ProxyCore.h"
 #include "RuntimeConfig.h"
+#include "SetupPin.h"
 #include "Shifter.h"
 #include "Status.h"
 #include "StatusLed.h"
@@ -1779,10 +1780,39 @@ void test_ota_rejects_size_mismatch_and_bad_manifest() {
     }
 }
 
+// --- setup-AP PIN derivation + OLED portal row ----------------------------------------------------
+
+void test_setup_pin_is_eight_digits() {
+    const uint8_t mac[6] = {0xAA, 0xBB, 0xCC, 0x11, 0x22, 0x33};
+    const std::string pin = deriveSetupPin(mac, 6, "secret");
+    TEST_ASSERT_EQUAL_INT(8, (int)pin.size());
+    for (char c : pin) TEST_ASSERT_TRUE(c >= '0' && c <= '9');  // WPA2-typable, digits only
+}
+
+void test_setup_pin_deterministic_and_sensitive() {
+    const uint8_t mac[6] = {0xAA, 0xBB, 0xCC, 0x11, 0x22, 0x33};
+    const uint8_t mac2[6] = {0xAA, 0xBB, 0xCC, 0x11, 0x22, 0x34};  // one byte different
+    TEST_ASSERT_EQUAL_STRING(deriveSetupPin(mac, 6, "secret").c_str(),
+                             deriveSetupPin(mac, 6, "secret").c_str());  // deterministic
+    TEST_ASSERT_TRUE(deriveSetupPin(mac, 6, "secret") != deriveSetupPin(mac2, 6, "secret"));  // per-MAC
+    TEST_ASSERT_TRUE(deriveSetupPin(mac, 6, "secret") != deriveSetupPin(mac, 6, "other"));   // per-secret
+}
+
+void test_oled_portal_shows_pin_when_present() {
+    auto withPin = formatOledLines(OledMode::Portal, "", 0, -1, 0, -1, "12345678");
+    TEST_ASSERT_EQUAL_STRING("SB20-Setup", withPin[1].c_str());
+    TEST_ASSERT_EQUAL_STRING("PIN 12345678", withPin[2].c_str());
+    auto noPin = formatOledLines(OledMode::Portal, "", 0, -1, 0, -1, "");  // open-AP fallback layout
+    TEST_ASSERT_EQUAL_STRING("join wifi:", noPin[1].c_str());
+}
+
 // --- runner -------------------------------------------------------------------
 
 int runUnityTests() {
     UNITY_BEGIN();
+    RUN_TEST(test_setup_pin_is_eight_digits);
+    RUN_TEST(test_setup_pin_deterministic_and_sensitive);
+    RUN_TEST(test_oled_portal_shows_pin_when_present);
     RUN_TEST(test_request_authority_extracts_host);
     RUN_TEST(test_same_origin_allows_tools_and_self);
     RUN_TEST(test_same_origin_blocks_cross_site);
