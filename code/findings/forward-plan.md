@@ -515,3 +515,27 @@ From `phase-0-report.md` §5 — track, don't block on:
    Phase 1B (the keystone pairing proof) rides along.
 4. **Decision point after the bike:** Session G Part C result decides whether Track C (ESP32/BLE)
    opens. Phase 1B result greenlights Phase 2.
+
+---
+
+## 10. SB20 spoof — make the app's "Zero Reset" actually zero the Assioma (session 8)
+
+Session 8 closed the calibrate **handshake** — the Stages app's zero-reset now *completes* against the spoof
+(`decisions.md` 2026-06-25) — by replaying the real crank's `0x10` reply (company-id **442** + the captured
+mfg-data, which encodes a **static** `901/951`). That's **cosmetically complete but functionally a no-op**:
+the button finishes, but nothing is actually calibrated.
+
+**Owner intent (2026-06-25):** keep the static reply (we pass the Assioma's real power straight through, so
+the displayed offset is moot, and out-of-normal values risk erroring the app). The worthwhile feature is to
+make the app's **"Zero Reset" perform a real zero-offset on the Assioma**:
+- When the SB20/Stages app writes Enhanced Offset Compensation `0x10` to our spoof's CP, **forward an
+  offset-compensation/zero command to the real Assioma** over the existing BLE-central link
+  (`BleMeterClient`) — the Assioma exposes a Cycling Power Control Point (`0x2A66`); issue its Start/Enhanced
+  Offset Compensation (`0x0C`/`0x10`) and read back the result.
+- Reply to the SB20 with the real-crank-shaped success (keep company-id 442 + a sane offset/mfg-data so the
+  app doesn't error), ideally **gated on the Assioma's real zero completing**.
+- **Real-data-first:** capture the Assioma's own `0x10`/`0x0C` reply first
+  (`06_capture_ble.py --control-point … --name ASSIOMA…`) to ground the forwarded command + the success
+  shape **before** building it.
+- **Care:** the Assioma must be **unloaded/still** during the zero (cranks stationary), and any offset
+  surfaced to the app must stay within the range the Stages app accepts.

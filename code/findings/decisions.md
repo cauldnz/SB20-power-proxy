@@ -1813,3 +1813,11 @@ grounded in captured bytes**. Run on the bike via the own-unique-ID plan. Narrat
   non-standard path for crank length** (matches session 3's A2 "app bypasses standard CP"). Doesn't affect
   the calibrate (G2) or power (the Assioma supplies watts). → **backlog:** capture the app's crank-length
   write (likely the proprietary `d445fe02`/`fe02` char) and implement it for a fully-faithful spoof.
+- **Owner decision (static cal value — keep it):** replaying the captured `901/951` verbatim is **fine,
+  even preferable.** We pass the **Assioma's real power straight through** to the SB20, so the displayed
+  calibration offset is moot — and returning *out-of-normal* values could make the Stages app **error**. So
+  do **not** synthesize a "dynamic" offset. **The meaningful follow-up instead:** make the app's
+  **"Zero Reset" actually perform a real zero-offset on the Assioma** — when the SB20/app writes `0x10` to
+  our spoof's CP, **propagate an offset-compensation/zero command to the real Assioma** over the existing
+  BLE-central link so the calibrate button does something real, not just complete cosmetically. → backlog,
+  `forward-plan.md` §10.
