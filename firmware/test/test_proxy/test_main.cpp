@@ -18,6 +18,7 @@
 #include "HttpSecurity.h"
 #include "MeterMatch.h"
 #include "OtaManifest.h"
+#include "OtaUpdater.h"
 #include "OtaVerify.h"
 #include "LogBuffer.h"
 #include "MockCrank.h"
@@ -1646,6 +1647,138 @@ void test_ed25519_rejects_tampering() {
     TEST_ASSERT_FALSE(verifyImageSignature(digest.data(), sig.data(), badPub.data()));
 }
 
+// --- signed-OTA updater orchestration (pure, with fakes) -------------------------------------------
+namespace {
+struct FakeFetcher : IFirmwareFetcher {
+    std::string manifestUrl, manifestBody, imageUrl;
+    std::vector<uint8_t> image;
+    bool manifestOk = true, imageOk = true;
+    bool fetchText(const std::string& url, std::string& out) override {
+        if (!manifestOk || url != manifestUrl) return false;
+        out = manifestBody;
+        return true;
+    }
+    bool fetchStream(const std::string& url,
+                     const std::function<bool(const uint8_t*, size_t)>& sink) override {
+        if (!imageOk || url != imageUrl) return false;
+        const size_t mid = image.size() / 2;  // two chunks, to exercise streaming
+        if (!sink(image.data(), mid)) return false;
+        if (!sink(image.data() + mid, image.size() - mid)) return false;
+        return true;
+    }
+};
+struct FakeWriter : IFirmwareWriter {
+    std::vector<uint8_t> written;
+    bool began = false, ended = false, aborted = false;
+    bool failBegin = false, failEnd = false;
+    bool begin(size_t) override { began = true; return !failBegin; }
+    bool write(const uint8_t* d, size_t n) override {
+        written.insert(written.end(), d, d + n);
+        return true;
+    }
+    bool end() override { ended = true; return !failEnd; }
+    void abort() override { aborted = true; }
+};
+std::string otaManifest(const std::string& version, const std::string& url, long size,
+                        const char* digestHex, const char* sigHex) {
+    return "{\"version\":\"" + version + "\",\"url\":\"" + url + "\",\"size\":" +
+           std::to_string(size) + ",\"blake2b\":\"" + digestHex + "\",\"sig\":\"" + sigHex + "\"}";
+}
+// Wire a fetcher to serve the golden image at a fixed pair of URLs.
+void wireGolden(FakeFetcher& f, const std::string& manifestBody) {
+    f.manifestUrl = "https://ota.local/manifest.json";
+    f.imageUrl = "https://ota.local/fw.bin";
+    f.manifestBody = manifestBody;
+    f.image = testImage();
+}
+}  // namespace
+
+void test_ota_applies_a_valid_signed_update() {
+    std::vector<uint8_t> pub;
+    hexDecode(kGoldenPubKey, pub);
+    FakeFetcher f;
+    FakeWriter w;
+    wireGolden(f, otaManifest("0.2.0", "https://ota.local/fw.bin", 256, kGoldenDigest, kGoldenSig));
+    OtaUpdater up(pub.data(), f, w);
+    const OtaResult r = up.checkAndApply(f.manifestUrl, "0.1.0");
+    TEST_ASSERT_EQUAL_INT((int)OtaResult::Applied, (int)r);
+    TEST_ASSERT_TRUE(w.ended);
+    TEST_ASSERT_FALSE(w.aborted);
+    TEST_ASSERT_EQUAL_INT(256, (int)w.written.size());
+}
+
+void test_ota_skips_when_not_newer() {
+    std::vector<uint8_t> pub;
+    hexDecode(kGoldenPubKey, pub);
+    FakeFetcher f;
+    FakeWriter w;
+    wireGolden(f, otaManifest("0.2.0", "https://ota.local/fw.bin", 256, kGoldenDigest, kGoldenSig));
+    OtaUpdater up(pub.data(), f, w);
+    const OtaResult r = up.checkAndApply(f.manifestUrl, "0.2.0");  // already on 0.2.0
+    TEST_ASSERT_EQUAL_INT((int)OtaResult::UpToDate, (int)r);
+    TEST_ASSERT_FALSE(w.began);  // never touched the flash
+}
+
+void test_ota_rejects_a_tampered_image() {
+    std::vector<uint8_t> pub;
+    hexDecode(kGoldenPubKey, pub);
+    FakeFetcher f;
+    FakeWriter w;
+    wireGolden(f, otaManifest("0.2.0", "https://ota.local/fw.bin", 256, kGoldenDigest, kGoldenSig));
+    f.image[42] ^= 0x01;  // flip a byte -> digest won't match the manifest
+    OtaUpdater up(pub.data(), f, w);
+    const OtaResult r = up.checkAndApply(f.manifestUrl, "0.1.0");
+    TEST_ASSERT_EQUAL_INT((int)OtaResult::HashMismatch, (int)r);
+    TEST_ASSERT_TRUE(w.aborted);
+    TEST_ASSERT_FALSE(w.ended);
+}
+
+void test_ota_rejects_a_bad_signature() {
+    std::vector<uint8_t> pub;
+    hexDecode(kGoldenPubKey, pub);
+    // Valid digest for the (untampered) image, but a corrupted signature.
+    std::string badSig(kGoldenSig);
+    badSig[0] = (badSig[0] == 'a') ? 'b' : 'a';
+    FakeFetcher f;
+    FakeWriter w;
+    wireGolden(f, otaManifest("0.2.0", "https://ota.local/fw.bin", 256, kGoldenDigest, badSig.c_str()));
+    OtaUpdater up(pub.data(), f, w);
+    const OtaResult r = up.checkAndApply(f.manifestUrl, "0.1.0");
+    TEST_ASSERT_EQUAL_INT((int)OtaResult::BadSignature, (int)r);
+    TEST_ASSERT_TRUE(w.aborted);
+    TEST_ASSERT_FALSE(w.ended);
+}
+
+void test_ota_rejects_size_mismatch_and_bad_manifest() {
+    std::vector<uint8_t> pub;
+    hexDecode(kGoldenPubKey, pub);
+    {  // manifest claims a different size than the stream delivers
+        FakeFetcher f;
+        FakeWriter w;
+        wireGolden(f, otaManifest("0.2.0", "https://ota.local/fw.bin", 255, kGoldenDigest, kGoldenSig));
+        OtaUpdater up(pub.data(), f, w);
+        const OtaResult r = up.checkAndApply(f.manifestUrl, "0.1.0");
+        TEST_ASSERT_EQUAL_INT((int)OtaResult::SizeMismatch, (int)r);
+        TEST_ASSERT_TRUE(w.aborted);
+    }
+    {  // garbage manifest -> never flashes
+        FakeFetcher f;
+        FakeWriter w;
+        wireGolden(f, "not a manifest");
+        OtaUpdater up(pub.data(), f, w);
+        TEST_ASSERT_EQUAL_INT((int)OtaResult::BadManifest, (int)up.checkAndApply(f.manifestUrl, "0.1.0"));
+        TEST_ASSERT_FALSE(w.began);
+    }
+    {  // manifest fetch fails outright
+        FakeFetcher f;
+        FakeWriter w;
+        wireGolden(f, otaManifest("0.2.0", "https://ota.local/fw.bin", 256, kGoldenDigest, kGoldenSig));
+        f.manifestOk = false;
+        OtaUpdater up(pub.data(), f, w);
+        TEST_ASSERT_EQUAL_INT((int)OtaResult::NoManifest, (int)up.checkAndApply(f.manifestUrl, "0.1.0"));
+    }
+}
+
 // --- runner -------------------------------------------------------------------
 
 int runUnityTests() {
@@ -1660,6 +1793,11 @@ int runUnityTests() {
     RUN_TEST(test_blake2b_matches_python_digest);
     RUN_TEST(test_ed25519_verifies_python_signature);
     RUN_TEST(test_ed25519_rejects_tampering);
+    RUN_TEST(test_ota_applies_a_valid_signed_update);
+    RUN_TEST(test_ota_skips_when_not_newer);
+    RUN_TEST(test_ota_rejects_a_tampered_image);
+    RUN_TEST(test_ota_rejects_a_bad_signature);
+    RUN_TEST(test_ota_rejects_size_mismatch_and_bad_manifest);
     RUN_TEST(test_correction_scale_offset);
     RUN_TEST(test_correction_clamps_at_zero);
     RUN_TEST(test_curve_empty_is_unity);
