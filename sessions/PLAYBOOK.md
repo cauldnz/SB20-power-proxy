@@ -31,6 +31,14 @@ This pairs with CLAUDE.md → *Session plans & the session ledger* (the doc/stat
   go/no-go that fails early saves the rest of the session. *(In session 2 "does the SB20 display the
   relayed Assioma watts at all?" was the first thing run — once it passed, the protocol-capture work
   was all upside; had it failed, the rest of the plan was moot.)*
+- **Audit placeholders/unknowns at plan time; order gates so the grounding capture comes first.** If a
+  value the test depends on is a flagged placeholder or "unconfirmed" (e.g. a spoof field hard-set to
+  `0x0000`), the dependent test is *predetermined to fail until a capture grounds it* — running a "does it
+  work?" gate before that capture only confirms the obvious and burns rider patience. List every such
+  unknown in the spoof/correction surface; schedule the **grounding capture strictly before** any gate
+  that consumes it, and frame the dependent gate as a *post-reflash confirmation*, not a standalone live
+  test. *(Session 8: `SPOOF_MFG_COMPANY_ID = 0x0000` made the G2 calibrate-spin foreseeable, yet G2 was
+  run before the G1 capture that grounded it — a wasted cycle on the rider's clock.)*
 - **Batch by physical setup.** Group everything that needs the same rig state (a battery pulled, a given
   pairing) so the rig changes as few times as possible. Each battery swap / re-pair is a patience tax.
 - **Write each step as Plan**: *goal · exact action · expected result (explicit pass/fail) · what to
@@ -60,6 +68,14 @@ rider starts:
   superseded branch wastes the session and can ship a wrong value (the ANT+ offset `903` once leaked onto
   the BLE crank, which must answer `0`). Local ESP32 compile is the pre-flash gate; `curl /` should show a
   **low uptime** after the flash (it just rebooted) and `source:searching`.
+- [ ] **The build + flash toolchain actually RUNS on THIS machine — verify by building + flashing once, at
+  the desk.** Work moves between the desk and the bike laptop (different machines), and a Python upgrade can
+  silently orphan the toolchain. Confirm `pio`/`platformio` runs, an ESP32 toolchain is cached, a host
+  compiler exists for `pio test -e native`, **and** an OTA upload reaches the board — *before* the rider is
+  at the bike. Pin the environment in **committed config** (a requirements/lock + a provisioning script for
+  PlatformIO + the BLE venv) so any machine reaches a known-good state. *(Session 8: the bike laptop had no
+  PlatformIO — Py 3.14 orphaned it, empty `~/.platformio` — and no `gcc` → ~30 min of mid-session bring-up;
+  the exact "does the tool run?" failure step 1 exists to prevent.)*
 - [ ] **Board near the AP — check RSSI before OTA.** OTA gets unreliable below ~**−72 dBm** on the C3
   (`WiFi -XX` on the OLED / `rssi` in `curl /`). `flash.ps1` warns and retries; if it still drops, move
   the board closer or USB-flash. Don't burn rider time on a flaky OTA you could see coming.
@@ -230,6 +246,13 @@ don't re-learn each one on the rider's time. Citations are in *(parens)*.
   (RSSI pre-flight + auto-retry) and `firmware/BENCH-FLASH.md`. *(decisions.md 2026-06-17; `flash.ps1`
   lines 40–59. Conversely, a desk OTA at −73 dBm **succeeded** — the threshold is real but close, so
   check, don't assume.)*
+- **espota needs an explicit host IP on a multi-NIC machine.** PlatformIO's `-t upload` espota integration
+  auto-picked host_ip `0.0.0.0` on a laptop with WiFi + WSL/Hyper-V vEthernet + link-local interfaces → the
+  board had nowhere to connect back to → **"No response from device"** (the UDP invitation is sent, but the
+  reverse TCP never lands). Fix: call `espota.py` directly with `-I <host-lan-ip>` (the interface on the
+  board's subnet); `flash.ps1` should pin it rather than relying on auto-detect. *(Session 8:
+  `espota.py -i 192.168.1.165 -I 192.168.1.223 -p 3232 -f firmware.bin` succeeded where
+  `pio run -e …-oled-live-ota -t upload` failed.)*
 - **The C3 doesn't roam between WiFi APs — power-cycle it to re-associate with the nearest one.** It stays
   bonded to whatever AP it first joined; if the board or the rider then moves into another AP's coverage, it
   clings to the now-distant one — RSSI craters (**−89 dBm** seen), `/` and `/log` time out, OTA is hopeless,

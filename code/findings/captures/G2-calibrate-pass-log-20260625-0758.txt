@@ -1,0 +1,16 @@
+[wifi] joining 'Donnie Boon'
+[meter] found 'ASSIOMA22428R' cc:d2:a0:d6:5c:9d
+[wifi] connected; status at http://192.168.1.165/
+[meter] disconnected
+[meter] found 'ASSIOMA22428R' cc:d2:a0:d6:5c:9d
+[meter] disconnected
+[meter] found 'ASSIOMA17039L' e6:20:90:8c:f3:fe
+[srv] connect from e4:aa:5a:d6:0e:d4
+[meter] cps flags=0x0023 cadence=yes balanceHalfPct=100 23000000641a029bfc
+[srv] disconnect reason=531
+[srv] connect from e4:aa:5a:d6:0e:d4
+[prop fe02] write bfda1853
+[cp] write 10
+[srv] disconnect reason=531
+[srv] connect from e4:aa:5a:d6:0e:d4
+[prop fe02] write bfda1853
