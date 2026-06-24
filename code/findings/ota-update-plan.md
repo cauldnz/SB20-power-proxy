@@ -1,9 +1,11 @@
 # OTA / firmware-update security plan — push → signed HTTPS pull
 
-**Status: P0 done; decisions locked; building toward the pull path (2026-06-24).** Owner-driven from the
-2026-06-24 security review (`Vuln 1`): the device exposed **unauthenticated, unsigned** firmware flashing on
-the LAN. P0 (lockdown) + Vuln 2 (web CSRF guard) have shipped; this doc is the plan for the **internet**
-update + log-upload paths the pre-beta needs, with the owner's decisions folded in below.
+**Status: P0–P2 + SoftAP PIN SHIPPED; P3/P4 gated on the back end + a signing key (2026-06-24).** Owner-driven
+from the 2026-06-24 security review (`Vuln 1`): the device exposed **unauthenticated, unsigned** firmware
+flashing on the LAN. The lockdown (P0), CSRF guard (Vuln 2), CI gate (P0.5), the host-tested signed-OTA core
++ tooling (P1), the fetch/verify/apply updater (P2), and the WPA2 setup-AP PIN have all landed. Remaining:
+wire `POST /ota/check` (P3) + log upload (P4), both blocked on standing up the unRAID back end + generating
+the offline signing key. Owner decisions folded in below.
 
 > **One-line goal:** the device only ever runs firmware **we signed**, fetched by the **device itself**
 > over a trusted channel — and there is **no inbound flash surface** for a LAN/CSRF attacker to abuse.
@@ -33,13 +35,14 @@ protecting is **code execution on the device** (→ it holds the WiFi PSK and is
         └────────────────────────────▶ HTTPS GET firmware.bin (stream → Update.write,
                                           hashing as it goes)
                                               ▼
-                            verify  SHA-256(image)==manifest.sha256
-                                 && ECDSA-P256(sig, sha256, EMBEDDED_PUBKEY)
+                            verify  BLAKE2b(image)==manifest.blake2b
+                                 && ed25519(sig, blake2b, EMBEDDED_PUBKEY)
                                               ▼  (fail → Update.abort, stay on current image)
                                         Update.end(true) → reboot
 ```
-- **Manifest** (`manifest.json`): `{ "version": "...", "url": "https://.../firmware.bin", "sha256": "...",
-  "sig": "<base64 ECDSA-P256 over the sha256>" }`. Small, cacheable, the only thing polled.
+- **Manifest** (`manifest.json`): `{ "version": "...", "url": "https://.../firmware.bin", "size": …,
+  "blake2b": "<128 hex>", "sig": "<128 hex ed25519 over the digest>" }`. Small, cacheable, the only thing
+  polled. (Implemented — `sb20proxy.ota.sign.build_manifest`; parsed by `OtaManifest.h`.)
 - **Source-configurable:** a base manifest URL in NVS (set via `/setup`), so the **same firmware** updates
   from **GitHub Releases** *or* the **unRAID** box — just a different URL. Default: GitHub Releases.
 - **Signed images are the core security property.** Authenticity comes from the **signature**, not the
@@ -81,12 +84,18 @@ Because the device trusts only our back end, that endpoint must exist with a **p
 - Firmware binaries can still be *built/released* on GitHub; the back end **mirrors** them so the device
   never has to trust GitHub directly.
 
-### Signing (decided: app-layer signature, ECDSA-P256)
-- **App-layer verification**, not ESP-IDF Secure Boot: compute SHA-256 of the streamed image on-device and
-  verify a **detached ECDSA-P256 signature** over that hash against a **public key compiled into the
-  firmware**, *before* `Update.end(true)`. ECDSA-P256 (or RSA-3072) is in the bundled **mbedTLS** (no new
-  dependency; SHA/RSA are HW-accelerated on the C3). Chosen over Ed25519 only because mbedTLS ships P256/RSA
-  enabled under Arduino by default; revisit if we add libsodium.
+### Signing (decided + SHIPPED: app-layer ed25519 over a BLAKE2b digest, via vendored monocypher)
+- **App-layer verification**, not ESP-IDF Secure Boot: compute the **BLAKE2b-512** digest of the streamed
+  image on-device and verify a **detached ed25519 signature** over that digest against a **public key
+  compiled into the firmware**, *before* `Update.end(true)`. **(Implemented in P1 — `OtaVerify.h` +
+  `OtaUpdater.h`; signing in `sb20proxy.ota.sign`.)**
+- **Why ed25519 + monocypher, not mbedTLS/ECDSA** (the owner's call, 2026-06-24): mbedTLS's ed25519 isn't
+  reliably enabled in the Arduino build, and — decisively — vendoring a small portable lib (**monocypher**,
+  public-domain, `firmware/lib/monocypher`) means the *same* verify code runs in the host tests and on the
+  device. That gives the security-critical check real **golden-vector coverage** (Python signs → C verifies,
+  byte-for-byte), which an mbedTLS-only path can't have until the bench. ed25519 is also simpler/harder to
+  misuse than ECDSA. (TLS for the *transport* still uses the bundled mbedTLS — only the image *signature*
+  moved to monocypher.)
 - **Why app-layer signing is enough for beta:** it gives *authenticity of the image* (the device only
   applies our-signed firmware) verified **in software, with zero eFuses** — so OTA can't be tampered into
   the device. It does **not** stop a physical attacker from USB-flashing unsigned code; that needs Secure
@@ -109,19 +118,21 @@ Because the device trusts only our back end, that endpoint must exist with a **p
 ## Phases (each = a PR; pure cores host-tested in-commit)
 - **P0 — lockdown + this doc — ✅ DONE.** Removed `POST /update` + fail-closed authenticated ArduinoOTA
   (PR #125); **Vuln 2** CSRF/same-origin guard + `/forget` POST-only (host-tested `HttpSecurity.h`, on main).
-- **P0.5 — CI gate (do first, decision-free).** Add a `USE_WIFI=1` build to CI — today CI compiles only
-  `esp32c3-supermini` (`USE_WIFI=0`), so none of the OTA/web code is CI-compiled. All P1+ firmware needs this.
-- **P1 — pure OTA core (host-tested).** Manifest parse + semver compare + the update decision; **signature
-  verification** with golden vectors (sign a known blob offline → assert verify accepts it and rejects a
-  flipped byte / wrong key). Release tooling: keygen + a `build_signed_release.py` (build → sha256 → sign →
-  emit manifest + bin). No hardware.
-- **P2 — firmware HTTPS fetch + apply seam.** `WiFiClientSecure` pinned to **our back end's root** → stream
-  manifest + image into `Update`, verify signature, apply; abort + stay on current image on any mismatch.
-  Bench-gated. Pairs with standing up the unRAID reverse proxy + Let's-Encrypt cert (see Back end above).
-- **P3 — local force route + config + surfacing.** `POST /ota/check` (force a pull; **CSRF-guarded** like the
-  other mutations), back-end base-URL in NVS via `/setup`, current-version + last-check on `/status` + OLED,
-  slow between-rides auto-poll (never during ride mode).
-- **P4 — log upload over HTTPS.** The other internet need (testers' `/diag`/`/log` → our back end), same
+- **P0.5 — CI gate — ✅ DONE (PR #127).** Added a `USE_WIFI=1` (`esp32c3-wifi`) build to CI so the OTA/web
+  code is compiled on every push (was `esp32c3-supermini`/`USE_WIFI=0` only).
+- **P1 — pure OTA core + signing tooling — ✅ DONE (PR #128).** `OtaManifest.h` (parse + semver + decision),
+  `OtaVerify.h` (ed25519 + streaming BLAKE2b via monocypher) with **golden vectors** (Python signs →
+  C verifies, + tamper rejection); `sb20proxy.ota.sign` + `scripts/ota_sign.py` (keygen / pubkey / sign →
+  manifest). Host-tested.
+- **P2 — OTA updater + HTTPS fetch/apply seam — ✅ DONE (PR #129).** `OtaUpdater.h` (pure orchestration:
+  fetch → verify → apply, every abort path host-tested with fakes) + `src/net/OtaPull.{h,cpp}`
+  (`WiFiClientSecure` pinned to our root, fail-closed; Arduino `Update`). Inert until P3 + the back end + a key.
+- **SoftAP PIN — ✅ DONE (PR #130).** WPA2-protect the setup AP — per-device 8-digit PIN on OLED, default
+  passphrase on screenless boards.
+- **P3 — local force route + config + surfacing (NEXT — needs the back end + key).** `POST /ota/check` (force
+  a pull; **CSRF-guarded** like the other mutations), back-end base-URL + embedded pubkey + pinned CA,
+  current-version + last-check on `/status` + OLED, slow between-rides auto-poll (never during ride mode).
+- **P4 — log upload over HTTPS (needs the back end).** Testers' `/diag`/`/log` → our back end, same
   pinned-TLS client; opt-in, between rides.
 - **(post-beta) production hardware hardening.** Secure Boot v2 + Flash + NVS Encryption on production
   boards; provision keys; prove on a spare board first. **Out of beta scope** per the decision above.
