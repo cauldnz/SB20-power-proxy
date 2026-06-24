@@ -28,6 +28,16 @@ $fw = $PSScriptRoot                                   # this script lives in fir
 $bin = Join-Path $fw ".pio\build\$Env\firmware.bin"
 $espota = Join-Path $env:USERPROFILE ".platformio\packages\framework-arduinoespressif32\tools\espota.py"
 
+# Authenticated push OTA: read OTA_PASSWORD from the (gitignored) ota_secret.h so espota can pass -a.
+# Single source of truth — the firmware compiles in the same value. Absent ⇒ push OTA is disabled on the
+# board (fail-closed, 2026-06-24 security review); use -Mode usb instead.
+$otaPass = $null
+$otaSecret = Join-Path $fw "ota_secret.h"
+if (Test-Path $otaSecret) {
+  $m = Select-String -Path $otaSecret -Pattern '#define\s+OTA_PASSWORD\s+"([^"]*)"'
+  if ($m) { $otaPass = $m.Matches[0].Groups[1].Value }
+}
+
 function Say($msg, $color = "Cyan") { Write-Host $msg -ForegroundColor $color }
 
 if (-not $NoBuild) {
@@ -49,14 +59,21 @@ if ($Mode -eq "ota") {
   } catch { Say "couldn't read http://$Target/ (continuing anyway)" "Yellow" }
   try { $ip = ([System.Net.Dns]::GetHostAddresses($Target) | Where-Object { $_.AddressFamily -eq 'InterNetwork' } | Select-Object -First 1).IPAddressToString } catch {}
 
+  if (-not $otaPass) {
+    Say "No ota_secret.h found - push OTA is disabled on boards built without it (fail-closed)." "Yellow"
+    Say "  If this board has no OTA_PASSWORD baked in, espota will not connect - use: .\flash.ps1 -Mode usb" "Yellow"
+  }
+  $espotaArgs = @('-i', $ip, '-p', '3232', '-f', $bin, '-r')
+  if ($otaPass) { $espotaArgs += @('-a', $otaPass) }
+
   $ok = $false
   for ($i = 1; $i -le $Retries; $i++) {
     Say "OTA attempt $i/$Retries -> $ip ..."
-    python $espota -i $ip -p 3232 -f $bin -r
+    python $espota @espotaArgs
     if ($LASTEXITCODE -eq 0) { Say "OTA OK" "Green"; $ok = $true; break }
     Start-Sleep -Seconds 3
   }
-  if (-not $ok) { throw "OTA failed after $Retries attempts - weak signal? Move the board closer, or use -Mode usb." }
+  if (-not $ok) { throw "OTA failed after $Retries attempts - weak signal, or push OTA disabled (no ota_secret.h)? Move closer, or use -Mode usb." }
 
   Say "waiting for reboot ..."
   for ($i = 0; $i -lt 12; $i++) {

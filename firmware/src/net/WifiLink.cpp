@@ -10,7 +10,6 @@
 #include <Arduino.h>
 #include <ArduinoOTA.h>
 #include <DNSServer.h>
-#include <Update.h>
 #include <WebServer.h>
 #include <WiFi.h>
 #include <esp_ota_ops.h>
@@ -29,6 +28,15 @@
 #if __has_include("../../wifi_secret.h")
 #include "../../wifi_secret.h"
 #define HAVE_WIFI_SECRET 1
+#endif
+
+// ota_secret.h is OPTIONAL and gitignored: if present it defines OTA_PASSWORD, which turns ON the
+// authenticated ArduinoOTA push path (a dev convenience). Absent ⇒ push OTA is DISABLED (fail-closed),
+// the device flashes over USB, and networked updates use the signed-pull path (see
+// code/findings/ota-update-plan.md). This replaces the old open /update form + open ArduinoOTA, which
+// let anyone on the LAN flash arbitrary firmware (2026-06-24 security review, Vuln 1).
+#if __has_include("../../ota_secret.h")
+#include "../../ota_secret.h"
 #endif
 
 using namespace sb20proxy;
@@ -175,8 +183,18 @@ void WifiLink::addForgetRoute_(const char* msg) {
 }
 
 void WifiLink::startStationServer_() {
+    // Push OTA is OFF unless a build-time OTA_PASSWORD is set (ota_secret.h) — fail-closed. Without it
+    // there is NO networked flash listener at all; dev flashes over USB and production updates come from
+    // the signed-pull path. With it, ArduinoOTA is authenticated (espota -a / flash.ps1 reads the secret).
+#ifdef OTA_PASSWORD
     ArduinoOTA.setHostname(hostname_);
+    ArduinoOTA.setPassword(OTA_PASSWORD);
     ArduinoOTA.begin();
+    otaEnabled_ = true;
+    logf("[ota] authenticated push OTA enabled (ArduinoOTA :3232)");
+#else
+    logf("[ota] push OTA DISABLED (no ota_secret.h) — flash over USB; networked updates use signed pull");
+#endif
 
     server_ = new WebServer(80);
     // GET / -> the dashboard (what a tester sees opening the board's IP); /ui is kept as an alias.
@@ -198,29 +216,10 @@ void WifiLink::startStationServer_() {
         if (perfReset_) perfReset_();
         server_->send(200, "text/plain", "perf window reset\n");
     });
-    server_->on("/update", HTTP_GET, [this]() {
-        server_->send(200, "text/html",
-                      "<form method='POST' action='/update' enctype='multipart/form-data'>"
-                      "<input type='file' name='firmware'><input type='submit' value='Flash'></form>");
-    });
-    server_->on(
-        "/update", HTTP_POST,
-        [this]() {
-            bool ok = !Update.hasError();
-            server_->send(200, "text/plain", ok ? "OTA OK - rebooting\n" : "OTA FAILED\n");
-            delay(400);
-            esp_restart();
-        },
-        [this]() {
-            HTTPUpload& up = server_->upload();
-            if (up.status == UPLOAD_FILE_START) {
-                Update.begin(UPDATE_SIZE_UNKNOWN);
-            } else if (up.status == UPLOAD_FILE_WRITE) {
-                Update.write(up.buf, up.currentSize);
-            } else if (up.status == UPLOAD_FILE_END) {
-                Update.end(true);
-            }
-        });
+    // NOTE: the old unauthenticated `POST /update` firmware-upload form was REMOVED (2026-06-24 security
+    // review, Vuln 1) — it let anyone on the LAN, or any website via CSRF, flash arbitrary firmware. There
+    // is deliberately no browser-reachable flash route. Networked updates come from the signed-pull path
+    // (code/findings/ota-update-plan.md); dev push uses authenticated ArduinoOTA above (USB otherwise).
     // Re-provision from the station too: forget creds, reboot into the portal.
     addForgetRoute_("credentials cleared - rebooting into setup\n");
     addConfigRoutes_();  // GET /setup picker + POST /setup/save + GET /setup/scan
@@ -239,8 +238,8 @@ void WifiLink::addRideModeRoute_() {
     });
     server_->on("/wifi/off", HTTP_POST, [this]() {
         server_->send(200, "text/html", rideModeDoneHtml());
-        delay(400);            // let the reply flush before the radio drops (mirrors /update)
-        ArduinoOTA.end();
+        delay(400);            // let the reply flush before the radio drops
+        if (otaEnabled_) ArduinoOTA.end();
         WiFi.disconnect(true, false);
         WiFi.mode(WIFI_OFF);
         radioOff_ = true;
@@ -500,7 +499,7 @@ void WifiLink::handle() {
         return;
     }
     if (server_) server_->handleClient();
-    ArduinoOTA.handle();
+    if (otaEnabled_) ArduinoOTA.handle();
     if (!healthy_ && server_ && WiFi.status() == WL_CONNECTED) {
         healthy_ = true;
         disarmBootGuard();

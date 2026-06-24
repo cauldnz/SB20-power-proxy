@@ -18,8 +18,11 @@ namespace sb20proxy {
 // idiom. Credentials are provisioned at runtime via a captive portal (no rebuild needed) and
 // stored in NVS (WifiCreds); a compile-time wifi_secret.h, if present, only seeds the first
 // boot. Two modes:
-//   * STATION  — creds known & join succeeds: serves status JSON at GET /, an OTA upload form
-//                at /update, and self-resets if it never becomes healthy (boot-guard).
+//   * STATION  — creds known & join succeeds: serves status JSON at GET /, and self-resets if it
+//                never becomes healthy (boot-guard). There is deliberately NO browser-reachable
+//                flash route (the open /update form was removed, 2026-06-24 security review); push
+//                OTA is authenticated ArduinoOTA, enabled only when OTA_PASSWORD is set (fail-closed),
+//                and networked updates use the signed-pull path (code/findings/ota-update-plan.md).
 //   * PORTAL   — no creds, or the join failed: raises a SoftAP + captive DNS and serves the
 //                setup page so the user can pick a network. The boot-guard is disarmed here —
 //                waiting for the user is a stable state, not a failed flash.
@@ -127,6 +130,7 @@ private:
     bool portal_ = false;
     bool radioOff_ = false;  // ride mode: WiFi powered down (BLE-only); handle() then no-ops
     bool logEnabled_ = true;  // serve GET /log? (persisted in NVS via WifiCreds)
+    bool otaEnabled_ = false;  // authenticated ArduinoOTA started? (only when OTA_PASSWORD is set)
 };
 
 }  // namespace sb20proxy
