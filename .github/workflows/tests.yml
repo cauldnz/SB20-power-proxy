@@ -75,3 +75,10 @@ jobs:
       # minimal proxy build (mock meter, no WiFi/OLED deps) and still links main.cpp + ble/*.
       - name: Compile proxy firmware (link guard)
         run: pio run -e esp32c3-supermini
+
+      # Compile the WiFi build (USE_WIFI=1) so the net/ + OTA + web-server code (WifiLink, the
+      # captive portal, /setup + /calibrate routes, the CSRF guard, and the signed-pull OTA path)
+      # is actually built on CI. esp32c3-supermini is USE_WIFI=0, so without this none of that
+      # code is compiled by CI — a break in it would only surface at the bench (2026-06-24).
+      - name: Compile WiFi/OTA firmware (net + web + OTA code)
+        run: pio run -e esp32c3-wifi
