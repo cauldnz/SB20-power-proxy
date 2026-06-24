@@ -21,12 +21,17 @@ struct Config {
     static constexpr int         SPOOF_CAL_OFFSET   = 0;
     // Manufacturer Company ID (uint16) carried in the ENHANCED Offset Compensation (0x10) reply the
     // Stages app sends for its zero-reset — the spec puts it after the offset (see Cps.h
-    // encodeEnhancedOffsetCompResponse). ⚠️ UNCONFIRMED: the spec mandates the field but not its value,
-    // and the real crank's 0x10 reply was never sniffable passively. Grounded next from
-    // `06_capture_ble.py --control-point enhanced-offset-compensation` (sessions/session-04). 0 here is
-    // a flagged placeholder — the spec-correct *structure* is the candidate fix; the exact value (and
-    // any trailing manufacturer-specific data) come from the capture.
-    static constexpr uint16_t    SPOOF_MFG_COMPANY_ID = 0x0000;
+    // encodeEnhancedOffsetCompResponse). GROUNDED on-bike 2026-06-25 (session 8 G1, capture
+    // G-crank62144-ble-enhanced-0x10-20260625-0716.jsonl): the real Stages SPM2 crank's 0x10 reply is
+    // `20 10 01 00 00 ba 01 04 85 03 b7 03` -> offset 0, **company id 0x01BA = 442** (the Stages
+    // company id; independently corroborated by the SB20's own advert manufacturer-data key 442), then
+    // 5 bytes of opaque mfg data (SPOOF_MFG_DATA). The old 0x0000 placeholder left the Stages app's
+    // calibrate spinning (session 8 G2); replying with the real 442 + mfg data is the candidate fix.
+    static constexpr uint16_t    SPOOF_MFG_COMPANY_ID = 0x01BA;  // 442 = Stages Cycling
+    // Opaque manufacturer-specific data trailing the company id in the real crank's captured 0x10 reply
+    // (session 8 G1). Replayed verbatim for byte-faithfulness — the app likely treats it as opaque
+    // (company id 442 is the field that matters), but matching the real crank exactly avoids guessing.
+    static constexpr uint8_t     SPOOF_MFG_DATA[]   = {0x04, 0x85, 0x03, 0xB7, 0x03};
     // Crank length reported (CP op 0x05) and stored when the bike sets it (0x04), in 1/2 mm.
     // 345 = 172.5 mm — the real crank's captured Request-Crank-Length value (`20 05 59 01`).
     static constexpr uint16_t    SPOOF_CRANK_LENGTH_HALFMM = 345;

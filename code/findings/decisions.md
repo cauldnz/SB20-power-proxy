@@ -1749,3 +1749,75 @@ re-architected. Full design + decisions: [`ota-update-plan.md`](ota-update-plan.
 - **esp-net-kit** sibling lib mirrors these cores (`netkit` ns) for cross-project reuse; contributed the
   device-side glue back (esp-net-kit PR #1). **SB20 adoption DEFERRED** (private-repo CI blocker +
   native-env scoping) — see memory `esp-net-kit-shared-lib` + issue #131.
+
+## 2026-06-25 — Session 8 (on-bike): SB20 spoof calibrate handshake CLOSED (G1 + G2 ✅)
+
+The last open gap in the SB20 crank spoof — the **Stages app's calibrate / zero-reset** — is **closed and
+grounded in captured bytes**. Run on the bike via the own-unique-ID plan. Narrative + live log:
+[`sessions/session-08-sb20-spoof-calibration.md`](../../sessions/session-08-sb20-spoof-calibration.md).
+
+- **Own-unique-ID spoof WORKS — but the bike requires a *findable* right crank.** ESP on its own id
+  **`Stages 62145`**, app L=`62145` → the SB20 connects to our ESP and writes its `fe02` token
+  (`bfda1853`): the bike accepts a spoof under a **brand-new** Stages id, not only the byte-faithful
+  `62144`. **BUT** a **phantom right id (`4964`, nothing on air) → "pairing failed."** The bike validates
+  that *both* configured crank ids are findable before pairing; using the real right **`4963`** (awake)
+  for R let it complete. ⇒ the **phantom-R sole-source idea is refuted** — a real/findable right crank
+  must be present.
+- **No double-count in practice.** Pedalling: ESP reads Assioma ~100 W → outputs ~200 W (single-sided
+  ×2); the **SB20 displayed ~203 W ≈ the ESP's doubled output alone**. A BLE scan showed the real right
+  `4963` **still advertising = the bike never connected to it** — it only needs the id *findable* to pair,
+  and consumes only the ESP's (doubled-left) total. So own-id + a findable right id ⇒ clean sole-source,
+  no double-count. (Untested: whether a *non-real* findable right id also satisfies the pairing.)
+- **G1 — real crank `0x10` (Enhanced Offset Compensation) captured** →
+  `findings/captures/G-crank62144-ble-enhanced-0x10-20260625-0716.jsonl`. Real reply:
+  **`20 10 01 00 00 ba 01 04 85 03 b7 03`**:
+  - standard Offset field = `00 00` = **0** (the BLE residual `200c010000`, NOT the ANT+ raw 903 — confirms
+    the 2026-06-19 offset reconciliation);
+  - **Manufacturer Company ID = `0x01BA` = 442** (Stages) — independently corroborated by the SB20's own
+    advert manufacturer-data key `442`;
+  - **manufacturer-specific data `04 85 03 b7 03` ENCODES the L/R zero-offsets**: `85 03` LE = `0x0385` =
+    **901** (L), `b7 03` LE = `0x03B7` = **951** (R). Shape `[0x04, Loff_LE, Roff_LE]`.
+  - DIS re-confirmed byte-faithful: mfg "Stages Cycling", model `SPM2`, fw `1.8.2`, serial `11821518`, CP
+    Feature `0x0008030B`, Sensor Location `0x00`, flags `0x002F`, proprietary `d445fe01` + Nordic DFU
+    `fe59`. Crank battery **22 %** (low — the on-cell low-read caveat persists).
+- **G2 — the Stages app's calibrate now COMPLETES** (was: spun forever, sessions 2–3). **Root cause: the
+  placeholder `SPOOF_MFG_COMPANY_ID = 0x0000`** — the spec-correct *structure* alone is NOT sufficient; the
+  app validates the company id. With the real **442 + the mfg-data**, the spoof's reply is byte-identical
+  to the crank and the app shows **"Calibrated 901/951"** (literally our replayed bytes). `/log`: a single
+  `[cp] write 10` (vs the pre-fix spin). Evidence:
+  `findings/captures/G2-calibrate-pass-log-20260625-0758.txt`. **Caveat:** the mfg-data is replayed
+  *verbatim* (static), so the app always shows 901/951 regardless of live state — cosmetic; the Assioma is
+  the real calibrated meter.
+- **Firmware fix (branch `session/08-onbike-20260625` → PR):** `Config::SPOOF_MFG_COMPANY_ID 0x0000 →
+  0x01BA` (442) + `SPOOF_MFG_DATA = {04 85 03 b7 03}`, wired through `handleControlPoint` at the
+  `BleCrankPeripheral.cpp` call site; golden host test `test_cp_offset_comp_enhanced_0x10_real_crank`
+  asserts the 12-byte reply. **For the live G2 the binary was built from the pre-lockdown base `8494935`**
+  (to avoid the deliberately-deferred 2026-06-24 security lockdown — its CSRF guard would 403 our restore
+  POST, `/log` is toggled, espota is fail-closed). **Eventual `main` firmware = security lockdown + this
+  442 fix** (desk reflash, post-session-8).
+- **Process/tooling misses → PLAYBOOK:** (1) the `0x0000` placeholder made G2's spin **predictable** — it
+  should have been flagged at plan time, with **G1 ordered strictly before G2** (we even ran G2 first);
+  (2) the bike laptop had **no PlatformIO and no host gcc** (Python 3.14 orphaned the toolchain) → the dev
+  env must be **reproducible** (committed requirements + a provisioning script) and a **build-toolchain
+  check added to the bike pre-flight**; (3) OTA via espota needed an **explicit host IP**
+  (`-I 192.168.1.223`) on this multi-NIC laptop (PlatformIO auto-picked `0.0.0.0` → "No response from
+  device") — pin it in the flash helper / cold-start.
+- **Restored:** app → L=`62144` / R=`4963`; crank length untouched (165 mm — never changed this session,
+  so nothing to restore; the app's manual crank-length set sent no `0x04` to the board). ESP left on
+  `62145` (idle, safe — the real `62144` is then the only `62144` on air). **Board currently runs the
+  pre-lockdown+fix build; desk action: reflash to `main` (security lockdown + the 442 fix) and restore the
+  canonical `62144` identity.**
+- **Known gap (corroborated this session):** with the SB20 paired to the ESP spoof, the Stages app's
+  **crank-length set didn't stick → the app shows "--"**. No standard CP `0x04`/`0x05` write reached our
+  ESP (we handle both — a `0x05` request would reply `20 05 59 01` = 172.5 mm), so the **app uses a
+  non-standard path for crank length** (matches session 3's A2 "app bypasses standard CP"). Doesn't affect
+  the calibrate (G2) or power (the Assioma supplies watts). → **backlog:** capture the app's crank-length
+  write (likely the proprietary `d445fe02`/`fe02` char) and implement it for a fully-faithful spoof.
+- **Owner decision (static cal value — keep it):** replaying the captured `901/951` verbatim is **fine,
+  even preferable.** We pass the **Assioma's real power straight through** to the SB20, so the displayed
+  calibration offset is moot — and returning *out-of-normal* values could make the Stages app **error**. So
+  do **not** synthesize a "dynamic" offset. **The meaningful follow-up instead:** make the app's
+  **"Zero Reset" actually perform a real zero-offset on the Assioma** — when the SB20/app writes `0x10` to
+  our spoof's CP, **propagate an offset-compensation/zero command to the real Assioma** over the existing
+  BLE-central link so the calibrate button does something real, not just complete cosmetically. → backlog,
+  `forward-plan.md` §10.

@@ -1,18 +1,18 @@
 # 🟢 READ ME FIRST — bike-machine session cold-start
 
-**You are the assistant on the bike machine.** Two rides are **🟢 READY** for this visit — run **whichever
-bike is set up first**:
+**You are the assistant on the bike machine.** One ride is **🟢 READY** for this visit:
 
-- **[Session 8 — SB20 spoof calibration handshake (G1 + G2)](sessions/session-08-sb20-spoof-calibration.md)** —
-  on the **SB20**. Capture the real Stages crank's `0x10` Enhanced-Offset reply (G1) → test whether the
-  Stages app's zero-reset now **completes** against our spoof (G2). ~25–35 min.
-  **🟡 STAGED 2026-06-24 → read the doc's "RESUME HERE" first:** pivoted to the **own-unique-ID** approach —
-  the board is already on **`Stages 62145`** (runtime, no reflash); the plan is app **L=`62145` / R=`4964`
-  (phantom), real cranks stay powered, no battery pull**. First gate: does the SB20 connect to our ESP at
-  `62145`? Original G1/G2 fold in as bonus/payoff. (Restore POST + values are in the session doc.)
 - **[Session 5 — meter-to-meter calibration ride (XCadey → reads like Assioma)](sessions/session-05-meter-calibration-capture.md)** —
   on the **track bike** (both meters fitted). Drive the on-device `/calibrate` wizard so the XCadey reads
   like the Assioma, then leave the proxy rebroadcasting the corrected XCadey for the Garmin. ~20–30 min.
+
+> **Session 8 (SB20 spoof calibrate handshake) is ✅ DONE (2026-06-25).** G1 captured the real crank's `0x10`
+> (Manufacturer **Company ID 442** + mfg-data that encodes the L/R offsets), G2 confirmed the Stages app's
+> calibrate now **completes** against our spoof (`decisions.md` 2026-06-25). **Two desk follow-ups before the
+> SB20 is "shippable":** (a) **reflash the board to current `main` (security lockdown) + the 442 fix** — it's
+> currently on a temporary *pre-lockdown+fix* build — then re-confirm the calibrate on the locked-down
+> firmware and restore the `62144` identity; (b) the 442 fix rides in on branch `session/08-onbike-20260625`
+> (merge the PR). Until then, don't re-run session 8.
 
 They're **independent** — do one, both, or whichever bike is ready. **Guide the rider live, one step at a
 time,** out of the chosen session doc; watch `/log` + the capture files as they narrate. Don't dump the
@@ -29,9 +29,12 @@ one-line Outcome, update the ledger [`sessions/README.md`](sessions/README.md), 
 `code/findings/decisions.md`, commit captures — **and fold the retro's lessons into the playbook**
 (CLAUDE.md → *Session plans & the session ledger*).
 
-Prepared for sessions 8 + 5 (desk-derisked 2026-06-23). Boards run the **2026-06-23 firmware** — fine for
-session 8 (the spoof's `0x10` reply is unchanged since); the security-lockdown reflash to current `main`
-is **deliberately post-session-8** (owner's call).
+Prepared for **session 5** (desk-derisked 2026-06-23). ⚠️ **Build toolchain (learned the hard way, session
+8):** this bike laptop's PlatformIO was orphaned by a Python 3.14 upgrade — it was re-provisioned into a venv
+at **`C:\repos\cauldnz\pio-venv`** (PlatformIO 6.1.19). **`python -m platformio` no longer works** (system
+Py 3.14 has no platformio); use the venv's `platformio.exe`. Verify it runs **and that an OTA build actually
+flashes** *before* the rider is at the bike (§2b). The SB20 board currently runs a temporary
+*pre-lockdown+fix* build pending the canonical desk reflash (see the session-8 note above).
 
 ---
 
@@ -82,16 +85,18 @@ code\.venv\Scripts\python.exe -c "import asyncio; from bleak import BleakScanner
 The scan should see **`Stages 62145`** (our ESP) *and* **`Stages 62144`** (the real crank), disambiguated by
 address — that's the G1/G2 pair. (`06_capture_ble.py` is API-verified against bleak 3.0.2.)
 
-> **Only reflash if a session step says to** — session 8 G2 reflashes **only** if G1 yields new
-> `SPOOF_MFG_COMPANY_ID` bytes to plug in. If you must: build then USB-flash via `flash_c3.py` (NOT
-> `flash.ps1 -Mode usb` — pio's bundled esptool 4.5.1 hits the C3 USB-JTAG "No serial data received" bug;
-> memory `esp32-c3-flashing`):
-> ```powershell
-> cd firmware ; python -m platformio run -e esp32c3-oled-live
-> python ..\code\scripts\flash_c3.py --env esp32c3-oled-live --port COM9 --verify-ble "Stages 62144"
-> ```
-> OTA (`firmware\flash.ps1`) also works if RSSI is decent (>−72 dBm). **COM9 = the OLED bike board; COM10 =
-> the spare/no-OLED board** (memory `esp32-c3-flashing`).
+> **Only reflash if a session step says to.** ⚠️ **`python -m platformio` is dead on this machine** (Py 3.14
+> has no platformio) — use the venv: **`C:\repos\cauldnz\pio-venv\Scripts\platformio.exe`**.
+> Build: `…\pio-venv\Scripts\platformio.exe run -e esp32c3-oled-live -d firmware`. Then either:
+> - **OTA (preferred, RSSI > −72 dBm):** on this **multi-NIC laptop espota auto-picks the wrong host IP**
+>   (`0.0.0.0` → "No response from device") — call espota directly with the **explicit host LAN IP**:
+>   ```powershell
+>   C:\repos\cauldnz\pio-venv\Scripts\python.exe "$env:USERPROFILE\.platformio\packages\framework-arduinoespressif32\tools\espota.py" -i <board-ip> -I <host-lan-ip> -p 3232 -f firmware\.pio\build\esp32c3-oled-live\firmware.bin -r
+>   ```
+>   (session 8: board `192.168.1.165`, host `192.168.1.223`; find host IP with `Get-NetIPAddress`). `flash.ps1` works too once `pio` is on PATH.
+> - **USB:** `flash_c3.py --env esp32c3-oled-live --port COM9 --verify-ble "Stages 62144"` (NOT
+>   `flash.ps1 -Mode usb` — esptool 4.5.1 hits the C3 USB-JTAG "No serial data received" bug). **COM9 = the
+>   OLED bike board; COM10 = the spare/no-OLED board** (memory `esp32-c3-flashing`).
 
 ---
 
@@ -100,7 +105,7 @@ address — that's the G1/G2 pair. (`06_capture_ble.py` is API-verified against 
 | | |
 |---|---|
 | **Proxy board** | `sb20proxy.local` → `192.168.1.165` (mDNS is the safe bet) · `/` `/ui` `/log` `/stats` `/status` `/calibrate` · **COM9** = OLED bike board |
-| **SB20 spoof (session 8)** | **🟡 staged on `Stages 62145`** (2026-06-24 own-unique-ID pivot; was `62144` — restore POST in the session doc) · **reads** `ASSIOMA` · BLE cal-offset **0** (`200c010000`; **not** ANT+ `903`) · Enhanced `0x10` reply spec-shape `20 10 01 <offset> <mfgId>` · plan: app **L=`62145` / R=`4964` phantom** |
+| **SB20 spoof (session 8 ✅ DONE)** | calibrate handshake **CLOSED** — real Enhanced `0x10` reply = `20 10 01 00 00 ba 01 04 85 03 b7 03` (**Company ID 442** + mfg-data encoding L901/R951; BLE offset still **0**). App restored to L=`62144`/R=`4963`. Board on a temp *pre-lockdown+fix* build on `Stages 62145`; **desk: reflash `main`+442 fix, restore `62144`.** Own-id spoof needs a **findable** right crank (phantom R fails) → no double-count. |
 | **Corrector (session 5)** | on-device `/calibrate`: **XCadey = DUT**, **Assioma = Ref** → fit → rebroadcast corrected XCadey under its own name for the **Garmin**. Run path bench-proven; the bike proves **2-meter coex** + the real fit |
 | **The SB20 itself** | `Stages Bike 0105`, addr **`E4:AA:5A:D6:0E:D4`** · shifter char `0c46be60` · FTMS `0x1826` |
 

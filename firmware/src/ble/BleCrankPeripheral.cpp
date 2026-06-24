@@ -25,9 +25,13 @@ class ControlPointCallbacks : public NimBLECharacteristicCallbacks {
         NimBLEAttValue v = c->getValue();
         if (v.size() == 0) return;
         logf("[cp] write %s", toHex(v.data(), v.size()).c_str());
+        // mfg-specific data from the real crank's captured 0x10 reply (session 8 G1) — replayed so our
+        // Enhanced Offset Compensation reply is byte-identical to the Stages SPM2 crank's.
+        static const std::vector<uint8_t> mfgData(
+            Config::SPOOF_MFG_DATA, Config::SPOOF_MFG_DATA + sizeof(Config::SPOOF_MFG_DATA));
         CpResult r = handleControlPoint(v.data(), v.size(), *crankLen_,
                                         (int16_t)Config::SPOOF_CAL_OFFSET,
-                                        Config::SPOOF_MFG_COMPANY_ID);
+                                        Config::SPOOF_MFG_COMPANY_ID, mfgData);
         if (r.crankLengthChanged) {
             *crankLen_ = r.crankLengthHalfMm;
             logf("[cp] crank length set = %u (1/2 mm)", (unsigned)*crankLen_);
