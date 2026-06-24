@@ -95,6 +95,9 @@ public:
 
     bool isUp() const { return healthy_; }
     bool inPortal() const { return portal_; }
+    // The setup AP's WPA2 password while the portal is up (a per-device PIN on OLED builds, else the
+    // default) — surfaced so the OLED can display it. Empty until the portal starts.
+    const std::string& setupPin() const { return setupPin_; }
 
 private:
     void startStationServer_();  // status/setup/calibrate/forget routes + opt-in auth OTA (WiFi joined)
@@ -133,6 +136,7 @@ private:
     bool radioOff_ = false;  // ride mode: WiFi powered down (BLE-only); handle() then no-ops
     bool logEnabled_ = true;  // serve GET /log? (persisted in NVS via WifiCreds)
     bool otaEnabled_ = false;  // authenticated ArduinoOTA started? (only when OTA_PASSWORD is set)
+    std::string setupPin_;     // the setup AP's WPA2 password while in the portal (PIN on OLED builds)
 };
 
 }  // namespace sb20proxy

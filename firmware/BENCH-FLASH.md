@@ -84,8 +84,9 @@ pio device monitor                                  # Ctrl-C to exit
 pio run -e esp32c3-wifi -t upload                   # use esp32c3-oled if your board has the OLED
 pio device monitor                                  # prints: join 'SB20-Setup' -> http://192.168.4.1/
 ```
-Phone: join open **`SB20-Setup`** → setup page auto-pops (else `http://192.168.4.1/`) → pick your
-2.4 GHz network → saves to NVS, reboots onto WiFi. Then:
+Phone: join the WPA2 AP **`SB20-Setup`** (OLED boards show an 8-digit **PIN** on screen; screenless
+boards use the default password **`sb20setup`**) → setup page auto-pops (else `http://192.168.4.1/`)
+→ pick your 2.4 GHz network → saves to NVS, reboots onto WiFi. Then:
 ```bash
 curl http://<device-ip>/        # status JSON (METER IN -> CRANK OUT)
 curl http://<device-ip>/ui      # streaming web dashboard

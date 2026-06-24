@@ -68,6 +68,16 @@ struct Config {
 
     // --- board (ESP32-C3 Super Mini) ---
     static constexpr int STATUS_LED_PIN = 8;  // onboard LED, active-low (LOW = lit)
+
+    // --- WiFi setup AP (always WPA2-protected) ---
+    // OLED builds: the AP password is a per-device 8-digit PIN derived from the chip MAC + this secret
+    // (SetupPin.h), shown on the screen. Override per deployment for a unique secret; see SetupPin.h
+    // for the threat-model caveat.
+    static constexpr const char* SETUP_PIN_SECRET = "sb20proxy-setup-ap-v1";
+    // Screenless builds: no display to show a per-device PIN, so the AP uses this KNOWN default
+    // passphrase (>= 8 chars, WPA2 minimum) that the user can type. Shared across screenless boards —
+    // weaker than the per-device PIN, but usable without a screen. Override per deployment.
+    static constexpr const char* SETUP_AP_DEFAULT_PASSWORD = "sb20setup";
 };
 
 }  // namespace sb20proxy

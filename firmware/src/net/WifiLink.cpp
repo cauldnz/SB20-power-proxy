@@ -16,8 +16,10 @@
 #include <esp_system.h>
 #include <esp_timer.h>
 
+#include "Config.h"            // SETUP_PIN_SECRET (the setup-AP PIN derivation key)
 #include "HttpSecurity.h"      // pure same-origin (CSRF) check for state-changing routes (host-tested)
 #include "Provisioning.h"      // pure page render + form parse + validation (host-tested)
+#include "SetupPin.h"          // pure per-device setup-AP PIN derivation (host-tested)
 #include "DiagReport.h"        // pure tester /diag report (config + status + raw meter frames)
 #include "WebApp.h"            // static streaming dashboard served at GET /ui (renders in the phone)
 #include "net/DebugLog.h"      // recent-log ring served at GET /log (serial is flaky on the C3)
@@ -448,7 +450,17 @@ void WifiLink::startPortal_() {
     disarmBootGuard();
 
     WiFi.mode(WIFI_AP_STA);  // AP for the portal; STA enabled so we can scan for networks
-    WiFi.softAP(WIFI_AP_SSID);
+    // The setup AP is WPA2-protected (closes the cleartext-PSK window when the user types their home
+    // WiFi password into the portal). OLED builds use a per-device 8-digit PIN shown on the screen;
+    // screenless builds fall back to a known default passphrase the user can type (Config).
+#if defined(USE_OLED) && USE_OLED
+    uint8_t mac[6];
+    WiFi.macAddress(mac);
+    setupPin_ = deriveSetupPin(mac, sizeof(mac), Config::SETUP_PIN_SECRET);
+#else
+    setupPin_ = Config::SETUP_AP_DEFAULT_PASSWORD;
+#endif
+    WiFi.softAP(WIFI_AP_SSID, setupPin_.c_str());
     IPAddress apIP = WiFi.softAPIP();
 
     // Best-effort initial scan so the first page already offers a picker. Synchronous (~2-4 s)
@@ -522,9 +534,9 @@ void WifiLink::startPortal_() {
     server_->onNotFound(redirect);
     server_->begin();
 
-    logf("[wifi] setup portal up: AP '%s' (%d networks scanned)", WIFI_AP_SSID,
+    logf("[wifi] setup portal up: AP '%s' (WPA2; %d networks scanned)", WIFI_AP_SSID,
          (int)networks_.size());
-    display_->showPortal(WIFI_AP_SSID, kPortalUrl);
+    display_->showPortal(WIFI_AP_SSID, kPortalUrl, setupPin_.c_str());
 }
 
 void WifiLink::handle() {

@@ -54,8 +54,9 @@ pio device monitor                          # watch the [proxy] log
 
 # WiFi observability + wireless flashing — NO wifi_secret.h needed (set the network at runtime):
 pio run  -e esp32c3-wifi -t upload                      # first time, over USB
-#   on boot the device raises the open AP 'SB20-Setup'; join it, open http://192.168.4.1/,
-#   pick your network -> it saves to NVS and reboots onto WiFi.
+#   on boot the device raises the WPA2 AP 'SB20-Setup' (OLED boards show an 8-digit PIN on screen;
+#   screenless boards use the default password 'sb20setup' — Config::SETUP_AP_DEFAULT_PASSWORD).
+#   Join it, open http://192.168.4.1/, pick your network -> it saves to NVS and reboots onto WiFi.
 pio run  -e esp32c3-ota -t upload --upload-port <ip>    # thereafter, over the air
 curl http://<ip>/                                       # live status JSON
 curl http://<ip>/log                                    # recent log lines (serial-over-HTTP)
