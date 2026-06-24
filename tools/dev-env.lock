@@ -1,0 +1,10 @@
+# SB20-proxy dev-env pins — the known-good set verified on the bike laptop
+# (native Windows, Python 3.14) during session 8 (2026-06-25). Keep in sync with
+# tools/provision-dev-env.ps1. Re-provision with that script; verify with tools/doctor.ps1.
+
+platformio==6.1.19    # firmware build + espota OTA          -> firmware/.venv
+bleak==3.0.2          # BLE capture tooling (06_capture_ble) -> code/.venv
+
+# NOT pip-installable, but required for `pio test -e native` (host unit tests):
+#   a host C++ compiler (gcc/g++). Install MinGW-w64 or VS Build Tools and put gcc on PATH.
+#   (CI runs the native tests regardless, so this only matters for running them locally.)

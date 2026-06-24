@@ -29,7 +29,7 @@ RULE
 sudo udevadm control --reload-rules && sudo udevadm trigger   # then re-plug the stick
 ```
 
-Windows needs USB passthrough to WSL (`START-HERE.md` / `07-hardware-and-environment.md` §"Windows + WSL"). Firmware (ESP32-C3) is PlatformIO.
+Windows needs USB passthrough to WSL (`START-HERE.md` / `07-hardware-and-environment.md` §"Windows + WSL"). Firmware (ESP32-C3) is PlatformIO. **On the native-Windows bike machine, provision the pinned build/flash toolchain (PlatformIO + bleak) with `tools\provision-dev-env.ps1` and verify with `tools\doctor.ps1`** (the build/flash pre-flight) — see [`tools/README.md`](tools/README.md). A Python upgrade can silently orphan PlatformIO (session 8).
 
 ## Commands
 

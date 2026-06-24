@@ -72,8 +72,9 @@ rider starts:
   the desk.** Work moves between the desk and the bike laptop (different machines), and a Python upgrade can
   silently orphan the toolchain. Confirm `pio`/`platformio` runs, an ESP32 toolchain is cached, a host
   compiler exists for `pio test -e native`, **and** an OTA upload reaches the board — *before* the rider is
-  at the bike. Pin the environment in **committed config** (a requirements/lock + a provisioning script for
-  PlatformIO + the BLE venv) so any machine reaches a known-good state. *(Session 8: the bike laptop had no
+  at the bike. **Now committed:** `tools/provision-dev-env.ps1` provisions the pinned toolchain (PlatformIO
+  + the BLE venv; pins in `tools/dev-env.lock`) and `tools/doctor.ps1` is the build+flash pre-flight gate —
+  green it at the desk. *(Session 8: the bike laptop had no
   PlatformIO — Py 3.14 orphaned it, empty `~/.platformio` — and no `gcc` → ~30 min of mid-session bring-up;
   the exact "does the tool run?" failure step 1 exists to prevent.)*
 - [ ] **Board near the AP — check RSSI before OTA.** OTA gets unreliable below ~**−72 dBm** on the C3
