@@ -28,6 +28,10 @@ session 3/4). This is independent of the corrector ride (session 5).
 - Coin/small screwdriver for the crank battery door.
 
 ## Pre-flight (desk, ~2 min — the gate)
+> **Power-cycle the board first** (unplug/replug, or it happens when you move it to the bike). Heap drops
+> over long uptime — a board up ~20 h showed **~28 KB free**, which made the (session-5-only, **unused
+> here**) `/calibrate` route time out in `route_smoke`; a power-cycle restores ~125 KB and clears it.
+> `route_smoke` should then show all PASS; for session 8 only `/status` · `/setup` · `/diag` · `/log` matter.
 ```bash
 curl http://sb20proxy.local/status      # 200 + low "ms" (fresh boot), source:searching
 ```
@@ -61,11 +65,20 @@ No bike time today (rider ran out of time before going downstairs). **All desk s
 - **Tonight's normal ride:** leaving the ESP on `62145` is **safe** (real `62144` is then the only `62144` on air → SB20 pairs to it cleanly). **Do NOT restore the ESP to `62144` for a normal ride** — that recreates the duplicate-`62144` collision. Zero-noise option: power the ESP off.
 - **ESP restore (only when the experiment is fully done):** `POST /setup/save` `name=ASSIOMA&single=1&spoof_name=Stages 62144&spoof_serial=11821518`; app back to **L=`62144` / R=`4963`**.
 
+> ### ▶ READ THIS — which plan to follow
+> **PRIMARY = the staged own-unique-ID plan (RESUME HERE, above): ESP stays on `62145`, app → L=`62145` /
+> R=`4964` (phantom), NO battery pull.** Because the ESP is `62145`, the **real crank is the only `62144`
+> on air** — so **G1 needs no ESP power-off** and **G2 needs no battery pull**. The per-step commands +
+> pass-criteria below still apply; treat the *"power the ESP off"* / *"pull the L-crank battery"* lines as
+> the **FALLBACK**, used only if the own-ID approach doesn't connect/behave on the bike (then you're back to
+> the byte-faithful-`62144` + battery-pull route). Don't pull the battery unless the pivot fails.
+
 ## G1 · Capture the REAL crank's 0x10 Enhanced-Offset reply ⭐ (do FIRST)
 Writes `0x10` to the **real** crank and logs its indication — the bytes that ground
-`SPOOF_MFG_COMPANY_ID` (+ any manufacturer data).
-1. **Power the ESP spoof OFF** (unplug) so the only `Stages 62144` on the air is the **real** crank;
-   **leave the real L-crank battery IN** (fresh cell). Keep the cranks **still** (it's a zero-reset).
+`SPOOF_MFG_COMPANY_ID` (+ any manufacturer data). With the ESP on `62145`, just capture by name
+`Stages 62144` — the only `62144` on air is the real crank (no ESP power-off needed; that's the fallback).
+1. *(FALLBACK only)* if disambiguation fails, **power the ESP spoof OFF** so the only `Stages 62144` is the
+   **real** crank. Either way: **leave the real L-crank battery IN** (fresh cell), keep the cranks **still**.
 2. Run (native-Windows venv):
    ```bash
    code/.venv/Scripts/python.exe code/scripts/06_capture_ble.py \
@@ -82,8 +95,11 @@ update the golden test, and we reflash for G2. **If the write is rejected / need
 the spec-structure reply we already ship may satisfy the app on its own (test in G2 regardless).
 
 ## G2 · Re-test our spoof's 0x10 — does the app's calibrate complete? (the payoff)
-1. Re-power the ESP; **pull the real L-crank battery** so the SB20 pairs to the **ESP** (`Stages 62144`).
-   SB20 → Stages app → Pair (Bluetooth) → pedal a few strokes (wake the chain) → confirm power + cadence.
+1. **PRIMARY (own-ID, no battery pull):** in the Stages app set the crank ids to **L=`62145`** (the ESP) +
+   **R=`4964`** (phantom). Watch `/log` for the SB20 connecting to the ESP; pedal a few strokes (wake the
+   Assioma) → confirm power + cadence, and sanity-check the watts aren't double-counted.
+   *(FALLBACK: if the SB20 won't pair to `62145`, restore the ESP to `62144` via `/setup/save` and **pull
+   the real L-crank battery** so the only `62144` is the ESP, then pair as before.)*
 2. Stages app → **calibrate / zero-reset.** Watch `/log` for `[cp] write 10` then our reply.
 
 **✅ Pass:** the calibrate UI **COMPLETES** (no longer spins), the link holds, `/log` shows our
