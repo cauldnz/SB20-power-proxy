@@ -29,7 +29,9 @@ one-line Outcome, update the ledger [`sessions/README.md`](sessions/README.md), 
 `code/findings/decisions.md`, commit captures — **and fold the retro's lessons into the playbook**
 (CLAUDE.md → *Session plans & the session ledger*).
 
-Prepared for sessions 8 + 5 (desk-derisked 2026-06-23 — both boards already on current firmware).
+Prepared for sessions 8 + 5 (desk-derisked 2026-06-23). Boards run the **2026-06-23 firmware** — fine for
+session 8 (the spoof's `0x10` reply is unchanged since); the security-lockdown reflash to current `main`
+is **deliberately post-session-8** (owner's call).
 
 ---
 
@@ -49,8 +51,9 @@ git checkout main && git pull            # current truth
 
 ## 2 · Pre-flight the board (the gate — don't pedal until green)
 
-Both boards were flashed current at the desk on 2026-06-23, so **no flashing should be needed**. Confirm
-the board the rider has powered is alive:
+Both boards were flashed on 2026-06-23, and **no flashing is needed for session 8** (the spoof's `0x10`
+reply hasn't changed; the security-lockdown reflash to current `main` is post-session-8). Confirm the
+board the rider has powered is alive:
 
 ```powershell
 curl http://sb20proxy.local/status                       # 200 + low "ms" (fresh boot), source:searching
@@ -60,6 +63,24 @@ Open a rolling `/log` (the live instrument) in a second terminal and keep it vis
 ```powershell
 while($true){(iwr http://sb20proxy.local/log).Content; sleep 3}
 ```
+
+> **Power-cycle the board before the gate** if it's been running a while — heap drops over long uptime
+> (a board up ~20 h showed ~28 KB free, which times out the *unused-by-session-8* `/calibrate` route in
+> `route_smoke`; a power-cycle restores ~125 KB). For session 8, only `/status` · `/setup` · `/diag` · `/log`
+> matter — `/calibrate` is session 5's.
+
+## 2b · BLE tooling (session 8 G1 needs it — set up OFF the rider's clock)
+
+Session 8's G1 capture (`06_capture_ble.py`) needs a Python venv with **bleak**. If this is a fresh clone
+without `code\.venv`, create it before the rider is at the bike (verified working: **bleak 3.0.2**, native
+Windows, Python 3.13):
+```powershell
+python -m venv code\.venv
+code\.venv\Scripts\python.exe -m pip install bleak
+code\.venv\Scripts\python.exe -c "import asyncio; from bleak import BleakScanner; asyncio.run(BleakScanner.discover(timeout=5))"  # radio works?
+```
+The scan should see **`Stages 62145`** (our ESP) *and* **`Stages 62144`** (the real crank), disambiguated by
+address — that's the G1/G2 pair. (`06_capture_ble.py` is API-verified against bleak 3.0.2.)
 
 > **Only reflash if a session step says to** — session 8 G2 reflashes **only** if G1 yields new
 > `SPOOF_MFG_COMPANY_ID` bytes to plug in. If you must: build then USB-flash via `flash_c3.py` (NOT
