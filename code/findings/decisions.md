@@ -1807,3 +1807,9 @@ grounded in captured bytes**. Run on the bike via the own-unique-ID plan. Narrat
   `62145` (idle, safe — the real `62144` is then the only `62144` on air). **Board currently runs the
   pre-lockdown+fix build; desk action: reflash to `main` (security lockdown + the 442 fix) and restore the
   canonical `62144` identity.**
+- **Known gap (corroborated this session):** with the SB20 paired to the ESP spoof, the Stages app's
+  **crank-length set didn't stick → the app shows "--"**. No standard CP `0x04`/`0x05` write reached our
+  ESP (we handle both — a `0x05` request would reply `20 05 59 01` = 172.5 mm), so the **app uses a
+  non-standard path for crank length** (matches session 3's A2 "app bypasses standard CP"). Doesn't affect
+  the calibrate (G2) or power (the Assioma supplies watts). → **backlog:** capture the app's crank-length
+  write (likely the proprietary `d445fe02`/`fe02` char) and implement it for a fully-faithful spoof.
