@@ -1720,3 +1720,32 @@ to it (real `62144` still powered)? Then: is the power sane (no double-count), a
 **calibrate/zero-reset complete** (the old G2 payoff)? **Board left staged at `Stages 62145`** (NVS);
 restore to baseline with `POST /setup/save` `…spoof_name=Stages 62144…` + app L=`62144`/R=`4963`. Docs
 landed: PR #123 + the close-out PR carrying this entry.
+
+## 2026-06-24 — Security review → firmware-update + web hardening (desk; full plan in `ota-update-plan.md`)
+
+A `/security-review` of the device surfaced two real issues; both fixed, plus the device-update path was
+re-architected. Full design + decisions: [`ota-update-plan.md`](ota-update-plan.md). Summary:
+
+- **Vuln 1 — unauthenticated/unsigned flashing (HIGH).** The board exposed an open `POST /update` form
+  (browser-reachable → CSRF-able RCE) **and** an open ArduinoOTA (:3232) — any LAN host could flash
+  arbitrary firmware. **Fix:** removed `/update` entirely; ArduinoOTA now **fail-closed** (off unless a
+  build-time `OTA_PASSWORD` from gitignored `ota_secret.h` is set). PR #125.
+- **Vuln 2 — no web auth / CSRF (MEDIUM).** No same-origin check on state-changing routes; `GET /forget`
+  could be wiped via `<img>`. **Fix (option B):** pure host-tested `HttpSecurity.h` (`isSameOriginRequest`)
+  guarding every mutating POST in both station + portal; `/forget` moved GET→POST. (Committed to main
+  directly — process slip; CI-green.)
+- **Signed-pull OTA (P1+P2 shipped, host-tested; P3/P4 gated on the back end + a key).** Device-initiated
+  HTTPS **pull**, not push (NAT + no-inbound-listener). **Signing = ed25519 over a BLAKE2b digest via
+  vendored monocypher** (owner's call over mbedTLS/ECDSA — same verify code runs host-side, so golden
+  vectors: Python signs → C verifies). `OtaManifest`/`OtaVerify`/`OtaUpdater` pure + host-tested (every
+  abort path); `OtaPull` HTTPS/Update seam. Signer: `sb20proxy.ota.sign` + `scripts/ota_sign.py`.
+  PRs #128/#129. CI now also compiles the WiFi build (#127).
+- **TLS = backend-only** (pin one Let's-Encrypt root, no direct GitHub); **eFuse hardening (Flash/NVS
+  Encryption, Secure Boot) deferred past beta** (no eFuse-free option; beta threat is network, covered by
+  signed-pull). Owner decisions, 2026-06-24.
+- **SoftAP now WPA2** (closes the cleartext-PSK window): OLED boards show a per-device 8-digit PIN derived
+  from the chip MAC (`SetupPin.h`, keyed BLAKE2b); screenless boards use `Config::SETUP_AP_DEFAULT_PASSWORD`
+  = `sb20setup`. PR #130.
+- **esp-net-kit** sibling lib mirrors these cores (`netkit` ns) for cross-project reuse; contributed the
+  device-side glue back (esp-net-kit PR #1). **SB20 adoption DEFERRED** (private-repo CI blocker +
+  native-env scoping) — see memory `esp-net-kit-shared-lib` + issue #131.
