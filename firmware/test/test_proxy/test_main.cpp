@@ -137,6 +137,21 @@ void test_cp_offset_comp_enhanced_0x10() {
     TEST_ASSERT_FALSE(r.crankLengthChanged);
 }
 
+void test_cp_offset_comp_enhanced_0x10_real_crank() {
+    // The REAL Stages SPM2 crank's 0x10 reply, captured ON-BIKE 2026-06-25 (session 8 G1,
+    // G-crank62144-ble-enhanced-0x10-20260625-0716.jsonl): 20 10 01 | 00 00 | ba 01 | 04 85 03 b7 03
+    // = offset 0, Manufacturer Company ID 442 (0x01BA), then 5 opaque mfg-data bytes. The earlier
+    // 0x0000 company-id placeholder left the Stages app's calibrate spinning (session 8 G2); this
+    // golden vector locks in the real crank's EXACT bytes (now Config::SPOOF_MFG_COMPANY_ID + MFG_DATA).
+    const uint8_t req[] = {CP_OP_ENHANCED_OFFSET_COMP};
+    const std::vector<uint8_t> mfgData = {0x04, 0x85, 0x03, 0xB7, 0x03};
+    CpResult r = handleControlPoint(req, sizeof(req), 345, /*offset*/0, /*mfgCompanyId*/0x01BA, mfgData);
+    const uint8_t expected[] = {0x20, 0x10, 0x01, 0x00, 0x00, 0xBA, 0x01, 0x04, 0x85, 0x03, 0xB7, 0x03};
+    TEST_ASSERT_EQUAL_INT(12, (int)r.response.size());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, r.response.data(), 12);
+    TEST_ASSERT_FALSE(r.crankLengthChanged);
+}
+
 void test_encode_enhanced_offset_comp_structure() {
     // 0x20 | 0x10 | 0x01 | offset(sint16 LE) | mfgCompanyId(uint16 LE) | mfgData[...]
     const std::vector<uint8_t> mfgData = {0xDE, 0xAD};
@@ -1837,6 +1852,7 @@ int runUnityTests() {
     RUN_TEST(test_cps_decode_short_frame_is_safe);
     RUN_TEST(test_calibration_response_bytes);
     RUN_TEST(test_cp_offset_comp_enhanced_0x10);
+    RUN_TEST(test_cp_offset_comp_enhanced_0x10_real_crank);
     RUN_TEST(test_encode_enhanced_offset_comp_structure);
     RUN_TEST(test_cp_offset_comp_basic_0x0C);
     RUN_TEST(test_cp_set_crank_length_0x04);
