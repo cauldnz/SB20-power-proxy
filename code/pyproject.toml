@@ -36,6 +36,11 @@ analysis = [
     # broadcast -> radio -> Garmin -> FIT path.
     "fitparse>=1.2",
 ]
+ota = [
+    # For signing firmware release images (ed25519) for the on-device signed-pull OTA path.
+    # Dev/release-only — the device verifies with vendored monocypher, not this.
+    "cryptography>=42",
+]
 
 [project.scripts]
 sb20proxy = "sb20proxy.cli:main"

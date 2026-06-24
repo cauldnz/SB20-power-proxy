@@ -17,6 +17,8 @@
 #include "Ftms.h"
 #include "HttpSecurity.h"
 #include "MeterMatch.h"
+#include "OtaManifest.h"
+#include "OtaVerify.h"
 #include "LogBuffer.h"
 #include "MockCrank.h"
 #include "MockMeter.h"
@@ -1518,6 +1520,132 @@ void test_same_origin_blocks_cross_site() {
     TEST_ASSERT_FALSE(isSameOriginRequest("", "http://evil.com", ""));
 }
 
+// --- signed-OTA manifest (pure) ----------------------------------------------
+
+void test_manifest_parse_and_validate() {
+    const std::string body =
+        "{\"version\":\"0.2.0\",\"url\":\"https://ota.example/fw-0.2.0.bin\",\"size\":1094042,"
+        "\"blake2b\":\"" + std::string(128, 'a') + "\",\"sig\":\"" + std::string(128, 'b') + "\"}";
+    const OtaManifest m = parseManifest(body);
+    TEST_ASSERT_TRUE(m.valid);
+    TEST_ASSERT_EQUAL_STRING("0.2.0", m.version.c_str());
+    TEST_ASSERT_EQUAL_STRING("https://ota.example/fw-0.2.0.bin", m.url.c_str());
+    TEST_ASSERT_EQUAL_INT(1094042, (int)m.size);
+}
+
+void test_manifest_rejects_malformed() {
+    // Short digest -> invalid (so a truncated manifest can never trigger an update).
+    const std::string shortDigest =
+        "{\"version\":\"1.0.0\",\"url\":\"u\",\"size\":10,\"blake2b\":\"abcd\",\"sig\":\"" +
+        std::string(128, 'b') + "\"}";
+    TEST_ASSERT_FALSE(parseManifest(shortDigest).valid);
+    // Missing fields / empty body -> invalid.
+    TEST_ASSERT_FALSE(parseManifest("{}").valid);
+    TEST_ASSERT_FALSE(parseManifest("not json").valid);
+    // size 0 -> invalid.
+    const std::string zeroSize =
+        "{\"version\":\"1.0.0\",\"url\":\"u\",\"size\":0,\"blake2b\":\"" + std::string(128, 'a') +
+        "\",\"sig\":\"" + std::string(128, 'b') + "\"}";
+    TEST_ASSERT_FALSE(parseManifest(zeroSize).valid);
+}
+
+void test_version_compare_and_should_update() {
+    TEST_ASSERT_TRUE(isNewerVersion("0.1.0", "0.2.0"));
+    TEST_ASSERT_TRUE(isNewerVersion("0.1.9", "0.2.0"));
+    TEST_ASSERT_TRUE(isNewerVersion("1.0.0", "1.0.1"));
+    TEST_ASSERT_FALSE(isNewerVersion("0.2.0", "0.2.0"));  // equal
+    TEST_ASSERT_FALSE(isNewerVersion("0.2.0", "0.1.9"));  // older
+    TEST_ASSERT_FALSE(isNewerVersion("2.0.0", "1.9.9"));
+    OtaManifest m;
+    m.valid = true;
+    m.version = "0.3.0";
+    TEST_ASSERT_TRUE(shouldUpdate("0.2.0", m));
+    TEST_ASSERT_FALSE(shouldUpdate("0.3.0", m));
+    m.valid = false;  // a malformed manifest never updates, even if "newer"
+    TEST_ASSERT_FALSE(shouldUpdate("0.1.0", m));
+}
+
+void test_hex_decode_roundtrip_and_rejects_bad() {
+    std::vector<uint8_t> out;
+    TEST_ASSERT_TRUE(hexDecode("00ff10ab", out));
+    TEST_ASSERT_EQUAL_INT(4, (int)out.size());
+    TEST_ASSERT_EQUAL_HEX8(0xff, out[1]);
+    TEST_ASSERT_EQUAL_HEX8(0xab, out[3]);
+    TEST_ASSERT_FALSE(hexDecode("abc", out));   // odd length
+    TEST_ASSERT_FALSE(hexDecode("zz", out));     // non-hex
+}
+
+// --- signed-OTA crypto: golden vectors from the Python signer (sb20proxy.ota.sign) ----------------
+// Deterministic test key (seed = bytes 0..31) signing a deterministic "image" (bytes 0..255). The
+// digest/sig/pubkey below were produced by cryptography (ed25519) + hashlib.blake2b on the signing
+// side; this asserts the vendored monocypher device verifier accepts them — i.e. Python-sign <-> C-verify
+// interop, and BLAKE2b agreement. Regenerate via code/tests/test_ota_sign.py if the scheme changes.
+namespace {
+std::vector<uint8_t> testImage() {  // bytes 0x00..0xff
+    std::vector<uint8_t> v(256);
+    for (int i = 0; i < 256; ++i) v[i] = (uint8_t)i;
+    return v;
+}
+const char* kGoldenPubKey =
+    "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8";
+const char* kGoldenDigest =
+    "1ecc896f34d3f9cac484c73f75f6a5fb58ee6784be41b35f46067b9c65c63a67"
+    "94d3d744112c653f73dd7deb6666204c5a9bfa5b46081fc10fdbe7884fa5cbf8";
+const char* kGoldenSig =
+    "b2e355e1bbc88f6f324fe8b444197d0f301162d91fb9484523afb0e77f64e769"
+    "eae7217d166ebe394e9addd3589406f01a7b614c06787bb6bff227689a63cb01";
+}  // namespace
+
+void test_blake2b_matches_python_digest() {
+    const std::vector<uint8_t> img = testImage();
+    uint8_t digest[kImageDigestSize];
+    imageDigest(img.data(), img.size(), digest);
+    std::vector<uint8_t> expected;
+    TEST_ASSERT_TRUE(hexDecode(kGoldenDigest, expected));
+    TEST_ASSERT_EQUAL_INT(kImageDigestSize, (int)expected.size());
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(expected.data(), digest, kImageDigestSize);
+    // Streamed (chunked) hashing must agree with one-shot.
+    ImageHasher h;
+    h.update(img.data(), 100);
+    h.update(img.data() + 100, img.size() - 100);
+    uint8_t streamed[kImageDigestSize];
+    h.finish(streamed);
+    TEST_ASSERT_TRUE(digestsEqual(digest, streamed));
+}
+
+void test_ed25519_verifies_python_signature() {
+    std::vector<uint8_t> pub, digest, sig;
+    TEST_ASSERT_TRUE(hexDecode(kGoldenPubKey, pub));
+    TEST_ASSERT_TRUE(hexDecode(kGoldenDigest, digest));
+    TEST_ASSERT_TRUE(hexDecode(kGoldenSig, sig));
+    // The real device path: recompute the digest from the image, confirm it matches the manifest's,
+    // then verify the signature over it.
+    const std::vector<uint8_t> img = testImage();
+    uint8_t computed[kImageDigestSize];
+    imageDigest(img.data(), img.size(), computed);
+    TEST_ASSERT_TRUE(digestsEqual(computed, digest.data()));
+    TEST_ASSERT_TRUE(verifyImageSignature(digest.data(), sig.data(), pub.data()));
+}
+
+void test_ed25519_rejects_tampering() {
+    std::vector<uint8_t> pub, digest, sig;
+    hexDecode(kGoldenPubKey, pub);
+    hexDecode(kGoldenDigest, digest);
+    hexDecode(kGoldenSig, sig);
+    // Flip one signature byte -> reject.
+    std::vector<uint8_t> badSig = sig;
+    badSig[10] ^= 0x01;
+    TEST_ASSERT_FALSE(verifyImageSignature(digest.data(), badSig.data(), pub.data()));
+    // Flip one digest byte (a tampered image) -> reject.
+    std::vector<uint8_t> badDigest = digest;
+    badDigest[0] ^= 0x80;
+    TEST_ASSERT_FALSE(verifyImageSignature(badDigest.data(), sig.data(), pub.data()));
+    // Wrong public key (flip a byte) -> reject.
+    std::vector<uint8_t> badPub = pub;
+    badPub[5] ^= 0x01;
+    TEST_ASSERT_FALSE(verifyImageSignature(digest.data(), sig.data(), badPub.data()));
+}
+
 // --- runner -------------------------------------------------------------------
 
 int runUnityTests() {
@@ -1525,6 +1653,13 @@ int runUnityTests() {
     RUN_TEST(test_request_authority_extracts_host);
     RUN_TEST(test_same_origin_allows_tools_and_self);
     RUN_TEST(test_same_origin_blocks_cross_site);
+    RUN_TEST(test_manifest_parse_and_validate);
+    RUN_TEST(test_manifest_rejects_malformed);
+    RUN_TEST(test_version_compare_and_should_update);
+    RUN_TEST(test_hex_decode_roundtrip_and_rejects_bad);
+    RUN_TEST(test_blake2b_matches_python_digest);
+    RUN_TEST(test_ed25519_verifies_python_signature);
+    RUN_TEST(test_ed25519_rejects_tampering);
     RUN_TEST(test_correction_scale_offset);
     RUN_TEST(test_correction_clamps_at_zero);
     RUN_TEST(test_curve_empty_is_unity);
