@@ -60,7 +60,7 @@ pio run  -e esp32c3-ota -t upload --upload-port <ip>    # thereafter, over the a
 curl http://<ip>/                                       # live status JSON
 curl http://<ip>/log                                    # recent log lines (serial-over-HTTP)
 curl http://<ip>/log/off                                # disable the log endpoint (persisted)
-curl http://<ip>/forget                                 # wipe creds -> reboots into setup
+curl -X POST http://<ip>/forget                         # wipe creds -> reboots into setup (POST: CSRF-guarded)
 ```
 
 The C3's native-USB serial is unreliable, so a **diagnostic `/log` endpoint** mirrors the log

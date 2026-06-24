@@ -15,6 +15,7 @@
 #include "Cps.h"
 #include "DiagReport.h"
 #include "Ftms.h"
+#include "HttpSecurity.h"
 #include "MeterMatch.h"
 #include "LogBuffer.h"
 #include "MockCrank.h"
@@ -1485,10 +1486,45 @@ void test_ftms_feature_and_power_range_and_status() {
     TEST_ASSERT_EQUAL_INT(200, s.targetPower);
 }
 
+// --- CSRF / same-origin guard (Vuln 2) ---------------------------------------
+
+void test_request_authority_extracts_host() {
+    TEST_ASSERT_EQUAL_STRING("192.168.1.165", requestAuthority("http://192.168.1.165/forget").c_str());
+    TEST_ASSERT_EQUAL_STRING("sb20proxy.local:8080",
+                             requestAuthority("https://sb20proxy.local:8080/setup/save").c_str());
+    TEST_ASSERT_EQUAL_STRING("192.168.4.1", requestAuthority("192.168.4.1").c_str());  // bare Host header
+    TEST_ASSERT_EQUAL_STRING("evil.com", requestAuthority("http://evil.com/?x=1").c_str());
+    TEST_ASSERT_EQUAL_STRING("", requestAuthority("").c_str());
+}
+
+void test_same_origin_allows_tools_and_self() {
+    // No Origin/Referer (curl, our scripts, same-origin GET) -> allowed.
+    TEST_ASSERT_TRUE(isSameOriginRequest("sb20proxy.local", "", ""));
+    // Origin matches our Host -> our own page POSTing back -> allowed.
+    TEST_ASSERT_TRUE(isSameOriginRequest("192.168.1.165", "http://192.168.1.165", ""));
+    // Referer (no Origin) from our own page -> allowed.
+    TEST_ASSERT_TRUE(isSameOriginRequest("sb20proxy.local", "", "http://sb20proxy.local/setup"));
+}
+
+void test_same_origin_blocks_cross_site() {
+    // A malicious page POSTing to us -> Origin authority differs -> blocked (the /forget CSRF).
+    TEST_ASSERT_FALSE(isSameOriginRequest("sb20proxy.local", "http://evil.com", ""));
+    // Origin absent but a cross-site Referer -> blocked.
+    TEST_ASSERT_FALSE(isSameOriginRequest("192.168.1.165", "", "http://evil.com/attack.html"));
+    // Origin wins over Referer: a forged Origin is checked even if Referer looks local.
+    TEST_ASSERT_FALSE(isSameOriginRequest("sb20proxy.local", "http://evil.com",
+                                          "http://sb20proxy.local/"));
+    // No Host to validate against -> refuse rather than guess.
+    TEST_ASSERT_FALSE(isSameOriginRequest("", "http://evil.com", ""));
+}
+
 // --- runner -------------------------------------------------------------------
 
 int runUnityTests() {
     UNITY_BEGIN();
+    RUN_TEST(test_request_authority_extracts_host);
+    RUN_TEST(test_same_origin_allows_tools_and_self);
+    RUN_TEST(test_same_origin_blocks_cross_site);
     RUN_TEST(test_correction_scale_offset);
     RUN_TEST(test_correction_clamps_at_zero);
     RUN_TEST(test_curve_empty_is_unity);

@@ -16,6 +16,7 @@
 #include <esp_system.h>
 #include <esp_timer.h>
 
+#include "HttpSecurity.h"      // pure same-origin (CSRF) check for state-changing routes (host-tested)
 #include "Provisioning.h"      // pure page render + form parse + validation (host-tested)
 #include "DiagReport.h"        // pure tester /diag report (config + status + raw meter frames)
 #include "WebApp.h"            // static streaming dashboard served at GET /ui (renders in the phone)
@@ -171,10 +172,35 @@ void WifiLink::addLogRoutes_() {
     });
 }
 
+// CSRF guard for state-changing routes (2026-06-24 security review, Vuln 2). The on-device web server
+// has no auth, so a malicious page the user opens on the same LAN could otherwise POST to us behind their
+// back (e.g. wipe creds, re-point the source). We reject any request whose Origin/Referer authority isn't
+// our own Host; requests with no Origin/Referer (curl, our tools) are allowed (decision logic + tests in
+// HttpSecurity.h). Returns true to proceed; on false it has already sent a 403, so the handler must return.
+bool WifiLink::csrfOk_() {
+    const std::string host(server_->hostHeader().c_str());
+    const std::string origin(server_->hasHeader("Origin") ? server_->header("Origin").c_str() : "");
+    const std::string referer(server_->hasHeader("Referer") ? server_->header("Referer").c_str() : "");
+    if (isSameOriginRequest(host, origin, referer)) return true;
+    logf("[sec] blocked cross-site %s (origin='%s' host='%s')", server_->uri().c_str(),
+         origin.c_str(), host.c_str());
+    server_->send(403, "text/plain", "cross-site request blocked\n");
+    return false;
+}
+
+// Tell the WebServer to retain the Origin/Referer request headers (it drops all headers by default), so
+// csrfOk_() can read them. Called once per server, before begin(). Shared by station + portal.
+void WifiLink::collectCsrfHeaders_() {
+    static const char* kHeaders[] = {"Origin", "Referer"};
+    server_->collectHeaders(kHeaders, 2);
+}
+
 void WifiLink::addForgetRoute_(const char* msg) {
-    // GET /forget: wipe stored creds and reboot. `msg` (a string literal) is the only thing the
-    // station and portal versions differed by, so both share this installer.
-    server_->on("/forget", HTTP_GET, [this, msg]() {
+    // POST /forget: wipe stored creds and reboot. POST (not GET) + the CSRF guard so a cross-site <img>/
+    // form can't wipe a tester's WiFi config (Vuln 2). `msg` is the only thing the station and portal
+    // versions differed by, so both share this installer. CLI: curl -X POST http://<ip>/forget
+    server_->on("/forget", HTTP_POST, [this, msg]() {
+        if (!csrfOk_()) return;
         WifiCreds::clear();
         server_->send(200, "text/plain", msg);
         delay(400);
@@ -197,6 +223,7 @@ void WifiLink::startStationServer_() {
 #endif
 
     server_ = new WebServer(80);
+    collectCsrfHeaders_();  // so csrfOk_() can read Origin/Referer on the mutating POST routes
     // GET / -> the dashboard (what a tester sees opening the board's IP); /ui is kept as an alias.
     auto serveDash = [this]() { server_->send(200, "text/html", appPageHtml()); };
     server_->on("/", HTTP_GET, serveDash);
@@ -237,6 +264,7 @@ void WifiLink::addRideModeRoute_() {
         server_->send(200, "text/html", rideModeConfirmHtml());
     });
     server_->on("/wifi/off", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
         server_->send(200, "text/html", rideModeDoneHtml());
         delay(400);            // let the reply flush before the radio drops
         if (otaEnabled_) ArduinoOTA.end();
@@ -274,6 +302,7 @@ void WifiLink::addConfigRoutes_() {
         server_->send(303, "text/plain", "scanning\n");
     });
     server_->on("/setup/save", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
         const std::string body = formBody(server_);
         RuntimeConfig cfg = parseConfigForm(body);
         const char* err = configValidationError(cfg);
@@ -291,6 +320,7 @@ void WifiLink::addConfigRoutes_() {
     // POST /setup/reset -> clear the saved source + identity back to the shipped defaults (recovery
     // for a tester who mis-picked). Persisting defaults() == clearing: next boot loads the defaults.
     server_->on("/setup/reset", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
         if (configSave_) configSave_(RuntimeConfig::defaults());
         server_->send(200, "text/html",
                       "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' "
@@ -328,6 +358,7 @@ void WifiLink::addCalibrationRoutes_() {
         server_->send(303, "text/plain", "scanning\n");
     });
     server_->on("/calibrate/start", HTTP_POST, [this, render]() {
+        if (!csrfOk_()) return;
         const CalForm f = parseCalibrationForm(formBody(server_));
         const char* err = calibrationStartError(f);
         if (err) { render(err); return; }
@@ -346,11 +377,13 @@ void WifiLink::addCalibrationRoutes_() {
         esp_restart();
     });
     server_->on("/calibrate/finish", HTTP_POST, [this, render]() {
+        if (!csrfOk_()) return;
         if (calFinish_) calFinish_();  // fit (or no-op if too few pairs); the view shows the result
         server_->sendHeader("Location", "/calibrate");
         server_->send(303, "text/plain", "fitting\n");
     });
     server_->on("/calibrate/save", HTTP_POST, [this, render]() {
+        if (!csrfOk_()) return;
         const CalForm f = parseCalibrationForm(formBody(server_));
         if (calSave_ && !calSave_(f.deviceName)) {  // rejected (not fitted yet) — don't reboot
             render("Finish the calibration first \xE2\x80\x94 there's no fitted correction to save yet.");
@@ -367,6 +400,7 @@ void WifiLink::addCalibrationRoutes_() {
         esp_restart();
     });
     server_->on("/calibrate/cancel", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
         if (calCancel_) calCancel_();  // clear the calibration marker
         server_->send(200, "text/html",
                       "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' "
@@ -428,6 +462,7 @@ void WifiLink::startPortal_() {
     dns_->start(53, "*", apIP);
 
     server_ = new WebServer(80);
+    collectCsrfHeaders_();  // retain Origin/Referer so the /save + /forget POSTs are CSRF-guarded
 
     // 302 back to the setup page; reused by the OS captive-portal probes, the catch-all, and the
     // Rescan button below.
@@ -455,6 +490,7 @@ void WifiLink::startPortal_() {
     });
 
     server_->on("/save", HTTP_POST, [this, renderRoot]() {
+        if (!csrfOk_()) return;
         // WebServer parses urlencoded form fields itself; fall back to the raw body parser
         // (host-tested in Provisioning.h) if it didn't.
         WifiCredentials c;

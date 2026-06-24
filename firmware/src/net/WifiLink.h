@@ -97,13 +97,15 @@ public:
     bool inPortal() const { return portal_; }
 
 private:
-    void startStationServer_();  // OTA + status/update/forget routes (assumes WiFi joined)
+    void startStationServer_();  // status/setup/calibrate/forget routes + opt-in auth OTA (WiFi joined)
     void addConfigRoutes_();     // GET /setup picker + POST /setup/save + GET /setup/scan
     void addCalibrationRoutes_();  // GET /calibrate + POST start/finish/save/cancel + GET scan
     void addRideModeRoute_();    // GET /wifi/off (confirm) + POST /wifi/off (radio down for riding)
     void startPortal_();         // SoftAP + captive DNS + setup routes
     void addLogRoutes_();        // GET /log + /log/on + /log/off (shared by both modes)
-    void addForgetRoute_(const char* msg);  // GET /forget: clear creds + reboot (shared by both modes)
+    void addForgetRoute_(const char* msg);  // POST /forget: clear creds + reboot (shared by both modes)
+    void collectCsrfHeaders_();  // retain Origin/Referer on a server so csrfOk_() can read them
+    bool csrfOk_();              // same-origin (CSRF) guard for state-changing routes; sends 403 on fail
     void populateFromScan_(int n);  // fill networks_ from a finished WiFi scan (Arduino WiFi.*)
     bool collectScan_();            // harvest a completed async scan; true if one is still running
 

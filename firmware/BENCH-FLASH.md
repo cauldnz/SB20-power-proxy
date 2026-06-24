@@ -90,7 +90,7 @@ Phone: join open **`SB20-Setup`** → setup page auto-pops (else `http://192.168
 curl http://<device-ip>/        # status JSON (METER IN -> CRANK OUT)
 curl http://<device-ip>/ui      # streaming web dashboard
 curl http://<device-ip>/log     # serial-over-HTTP log (serial-flaky workaround)
-curl http://<device-ip>/forget  # wipe creds -> reboots into setup
+curl -X POST http://<device-ip>/forget  # wipe creds -> reboots into setup (POST: CSRF-guarded)
 ```
 ```bash
 # c) over-the-air thereafter (same binary), and the OTA-survival check:
