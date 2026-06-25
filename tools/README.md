@@ -53,7 +53,14 @@ ssh unraid "sh /tmp/new-machine-identity.sh chris-p1-sb20 --project sb20-power-p
 # read it back (the build uses this to `infisical login`):
 .\tools\secrets-get.ps1                       # masked summary object
 .\tools\secrets-get.ps1 -Field clientSecret   # raw secret (for scripting / the build)
+
+# regenerate the gitignored firmware\ota_secret.h FROM the vault (the firmware compile + flash.ps1 read it):
+.\tools\secrets-sync-ota.ps1                  # pull OTA_PASSWORD from Infisical -> firmware\ota_secret.h
+.\tools\secrets-sync-ota.ps1 -Check           # drift check (vault vs local header); exit 1 on drift
 ```
+
+The vault is the source of truth for `OTA_PASSWORD`; `firmware/ota_secret.h` is a **generated, gitignored
+artifact**. Rotate = change it in Infisical, re-run `secrets-sync-ota.ps1`, reflash.
 
 SSH must be **key-based / non-interactive**. The provisioner + runbook live in
 `cauldnz-pos:infra/identities/`; the two-pattern model (per-app read-only / per-machine read+write) is

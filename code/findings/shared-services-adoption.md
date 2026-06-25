@@ -35,29 +35,29 @@ NAS-side at `/mnt/user/appdata/pos-infisical/identities/sb20-power-proxy.creds` 
 
 - **⚠️ Firmware nuance:** the ESP32 can't run the Infisical SDK / pull at runtime — secrets are baked at
   **build/sign** time, so Infisical serves the **desk / build / backend** side:
-  - **Build** pulls `OTA_PASSWORD` from the vault (`infisical run -- pio run …`, or the raw API) as the
-    **read-only** SB20 identity, instead of reading the committed header.
+  - **Build** regenerates the gitignored `firmware/ota_secret.h` from the vault via
+    [`tools/secrets-sync-ota.ps1`](../../tools/secrets-sync-ota.ps1) (raw API, as the **read-only** SB20
+    identity) before a compile/flash — the vault is the source of truth; the header is a build artifact.
   - **Signed-pull backend** (P3/P4) holds the **ed25519 signing key**; the device verifies with the embedded
     public key (vendored monocypher) — only the *private* key needs the vault.
-- **SB20 remaining steps:**
-  1. **Retrieve the read-only creds** into Windows Credential Manager (owner, on this machine) —
-     turnkey via [`tools/secrets-pull.ps1`](../../tools/secrets-pull.ps1): SSH-fetches
-     `…/sb20-power-proxy.creds` from the NAS and stores it under Cred Manager target
-     `SB20/infisical/sb20-power-proxy` (**never** Git). Read back with `tools/secrets-get.ps1`.
-  2. **Seed the build's secrets** into the `sb20-power-proxy` project — `OTA_PASSWORD` (from the current
-     `ota_secret.h`) + later the signing key — via the **Infisical UI** (owner is admin) **or** a **`--write`
-     identity** (the read-only SB20 identity can't write).
-  3. **Agent wires the build** to pull `OTA_PASSWORD` from the vault at build time, retiring the committed
-     `ota_secret.h`: `secrets-get.ps1` → `infisical login` (UA) → `infisical secrets get OTA_PASSWORD`.
-     Real-data-first: verified against the live vault.
-- **P1 dev-box identity (read+write).** The per-machine pattern. Provision on the NAS (needs the admin
-  bootstrap token): `scp …/new-machine-identity.sh unraid:/tmp/`, then one run **per project** — the
-  script grants one project per run and isn't idempotent on a name, so today the P1 covers *both*
-  projects as two scoped identities: `… chris-p1-pos --project pos --write` and
-  `… chris-p1-sb20 --project sb20-power-proxy --write` (a single identity spanning both needs
-  multi-`--project` support — to propose to cauldnz-pos). Store each with
-  `secrets-pull.ps1 -Identity <name> -FromStdin` (pipe the one-time stdout). The `--write` identity on
-  `sb20-power-proxy` is what **seeds** `OTA_PASSWORD` for step 2.
+- **SB20 secrets onboarding — ✅ DONE (live, 2026-06-25):**
+  1. **Read-only build creds in Windows Credential Manager** — `tools/secrets-pull.ps1` SSH-fetched
+     `sb20-power-proxy.creds` and stored it at Cred Manager target `SB20/infisical/sb20-power-proxy`.
+  2. **`OTA_PASSWORD` seeded** into `sb20-power-proxy`/`dev` (raw API, admin token — the org admin reaches
+     the project; HTTP 200). **Verified readable by the read-only build identity** (len 32, matches the
+     local `ota_secret.h`).
+  3. **Build wiring:** [`tools/secrets-sync-ota.ps1`](../../tools/secrets-sync-ota.ps1) regenerates the
+     gitignored `firmware/ota_secret.h` from the vault (`secrets-get.ps1` → UA login → raw GET); `-Check`
+     reports drift. Run it before a build/flash; **rotate** = change in Infisical → re-run → reflash.
+  - Still future: seed `staging`/`prod` when those builds exist; the **ed25519 signing key** (P3/P4).
+- **P1 dev-box identity (read+write) — ⚠️ OPEN (topology decision).** A `chris-p1` identity exists but is
+  scoped to a **standalone `chris-p1` project** (the provisioner defaults the project to the identity name
+  when `--project` is omitted) — *not* `pos`/`sb20-power-proxy`, so it doesn't yet match the "both projects"
+  intent and can't self-serve seeding into `sb20-power-proxy`. (Seeding above used the admin token, so this
+  isn't blocking.) **To resolve** — owner's call: grant the existing `chris-p1` identity read+write on
+  `sb20-power-proxy` (+ the general project, currently `pos-test`) for one multi-project machine identity,
+  or re-provision scoped identities. The provisioner grants one project/run and isn't idempotent on a name
+  (multi-`--project` support to propose to cauldnz-pos). Store with `secrets-pull.ps1 -Identity <name> -FromStdin`.
 - Backlog (cauldnz-pos): per-env scoping (custom roles), OIDC/SPIFFE, self-service rotation via the control plane.
 - **⚠️ Plane boundary:** this is a **work** laptop but the POS is **personal-plane** — the machine identity
   here is for **personal** dev work (SB20 is a hobby); keep work/client secrets + content OUT of the personal
