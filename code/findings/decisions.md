@@ -1956,3 +1956,25 @@ session-8 close-out + the zero-reset feature — PRs #136 / #138, both on `main`
   because `doctor.ps1` doesn't cover the capture rig (green doctor = false confidence). Fix queued: extend
   `doctor.ps1` to GATE the capture rig, and a readiness pass must *verify both radios actually capturing*, not
   list it. (Recorded in the session-09 retro + folded into the PLAYBOOK.)
+
+## 2026-06-26 (pm) — Correction: the nRF capture path is sniff_ble.py, NOT Npcap (doctor #158 gated the wrong path)
+- **Refuted (mine, same day):** the morning "nRF not ready → install Npcap" call **and** PR #158's doctor gate
+  (Npcap + tshark extcap) were the **WRONG PATH**. After reviewing `nrf-sniffer.md` (which I'd failed to read)
+  + running `scripts/sniff_ble.py --scan-only`: the project captures BLE **headless via `sniff_ble.py`**, which
+  drives Nordic's **SnifferAPI over the dongle's serial port** → pcap. It needs **no Npcap / no tshark** —
+  those are only the interactive Wireshark-GUI alternative.
+- **The real state this morning:** the nRF genuinely wasn't usable, but because the **SnifferAPI extcap was
+  un-staged** (gone from `%APPDATA%\Wireshark\extcap`; present 2026-06-21) **and pyserial was missing** — NOT
+  Npcap. Dongle firmware was fine (Nordic VID_1915 PID 522A). So the "unavailable" *conclusion* was right; the
+  *reason* + the Npcap remediation were wrong.
+- **Fixed (PR #160):** `doctor.ps1` nRF checks now gate the real path — dongle PID 522A + SnifferAPI staged +
+  pyserial in `code/.venv`; README "Capture rig setup" re-framed around `sniff_ble.py` (nrf-sniffer.md
+  canonical; Npcap/Wireshark = GUI alternative); `pyserial>=3.5` added to the `[ble]` extra (reproducible via
+  provision-dev-env.ps1) + installed into `code/.venv`. Verified: doctor now FAILs only the genuine gaps
+  (SnifferAPI re-stage + ANT chmod); dongle + pyserial PASS.
+- **To make nRF ready next ride:** re-stage the matched **v4.1.1 SnifferAPI extcap** into
+  `%APPDATA%\Wireshark\extcap` (makerdiary zip; firmware already flashed) + do the ANT `chmod` (runbook §1).
+  Both doctor-gated now.
+- **Process lesson:** read the subsystem's canonical findings doc (here `nrf-sniffer.md`) BEFORE building
+  tooling/checks for it — both the spawned doctor task and I built the gate on assumptions, not the doc. (A
+  concurrent session also improved `nrf-sniffer.md` with a TL;DR quick-start, PR #159.)
