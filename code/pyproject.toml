@@ -27,6 +27,10 @@ ble = [
     # ANT+-only spoofing of the SB20.
     "bleak>=0.22",
     "pycycling>=0.4",
+    # Headless nRF Sniffer capture (scripts/sniff_ble.py drives Nordic's SnifferAPI over the
+    # dongle's serial port). The matched-version SnifferAPI extcap is staged separately, not
+    # pip-installed (Nordic-licensed) — see code/findings/nrf-sniffer.md.
+    "pyserial>=3.5",
 ]
 analysis = [
     # For ingesting captures into InfluxDB so they can be explored in Grafana

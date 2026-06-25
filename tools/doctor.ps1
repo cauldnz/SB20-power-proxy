@@ -7,10 +7,11 @@
     1. "can we actually build AND flash a firmware?" - the build/flash toolchain (session 8: a Py 3.14
        upgrade orphaned PlatformIO + no host compiler -> ~30 min lost mid-ride).
     2. "can we actually CAPTURE on both radios?" - the always-on dual-radio sniff that is a standing
-       pre-flight rule (PLAYBOOK §pre-flight): the nRF BLE sniffer (-> pcap, via Npcap + the nRF Sniffer
-       extcap) AND the ANT+ stick (-> JSONL, via usbipd -> a WSL libusb claim). Session 9 missed this across
-       two "check everything" passes because doctor only covered the build toolchain - a green doctor gave
-       false confidence and the gap (Npcap absent, nRF extcap unregistered, ANT node root-only) surfaced
+       pre-flight rule (PLAYBOOK §pre-flight): the nRF BLE sniffer (-> pcap, via code/scripts/sniff_ble.py +
+       Nordic's SnifferAPI over the dongle's serial port - NOT Npcap/tshark, see nrf-sniffer.md) AND the
+       ANT+ stick (-> JSONL, via usbipd -> a WSL libusb claim). Session 9 missed the rig across two "check
+       everything" passes because doctor only covered the build toolchain - a green doctor gave false
+       confidence and the gaps (SnifferAPI extcap unstaged, pyserial missing, ANT node root-only) surfaced
        only at the bike. This script now GATES the rig so a green doctor means captures actually work.
 
   Exits non-zero if any required check fails. A WARN is an intentionally-absent radio or an optional piece.
@@ -142,41 +143,47 @@ if (-not $NoCaptureRig) {
   Write-Host "`nCapture rig (dual-radio sniff)" -ForegroundColor Cyan
   Write-Host "------------------------------"
 
-  # ---------- nRF BLE sniffer path (Windows-native) ----------
+  # ---------- nRF BLE sniffer path ----------
+  # The project captures BLE headless via code/scripts/sniff_ble.py, which drives Nordic's SnifferAPI over
+  # the dongle's serial port (NO Npcap/tshark - that's only the interactive Wireshark-GUI alternative). So
+  # gate what sniff_ble.py actually needs (see code/findings/nrf-sniffer.md): the dongle on the SNIFFER
+  # firmware (PID 522A), the SnifferAPI extcap staged, and pyserial in the BLE venv.
   if ($NoNrf) {
     Result "nRF BLE sniffer" 'WARN' "- skipped (-NoNrf: intentionally absent this ride)"
   } else {
-    $tshark = (Get-Command tshark -ErrorAction SilentlyContinue).Source
-    if (-not $tshark -and (Test-Path 'C:\Program Files\Wireshark\tshark.exe')) { $tshark = 'C:\Program Files\Wireshark\tshark.exe' }
-
-    if (-not $tshark) {
-      Result "Wireshark / tshark" 'FAIL' "- not found; install Wireshark - tools/README.md > Capture rig"
-    } else {
-      # `tshark -D` exits non-zero (13) when Npcap can't load, so capture stdout+stderr regardless of exit code.
-      $td = (& $tshark -D 2>&1 | Out-String)
-      # (a) Npcap installed + tshark can load wpcap
-      if ($td -match 'Unable to load Npcap' -or $td -match 'wpcap\.dll') {
-        Result "Npcap (wpcap.dll loads)" 'FAIL' "- tshark can't load Npcap; install it (admin installer + reboot) - tools/README.md > Capture rig"
-      } else {
-        Result "Npcap (wpcap.dll loads)" 'PASS' "-> tshark loads wpcap"
-      }
-      # (b) nRF Sniffer for Bluetooth LE extcap registered (tshark -D lists it)
-      if ($td -match 'nRF Sniffer') {
-        Result "nRF Sniffer extcap" 'PASS' "-> tshark -D lists the nRF Sniffer interface"
-      } else {
-        Result "nRF Sniffer extcap" 'FAIL' "- not registered (tshark -D shows no nRF Sniffer); install+register the extcap - tools/README.md > Capture rig"
-      }
-    }
-    # (c) the nRF dongle is on a COM port (Nordic VID_1915, sniffer firmware enumerates a CDC-ACM serial port)
+    # (a) dongle on the SNIFFER firmware: Nordic VID_1915 + PID 522A on a COM port. (PID C00A = the nRF
+    #     Connect 'connectivity' firmware, which CANNOT sniff -> re-flash per nrf-sniffer.md.)
     $nordic = Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue |
       Where-Object { $_.DeviceID -like '*VID_1915*' -and $_.Name -match '\(COM\d+\)' } | Select-Object -First 1
-    if ($nordic) {
-      $com    = ([regex]'COM\d+').Match($nordic.Name).Value
-      $nrfPid = ([regex]'PID_([0-9A-Fa-f]{4})').Match($nordic.DeviceID).Groups[1].Value
-      Result "nRF dongle (COM port)" 'PASS' "-> Nordic VID_1915 PID_$nrfPid on $com"
+    if (-not $nordic) {
+      Result "nRF dongle (sniffer fw 522A)" 'FAIL' "- no Nordic VID_1915 COM port; plug the dongle in - nrf-sniffer.md"
     } else {
-      Result "nRF dongle (COM port)" 'FAIL' "- no Nordic VID_1915 serial port; plug the dongle in / flash the Sniffer firmware - tools/README.md > Capture rig"
+      $com    = ([regex]'COM\d+').Match($nordic.Name).Value
+      $nrfPid = ([regex]'PID_([0-9A-Fa-f]{4})').Match($nordic.DeviceID).Groups[1].Value.ToUpper()
+      if ($nrfPid -eq '522A') {
+        Result "nRF dongle (sniffer fw 522A)" 'PASS' "-> VID_1915 PID_522A on $com (sniffer app)"
+      } else {
+        Result "nRF dongle (sniffer fw 522A)" 'FAIL' "- on $com but PID_$nrfPid, not the sniffer app (522A); flash the sniffer firmware - nrf-sniffer.md"
+      }
     }
+    # (b) the Nordic SnifferAPI extcap is staged (sniff_ble.py borrows it; its version must match the fw).
+    $extcapDirs = @("$env:APPDATA\Wireshark\extcap", "$env:ProgramFiles\Wireshark\extcap")
+    $apiDir = $extcapDirs | Where-Object { Test-Path (Join-Path $_ 'SnifferAPI') } | Select-Object -First 1
+    if ($apiDir) {
+      Result "nRF SnifferAPI extcap staged" 'PASS' "-> $apiDir\SnifferAPI"
+    } else {
+      Result "nRF SnifferAPI extcap staged" 'FAIL' "- not in $($extcapDirs -join ' / '); re-stage the v4.1.1 extcap - tools/README.md > Capture rig + nrf-sniffer.md"
+    }
+    # (c) pyserial in the BLE venv that runs sniff_ble.py (it autodetects the dongle via serial.tools.list_ports).
+    $pyserialOk = $false
+    if ($blePy -and (Test-Path $blePy)) { & $blePy -c "import serial" 2>$null; $pyserialOk = ($LASTEXITCODE -eq 0) }
+    if ($pyserialOk) {
+      Result "pyserial (for sniff_ble.py)" 'PASS' "-> import serial OK in code\.venv"
+    } else {
+      Result "pyserial (for sniff_ble.py)" 'FAIL' "- code\.venv lacks pyserial; code\.venv\Scripts\python.exe -m pip install pyserial"
+    }
+    # (Interactive Wireshark-GUI capture additionally needs Npcap + the registered extcap; that's the
+    #  alternative path, not gated here - see nrf-sniffer.md 'Using it ... Wireshark GUI'.)
   }
 
   # ---------- ANT+ path (usbipd -> WSL libusb claim) ----------
