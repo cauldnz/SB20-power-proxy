@@ -1821,3 +1821,32 @@ grounded in captured bytes**. Run on the bike via the own-unique-ID plan. Narrat
   our spoof's CP, **propagate an offset-compensation/zero command to the real Assioma** over the existing
   BLE-central link so the calibrate button does something real, not just complete cosmetically. → backlog,
   `forward-plan.md` §10.
+
+## 2026-06-25 (pm) — Canonical reflash to the locked-down firmware + OTA-update path validated
+
+The SB20 board is now on the **shippable firmware** and the networked-update path is tested. (Follows the
+session-8 close-out + the zero-reset feature — PRs #136 / #138, both on `main`.)
+
+- **Reflashed `esp32c3-oled-live` from `main`** = the 2026-06-24 **security lockdown** + the **442** calibrate
+  fix (#136) + the **zero-reset→Assioma** feature (#138). OTA'd over the board's then-current *open* espota
+  (the pre-lockdown build), so this flash needed no auth; identity **`Stages 62145`** persisted (NVS).
+- **Kept it OTA-recoverable** (the board is remote — no USB access from the dev box): built with a gitignored
+  `firmware/ota_secret.h` defining `OTA_PASSWORD`, so the locked-down build's ArduinoOTA (`:3232`) stays ON
+  but **authenticated** (`[ota] authenticated push OTA enabled` in `/log`). **Verified the password is in
+  `firmware.bin` before flashing** — and a **clean** build is required: `__has_include("ota_secret.h")` does
+  NOT trigger an incremental rebuild when the file newly appears, so an incremental build would silently
+  ship a no-OTA image.
+- **OTA update path — TESTED both ways (answers "how do we update OTA"):**
+  - `espota` **without** the password → **`Authentication Failed`** (rejected — fail-closed auth enforced).
+  - `espota -a <password>` → **`Authenticating...OK`**, flashed, board recovered. ✅
+  - ⇒ **going-forward updates:** dev = **authenticated push** (`firmware/flash.ps1` reads `ota_secret.h`, or
+    `espota -a`); **USB** = always-works fallback; **signed-pull (P3/P4)** = the future hands-off production
+    path (still gated on backend + a key). On a multi-NIC host espota needs the explicit host IP
+    (`-I 192.168.1.223`) — PlatformIO's `-t upload` auto-picks `0.0.0.0`.
+- **Identity left on `Stages 62145`** (NOT restored to `62144`): it's the clean pairing for the pending
+  zero-reset on-air confirm *and* safe for normal riding (the real `62144` is then the only `62144` on air).
+  Restore `62144` once the experiment is fully done.
+- **Open / next gate:** the **zero-reset on-air confirm** (does the Assioma actually zero when the Stages app
+  calibrates?) — deferred to the next on-bike session ([`session-09`](../../sessions/session-09-zero-reset-onair-confirm.md)).
+  Needs the SB20 + Assioma + a pedal + the app calibrate; watch `/log` for the forwarded `0x0C` then the
+  Assioma's `20 0c 01 …` result.

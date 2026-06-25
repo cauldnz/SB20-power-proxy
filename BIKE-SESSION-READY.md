@@ -1,18 +1,21 @@
 # 🟢 READ ME FIRST — bike-machine session cold-start
 
-**You are the assistant on the bike machine.** One ride is **🟢 READY** for this visit:
+**You are the assistant on the bike machine.** Two rides are **🟢 READY** for this visit — run whichever
+bike is set up first:
 
+- **[Session 9 — zero-reset → Assioma: on-air confirm](sessions/session-09-zero-reset-onair-confirm.md)** —
+  on the **SB20**. The one unproven piece of the spoof: when the Stages app calibrates, does the firmware
+  forward `0x0C` to the Assioma so it **actually zeroes**? Pair SB20→ESP (app L=`62145`/R=`4963`), pedal,
+  app-calibrate, watch `/log`. ~10 min, opportunistic.
 - **[Session 5 — meter-to-meter calibration ride (XCadey → reads like Assioma)](sessions/session-05-meter-calibration-capture.md)** —
   on the **track bike** (both meters fitted). Drive the on-device `/calibrate` wizard so the XCadey reads
   like the Assioma, then leave the proxy rebroadcasting the corrected XCadey for the Garmin. ~20–30 min.
 
-> **Session 8 (SB20 spoof calibrate handshake) is ✅ DONE (2026-06-25).** G1 captured the real crank's `0x10`
-> (Manufacturer **Company ID 442** + mfg-data that encodes the L/R offsets), G2 confirmed the Stages app's
-> calibrate now **completes** against our spoof (`decisions.md` 2026-06-25). **Two desk follow-ups before the
-> SB20 is "shippable":** (a) **reflash the board to current `main` (security lockdown) + the 442 fix** — it's
-> currently on a temporary *pre-lockdown+fix* build — then re-confirm the calibrate on the locked-down
-> firmware and restore the `62144` identity; (b) the 442 fix rides in on branch `session/08-onbike-20260625`
-> (merge the PR). Until then, don't re-run session 8.
+> **Session 8 (SB20 spoof calibrate handshake) is ✅ DONE (2026-06-25)** + the canonical reflash & OTA-path
+> validation are **done** (same day, pm — `decisions.md` 2026-06-25). The board now runs the **shippable
+> firmware** (security lockdown + 442 fix + zero-reset feature, all on `main`; PRs #136/#138), identity
+> `Stages 62145`, and is **OTA-recoverable via an authenticated push password** (`firmware/ota_secret.h`).
+> The only open SB20 piece is **session 9** (the zero-reset *on-air* confirm). Don't re-run session 8.
 
 They're **independent** — do one, both, or whichever bike is ready. **Guide the rider live, one step at a
 time,** out of the chosen session doc; watch `/log` + the capture files as they narrate. Don't dump the
@@ -98,9 +101,9 @@ API-verified against bleak 3.0.2.)
 > - **OTA (preferred, RSSI > −72 dBm):** on this **multi-NIC laptop espota auto-picks the wrong host IP**
 >   (`0.0.0.0` → "No response from device") — call espota directly with the **explicit host LAN IP**:
 >   ```powershell
->   firmware\.venv\Scripts\python.exe "$env:USERPROFILE\.platformio\packages\framework-arduinoespressif32\tools\espota.py" -i <board-ip> -I <host-lan-ip> -p 3232 -f firmware\.pio\build\esp32c3-oled-live\firmware.bin -r
+>   firmware\.venv\Scripts\python.exe "$env:USERPROFILE\.platformio\packages\framework-arduinoespressif32\tools\espota.py" -i <board-ip> -I <host-lan-ip> -p 3232 -f firmware\.pio\build\esp32c3-oled-live\firmware.bin -a <OTA_PASSWORD> -r
 >   ```
->   (session 8: board `192.168.1.165`, host `192.168.1.223`; `tools\doctor.ps1 -BoardIp <ip>` prints host-IP candidates). `flash.ps1` works too once `pio` is on PATH.
+>   (board `192.168.1.165`, host `192.168.1.223`; `tools\doctor.ps1 -BoardIp <ip>` prints host-IP candidates.) ⚠️ **The board now runs the locked-down firmware — push-OTA is AUTHENTICATED:** pass `-a <password>` (the `OTA_PASSWORD` in the gitignored `firmware\ota_secret.h`); without it espota returns `Authentication Failed`. `flash.ps1` reads `ota_secret.h` + passes `-a` for you (once the venv/`pio` is available).
 > - **USB:** `flash_c3.py --env esp32c3-oled-live --port COM9 --verify-ble "Stages 62144"` (NOT
 >   `flash.ps1 -Mode usb` — esptool 4.5.1 hits the C3 USB-JTAG "No serial data received" bug). **COM9 = the
 >   OLED bike board; COM10 = the spare/no-OLED board** (memory `esp32-c3-flashing`).
@@ -112,7 +115,7 @@ API-verified against bleak 3.0.2.)
 | | |
 |---|---|
 | **Proxy board** | `sb20proxy.local` → `192.168.1.165` (mDNS is the safe bet) · `/` `/ui` `/log` `/stats` `/status` `/calibrate` · **COM9** = OLED bike board |
-| **SB20 spoof (session 8 ✅ DONE)** | calibrate handshake **CLOSED** — real Enhanced `0x10` reply = `20 10 01 00 00 ba 01 04 85 03 b7 03` (**Company ID 442** + mfg-data encoding L901/R951; BLE offset still **0**). App restored to L=`62144`/R=`4963`. Board on a temp *pre-lockdown+fix* build on `Stages 62145`; **desk: reflash `main`+442 fix, restore `62144`.** Own-id spoof needs a **findable** right crank (phantom R fails) → no double-count. |
+| **SB20 spoof (session 8 ✅ DONE)** | calibrate handshake **CLOSED** — real Enhanced `0x10` reply = `20 10 01 00 00 ba 01 04 85 03 b7 03` (**Company ID 442** + mfg-data encoding L901/R951; BLE offset still **0**). App on L=`62144`/R=`4963` for normal riding. Board now on the **shippable `main` firmware** (lockdown + 442 + zero-reset) on `Stages 62145`; push-OTA **authenticated** (`-a <password>` from `ota_secret.h`). **On-air zero-reset confirm → session 9.** Own-id spoof needs a **findable** right crank (phantom R fails) → no double-count. |
 | **Corrector (session 5)** | on-device `/calibrate`: **XCadey = DUT**, **Assioma = Ref** → fit → rebroadcast corrected XCadey under its own name for the **Garmin**. Run path bench-proven; the bike proves **2-meter coex** + the real fit |
 | **The SB20 itself** | `Stages Bike 0105`, addr **`E4:AA:5A:D6:0E:D4`** · shifter char `0c46be60` · FTMS `0x1826` |
 

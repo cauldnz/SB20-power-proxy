@@ -4,21 +4,21 @@ The single index of every on-bike / hardware session we **plan and run**. Histor
 links to that session's **Plan + Actual** doc, and completed sessions stay as the record. Convention:
 CLAUDE.md → *Session plans & the session ledger* (record Actual against Plan, status header, mark DONE).
 
-> **Latest done: session 8 ✅ (2026-06-25)** — the SB20 crank-spoof's **calibrate / zero-reset handshake is
-> CLOSED**. **G1** captured the real crank's Enhanced-Offset `0x10` reply (`20 10 01 00 00 ba 01 04 85 03 b7 03`):
-> Manufacturer **Company ID 442** + mfg-data `04 85 03 b7 03` that *encodes* the L/R zero-offsets (901/951).
-> The old `Config::SPOOF_MFG_COMPANY_ID = 0x0000` placeholder was exactly why the Stages app's calibrate spun
-> (sessions 2–3). **G2:** with the real 442 + mfg-data, the app's calibrate **completes** (confirmed live — it
-> shows "Calibrated 901/951", literally our replayed bytes). Also: the own-unique-ID spoof (`62145`) pairs
-> **only if the configured right crank id is findable** (a phantom R `4964` → "pairing failed"; real `4963`
-> works), and then shows **no double-count**. Fix on branch `session/08-onbike-20260625` → PR; board temporarily
-> on a **pre-lockdown+fix build** (desk to reflash `main` + the 442 fix). **Next 🟢 READY ride: session 5** —
-> the on-device meter-to-meter `/calibrate` ride (track bike).
+> **Latest done: session 8 ✅ (2026-06-25)** + the same-day (pm) **canonical reflash & OTA-path validation.**
+> The SB20 crank-spoof's **calibrate/zero-reset handshake is CLOSED** — G1 captured the real `0x10` reply
+> (Company ID **442** + mfg-data encoding the L/R offsets 901/951; the old `0x0000` placeholder was why the
+> app's calibrate spun), and G2 confirmed the app's calibrate now **completes** (`decisions.md` 2026-06-25).
+> The board is now on the **shippable firmware** — security lockdown + 442 fix + zero-reset feature — and is
+> **OTA-recoverable** via an authenticated push password (`ota_secret.h`); the OTA path was tested both ways
+> (unauth → rejected, auth → flashes). **Two 🟢 READY bike steps next:** **session 9** — confirm the zero-reset
+> actually zeroes the Assioma *on air* (the one unproven piece of PR #138); and **session 5** — the on-device
+> meter-to-meter `/calibrate` ride (track bike).
 > · cold-start: [BIKE-SESSION-READY.md](../BIKE-SESSION-READY.md)
 
 | # | Date | Status | Session (Plan + Actual) | Outcome |
 |---|------|--------|--------------------------|---------|
-| 8 | 2026-06-25 | ✅ DONE | [SB20 spoof calibration handshake (G1 + G2)](session-08-sb20-spoof-calibration.md) | **Both goals met.** Own-id spoof (`62145`) pairs — but needs a **findable right crank** (phantom R `4964` → "pairing failed"; real `4963` works) — and then shows **no double-count** (the bike consumes only the ESP's doubled-left). **G1:** real `0x10` = `20 10 01 00 00 ba 01 04 85 03 b7 03` → **Company ID 442** + mfg-data encoding L901/R951. **G2:** the Stages app's calibrate **COMPLETES** with the real 442+mfg-data (the `0x0000` placeholder was the spin). Firmware fix + golden test on `session/08-onbike-20260625`; built/flashed live from pre-lockdown base `8494935`. → `decisions.md` 2026-06-25. Board on pre-lockdown+fix build (desk: reflash `main` + the fix). |
+| 9 | 2026-06-25 | 🟢 READY | [zero-reset → Assioma: on-air confirm](session-09-zero-reset-onair-confirm.md) | Confirm PR #138 **on air**: when the Stages app calibrates against our spoof, does the firmware forward `0x0C` to the Assioma so it **actually zeroes**? Board's already on the shippable firmware (lockdown + 442 + zero-reset), identity `62145`. ~10 min, opportunistic — pair SB20→ESP (app L=`62145`/R=`4963`), pedal, app calibrate, watch `/log` for `[cp] write 10` → forwarded `0x0C` → Assioma's `20 0c 01 …`. |
+| 8 | 2026-06-25 | ✅ DONE | [SB20 spoof calibration handshake (G1 + G2)](session-08-sb20-spoof-calibration.md) | **Both goals met.** Own-id spoof (`62145`) pairs — but needs a **findable right crank** (phantom R `4964` → "pairing failed"; real `4963` works) — and then shows **no double-count** (the bike consumes only the ESP's doubled-left). **G1:** real `0x10` = `20 10 01 00 00 ba 01 04 85 03 b7 03` → **Company ID 442** + mfg-data encoding L901/R951. **G2:** the Stages app's calibrate **COMPLETES** with the real 442+mfg-data (the `0x0000` placeholder was the spin). Firmware fix + golden test (PR #136); built/flashed live from pre-lockdown base `8494935`. → `decisions.md` 2026-06-25. **Board since reflashed to `main` (lockdown + 442 + zero-reset) 2026-06-25 pm + OTA path validated; on-air zero-reset confirm → session 9.** |
 | 7 | 2026-06-22 | ✅ DONE | [comprehensive passive ride monitor (qdomyos training ride)](session-07-comprehensive-monitor.md) | **Power topology RESOLVED:** one-clock ANT+ — **SB20 = Stages crank 1:1**, both **~11% high vs Assioma** (≈1.11×); **overturns session-4's ~30%-low**. **Block S:** qdomyos ergs over **standard FTMS** (vs the app's proprietary `0c46be`) + shifter captured. **Assioma BLE L/R balance** grabbed (proxy-forward grounding). Sniff-before-connect caught the `CONNECT_IND` (44k ATT, 39k ANT records). → `decisions.md` 2026-06-22 |
 | 6 | 2026-06-21 | ✅ DONE | [sniff the app↔SB20 erg conversation + power-topology Phase 2](session-06-sniff-and-power-topology.md) | **Block S ✅:** app↔SB20 erg is **cleartext** (no `btsmp`/bond) over the **Stages-proprietary `0c46be`** char (handle 0x0039, `02 00 <u16> 00 00`), **not FTMS**; the `<u16>` is an app-side load setpoint (≠ watts). **Pipeline delivered:** `pcap_sqlite`+`fit_sqlite` (tshark→SQLite, both sniffs & FITs; suite 322 green). **Phase 2 ❌ blocked** — sweep/zero sniffs adverts-only (started after connect → no `CONNECT_IND`); topology still open (FIT preliminary: Stages ~10% high, *conflicts* w/ Phase 1). **Lesson: sniff before connect.** |
 | 5 | 2026-06-23 | 🟢 READY | [meter-to-meter calibration ride (XCadey → reads like Assioma)](session-05-meter-calibration-capture.md) | **Re-scoped to the on-device wizard** (replaces the old ANT+ capture→desk-fit plan): a single `/calibrate` session does it all. Desk-derisked 2026-06-23 — wizard renders + routes work over WiFi, **ride-blocking form-POST bug found + fixed** (PR #107), both boards on current firmware. **Bike proves:** 2-meter coex on the C3 + the real fit. Opportunistic — track bike on a trainer. |
