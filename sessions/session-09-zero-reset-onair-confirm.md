@@ -25,6 +25,14 @@ opportunistic — can ride along with [session 5](session-05-meter-calibration-c
 .\tools\doctor.ps1 -BoardIp 192.168.1.165     # toolchain + board reachable + OTA host-IP candidates
 curl http://sb20proxy.local/status            # 200, source:searching
 ```
+> **✅ Desk pre-flight verified 2026-06-25 (eve):** `doctor.ps1` green (bleak 3.0.2, PlatformIO 6.1.19, ESP32
+> cache; board `192.168.1.165` reachable, heap ~80 KB, `source:searching`); `main` current (`97c0bf4`);
+> `ota_secret.h` in sync with the vault (`secrets-sync-ota.ps1 -Check`, len 32 — **no reflash needed**); BLE
+> scan sees the spoof **`Stages 62145`** advertising. **Still to verify in the morning at the bike:** the
+> **dual-radio capture actually recording** (nRF BLE + ANT+ — needs the sniffer/stick plugged in), and the
+> **Assioma + right crank `4963` awake/findable** (both asleep in the desk scan — pedal to wake; phantom-R
+> fails pairing).
+>
 Open a rolling `/log` (it's readable on this build). **NB the locked-down firmware:** `POST /setup/save`
 has a same-origin (CSRF) check — do identity changes from the board's web UI, or a `curl` with matching
 `Origin`/`Referer` headers; OTA needs the `-a <password>` from `ota_secret.h`.
