@@ -49,6 +49,14 @@ write may need a retry or the Assioma may have been loaded/moving during the zer
   (`POST /setup/save name=ASSIOMA&single=1&spoof_name=Stages 62144&spoof_serial=11821518` — needs the
   same-origin header on the locked-down build) once the experiment is fully done.
 
+## Opportunistic bonus (if time — the rig's already set up)
+- **Debug the phantom-R pairing failure** (`forward-plan.md` §12): while at the bike, run a couple of
+  crank-id variants in the app and watch `/log` — **L=`62145` / R=`4964`** (absent → reproduce the fail;
+  does the ESP see *any* connect attempt?), then **L=`<absent id>` / R=`4963`** (does the bike connect to a
+  present right crank alone?). Nails whether the SB20 needs *both* ids findable (→ a sole-source workaround
+  = the ESP advertising a 2nd phantom-right peripheral) or the app is the gatekeeper. Restore L=`62145` /
+  R=`4963` afterwards for the zero-reset gate above.
+
 ## Retro
 - Went well:
 - Went wrong / slow / confusing (+ root cause):
