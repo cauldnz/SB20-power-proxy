@@ -19,6 +19,10 @@ Verified reachable 2026-06-25: Ollama `:11434` (models `llama3.2:3b`, `nomic-emb
 ## 1. Secrets — Infisical (retires gitignored `ota_secret.h`)
 Move `OTA_PASSWORD` (today a gitignored `firmware/ota_secret.h`) and, when built, the **signed-pull ed25519
 signing key** into the vault.
+
+> **Platform-side auth standardization tracked in [cauldnz-pos#1](https://github.com/cauldnz/cauldnz-pos/issues/1)**
+> (in progress): the per-machine identity method (no SSH-keypair option — Universal Auth + OS credential
+> store), a provisioning script, and the central `SHARED-SERVICES.md` docs. SB20 consumes the result here.
 - **⚠️ Firmware nuance:** the ESP32 is a microcontroller — it can't run the Infisical SDK / pull at runtime;
   it gets secrets **baked at build/sign time**. So Infisical serves the **desk / build / backend** side:
   - **Build** pulls `OTA_PASSWORD` from the vault (`infisical run -- pio run …`, or the raw API) instead of
