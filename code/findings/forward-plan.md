@@ -545,3 +545,35 @@ make the app's **"Zero Reset" perform a real zero-offset on the Assioma**:
   shape **before** building it.
 - **Care:** the Assioma must be **unloaded/still** during the zero (cranks stationary), and any offset
   surfaced to the app must stay within the range the Stages app accepts.
+
+---
+
+## 11. SB20 spoof — bidirectional CRANK-LENGTH bridge (sessions 3/8/9; owner 2026-06-25)
+
+The crank-spoof's calibrate/zero-reset **handshake** is closed (#136) and the zero-reset now forwards to the
+Assioma (§10, #138) — **but crank length is still a gap** (do NOT call the spoof "done"). Today the spoof
+answers the standard CP Request-Crank-Length (`0x05`) with a **static 172.5 mm** (the captured real-crank
+value), and the Stages app's crank-length *set* never reaches us over standard CP (`0x04`) — so the app
+shows **`--`** (session 3 "A2", re-confirmed sessions 8/9). **Owner's goal:** make the spoof a
+**transparent, bidirectional crank-length bridge** between the Stages app and the real meter — like the
+zero-reset pass-through, but BOTH ways:
+
+- **App → meter:** accept the crank length the SB20/Stages app sets → **forward it to the source meter**
+  (Assioma or other) so the real meter computes power with the correct crank length.
+- **Meter → app:** **read the source meter's crank length** → present it to the Stages app (real value, not
+  `--`, and not the static 172.5 mm).
+
+**Why it's harder than the zero-reset (capture first — real-data-first):**
+- The Stages app does NOT set crank length over standard CP `0x04` (no such write reached our ESP in
+  sessions 8/9 → the `--`); it uses a **non-standard/proprietary path** — likely the Stages proprietary
+  char **`d445fe02`** (the `fe02` token char). **Capture what the app writes when you change crank length**
+  (against the real crank and/or our spoof) before building the intercept.
+- The Assioma likely takes crank-length config over its **Nordic-UART service** (`6e400001…`, seen in
+  `G-assioma17039-ble-zero-20260615`), NOT standard CP `0x04`. **Capture the Favero-app ↔ Assioma
+  crank-length exchange** to ground the forward (and check whether other meters differ).
+- So this is **two proprietary protocols to reverse, both directions** — bigger than the zero-reset (which
+  rode standard CP). Stage it: (1) capture both sides; (2) do **meter→app read-back first** (lower risk —
+  just answer the app's crank-length read with the source's real value); (3) then the **app→meter forward**.
+
+**Pattern:** §10 (zero-reset) + §11 (crank length) are the same idea — the spoof as a **transparent config
+bridge** between the Stages app and the real power meter. Other config (cadence source, etc.) fits the mold.
