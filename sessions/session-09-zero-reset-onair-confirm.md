@@ -87,4 +87,30 @@ write may need a retry or the Assioma may have been loaded/moving during the zer
   Stages app isn't fighting erg; budget setup time). **(2)** the **§12 battery-out variant** (known-good
   R=`4963` with its battery pulled — does a *known* id that's offline behave like an *unknown* one?) + the
   sole-source **2nd-phantom-right-peripheral** test. **(3)** the **crank-length bidirectional bridge** (§11),
-  still open. **(4)** stand up the **nRF sniffer** (Npcap + extcap) so next ride has the full dual-radio capture.
+  still open. **(4)** stand up the **nRF sniffer** — re-stage the v4.1.1 `SnifferAPI` extcap + `pyserial` (NOT
+  Npcap; see addendum) so next ride has the full dual-radio capture.
+
+## Retro — afternoon addendum (desk work after the rider stopped)
+
+The rider called the live workout off (the driver bug below ate the warm-up) and rode self-driven; the rest
+came out of the post-ride desk pile. All of the below are **folded into the playbooks** — the "capture all
+learnings" pass:
+
+- **nRF capture path — the morning call AND my first fix were the WRONG path.** "Install Npcap" + the #158
+  `doctor.ps1` gate (Npcap + tshark extcap) were both wrong: the project sniffs headless via
+  `code/scripts/sniff_ble.py` + Nordic `SnifferAPI` over the dongle's serial port — **no Npcap/tshark**. The
+  real blockers were the **un-staged `SnifferAPI` extcap + missing pyserial** (dongle firmware was fine). Root
+  cause: I built tooling for the nRF subsystem **without reading `nrf-sniffer.md`** — the owner had to ask "did
+  you review it?" to surface it. Corrected in **#160** (doctor + README gate the real path; pyserial declared in
+  `[ble]`). So change **(a)** above is superseded — the gate now asserts **dongle 522A + `SnifferAPI` staged +
+  pyserial**, not Npcap/tshark. → DEV-PLAYBOOK §5 (read the findings doc first); PLAYBOOK §Passive BLE sniffing.
+- **FTMS workout driver — built live, bombed on the first on-air run.** A sync state-machine (`ftms_erg.drive`)
+  was fed an async bleak transport (coroutine never awaited); its tests covered only the pure segment builder,
+  so CI was green. Fixed + added a twin-based async-pump test; the `try/finally` Reset-on-exit kept the bike
+  safe. Lessons: don't build/debug tooling on the rider's clock; test the **seam**, not just the pure core.
+  → DEV-PLAYBOOK §2; PLAYBOOK §Time/patience savers; USERS-PLAYBOOK §3.
+- **Spawned-task / concurrent-session work landed in the shared tree** (the doctor hardening uncommitted in the
+  tree; a concurrent session's `nrf-sniffer.md` quickstart on its own branch #159). Survey + reconcile, don't
+  stomp or duplicate. → DEV-PLAYBOOK §4.
+- **Phantom-R fully resolved + recorded** (the SB20 needs *both* crank IDs findable). → PLAYBOOK §BLE pairing;
+  forward-plan §12; `decisions.md` 2026-06-26.

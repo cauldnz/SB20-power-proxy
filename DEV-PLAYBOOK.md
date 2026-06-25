@@ -63,6 +63,13 @@ CI, and merged the same session. Don't open a 10-file branch and hope.
   handler, exercise it end-to-end against a real board at least once — `code/scripts/route_smoke.py
   --ip <board>` does this for the device's routes (incl. POSTing a real urlencoded form and confirming
   `/diag` reflects it), so that regression can't recur silently.
+- **Test the seam the code will actually run through — not just its pure core.** The async / IO / hardware
+  wiring is its own bug habitat that a pure-core test sails right past (the async sibling of the form-POST bug
+  above). *(Session 9: the FTMS workout driver shipped with passing **segment-builder** tests but bombed on the
+  bike — it called the **synchronous** `ftms_erg.drive()` with an **async** bleak transport, so the transport
+  coroutine was never awaited. The fix shipped with `test_async_pump_converges_against_the_twin`, which drives
+  `_pump` against the in-process FTMS twin over an async transport — exactly the path that broke. For an
+  agent-built or seam-crossing module, the test MUST exercise the seam against the twin, not just pure functions.)*
 
 ## 3 · Decide at the right altitude — ask or plan, don't guess
 
@@ -84,6 +91,13 @@ One task → **fresh branch off `origin/main`** → PR → **wait for green CI**
 open PRs** + confirm `origin/main` hasn't moved under the PR → `gh pr merge --merge --delete-branch` →
 `git pull` → prune the local branch. Never resurrect an old branch; never merge on a stale base. (This
 is CLAUDE.md → *Git & branch hygiene*; it works — follow it every time, including for docs PRs.)
+
+- **A spawned task or concurrent session can leave work in the *shared working tree* — survey before you commit,
+  and reconcile rather than stomp or duplicate.** `git status` + `git branch -r` + `gh pr list` before each
+  commit/merge. *(Session 9: a spawned doctor-hardening task's changes turned up **uncommitted** in the tree
+  with no branch/PR — validated + adopted them in one PR; meanwhile a concurrent session independently improved
+  the same `nrf-sniffer.md` on its own branch (#159). The survey caught both, so each landed once — not lost,
+  not doubled. Stage explicit file lists, never `git add -A`, when the tree may hold another session's work.)*
 
 ## 5 · Environment gotchas (so the next session doesn't re-find them)
 
@@ -107,6 +121,13 @@ is CLAUDE.md → *Git & branch hygiene*; it works — follow it every time, incl
   config" stays *true*. A board left mid-experiment (a renamed spoof, a stale build) silently breaks the
   next session's assumptions. *(This session left a board one build behind; reflashing it kept the
   session-5 run-sheet honest.)*
+- **Before building tooling — or making an "X isn't ready" call — for a subsystem, read its canonical findings
+  doc first.** `code/findings/` is the source of truth (`nrf-sniffer.md`, `ftms-protocol.md`, the `*-protocol.md`
+  set). *(Session 9: both I and a spawned doctor-hardening task built the nRF capture-rig gate — plus a wrong
+  "install Npcap" remediation — on assumptions, never reading `nrf-sniffer.md`, which says the path is the
+  headless `sniff_ble.py` + Nordic `SnifferAPI` over serial, NOT Npcap/tshark. The gate checked the wrong thing
+  and shipped (#158); #160 corrected it. The doc would have saved the whole detour — the owner had to ask
+  "did you read it?" to surface it.)*
 
 ## 6 · Hunt bugs adversarially in code you just shipped — before you build on it
 
