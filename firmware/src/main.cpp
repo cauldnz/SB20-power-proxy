@@ -32,6 +32,10 @@
   static volatile bool g_pendDut = false, g_pendRef = false;
   static volatile int16_t g_pendDutP = 0, g_pendRefP = 0;
   static volatile uint32_t g_pendDutT = 0, g_pendRefT = 0;
+  // Set by the crank peripheral's CP-write callback when the SB20/app asks for a zero-reset (0x0C/0x10);
+  // loop() drains it into meter.requestZeroOffset() so the REAL source meter (Assioma) gets zeroed —
+  // off the BLE callback context, never a re-entrant central op. forward-plan §10.
+  static volatile bool g_pendZeroReset = false;
 #endif
 
 #if USE_WIFI
@@ -203,6 +207,10 @@ void setup() {
     meter.setMatch(cfg.meterAddress, cfg.meterNameFilter);
     meter.setSpoofName(cfg.spoofName);  // keep the loop guard in sync with the runtime identity
 
+    // The SB20/app's calibrate (CP 0x10) should perform a REAL zero on the source meter. The crank
+    // peripheral's CP callback flags it; loop() drains it into meter.requestZeroOffset() (forward-plan §10).
+    crank.setZeroResetHandler([]() { g_pendZeroReset = true; });
+
     // Calibration wiring: the DUT (primary meter) feeds the session via the proxy tap; the reference
     // (2nd central) feeds it directly. Both no-op unless a session is collecting, so this is inert in
     // normal spoof/corrector runs. On a calibration boot (cfg.calibrating, set by /calibrate/start)
@@ -370,6 +378,12 @@ void loop() {
         // reads it — ref first so the accumulator has a reference when the DUT sample pairs.
         if (g_pendRef) { g_pendRef = false; g_cal.onRef(g_pendRefP, g_pendRefT); }
         if (g_pendDut) { g_pendDut = false; g_cal.onDut(g_pendDutP, g_pendDutT); }
+    }
+    // Drain a pending zero-reset: the SB20/app asked our spoof to calibrate -> forward a REAL zero to the
+    // source meter HERE in loop() (off the CP-write callback, so no re-entrant central BLE op).
+    if (g_pendZeroReset) {
+        g_pendZeroReset = false;
+        meter.requestZeroOffset();
     }
 #endif
 

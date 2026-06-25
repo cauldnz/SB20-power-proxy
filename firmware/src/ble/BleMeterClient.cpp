@@ -176,6 +176,37 @@ void BleMeterClient::onDisconnected() {
     logf("[meter] disconnected");
 }
 
+bool BleMeterClient::requestZeroOffset() {
+    if (!connected_ || !client_) {
+        logf("[meter] zero-reset: no source connected");
+        return false;
+    }
+    NimBLERemoteService* svc = client_->getService(UUID_CPS);
+    if (!svc) {
+        logf("[meter] zero-reset: source has no CPS service");
+        return false;
+    }
+    NimBLERemoteCharacteristic* cp = svc->getCharacteristic(UUID_CP_CONTROL);
+    if (!cp || !cp->canWrite()) {
+        logf("[meter] zero-reset: source has no writable control point (0x2A66)");
+        return false;
+    }
+    // Best-effort: log the source's offset result if it indicates back. The Assioma replies
+    // `20 0c 01 <sint16 offset>` (captured `200c01ffff` = offset -1, G-assioma17039-ble-zero-20260615).
+    if (cp->canIndicate()) {
+        cp->subscribe(false, [](NimBLERemoteCharacteristic*, uint8_t* d, size_t n, bool) {
+            logf("[meter] zero-reset source result %s", toHex(d, n).c_str());
+        });
+    }
+    // The Assioma supports the SIMPLE Start Offset Compensation (0x0C), NOT the Enhanced 0x10 the Stages
+    // app uses — so forward 0x0C. Pedals must be unloaded + still (the app's zero-reset already tells the
+    // rider to stop). Fire-and-forget: the zero completes on the meter over the next ~few seconds.
+    const uint8_t op = CP_OP_START_OFFSET_COMP;  // 0x0C
+    const bool ok = cp->writeValue(&op, sizeof(op), true);  // write-with-response
+    logf("[meter] zero-reset -> source CP 0x0C: %s", ok ? "sent" : "write FAILED");
+    return ok;
+}
+
 void BleMeterClient::begin() {
     g_clients.push_back(this);  // register with the shared scan (one client for the spoof; two for cal)
     NimBLEScan* scan = NimBLEDevice::getScan();

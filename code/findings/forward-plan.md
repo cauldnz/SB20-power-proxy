@@ -520,6 +520,12 @@ From `phase-0-report.md` §5 — track, don't block on:
 
 ## 10. SB20 spoof — make the app's "Zero Reset" actually zero the Assioma (session 8)
 
+> **✅ FIRMWARE IMPLEMENTED 2026-06-25** (branch `feat/zero-reset-forward-to-assioma` → PR) — pure-core
+> `CpResult.requestSourceZero` flag + `BleMeterClient::requestZeroOffset()` (writes Start Offset Compensation
+> `0x0C` to the source's CP `0x2A66`) + the safe peripheral-hook → `loop()`-drain wiring + a host test;
+> ESP32 build green. **Remaining: the on-air confirm** — does the Assioma actually zero when the Stages app
+> calibrates? — a bike step that folds into the canonical reflash + a calibrate test. Design as-built below.
+
 Session 8 closed the calibrate **handshake** — the Stages app's zero-reset now *completes* against the spoof
 (`decisions.md` 2026-06-25) — by replaying the real crank's `0x10` reply (company-id **442** + the captured
 mfg-data, which encodes a **static** `901/951`). That's **cosmetically complete but functionally a no-op**:

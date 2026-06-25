@@ -171,6 +171,20 @@ void test_cp_offset_comp_basic_0x0C() {
     TEST_ASSERT_EQUAL_HEX8_ARRAY(expected, r.response.data(), 5);
 }
 
+void test_cp_request_source_zero_flag() {
+    // Offset-comp / zero-reset ops (0x0C, 0x10) set requestSourceZero so the hardware seam forwards a
+    // REAL zero to the source meter (the Assioma's CP supports 0x0C — see decisions.md / forward-plan §10);
+    // crank-length ops (0x04 set / 0x05 request) must NOT trigger a source zero.
+    const uint8_t c0c[] = {CP_OP_START_OFFSET_COMP};
+    TEST_ASSERT_TRUE(handleControlPoint(c0c, sizeof(c0c), 345, 0).requestSourceZero);
+    const uint8_t c10[] = {CP_OP_ENHANCED_OFFSET_COMP};
+    TEST_ASSERT_TRUE(handleControlPoint(c10, sizeof(c10), 345, 0).requestSourceZero);
+    const uint8_t c04[] = {CP_OP_SET_CRANK_LENGTH, 0x59, 0x01};
+    TEST_ASSERT_FALSE(handleControlPoint(c04, sizeof(c04), 345, 0).requestSourceZero);
+    const uint8_t c05[] = {CP_OP_REQUEST_CRANK_LENGTH};
+    TEST_ASSERT_FALSE(handleControlPoint(c05, sizeof(c05), 345, 0).requestSourceZero);
+}
+
 void test_cp_set_crank_length_0x04() {
     const uint8_t req[] = {CP_OP_SET_CRANK_LENGTH, 0x59, 0x01};   // 0x0159 = 345 = 172.5 mm
     CpResult r = handleControlPoint(req, sizeof(req), 330, 903);  // was 330 = 165 mm
@@ -1855,6 +1869,7 @@ int runUnityTests() {
     RUN_TEST(test_cp_offset_comp_enhanced_0x10_real_crank);
     RUN_TEST(test_encode_enhanced_offset_comp_structure);
     RUN_TEST(test_cp_offset_comp_basic_0x0C);
+    RUN_TEST(test_cp_request_source_zero_flag);
     RUN_TEST(test_cp_set_crank_length_0x04);
     RUN_TEST(test_cp_request_crank_length_0x05_stages_format);
     RUN_TEST(test_cp_set_then_request_crank_length_roundtrip);
