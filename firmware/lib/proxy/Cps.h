@@ -260,6 +260,12 @@ struct CpResult {
     std::vector<uint8_t> response;
     uint16_t crankLengthHalfMm;       // updated state to store back
     bool crankLengthChanged = false;
+    // True when the SB20/app asked for an offset-compensation / zero-reset (0x0C or 0x10). The hardware
+    // seam uses this to FORWARD a real zero to the source meter — the Assioma's CP (0x2A66) supports the
+    // simple 0x0C (captured reply `20 0c 01 ffff` in G-assioma17039-ble-zero-20260615). Fire-and-forget:
+    // we still reply to the SB20 immediately (the Assioma zero takes ~3.6 s, and the SB20 drops an
+    // unanswered CP write — reason 531), so the source zeros in the background while the app completes.
+    bool requestSourceZero = false;
 };
 inline CpResult handleControlPoint(const uint8_t* req, size_t len,
                                    uint16_t curCrankLenHalfMm, int16_t calOffset,
@@ -275,9 +281,11 @@ inline CpResult handleControlPoint(const uint8_t* req, size_t len,
     switch (op) {
         case CP_OP_START_OFFSET_COMP:                 // 0x0C — simple offset reply
             out.response = encodeOffsetCompResponse(calOffset);
+            out.requestSourceZero = true;             // forward a real zero to the source meter (seam)
             break;
         case CP_OP_ENHANCED_OFFSET_COMP:              // 0x10 — Enhanced (the Stages app's zero-reset)
             out.response = encodeEnhancedOffsetCompResponse(calOffset, mfgCompanyId, mfgData);
+            out.requestSourceZero = true;             // forward a real zero to the source meter (seam)
             break;
         case CP_OP_SET_CRANK_LENGTH:                  // 0x04 + uint16 LE (1/2 mm)
             if (len >= 3) {

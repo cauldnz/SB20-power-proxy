@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <string>
 
 #include "Config.h"  // SPOOF_* / CORRECTOR_* identity
@@ -34,6 +35,13 @@ public:
     // service) any head unit / Garmin pairs to. Call before begin(). Defaults to SPOOF.
     void setMode(ProxyMode m) { mode_ = m; }
 
+    // Hook invoked (from the control-point write callback) when the SB20/app requests an offset-
+    // compensation / zero-reset (CP 0x0C or 0x10). The seam wires this to forward a REAL zero to the
+    // source meter (the Assioma). The handler MUST be cheap + non-blocking — it runs on the NimBLE host
+    // task, so it should just flag work for loop() to drain (never issue a central BLE op re-entrantly).
+    // Call before begin(). Optional; defaults to no-op.
+    void setZeroResetHandler(std::function<void()> cb) { onZeroReset_ = std::move(cb); }
+
 private:
     ProxyMode mode_ = ProxyMode::Spoof;
     std::string spoofName_ = Config::SPOOF_NAME;      // advertised identity
@@ -44,6 +52,7 @@ private:
     uint32_t lastT_ = 0;          // previous reading's t_ms, for the cadence dt
     bool haveLastT_ = false;
     uint16_t crankLengthHalfMm_ = Config::SPOOF_CRANK_LENGTH_HALFMM;  // CP 0x04 set / 0x05 read
+    std::function<void()> onZeroReset_;  // fired on a 0x0C/0x10 CP write -> seam forwards a zero to source
 };
 
 }  // namespace sb20proxy

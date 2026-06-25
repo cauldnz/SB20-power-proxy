@@ -20,7 +20,8 @@ using namespace sb20proxy;
 // rest. Every write is logged raw first — that's how we capture the SB20's handshake (un-sniffable otherwise).
 class ControlPointCallbacks : public NimBLECharacteristicCallbacks {
  public:
-    explicit ControlPointCallbacks(uint16_t* crankLenHalfMm) : crankLen_(crankLenHalfMm) {}
+    ControlPointCallbacks(uint16_t* crankLenHalfMm, std::function<void()>* onZeroReset)
+        : crankLen_(crankLenHalfMm), onZeroReset_(onZeroReset) {}
     void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& /*info*/) override {
         NimBLEAttValue v = c->getValue();
         if (v.size() == 0) return;
@@ -36,12 +37,20 @@ class ControlPointCallbacks : public NimBLECharacteristicCallbacks {
             *crankLen_ = r.crankLengthHalfMm;
             logf("[cp] crank length set = %u (1/2 mm)", (unsigned)*crankLen_);
         }
+        // Answer the SB20 FIRST (it drops an unanswered CP write — reason 531), THEN fire-and-forget a
+        // REAL zero to the source meter on an offset-comp/zero-reset (0x0C/0x10). The handler only flags
+        // work for loop() — never a re-entrant central BLE op from this NimBLE host-task callback.
         c->setValue(r.response.data(), r.response.size());
         c->indicate();
+        if (r.requestSourceZero && onZeroReset_ && *onZeroReset_) {
+            logf("[cp] offset-comp -> forwarding zero to source meter");
+            (*onZeroReset_)();
+        }
     }
 
  private:
     uint16_t* crankLen_;
+    std::function<void()>* onZeroReset_;
 };
 
 // The Stages proprietary control char (fe02) — opaque protocol. We don't yet know what the SB20
@@ -85,7 +94,7 @@ void BleCrankPeripheral::begin() {
 
     NimBLECharacteristic* cp = cps->createCharacteristic(
         UUID_CP_CONTROL, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::INDICATE);
-    cp->setCallbacks(new ControlPointCallbacks(&crankLengthHalfMm_));
+    cp->setCallbacks(new ControlPointCallbacks(&crankLengthHalfMm_, &onZeroReset_));
     cps->start();
 
     const bool corrector = (mode_ == ProxyMode::Corrector);

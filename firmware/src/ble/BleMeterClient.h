@@ -32,6 +32,13 @@ public:
     bool connected() const { return connected_; }
     const char* sourceName() const { return name_; }  // the connected meter's advertised name
 
+    // Forward a zero-offset / calibration to the connected source meter: write Start Offset Compensation
+    // (CP 0x0C) to its Cycling Power Control Point (0x2A66). Used when the SB20/app triggers a zero-reset
+    // on our spoof so the REAL meter (the Assioma) actually gets zeroed. Fire-and-forget — returns whether
+    // the write was issued (the meter's offset result comes back async on the CP indication, logged).
+    // MUST be called from loop() context, never from a BLE callback (avoids a re-entrant central op).
+    bool requestZeroOffset();
+
     // Scan coordination (the NimBLE scan is a shared singleton, so multiple clients route through one
     // callback — see the registry in the .cpp). wantsTarget(): still looking for a meter to read.
     // claimedAddr(): the address this client has locked onto ("" if none), so another client doesn't
