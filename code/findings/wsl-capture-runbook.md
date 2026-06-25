@@ -194,6 +194,13 @@ next one.
 
 ## 9. Pre-ride checklist (do this *before* the rider clips in)
 
+> **Automate steps 1–3 with `tools\doctor.ps1` (run at the desk).** Its `ANT+ stick` / `ANT+ WSL libusb
+> claim` checks now do exactly this list — confirm the `0fcf:1008` stick, attach it into WSL, and run a
+> real openant/libusb claim — and FAIL with the precise fix (the §1 `chmod`, or the §3 zombie kill) if the
+> node is root-only or busy. Green it before the rider is at the bike; the manual steps below are the
+> fallback / the explanation of what doctor is asserting. (Session 9 reached the bike with the ANT node
+> still root-only because nothing gated it at the desk — `tools/README.md` > "Capture rig setup".)
+
 1. `usbipd list` → stick shows **Connected** (not just Persisted). If only
    Persisted, the physical stick is unplugged.
 2. `usbipd attach --wsl --busid <B>`; verify `lsusb | grep -i 0fcf` inside the

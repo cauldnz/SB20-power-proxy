@@ -73,8 +73,10 @@ rider starts:
   silently orphan the toolchain. Confirm `pio`/`platformio` runs, an ESP32 toolchain is cached, a host
   compiler exists for `pio test -e native`, **and** an OTA upload reaches the board — *before* the rider is
   at the bike. **Now committed:** `tools/provision-dev-env.ps1` provisions the pinned toolchain (PlatformIO
-  + the BLE venv; pins in `tools/dev-env.lock`) and `tools/doctor.ps1` is the build+flash pre-flight gate —
-  green it at the desk. *(Session 8: the bike laptop had no
+  + the BLE venv; pins in `tools/dev-env.lock`) and `tools/doctor.ps1` is the pre-flight gate — green it at
+  the desk. **It now also gates the dual-radio capture rig** (Npcap + nRF Sniffer extcap + dongle + the ANT+
+  WSL claim), so a green doctor means we can build, flash, *and* capture — see the dual-radio item below.
+  *(Session 8: the bike laptop had no
   PlatformIO — Py 3.14 orphaned it, empty `~/.platformio` — and no `gcc` → ~30 min of mid-session bring-up;
   the exact "does the tool run?" failure step 1 exists to prevent.)*
 - [ ] **Board near the AP — check RSSI before OTA.** OTA gets unreliable below ~**−72 dBm** on the C3
@@ -114,7 +116,15 @@ rider starts:
     a few-second live test capture on EACH radio** — never just tick the box. *(Session 9: the nRF sniffer was
     NOT ready — Npcap uninstalled, extcap unregistered — and it slipped through TWO explicit "check everything"
     passes, night-before AND morning, because `doctor.ps1` only checked build/flash. A green doctor MUST mean
-    the captures actually work.)*
+    the captures actually work.)* **Now implemented:** `doctor.ps1` default-gates the rig — Npcap (`wpcap`
+    loads) + the nRF Sniffer extcap registered + the dongle on its COM port + the ANT+ WSL libusb claim — and
+    FAILs (non-zero exit) with the exact fix when a piece is missing (`-NoNrf`/`-NoAnt` only when a radio is
+    *intentionally* absent; `-NoCaptureRig` for a build-only run). So the readiness procedure is now: **(1)**
+    run `.\tools\doctor.ps1` at the desk and get the **capture rig green**, then **(2)** take a **few-second
+    live test capture on each radio** — nRF: `tshark -i <nRF-Sniffer-iface> -a duration:3 -w test.pcapng`;
+    ANT+: a short `02_capture_assioma.py` — and confirm frames/pages actually land. Standing the nRF path up
+    at the desk (Npcap install, extcap register, dongle firmware): `tools/README.md` > "Capture rig setup".
+    **Never tick the capture box without doing both.**
   - **Commit the captures** (pcap + ANT JSONL) at close-out — canonical + lossless.
   - **Analyse by QUERYING `captures.sqlite`, never by dumping raw captures into context.** Parse both into the
     SQLite index (BLE via `tshark`→`pcap_sqlite.py`; the ANT JSONL likewise) and run SQL for the exact rows a
@@ -307,6 +317,11 @@ don't re-learn each one on the rider's time. Citations are in *(parens)*.
   the boot-guard `esp_timer` failsafe firing on a loop-stall, not a flashing fault. The root cause was the
   OLED I2C render blocking the hot loop (see Time/patience savers). *(decisions.md 2026-06-16; transcript
   2026-06-16.)*
+- **A freshly-rebooted board needs ~25 s before its HTTP server rebinds — don't mistake it for dead.** After
+  a reflash/reset, ping and BLE come up first; `/`, `/status`, `/log` time out for ~25 s while the WiFi +
+  web server re-init. Wait it out (or re-check) before declaring the board hung and power-cycling it again.
+  `doctor.ps1 -BoardIp <ip>` prints this reminder when `/status` is unreachable. *(Session 9: ~25 s of
+  "looks dead; wasn't" after a board restart.)*
 
 ### BLE pairing & the SB20's quirks
 
