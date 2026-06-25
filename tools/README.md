@@ -14,8 +14,8 @@ relying on a build/flash at the bike.
 .\tools\provision-dev-env.ps1 -WarmToolchain  # also pre-downloads the ESP32 toolchain (slow first time)
 
 # the ride-readiness PRE-FLIGHT — run at the desk, before the rider is at the bike.
-# Gates BOTH the build/flash toolchain AND the dual-radio capture rig (Npcap + nRF Sniffer extcap +
-# dongle; ANT+ stick shared into WSL + a libusb claim). A green doctor means we can build, flash, AND
+# Gates BOTH the build/flash toolchain AND the dual-radio capture rig (nRF: sniffer-fw dongle + SnifferAPI
+# extcap + pyserial, for sniff_ble.py; ANT+: stick shared into WSL + libusb claim). A green doctor means we can build, flash, AND
 # capture — exits non-zero on any fail. (Session 9: doctor used to cover only the build toolchain, so a
 # green run gave false confidence and the missing nRF/ANT capture rig surfaced at the bike.)
 .\tools\doctor.ps1                            # PASS/WARN/FAIL per piece; capture rig gated by default
@@ -57,51 +57,43 @@ notes below only cover what `doctor.ps1` asserts.
 > registered** — neither was caught because doctor only checked the build toolchain. Stand the nRF rig up
 > **once, at the desk**, and `doctor.ps1` keeps it honest thereafter.
 
-### nRF BLE sniffer (Windows) — Npcap + the nRF Sniffer extcap + dongle firmware
+### nRF BLE sniffer — the headless `sniff_ble.py` path (primary)
 
-Hardware here: a **Nordic nRF52840 dongle** (`VID_1915`) running the **nRF Sniffer for Bluetooth LE**
-firmware, which enumerates as a CDC-ACM **COM port** (e.g. `COM8`). Three pieces, each a doctor check:
+**Canonical doc: [`code/findings/nrf-sniffer.md`](../code/findings/nrf-sniffer.md)** (hardware, the `nrfutil`
+DFU firmware-flash recipe, the GUI path) — read it; this is the doctor-gated quick view. We capture BLE
+**headless** with [`code/scripts/sniff_ble.py`](../code/scripts/sniff_ble.py): it drives Nordic's `SnifferAPI`
+straight over the dongle's serial port (scan → follow a MAC → `.pcap`). **No Npcap, no tshark** — those are
+only for the interactive Wireshark-GUI alternative (below). Three pieces, each a `doctor.ps1` check:
 
-1. **Install Npcap** (doctor: `Npcap (wpcap.dll loads)`). tshark cannot capture without it.
-   - Easiest: re-run the **Wireshark installer** (4.6.x is already installed here) and tick **Install
-     Npcap**, or grab the standalone installer from <https://npcap.com/#download>. **Needs admin + a
-     reboot** — this is not scriptable unattended, so do it at the desk.
-   - Verify: `& 'C:\Program Files\Wireshark\tshark.exe' -D` lists interfaces with **no** `Unable to load
-     Npcap (wpcap.dll)` line.
+1. **Dongle on the sniffer firmware** (doctor: `nRF dongle (sniffer fw 522A)`). A Nordic nRF52840 dongle
+   (`VID_1915`) running the **nRF Sniffer for Bluetooth LE** app enumerates as a CDC-ACM COM port with PID
+   **`522A`**. PID `C00A` = the nRF-Connect "connectivity" firmware, which **can't** sniff — re-flash via
+   `nrfutil` DFU per `nrf-sniffer.md` §"How it was flashed". *(Currently the firmware IS flashed; it's the
+   host side below that's missing.)*
+2. **Stage the `SnifferAPI` extcap** (doctor: `nRF SnifferAPI extcap staged`). `sniff_ble.py` borrows Nordic's
+   `SnifferAPI` from the Wireshark extcap dir. Get the **matched v4.1.1** extcap from
+   `github.com/makerdiary/nrf52840-mdk-usb-dongle` (the extcap version must match the firmware) and copy its
+   `extcap/` contents (`SnifferAPI/`, `nrf_sniffer_ble.py`, `.bat`) into **`%APPDATA%\Wireshark\extcap`**.
+   Verify: `Test-Path "$env:APPDATA\Wireshark\extcap\SnifferAPI"`.
+3. **pyserial in the BLE venv** (doctor: `pyserial (for sniff_ble.py)`):
+   `code\.venv\Scripts\python.exe -m pip install pyserial`.
 
-2. **Install + register the nRF Sniffer for Bluetooth LE extcap** (doctor: `nRF Sniffer extcap`).
-   - Download **nRF Sniffer for Bluetooth LE** from Nordic:
-     <https://www.nordicsemi.com/Products/Development-tools/nRF-Sniffer-for-Bluetooth-LE/Download>
-     (a zip, e.g. `nrf_sniffer_for_bluetooth_le_4.x.x.zip`). It contains an `extcap/` folder
-     (`nrf_sniffer_ble.bat`, `nrf_sniffer_ble.py`, `SnifferAPI/`) and the dongle firmware under `hex/`.
-   - Find Wireshark's extcap folder: `& 'C:\Program Files\Wireshark\tshark.exe' -G folders` → the
-     **Personal Extcap path** (usually `%APPDATA%\Wireshark\extcap`, i.e.
-     `C:\Users\<you>\AppData\Roaming\Wireshark\extcap`). Copy the contents of the zip's `extcap/` there.
-   - The extcap calls `python`, which needs **pyserial**: ensure a `python` is on `PATH`, then
-     `python -m pip install pyserial` (or `pip install -r requirements.txt` from the extcap folder).
-   - Register: reopen Wireshark (or **Capture → Refresh Interfaces**). Verify from the CLI:
-     `& 'C:\Program Files\Wireshark\tshark.exe' -D` now lists an **`nRF Sniffer for Bluetooth LE COMx`**
-     interface. (This is exactly what doctor greps for.)
-
-3. **Confirm the dongle's Sniffer firmware** (doctor: `nRF dongle (COM port)`).
-   - The dongle must run the **Sniffer** firmware (a stock/DFU dongle won't sniff). Flash it with **nRF
-     Connect for Desktop → Programmer**: put the dongle in bootloader (press its **RESET**, the LED pulses
-     red), select `sniffer_nrf52840dongle_nrf52840_4.x.x.hex` from the zip's `hex/`, and **Write**.
-   - Confirm: it appears as a **Nordic `VID_1915`** serial port (doctor reports the PID + COMx). A green
-     `nRF Sniffer extcap` line above means the extcap is talking to that COM.
-
-**Few-second live test capture** (the playbook also requires this on ride day — doctor proves the rig is
-*installed*; a test capture proves it *records*):
+Then confirm + capture (the playbook's few-second live test — doctor proves it's *installed*, a scan proves it
+*records*):
 
 ```powershell
-$ts = 'C:\Program Files\Wireshark\tshark.exe'
-& $ts -D                                          # note the number/name of the nRF Sniffer interface
-& $ts -i <that-number-or-name> -a duration:3 -w "$env:TEMP\nrf-test.pcapng"
-& $ts -r "$env:TEMP\nrf-test.pcapng" | Select-Object -First 5   # non-empty => the dongle is sniffing
+code\.venv\Scripts\python.exe code\scripts\sniff_ble.py --scan-only --duration 10   # lists the dongle port + advertisers
+# follow the SB20 for a session — START BEFORE the app connects (else adverts only):
+code\.venv\Scripts\python.exe code\scripts\sniff_ble.py --device E4:AA:5A:D6:0E:D4 --duration 420 `
+  --output code\findings\captures\SNIFF-sb20-app-<stamp>.pcap
 ```
 
 > nRF gotcha (PLAYBOOK §Passive BLE sniffing): the sniffer can only **follow** a connection whose
 > `CONNECT_IND` it caught — start the sniff **before** the target connects, or you get adverts only.
+
+**Interactive alternative (Wireshark GUI):** to watch live in Wireshark instead, that path *does* need
+**Npcap** installed + the extcap **registered** (`tshark -D` lists `nRF Sniffer for Bluetooth LE COMx`). See
+`nrf-sniffer.md` §"Using it … Wireshark GUI". `doctor.ps1` does **not** gate this path.
 
 ### ANT+ stick (WSL) — usbipd share + a libusb claim
 
