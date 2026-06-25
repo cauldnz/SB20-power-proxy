@@ -1902,3 +1902,17 @@ session-8 close-out + the zero-reset feature — PRs #136 / #138, both on `main`
   "P1 = read+write on both projects" decision isn't met and the P1 can't self-serve seeding. Not blocking
   (admin seeds). Resolve by granting the `chris-p1` identity onto `sb20-power-proxy` + the general project
   (`pos-test`), or re-provisioning scoped identities; multi-`--project` support to propose to cauldnz-pos.
+
+## 2026-06-25 (eve) — P1 dev-box identity repurposed (chris-p1 → read+write on sb20-power-proxy + pos-test)
+- Per the owner's "repurpose chris-p1" choice: the `chris-p1` UA identity (IID `7e972f99…`, clientId
+  `e8eda690…`) was granted **member (read+write)** on `sb20-power-proxy` (`44b123ab…`) and `pos-test`
+  (`cf319ea9…`) — both grants HTTP 200. Verified **as chris-p1**: read `OTA_PASSWORD` ok (len 32) + a
+  throwaway `_P1_CHECK` write (200) and delete (200); an admin re-check confirmed no residue from the test.
+- `chris-p1.creds` repointed (`INFISICAL_PROJECT_ID`/`INFISICAL_PROJECT` → `sb20-power-proxy`) and pulled into
+  Windows Credential Manager (target `SB20/infisical/chris-p1`) via `tools/secrets-pull.ps1`. The P1 can now
+  self-serve seed/rotate `sb20-power-proxy` secrets without the admin token.
+- **Residuals (non-blocking):** the empty vanity `chris-p1` project (`93fe5483…`, 0 secrets across
+  dev/staging/prod) is still there — the project DELETE was blocked by the local safety classifier (reused
+  the identity ✓, but destroying a shared-infra project needs explicit go-ahead); drop via the Infisical UI
+  or admin `DELETE /api/v1/workspace/93fe5483…`. A stray `ONBOARD_TEST` key (cauldnz-pos onboarding artifact)
+  sits in `sb20-power-proxy/dev` — harmless (the build pulls only `OTA_PASSWORD`); remove at leisure.

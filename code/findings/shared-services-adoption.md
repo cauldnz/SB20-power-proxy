@@ -50,14 +50,16 @@ NAS-side at `/mnt/user/appdata/pos-infisical/identities/sb20-power-proxy.creds` 
      gitignored `firmware/ota_secret.h` from the vault (`secrets-get.ps1` → UA login → raw GET); `-Check`
      reports drift. Run it before a build/flash; **rotate** = change in Infisical → re-run → reflash.
   - Still future: seed `staging`/`prod` when those builds exist; the **ed25519 signing key** (P3/P4).
-- **P1 dev-box identity (read+write) — ⚠️ OPEN (topology decision).** A `chris-p1` identity exists but is
-  scoped to a **standalone `chris-p1` project** (the provisioner defaults the project to the identity name
-  when `--project` is omitted) — *not* `pos`/`sb20-power-proxy`, so it doesn't yet match the "both projects"
-  intent and can't self-serve seeding into `sb20-power-proxy`. (Seeding above used the admin token, so this
-  isn't blocking.) **To resolve** — owner's call: grant the existing `chris-p1` identity read+write on
-  `sb20-power-proxy` (+ the general project, currently `pos-test`) for one multi-project machine identity,
-  or re-provision scoped identities. The provisioner grants one project/run and isn't idempotent on a name
-  (multi-`--project` support to propose to cauldnz-pos). Store with `secrets-pull.ps1 -Identity <name> -FromStdin`.
+- **P1 dev-box identity (read+write) — ✅ DONE (2026-06-25).** The `chris-p1` identity (which the provisioner
+  had scoped to a standalone vanity `chris-p1` project) was **repurposed**: granted **read+write** on
+  `sb20-power-proxy` **and** `pos-test` (verified — read + a throwaway write/delete both succeeded), its
+  `.creds` repointed to `sb20-power-proxy`, and stored in Windows Credential Manager (target
+  `SB20/infisical/chris-p1`). The P1 can now self-serve seed/rotate `sb20-power-proxy` secrets without the
+  admin token. **Residuals (non-blocking):** the empty vanity `chris-p1` project still exists — deleting it
+  was blocked by the local safety classifier; drop via the Infisical UI or admin
+  `DELETE /api/v1/workspace/93fe5483-…`. A stray `ONBOARD_TEST` key sits in `sb20-power-proxy/dev` (an
+  onboarding artifact; harmless — the build pulls only `OTA_PASSWORD`). Multi-`--project` support in the
+  provisioner would avoid the vanity project — to propose to cauldnz-pos.
 - Backlog (cauldnz-pos): per-env scoping (custom roles), OIDC/SPIFFE, self-service rotation via the control plane.
 - **⚠️ Plane boundary:** this is a **work** laptop but the POS is **personal-plane** — the machine identity
   here is for **personal** dev work (SB20 is a hobby); keep work/client secrets + content OUT of the personal
