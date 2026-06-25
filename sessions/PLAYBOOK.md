@@ -273,6 +273,14 @@ don't re-learn each one on the rider's time. Citations are in *(parens)*.
   after the SB20 was already connected → ~4979 frames of pure advertising, zero connection data, and the
   crank-CPS reconcile was lost. It was **not** encryption.)* ⟹ **power-cycle the SB20 / toggle the pairing as
   the sniff goes live**, then connect — and confirm non-zero ATT (a `CONNECT_IND`) before trusting the capture.
+- **Capture headless with `code/scripts/sniff_ble.py` — NOT Wireshark/Npcap.** It drives Nordic's `SnifferAPI`
+  straight over the dongle's serial port (sniffer firmware, USB PID `522A`) → pcap; **no Npcap, no tshark**
+  (those are only the interactive GUI alternative). `tools/doctor.ps1` gates the rig (dongle on sniffer fw +
+  the `SnifferAPI` extcap staged + pyserial in `code/.venv`). **Read
+  [`code/findings/nrf-sniffer.md`](../code/findings/nrf-sniffer.md) before touching any of this** — and note the
+  `SnifferAPI` extcap can go **un-staged between sessions** (it did, 06-21 → 06-26), silently killing the path.
+  *(Session 9: the morning "nRF not ready → install Npcap" call was the WRONG path — the real blockers were the
+  un-staged extcap + missing pyserial, which doctor.ps1 now catches. `decisions.md` 2026-06-26.)*
 - **Parse pcaps with `tshark`, never by hand.** Wireshark's CLI natively dissects the `LINKTYPE_NORDIC_BLE`
   pcaps down to ATT/GATT; `analysis/pcap_sqlite.py` shells out to it → SQLite (and `fit_sqlite.py` does the
   Garmin FITs → the same index, so a reconcile is a JOIN). A pure-Python Nordic-BLE parser is a tar-pit — a
@@ -329,6 +337,14 @@ don't re-learn each one on the rider's time. Citations are in *(parens)*.
   "Stages 62144", so the SB20 (or a capture tool, or a sibling board) can grab the wrong one. For spoof
   tests, **pull the real L-crank battery** so the ESP is the only `62144`; for tools, disambiguate by
   `--address`. *(decisions.md 2026-06-17, 2026-06-18; BIKE-SESSION-2/3 setup step.)*
+- **The SB20 needs BOTH configured crank IDs findable on air to pair — symmetric.** App set to
+  L=`62145`(present) + R=`4964`(absent) → "pairing failed", and the SB20 **dropped + never re-attempted** our
+  ESP (`disconnect reason=531`, no `[srv] connect`); L=`42146`(absent) + R=`4963`(present) → the *same* fail;
+  both present → connects immediately. So an absent **left *or* right** id aborts the whole pairing — it is
+  **not** "needs a right crank" (session 8's narrower read). Implication for a sole-source rig (Assioma only,
+  no real cranks): the ESP must answer *both* configured ids (the 2nd-phantom-right-peripheral path). App- vs
+  bike-gatekeeper is still open (needs an nRF sniff of the app↔bike link). *(Session 9; forward-plan.md §12;
+  `decisions.md` 2026-06-26.)*
 - **The SB20 terminates the link if a control-point write goes unanswered.** Session 2 logged
   **`disconnect reason=531`** (NimBLE `0x0213` = HCI `0x13`, "remote user terminated") every time a CP
   procedure wasn't answered — and a side effect was the *next* write (Set Crank Length `0x04`) never even
@@ -359,6 +375,10 @@ don't re-learn each one on the rider's time. Citations are in *(parens)*.
   the rider cancelled, because the ESP logged the `0x10` write but sent no indication back. Fixed in PR #5
   (ACK `0x10` with a synthetic success — the Assioma is the real calibrated meter, nothing to zero on the
   ESP). Session 3 step A.1 verifies the fix on the bike. *(decisions.md 2026-06-18; BIKE-SESSION-3 §A.)*
+  **Session 9 confirmed the next layer on air:** the app's `0x10` is now *forwarded* as a Start-Offset-
+  Compensation `0x0C` to the real Assioma, which returns **`200c01ffff`** (SUCCESS, offset −1) — a genuine
+  zero, not just a synthetic ACK; the app completes + shows `901/951`. *(decisions.md 2026-06-26;
+  `G-zero-reset-onair-pass-20260626-0651.txt`.)*
 
 ### Capture discipline
 
@@ -385,6 +405,15 @@ don't re-learn each one on the rider's time. Citations are in *(parens)*.
   Python harness (a WinRT CPS peripheral as the meter, a bleak central as the consumer) before the bike, so
   the only open question at the bike was "does the *real* SB20 accept it?". The harness proves the firmware;
   the bike proves the bike. *(decisions.md 2026-06-17, 2026-06-18; `code/scripts/BLE-LOOP.md`.)*
+- **Never build or debug NEW tooling on the rider's clock — pre-build AND pre-*validate* it at the desk.**
+  The bike is for the **on-air proof of already-validated software**, never the first run of new code. *(Session
+  9: the FTMS workout driver was written live (background agent) and its first on-bike launch hit an async-
+  wiring bug — a synchronous state-machine fed an async BLE transport, coroutine never awaited — and the
+  build→bug→fix loop ate the rider's warm-up; they rightly called it off. Two takeaways: (1) validate a
+  hardware-driving path hermetically against the in-process twin BEFORE the ride, and use a **low-watt warm-up
+  segment as the live validation window** before any hard effort; (2) the driver's `try/finally` Reset-on-exit
+  DID keep the bike safe through the crash — keep that pattern on anything that commands resistance.
+  `decisions.md` 2026-06-26.)*
 - **The WSL/USB operational gremlins are solved — use the runbook.** The first live ride lost ~25 min to a
   zombie capture holding the ANT+ stick ("Resource busy"), root-only USB perms after `usbipd attach`, and a
   self-kill footgun (`pkill -f` matching the controlling shell). All now encoded: `run_capture.sh`

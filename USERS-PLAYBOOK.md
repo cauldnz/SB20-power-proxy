@@ -66,6 +66,11 @@ frustrated user and a support sink — "not yet, here's why" protects both sides
   OTA-iterated board never has to come back. The onboarding one-pager + ride protocol do the rest.
 - **No dead ends.** If a board can't be made ready, say "don't ride yet" rather than letting them
   troubleshoot in the saddle. A first bad ride sours a tester; the verify-gate exists to prevent it.
+- **Anything *we* drive on a user's ride is desk-validated first, too — not just their setup.** Any script we
+  run *for* them (erg control, a guided workout, a calibration pass) is proven against the in-process twin at
+  the desk before it touches their session; debugging our own tooling on a user's ride is the same sin as
+  sending them to ride an unverified board. *(Session 9: a workout driver debugged live ate the owner-rider's
+  warm-up — never do that on a user's clock.)*
 
 ## 4 · The collaboration loop (capture → support → OTA)
 
