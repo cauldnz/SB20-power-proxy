@@ -1,22 +1,22 @@
 # 🟢 READ ME FIRST — bike-machine session cold-start
 
-**You are the assistant on the bike machine.** Two rides are **🟢 READY** for this visit — run whichever
-bike is set up first:
+**You are the assistant on the bike machine.** **One ride is 🟢 READY** for this visit:
 
-- **[Session 9 — zero-reset → Assioma: on-air confirm](sessions/session-09-zero-reset-onair-confirm.md)** —
-  on the **SB20**. The one unproven piece of the spoof: when the Stages app calibrates, does the firmware
-  forward `0x0C` to the Assioma so it **actually zeroes**? Pair SB20→ESP (app L=`62145`/R=`4963`), pedal,
-  app-calibrate, watch `/log`. ~10 min, opportunistic.
 - **[Session 5 — meter-to-meter calibration ride (XCadey → reads like Assioma)](sessions/session-05-meter-calibration-capture.md)** —
   on the **track bike** (both meters fitted). Drive the on-device `/calibrate` wizard so the XCadey reads
   like the Assioma, then leave the proxy rebroadcasting the corrected XCadey for the Garmin. ~20–30 min.
+
+> **Session 9 ✅ DONE (2026-06-26)** — zero-reset → Assioma confirmed on air (`200c01ffff` SUCCESS = a real
+> zero) + phantom-R resolved (the SB20 needs *both* crank IDs findable). Don't re-run it; see the ledger +
+> `decisions.md` 2026-06-26.
 
 > **Session 8 (SB20 spoof calibrate handshake) is ✅ DONE (2026-06-25)** + the canonical reflash & OTA-path
 > validation are **done** (same day, pm — `decisions.md` 2026-06-25). The board now runs the **shippable
 > firmware** (security lockdown + 442 fix + zero-reset feature, all on `main`; PRs #136/#138), identity
 > `Stages 62145`, and is **OTA-recoverable via an authenticated push password** (`firmware/ota_secret.h`).
-> Open SB20 pieces: **session 9** (the zero-reset *on-air* confirm) **and** the **bidirectional crank-length
-> bridge** — still a real gap (the app shows `--`; `forward-plan.md` §11). Don't re-run session 8.
+> Open SB20 pieces (post session 9 ✅): the **bidirectional crank-length bridge** — still a real gap (the app
+> shows `--`; `forward-plan.md` §11) — plus the FTMS **workout driver** (drive it next ride) and the §12
+> **battery-out** variant. Don't re-run session 8 or 9.
 
 They're **independent** — do one, both, or whichever bike is ready. **Guide the rider live, one step at a
 time,** out of the chosen session doc; watch `/log` + the capture files as they narrate. Don't dump the

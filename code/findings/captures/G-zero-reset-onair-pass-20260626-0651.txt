@@ -1,0 +1,21 @@
+Session 9 - zero-reset -> Assioma on-air confirm - PASS (20260626-0651)
+Gate: app Calibrate/Zero-Reset -> our CP (0x10) -> forwarded 0x0C -> Assioma replied 200c01ffff (response/0x0C/SUCCESS, offset -1).
+
+=== /log ===
+[wifi] joining 'Donnie Boon'
+[meter] found 'ASSIOMA22428R' cc:d2:a0:d6:5c:9d
+[ota] authenticated push OTA enabled (ArduinoOTA :3232)
+[wifi] connected; status at http://192.168.1.165/
+[meter] disconnected
+[meter] found 'ASSIOMA17039L' e6:20:90:8c:f3:fe
+[meter] cps flags=0x0023 cadence=yes balanceHalfPct=100 23000000641f006de8
+[srv] connect from e4:aa:5a:d6:0e:d4
+[prop fe02] write bfda1853
+[cp] write 10
+[cp] offset-comp -> forwarding zero to source meter
+[meter] zero-reset -> source CP 0x0C: sent
+[meter] zero-reset source result 200c01ffff
+
+
+=== /status ===
+{"fw":"sb20proxy-esp32","source":"connected","src_name":"ASSIOMA17039L","forwarded":736,"src_power_w":169,"src_cadence_rpm":55,"src_balance_pct":45,"power_w":338,"cadence_rpm":55,"balance_pct":45,"rssi":-55,"heap":125536,"ms":743252}

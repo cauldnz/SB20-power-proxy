@@ -108,6 +108,13 @@ rider starts:
     `usbipd` (`wsl-capture-runbook.md`; native Windows is BLE-only — ride 1 lost ~25 min to bring-up) and the
     nRF dongle + Wireshark/tshark. **Verify both are *actually capturing* before the rider is at the bike** —
     a sniffer you think is running but isn't is worse than none.
+  - **⚠️ HARD RULE (session 9, 2026-06-26 — learned the painful way):** `doctor.ps1` MUST **gate the capture
+    rig**, not just build/flash — assert Npcap/tshark present + the nRF Sniffer extcap registered + the dongle
+    on its COM port + the ANT+ WSL claim (a libusb open). And **any "check everything" / readiness pass MUST do
+    a few-second live test capture on EACH radio** — never just tick the box. *(Session 9: the nRF sniffer was
+    NOT ready — Npcap uninstalled, extcap unregistered — and it slipped through TWO explicit "check everything"
+    passes, night-before AND morning, because `doctor.ps1` only checked build/flash. A green doctor MUST mean
+    the captures actually work.)*
   - **Commit the captures** (pcap + ANT JSONL) at close-out — canonical + lossless.
   - **Analyse by QUERYING `captures.sqlite`, never by dumping raw captures into context.** Parse both into the
     SQLite index (BLE via `tshark`→`pcap_sqlite.py`; the ANT JSONL likewise) and run SQL for the exact rows a
