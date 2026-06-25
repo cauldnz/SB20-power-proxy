@@ -15,7 +15,8 @@ bike is set up first:
 > validation are **done** (same day, pm — `decisions.md` 2026-06-25). The board now runs the **shippable
 > firmware** (security lockdown + 442 fix + zero-reset feature, all on `main`; PRs #136/#138), identity
 > `Stages 62145`, and is **OTA-recoverable via an authenticated push password** (`firmware/ota_secret.h`).
-> The only open SB20 piece is **session 9** (the zero-reset *on-air* confirm). Don't re-run session 8.
+> Open SB20 pieces: **session 9** (the zero-reset *on-air* confirm) **and** the **bidirectional crank-length
+> bridge** — still a real gap (the app shows `--`; `forward-plan.md` §11). Don't re-run session 8.
 
 They're **independent** — do one, both, or whichever bike is ready. **Guide the rider live, one step at a
 time,** out of the chosen session doc; watch `/log` + the capture files as they narrate. Don't dump the
