@@ -87,15 +87,28 @@ rider starts:
   *and* `ASSIOMA22428R`) and the real Stages cranks also advertise CPS — pin the source by address or the
   client bounces (see Lessons §BLE).
 - [ ] **A rolling `/log` window open** in a second terminal — you watch it through the whole session.
-- [ ] **An independent reference-meter feed running — timestamped, for the whole session.** Log a *second*,
-  independent power+cadence stream (the **Assioma over ANT+** is ideal — a separate radio, so zero
-  contention with the BLE work) for the *entire* session, so every gate has ground-truth to reconcile
-  against at the desk. The bike's own number can't validate itself: the Stages cranks read **~5–13 % high
-  vs the Assioma, cadence-dependent**, so "erg held 200 W" on the SB20 may not be 200 W at the pedals — an
-  independent log is the only way to know. **Pre-stage the ANT+ stick at the desk** (WSL + `usbipd`
-  passthrough per `wsl-capture-runbook.md`; native Windows is BLE-only) — standing it up mid-ride has been a
-  time-sink (ride 1 lost ~25 min), so treat a mid-ride bring-up as its own gated step. *(Owner ask,
-  Session 4: want a continuous ANT+ power+cadence feed for reconciliation every session.)*
+- [ ] **Always-on DUAL-RADIO capture for the WHOLE session — both sniffers, pre-staged, agent-run (standing rule).**
+  The rider's time is the budget, so leave **both radios capturing the entire ride** and mine the "exhaust"
+  at the desk — it turns one bike trip into replayable data, and lets a later question (e.g. §12, a missed
+  handshake) be answered from the capture instead of another trip. Run **both**, agent-side (the radios live
+  on the bike machine; the rider never manages them):
+  - **nRF BLE sniffer → pcap.** Captures the BLE air — app↔SB20, SB20↔crank, our ESP↔SB20. **Start it BEFORE
+    anything connects:** the nRF sniffer can only *follow* a connection whose `CONNECT_IND` it caught, and it
+    follows **one** link at a time, so power-cycle / re-pair the target as the sniff goes live and pick the
+    link that matters for the gate (started-after-connect = adverts only — the loss in session 6). Parse with
+    `tshark` → `pcap_sqlite.py`, never by hand. *(see §Passive BLE sniffing below.)*
+  - **ANT+ capture → JSONL.** The independent power+cadence reference (Assioma + cranks + SB20 FE-C) on a
+    *separate* radio (zero contention with the BLE work) — the ground-truth every gate reconciles against,
+    because the bike's own number can't validate itself (the Stages cranks read **~5–13 % high vs the
+    Assioma, cadence-dependent**). Pin the Assioma by its explicit ANT id; never wildcard.
+  - **Pre-stage BOTH at the desk** — they are the two biggest mid-ride time-sinks: the ANT+ stick over WSL +
+    `usbipd` (`wsl-capture-runbook.md`; native Windows is BLE-only — ride 1 lost ~25 min to bring-up) and the
+    nRF dongle + Wireshark/tshark. **Verify both are *actually capturing* before the rider is at the bike** —
+    a sniffer you think is running but isn't is worse than none.
+  - **Commit the captures** (pcap + ANT JSONL) at close-out — canonical + lossless; the analysis (and any
+    re-debug) happens off them, days later if need be. *(Owner standing ask, 2026-06-25: an nRF + ANT sniffer
+    running **any** time we're on the bike — capture the RF exhaust for later exploration; supersedes the
+    Session-4 ANT-only ask.)*
 
 ## 2 · Execute (live, you driving)
 

@@ -25,7 +25,9 @@ whole sheet; walk it.
 **How to run it well: read [`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md) first** — the rider's time and
 patience are the budget; one step at a time, explicit pass/fail, never send them to do something you
 haven't verified is ready, **⏱ timestamp from the start**, record every mid-session instruction change, and
-close with a retro.
+close with a retro. **Standing rule (pre-stage at the desk):** run the **always-on dual-radio capture** — an
+**nRF BLE sniffer + an ANT+ capture, both for the whole session** (PLAYBOOK §pre-flight) — so the ride's RF
+"exhaust" is replayable at the desk; verify both are *actually capturing* before the rider's at the bike.
 
 **Record as you go.** Write each step's result **back into the session doc** (`✅`/`❌`/`⚠️` + observed
 bytes / values / `/log` lines), not just chat. At the end set its `Status:` to `✅ DONE (date)` with a
@@ -128,5 +130,5 @@ API-verified against bleak 3.0.2.)
 **Live support:** the rider narrates in chat; you `curl` the board (`/`, `/log`, `/stats`, `/status`) and
 read the JSONL captures off the machine as they go.
 
-> All sessions are indexed in [`sessions/README.md`](sessions/README.md). Sessions 8 + 5 are independent
-> rides; older `BIKE-SESSION-*.md` / session 4 are historical (DONE).
+> All sessions are indexed in [`sessions/README.md`](sessions/README.md). Sessions **9 + 5** are the
+> independent 🟢 READY rides; session 8 + older `BIKE-SESSION-*.md` are historical (DONE).
