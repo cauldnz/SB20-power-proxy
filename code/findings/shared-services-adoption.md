@@ -11,38 +11,43 @@ Verified reachable 2026-06-25: Ollama `:11434` (models `llama3.2:3b`, `nomic-emb
 
 | Service | SB20 use | Status |
 |---|---|---|
-| **Secrets** (Infisical `:8222`) | Hold the **OTA push-password** + the future **ed25519 signed-pull key**; build/backend pull at build/sign time | ⏳ **needs a Machine Identity** (owner) |
+| **Secrets** (Infisical `:8222`) | SB20 build pulls `OTA_PASSWORD` + the ed25519 signing key via a **read-only app identity** at build/sign time | 🔵 read-only identity **created + verified** (cauldnz-pos#1); next: retrieve creds, seed `OTA_PASSWORD`, wire build |
 | **Observability** (OTLP `:4318` → Loki/Grafana `:3000`) | Non-blocking, content-free **signals** from the desk tooling (capture / build / flash / OTA / ride) | 🔵 wiring |
 | **Local models** (Ollama `:11434/v1`) | Token-heavy **routine** work (capture summarisation, status drafting, triage) + embeddings | 🔵 client helper |
 | **Surface into POS** (overlay) | Register SB20 (repo map, goals, health) so the day-driver sees it; home for weekly status + backlog | 🕓 coming soon |
 
 ## 1. Secrets — Infisical (retires gitignored `ota_secret.h`)
-Move `OTA_PASSWORD` (today a gitignored `firmware/ota_secret.h`) and, when built, the **signed-pull ed25519
-signing key** into the vault.
 
-> **Platform-side auth standardization tracked in [cauldnz-pos#1](https://github.com/cauldnz/cauldnz-pos/issues/1)**
-> (in progress): the per-machine identity method (no SSH-keypair option — Universal Auth + OS credential
-> store), a provisioning script, and the central `SHARED-SERVICES.md` docs. SB20 consumes the result here.
-- **⚠️ Firmware nuance:** the ESP32 is a microcontroller — it can't run the Infisical SDK / pull at runtime;
-  it gets secrets **baked at build/sign time**. So Infisical serves the **desk / build / backend** side:
-  - **Build** pulls `OTA_PASSWORD` from the vault (`infisical run -- pio run …`, or the raw API) instead of
-    reading the committed header → the password is compiled in (as today) but never committed.
-  - **Signed-pull backend** (P3/P4) holds the **signing key** in the vault; the device verifies with the
-    embedded public key (vendored monocypher) — only the *private* key needs the vault.
-- **Identity model — PER MACHINE, read+WRITE (owner, 2026-06-25):** each of the owner's machines gets its own
-  Infisical **Machine Identity** (this dev box is the **Lenovo P1 work laptop**); a dev env on that machine
-  authenticates *as the machine* and both **reads and writes** the secrets for the projects its identity is
-  scoped to. Secrets are organised per project; **auth is per machine**. Write access lets the tooling
-  **create/seed secrets directly** — no hand-seeding by the owner.
-- **⚠️ Trade-off (named):** read+write > read-only — a write-capable identity can create/overwrite/tamper, so
-  a compromised machine or its creds is the blast radius. Mitigate by **scope**: grant read+write on *this
-  machine's* project(s) (the SB20 project), **not org-wide**. Fine for personal-plane dev.
-- **Onboard (owner action — minimal):** (1) create this machine's Machine Identity (read+write,
-  **project-scoped**) — its `clientId`/`clientSecret` live at the **machine/user level** (env / Infisical CLI
-  login), **never** in any repo; (2) create an (empty) SB20 project + grant this identity access. **Then the
-  agent populates it:** push the current `OTA_PASSWORD` (from `ota_secret.h`) into the vault, add the signing
-  key later, wire the build to pull *as the machine* — retiring the committed header. Real-data-first: done
-  against the live vault, not pre-built blind.
+> **Platform model + provisioning landed in [cauldnz-pos#1](https://github.com/cauldnz/cauldnz-pos/issues/1)**
+> (commit `c363a9d`): `infra/identities/new-machine-identity.sh` + `infra/identities/README.md` + the
+> `SHARED-SERVICES.md` two-pattern model. **SB20 is already onboarded** (project + read-only identity created
+> + verified). This section is the SB20-side view of consuming it.
+
+**Two identity patterns (cauldnz-pos, least-privilege):**
+- **Per-app / service → READ-ONLY**, project-scoped (deployed runtime). **This is what the SB20 build uses**
+  to pull `OTA_PASSWORD` + the signing key at build time — the script's default.
+- **Per-machine → read+write** (dev boxes, e.g. the Lenovo P1) — general dev / seeding secrets; a *separate*
+  `--write` identity, **NOT** what the build runs as (a deployed build shouldn't carry write access).
+
+**Already provisioned + verified (cauldnz-pos):** project **`sb20-power-proxy`** (envs `dev`/`staging`/`prod`)
++ a **read-only** machine identity (logged in + test-read confirmed); its `clientId`/`clientSecret` are
+NAS-side at `/mnt/user/appdata/pos-infisical/identities/sb20-power-proxy.creds` (chmod 600).
+
+- **⚠️ Firmware nuance:** the ESP32 can't run the Infisical SDK / pull at runtime — secrets are baked at
+  **build/sign** time, so Infisical serves the **desk / build / backend** side:
+  - **Build** pulls `OTA_PASSWORD` from the vault (`infisical run -- pio run …`, or the raw API) as the
+    **read-only** SB20 identity, instead of reading the committed header.
+  - **Signed-pull backend** (P3/P4) holds the **ed25519 signing key**; the device verifies with the embedded
+    public key (vendored monocypher) — only the *private* key needs the vault.
+- **SB20 remaining steps:**
+  1. **Retrieve the read-only creds** onto this machine (owner): `ssh unraid "cat /mnt/user/appdata/pos-infisical/identities/sb20-power-proxy.creds"`
+     → store in the **OS credential store** (Windows Credential Manager), **never** Git.
+  2. **Seed the build's secrets** into the `sb20-power-proxy` project — `OTA_PASSWORD` (from the current
+     `ota_secret.h`) + later the signing key — via the **Infisical UI** (owner is admin) **or** a **`--write`
+     identity** (the read-only SB20 identity can't write).
+  3. **Agent wires the build** to pull `OTA_PASSWORD` from the vault at build time, retiring the committed
+     `ota_secret.h`. Real-data-first: verified against the live vault.
+- Backlog (cauldnz-pos): per-env scoping (custom roles), OIDC/SPIFFE, self-service rotation via the control plane.
 - **⚠️ Plane boundary:** this is a **work** laptop but the POS is **personal-plane** — the machine identity
   here is for **personal** dev work (SB20 is a hobby); keep work/client secrets + content OUT of the personal
   POS. (The platform's `SHARED-SERVICES.md` still describes a per-*app* identity — reconcile it to per-machine
