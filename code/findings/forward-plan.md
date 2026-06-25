@@ -580,9 +580,19 @@ bridge** between the Stages app and the real power meter. Other config (cadence 
 
 ---
 
-## 12. Debug — why does changing BOTH crank ids (own-id L + phantom R) fail to pair? (session 8)
+## 12. Debug — why changing BOTH crank ids fails to pair (session 8) — ✅ MOSTLY RESOLVED (session 9, 2026-06-26)
 
-**Question:** in session 8, setting the Stages app to **L=`62145` (our ESP) + R=`4964` (a phantom, nothing
+**✅ Resolved (session 9):** the rule is **symmetric — the SB20 needs BOTH configured crank IDs findable on
+air.** L=`62145`(present) + R=`4964`(absent) → fail (SB20 dropped our ESP, `disconnect reason=531`, never
+re-attempted); L=`42146`(absent) + R=`4963`(present) → *same* fail; both present → connects. So it is **not**
+"needs a right crank" (session 8's inference) — an absent L *or* R aborts the whole pairing. **Implication:**
+sole-source (Assioma only) needs our ESP to answer *both* IDs → the 2nd-phantom-right path below. **Still
+open:** app- vs bike-gatekeeper (which entity refuses) — needs an nRF sniff of the app↔bike link (nRF wasn't
+available session 9). **Next-ride variant (owner):** known-good `62145`/`4963` but with the right crank's
+**battery pulled** — does a *known* id that's offline behave like an *unknown* one? (isolates "unknown id"
+from "id present-but-not-on-air").
+
+**Original question (session 8):** setting the Stages app to **L=`62145` (our ESP) + R=`4964` (a phantom, nothing
 on air)** → the app reported **"pairing failed"** and the SB20 **never connected to our ESP** (`/log` saw
 nothing). Changing only **R→`4963`** (the real right crank, present) → connected immediately. So an **absent
 right id aborted the whole pairing** — the bike didn't even attempt the present left. We *inferred* "the bike
@@ -609,3 +619,27 @@ possible — and the shape of any workaround. (Pairs with the single-right-crank
 **If bike-gatekeeper (needs both findable):** a sole-source workaround to test is the **ESP advertising a
 SECOND, phantom-right peripheral** so both configured ids resolve to us. **If app-gatekeeper:** explore a
 different app pairing flow. Either way: capture-first, then decide.
+
+## 13. MCP workout builder + driver (backlog; owner 2026-06-26)
+
+**Idea:** an **MCP server** that exposes the SB20 erg as agent-drivable tools — Claude (or any MCP client)
+can **compose a structured workout** from a spec / natural language ("6×90 s @ 430 W, 3 min recovery") and
+**drive it live** on the bike over FTMS, with live status + a safe stop. The productized form of the
+session-9 ad-hoc driver.
+
+**Why:** today, driving an erg workout is a hand-run script; as an MCP it becomes a first-class capability the
+day-driver can invoke on command — compose on the fly, adapt mid-effort (shorten/extend, bump targets), and
+log it. This is the concrete **"agent directs the human"** inversion-of-control pattern (see the ride-wizard /
+blog-idea note): the assistant runs the session, the rider just pedals.
+
+**Shape (build on the validated FTMS infra — `ble/ftms_erg.py`, `ble/ftms.py`, `ride_control.py`, `ride/`):**
+- Tools: `build_workout(spec) -> plan` (segments: warmup / intervals / recovery / ramps / cooldown, by watts
+  or %FTP / zone — `test_ride_zones.py` already has zones), `drive_workout(plan)` + `start` / `pause` /
+  `stop`, `set_target(w)` (manual override), `workout_status()` (segment, target, elapsed, live power/cadence).
+- **Safety is non-negotiable:** every stop / disconnect / error path resets erg to neutral (never leave the
+  rider grinding at target) — the same try/finally rule as the seed script.
+- Surface segment transitions + live status to observability (`sb20proxy.obs`) and commit a workout-log capture.
+- A workout **library** (named sessions) + adapt-on-the-fly ("make the next recovery 8 min easy").
+
+**Seed:** `code/scripts/ftms_workout.py` (built session 9) is the prototype to refactor behind the MCP server.
+Real-data-first: the FTMS erg path is already byte-validated (session 4; `G-sb20-ftms-erg-*.jsonl`).

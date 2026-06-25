@@ -1916,3 +1916,43 @@ session-8 close-out + the zero-reset feature — PRs #136 / #138, both on `main`
   the identity ✓, but destroying a shared-infra project needs explicit go-ahead); drop via the Infisical UI
   or admin `DELETE /api/v1/workspace/93fe5483…`. A stray `ONBOARD_TEST` key (cauldnz-pos onboarding artifact)
   sits in `sb20-power-proxy/dev` — harmless (the build pulls only `OTA_PASSWORD`); remove at leisure.
+
+## 2026-06-26 — Session 9 (on-bike): zero-reset → Assioma CONFIRMED on air + phantom-R resolved
+- **Zero-reset → Assioma works on air — the last unproven piece of PR #138. ✅** With the SB20 paired to our
+  ESP (L=`62145` / R=`4963`), the Stages app's calibrate drove this `/log` sequence:
+  `[cp] write 10` (app's Enhanced-Offset `0x10` on our control point) → `[cp] offset-comp -> forwarding zero to
+  source meter` → `[meter] zero-reset -> source CP 0x0C: sent` → **`[meter] zero-reset source result 200c01ffff`**.
+  Decode of `20 0c 01 ff ff`: response (`0x20`) / Start-Offset-Compensation (`0x0C`) / **SUCCESS (`0x01`)** /
+  offset `0xFFFF` = −1. So the Assioma genuinely performed the offset compensation — NOT a cosmetic UI
+  completion. App-side: the calibrate **completed** and showed offsets **`901/951`** (our spoof's mfg-data
+  values) cleanly — the contrast with session 8 (which spun forever on the `0x0000` placeholder) confirms the
+  Company-ID-442 + mfg-data fix end-to-end. Power kept forwarding through + after the calibrate (Assioma L
+  doubled to total, e.g. 186 W → 372 W). **The SB20 crank-spoof is now proven end-to-end: pair → power →
+  calibrate/zero.** Evidence: `code/findings/captures/G-zero-reset-onair-pass-20260626-0651.txt` (`/log` + `/status`).
+- **Phantom-R pairing RESOLVED (forward-plan §12).** Live crank-id variants, watching `/log`:
+  - L=`62145` (our ESP, present) + R=`4964` (absent) → app "pairing failed"; SB20 dropped our ESP
+    (`[srv] disconnect reason=531`) and **never re-attempted** a connect.
+  - L=`42146` (absent) + R=`4963` (real right, present) → **same "pairing failed".**
+  - both present (`62145` + `4963`) → connects immediately.
+  ⇒ **The SB20 requires BOTH configured crank IDs findable on air** (symmetric — absent L *or* absent R aborts
+  the whole pairing). This **refines session 8's** inference ("needs a findable right crank"): it's not
+  right-specific. Implication for **sole-source** (Assioma only, no real cranks): our ESP must answer *both*
+  configured IDs → the **2nd phantom-right peripheral** path. Still open: app- vs bike-gatekeeper (needs an
+  nRF sniff of the app↔bike link to fully distinguish — nRF wasn't available this session, see below).
+- **Next-ride §12 variant (owner):** repeat with the **known-good pair `62145`/`4963` but the right crank's
+  battery pulled** — does a *known* id that's offline behave like an *unknown* one? Isolates "id unknown" from
+  "id not currently on air".
+- **FTMS workout driver — built, async bug found + fixed, drive deferred.** Added `code/scripts/ftms_workout.py`
+  (structured interval erg over FTMS, reusing the validated `ble/ftms` codec + `ble/ftms_erg.ErgController`).
+  First on-bike launch failed: it called the **synchronous** `ftms_erg.drive()` with an **async** bleak transport
+  (`coroutine was never awaited`). Fixed by pumping the controller against an *awaited* transport (mirrors the
+  proven `FtmsErgSession.run`). **Safety held:** the `try/finally` sent Reset (+ Stop) → the bike returned to
+  neutral despite the error. Rider stopped here (the bug/fix cycle cost ride time) → a properly-driven workout
+  deferred to next session. **Lesson:** the driver's tests covered only the pure segment builder, not the async
+  drive path — that gap let the bug ship; adding a twin-based async-pump test. MCP'd version backlogged (§13).
+- **Process miss (owner flagged — filed for the post-mortem):** the **dual-radio capture** (nRF + ANT+) is a
+  STANDING pre-flight rule, but the nRF sniffer was NOT ready (Npcap not installed; nRF Sniffer extcap
+  unregistered) and this was MISSED across two explicit "check everything" passes (night-before + morning),
+  because `doctor.ps1` doesn't cover the capture rig (green doctor = false confidence). Fix queued: extend
+  `doctor.ps1` to GATE the capture rig, and a readiness pass must *verify both radios actually capturing*, not
+  list it. (Recorded in the session-09 retro + folded into the PLAYBOOK.)

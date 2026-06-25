@@ -1,7 +1,16 @@
 # 🚴 Session 9 — Zero-reset → Assioma: on-air confirm
 
-**Status: 🟢 READY (planned 2026-06-25)** · tracked in [`sessions/README.md`](README.md). Run via
+**Status: ✅ DONE (2026-06-26)** · tracked in [`sessions/README.md`](README.md). Run via
 [`PLAYBOOK.md`](PLAYBOOK.md) (record actuals inline, ⏱ timestamp, retro at the end).
+
+**Outcome:** ✅ **Zero-reset → Assioma confirmed on air.** The Stages app's calibrate forwarded `0x0C` to the
+Assioma, which returned **`200c01ffff`** (response / `0x0C` / **SUCCESS**, offset −1) — a *real* zero, not a
+cosmetic UI completion; the app then showed the `901/951` offsets cleanly (no spin, unlike session 8).
+Evidence: [`captures/G-zero-reset-onair-pass-20260626-0651.txt`](../code/findings/captures/G-zero-reset-onair-pass-20260626-0651.txt).
+**Bonus (§12) — phantom-R RESOLVED:** the SB20 needs **both** configured crank IDs findable on air (absent L
+*or* absent R → "pairing failed", no connect; both present → connects) — symmetric, refining session 8's
+"needs a right crank". **FTMS workout drive attempted** — hit an async-wiring bug in the new `ftms_workout.py`
+(fixed + the teardown safely reset the bike); a proper driven workout deferred to next time.
 
 **Goal:** confirm the zero-reset→Assioma feature (PR #138) works **on air** — when the Stages app's
 **calibrate / zero-reset** runs against our spoof, the firmware should forward a real **Start Offset
@@ -66,8 +75,16 @@ write may need a retry or the Assioma may have been loaded/moving during the zer
   R=`4963` afterwards for the zero-reset gate above.
 
 ## Retro
-- Went well:
-- Went wrong / slow / confusing (+ root cause):
-- Planned vs actual:
-- Changes to make before next session:
-- Next gate + desk work that must precede it:
+- Went well: **The gate passed cleanly** — zero-reset forwarded + Assioma **SUCCESS** (`200c01ffff`) on the
+  first attempt; the app calibrate completed (no session-8 spin) and showed `901/951`. **Phantom-R fully
+  resolved** as a bonus (both IDs must be findable). The board recovered from a low-heap/HTTP scare. The
+  Credential-Manager pull tooling built earlier today + `/log` captured the proof even without the nRF pcap.
+- Went wrong / slow / confusing (+ root cause): **❗ nRF BLE sniffer was NOT ready — and it was missed despite the owner explicitly asking to "check everything" the NIGHT BEFORE *and* the MORNING OF.** The always-on dual-radio capture (nRF + ANT+) is a STANDING pre-flight rule (PLAYBOOK §pre-flight; owner's 2026-06-25 standing ask), but the readiness passes only ran `doctor.ps1` (toolchain + board) + git/OTA/BLE-scan and treated the capture rig as a checklist *line* instead of verifying it. The gap — **Npcap not installed, nRF Sniffer extcap not registered**; ANT+ node root-only (needs a `chmod`) — surfaced only once the rider was at the bike, too late to stand up nRF without delaying the ride. **Root cause:** (1) "check everything" was implicitly scoped to whatever `doctor.ps1` covers; (2) `doctor.ps1` does NOT check the capture rig, so a green doctor gave false confidence; (3) the nRF path was never provisioned/verified in any prior session's pre-flight. **Owner (rightly) frustrated — repeated explicit asks did not catch a standing-rule gap.**
+- Planned vs actual: nRF pcap unavailable this session → zero-reset evidence from `/log` only (no BLE air-capture); ANT+ available only after a manual `chmod`. Also lost time to a board restart whose web server took ~25 s to rebind (looked dead; wasn't).
+- Changes to make before next session: **(a)** extend `doctor.ps1` to **GATE the capture rig** — assert Npcap/tshark present + nRF Sniffer extcap registered + dongle on its COM port + the ANT+ WSL claim (libusb open) — so "doctor green" *guarantees* both radios can capture; **(b)** a "check everything"/readiness request MUST *verify both radios are actually capturing* (a short test capture each), never just list it; **(c)** provision the nRF sniffer as a desk task (install Npcap, register the nRF Sniffer extcap, confirm dongle firmware); **(d)** document that a fresh board reboot needs ~25 s before HTTP rebinds (ping/BLE up first) so it isn't mistaken for dead.
+- Next gate + desk work that must precede it: **(1)** a properly-tested, *driven* **FTMS workout** — the
+  `ftms_workout.py` async fix + a twin-based test land this session; next time actually drive it (ensure the
+  Stages app isn't fighting erg; budget setup time). **(2)** the **§12 battery-out variant** (known-good
+  R=`4963` with its battery pulled — does a *known* id that's offline behave like an *unknown* one?) + the
+  sole-source **2nd-phantom-right-peripheral** test. **(3)** the **crank-length bidirectional bridge** (§11),
+  still open. **(4)** stand up the **nRF sniffer** (Npcap + extcap) so next ride has the full dual-radio capture.
