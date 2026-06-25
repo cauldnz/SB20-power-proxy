@@ -59,7 +59,7 @@ NAS-side at `/mnt/user/appdata/pos-infisical/identities/sb20-power-proxy.creds` 
   was blocked by the local safety classifier; drop via the Infisical UI or admin
   `DELETE /api/v1/workspace/93fe5483-…`. A stray `ONBOARD_TEST` key sits in `sb20-power-proxy/dev` (an
   onboarding artifact; harmless — the build pulls only `OTA_PASSWORD`). Multi-`--project` support in the
-  provisioner would avoid the vanity project — to propose to cauldnz-pos.
+  provisioner would avoid the vanity project — filed as [cauldnz-pos#3](https://github.com/cauldnz/cauldnz-pos/issues/3).
 - Backlog (cauldnz-pos): per-env scoping (custom roles), OIDC/SPIFFE, self-service rotation via the control plane.
 - **⚠️ Plane boundary:** this is a **work** laptop but the POS is **personal-plane** — the machine identity
   here is for **personal** dev work (SB20 is a hobby); keep work/client secrets + content OUT of the personal
