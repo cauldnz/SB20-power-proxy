@@ -25,14 +25,20 @@ signing key** into the vault.
     reading the committed header → the password is compiled in (as today) but never committed.
   - **Signed-pull backend** (P3/P4) holds the **signing key** in the vault; the device verifies with the
     embedded public key (vendored monocypher) — only the *private* key needs the vault.
-- **Identity model — PER MACHINE, not per app (owner, 2026-06-25):** each of the owner's machines gets its
-  own Infisical **Machine Identity** (this dev box is the **Lenovo P1 work laptop**); a dev env on that
-  machine authenticates *as the machine* and pulls the secrets for the projects its identity is scoped to.
-  Secrets are organised per project; **auth is per machine**.
-- **Onboard (owner action):** (1) create this machine's Machine Identity — its `clientId`/`clientSecret` live
-  at the **machine/user level** (env / a local credential store, e.g. the Infisical CLI login), **never** in
-  any repo; (2) create/seed an SB20 project/environment with `OTA_PASSWORD` (+ later the signing key) and
-  grant this machine's identity read access. Then the build pulls from the vault *as the machine*.
+- **Identity model — PER MACHINE, read+WRITE (owner, 2026-06-25):** each of the owner's machines gets its own
+  Infisical **Machine Identity** (this dev box is the **Lenovo P1 work laptop**); a dev env on that machine
+  authenticates *as the machine* and both **reads and writes** the secrets for the projects its identity is
+  scoped to. Secrets are organised per project; **auth is per machine**. Write access lets the tooling
+  **create/seed secrets directly** — no hand-seeding by the owner.
+- **⚠️ Trade-off (named):** read+write > read-only — a write-capable identity can create/overwrite/tamper, so
+  a compromised machine or its creds is the blast radius. Mitigate by **scope**: grant read+write on *this
+  machine's* project(s) (the SB20 project), **not org-wide**. Fine for personal-plane dev.
+- **Onboard (owner action — minimal):** (1) create this machine's Machine Identity (read+write,
+  **project-scoped**) — its `clientId`/`clientSecret` live at the **machine/user level** (env / Infisical CLI
+  login), **never** in any repo; (2) create an (empty) SB20 project + grant this identity access. **Then the
+  agent populates it:** push the current `OTA_PASSWORD` (from `ota_secret.h`) into the vault, add the signing
+  key later, wire the build to pull *as the machine* — retiring the committed header. Real-data-first: done
+  against the live vault, not pre-built blind.
 - **⚠️ Plane boundary:** this is a **work** laptop but the POS is **personal-plane** — the machine identity
   here is for **personal** dev work (SB20 is a hobby); keep work/client secrets + content OUT of the personal
   POS. (The platform's `SHARED-SERVICES.md` still describes a per-*app* identity — reconcile it to per-machine
