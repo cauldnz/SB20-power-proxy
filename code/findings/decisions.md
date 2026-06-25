@@ -1876,3 +1876,29 @@ session-8 close-out + the zero-reset feature — PRs #136 / #138, both on `main`
 - **Still queued (owner, NAS-side):** provision the P1 identity/ies; `secrets-pull` them into Cred Manager;
   seed `OTA_PASSWORD` into the project. Then the agent wires the build (`secrets-get.ps1` → `infisical login`
   → `infisical secrets get OTA_PASSWORD`), retiring the committed `ota_secret.h`.
+
+## 2026-06-25 (eve) — Shared-services secrets onboarding EXECUTED live (build identity + OTA_PASSWORD in the vault)
+- Ran the runbook against the real NAS (`ssh unraid` → WTRMax, root). State found: projects `chris-p1`,
+  `pos-test`, `sb20-power-proxy`; identities `sb20-power-proxy` (read-only, project sb20-power-proxy/dev) and
+  `chris-p1` (scoped to a standalone `chris-p1` project — see topology note below).
+- **Build identity → Windows Credential Manager:** `tools/secrets-pull.ps1` SSH-fetched
+  `sb20-power-proxy.creds` and stored {host, projectId `44b123ab…`, env dev, clientId `207d1470…`, secret} at
+  Cred Manager target `SB20/infisical/sb20-power-proxy`. Verified via `secrets-get.ps1` (masked).
+- **`OTA_PASSWORD` seeded** into `sb20-power-proxy`/`dev` via raw API `POST /api/v3/secrets/raw/OTA_PASSWORD`
+  with the **admin bootstrap token** (admin reaches the project — a prior admin GET returned 404 "not found",
+  not 403; HTTP 200 on create). Value piped via stdin (never in a command / the transcript); only lengths
+  logged. **Verified readable by the read-only build identity** (UA login → raw GET → len 32, matches the
+  local `ota_secret.h`). Proves the full build-consumption chain on live infra.
+- **Build wiring (retires hand-maintained `ota_secret.h`):** added `tools/secrets-sync-ota.ps1` — pulls
+  `OTA_PASSWORD` from the vault (Cred Manager creds → UA login → raw GET) and regenerates the gitignored
+  `firmware/ota_secret.h` (`#pragma once` + `#define`). `-Check` = drift check (exit 1 on drift). Verified
+  live from this Windows box: `wtrmax.local` resolves; `-Check` = "in sync (len 32)"; generate → 4-line valid
+  header, still gitignored. The compile (`WifiLink.cpp __has_include`) + `flash.ps1` (espota `-a`) consume it
+  unchanged. **Rotate** = change in Infisical → re-run → reflash.
+- **No `infisical` CLI on the NAS** → raw API throughout (login `POST /api/v1/auth/universal-auth/login` →
+  `.accessToken`; read `GET /api/v3/secrets/raw/<NAME>?workspaceId&environment` → `.secret.secretValue`).
+- **⚠️ Topology OPEN (owner's call):** the existing `chris-p1` identity is on a **vanity `chris-p1` project**,
+  not `pos`/`sb20-power-proxy` (provisioner defaults project=identity-name when `--project` omitted), so the
+  "P1 = read+write on both projects" decision isn't met and the P1 can't self-serve seeding. Not blocking
+  (admin seeds). Resolve by granting the `chris-p1` identity onto `sb20-power-proxy` + the general project
+  (`pos-test`), or re-provisioning scoped identities; multi-`--project` support to propose to cauldnz-pos.
