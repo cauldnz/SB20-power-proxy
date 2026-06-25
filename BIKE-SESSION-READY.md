@@ -30,11 +30,11 @@ one-line Outcome, update the ledger [`sessions/README.md`](sessions/README.md), 
 (CLAUDE.md → *Session plans & the session ledger*).
 
 Prepared for **session 5** (desk-derisked 2026-06-23). ⚠️ **Build toolchain (learned the hard way, session
-8):** this bike laptop's PlatformIO was orphaned by a Python 3.14 upgrade — it was re-provisioned into a venv
-at **`C:\repos\cauldnz\pio-venv`** (PlatformIO 6.1.19). **`python -m platformio` no longer works** (system
-Py 3.14 has no platformio); use the venv's `platformio.exe`. Verify it runs **and that an OTA build actually
-flashes** *before* the rider is at the bike (§2b). The SB20 board currently runs a temporary
-*pre-lockdown+fix* build pending the canonical desk reflash (see the session-8 note above).
+8):** a Python 3.14 upgrade orphaned this bike laptop's PlatformIO. It's now **reproducible via
+`tools\provision-dev-env.ps1`** (creates `code\.venv` + `firmware\.venv`, pinned in `tools\dev-env.lock`) —
+**run `tools\doctor.ps1` to confirm the build+flash toolchain is green BEFORE the rider is at the bike**
+(§2b). The SB20 board currently runs a temporary *pre-lockdown+fix* build pending the canonical desk reflash
+(see the session-8 note above).
 
 ---
 
@@ -72,28 +72,35 @@ while($true){(iwr http://sb20proxy.local/log).Content; sleep 3}
 > `route_smoke`; a power-cycle restores ~125 KB). For session 8, only `/status` · `/setup` · `/diag` · `/log`
 > matter — `/calibrate` is session 5's.
 
-## 2b · BLE tooling (session 8 G1 needs it — set up OFF the rider's clock)
+## 2b · Dev toolchain (BLE captures + firmware build/flash — set up OFF the rider's clock)
 
-Session 8's G1 capture (`06_capture_ble.py`) needs a Python venv with **bleak**. If this is a fresh clone
-without `code\.venv`, create it before the rider is at the bike (verified working: **bleak 3.0.2**, native
-Windows, Python 3.13):
+The bike machine needs the BLE capture venv (`bleak`), and — if a step calls for a reflash — PlatformIO.
+**Both are provisioned + verified by the committed scripts in [`tools/`](tools/README.md)**; run them at
+the desk before the rider is at the bike (work moves desk↔laptop, and a Python upgrade can silently orphan
+the toolchain — session 8 lost ~30 min to exactly that):
 ```powershell
-python -m venv code\.venv
-code\.venv\Scripts\python.exe -m pip install bleak
-code\.venv\Scripts\python.exe -c "import asyncio; from bleak import BleakScanner; asyncio.run(BleakScanner.discover(timeout=5))"  # radio works?
+.\tools\provision-dev-env.ps1     # creates code\.venv (bleak 3.0.2) + firmware\.venv (PlatformIO 6.1.19)
+.\tools\doctor.ps1                # PASS/FAIL pre-flight: bleak · PlatformIO · ESP32 cache · host compiler
 ```
-The scan should see **`Stages 62145`** (our ESP) *and* **`Stages 62144`** (the real crank), disambiguated by
-address — that's the G1/G2 pair. (`06_capture_ble.py` is API-verified against bleak 3.0.2.)
+`doctor.ps1` is the **"can we build AND flash?" gate** — green it at the desk; never discover a broken
+toolchain at the bike. (`provision-dev-env.ps1 -WarmToolchain` also pre-downloads the ESP32 toolchain;
+pinned versions in `tools/dev-env.lock`.) BLE radio smoke-test:
+```powershell
+code\.venv\Scripts\python.exe -c "import asyncio; from bleak import BleakScanner; print([d.name for d in asyncio.run(BleakScanner.discover(timeout=5))])"
+```
+The scan should see the ESP spoof + any awake real Stages cranks / the Assioma. (`06_capture_ble.py` is
+API-verified against bleak 3.0.2.)
 
 > **Only reflash if a session step says to.** ⚠️ **`python -m platformio` is dead on this machine** (Py 3.14
-> has no platformio) — use the venv: **`C:\repos\cauldnz\pio-venv\Scripts\platformio.exe`**.
-> Build: `…\pio-venv\Scripts\platformio.exe run -e esp32c3-oled-live -d firmware`. Then either:
+> has no platformio) — use the **provisioned venv** `firmware\.venv` (`tools\provision-dev-env.ps1`; verify
+> with `tools\doctor.ps1`).
+> Build: `firmware\.venv\Scripts\platformio.exe run -e esp32c3-oled-live -d firmware`. Then either:
 > - **OTA (preferred, RSSI > −72 dBm):** on this **multi-NIC laptop espota auto-picks the wrong host IP**
 >   (`0.0.0.0` → "No response from device") — call espota directly with the **explicit host LAN IP**:
 >   ```powershell
->   C:\repos\cauldnz\pio-venv\Scripts\python.exe "$env:USERPROFILE\.platformio\packages\framework-arduinoespressif32\tools\espota.py" -i <board-ip> -I <host-lan-ip> -p 3232 -f firmware\.pio\build\esp32c3-oled-live\firmware.bin -r
+>   firmware\.venv\Scripts\python.exe "$env:USERPROFILE\.platformio\packages\framework-arduinoespressif32\tools\espota.py" -i <board-ip> -I <host-lan-ip> -p 3232 -f firmware\.pio\build\esp32c3-oled-live\firmware.bin -r
 >   ```
->   (session 8: board `192.168.1.165`, host `192.168.1.223`; find host IP with `Get-NetIPAddress`). `flash.ps1` works too once `pio` is on PATH.
+>   (session 8: board `192.168.1.165`, host `192.168.1.223`; `tools\doctor.ps1 -BoardIp <ip>` prints host-IP candidates). `flash.ps1` works too once `pio` is on PATH.
 > - **USB:** `flash_c3.py --env esp32c3-oled-live --port COM9 --verify-ble "Stages 62144"` (NOT
 >   `flash.ps1 -Mode usb` — esptool 4.5.1 hits the C3 USB-JTAG "No serial data received" bug). **COM9 = the
 >   OLED bike board; COM10 = the spare/no-OLED board** (memory `esp32-c3-flashing`).
