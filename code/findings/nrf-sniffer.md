@@ -6,6 +6,33 @@ by *us connecting* to a device; the nRF Sniffer is the one tool that sees the **
 the Stages app and the SB20** — what the app actually writes to erg, whether it bonds — which becomes the
 key diagnostic if the SB20 refuses our third-party control or the power-topology stays murky.
 
+## TL;DR — quick start (the dongle is already flashed + live)
+
+The dongle stays flashed with the sniffer firmware (enumerates at PID `522A`), so a normal capture is
+just these four steps — the rest of this doc is the *why* + the one-time flashing recipe.
+
+1. **Plug it in.** `sniff_ble.py` auto-detects it by PID `522A` — no Wireshark clicking needed.
+2. **Scan** to get the target's *advertising* MAC (it can differ from the connect-time address, so always
+   scan first and follow what the sniffer reports):
+   ```bash
+   python code/scripts/sniff_ble.py --scan-only --duration 12
+   ```
+3. **Capture — START IT BEFORE THE APP CONNECTS.** This is the one rule that matters: the sniffer can only
+   *follow* a connection whose setup it witnessed; start late and you get **adverts only, no ATT/GATT**.
+   Begin the capture, *then* open the Stages app + connect to the SB20 + ride:
+   ```bash
+   python code/scripts/sniff_ble.py --device <MAC-from-step-2> --duration 420 \
+       --output code/findings/captures/SNIFF-sb20-app-$(date +%Y%m%d-%H%M).pcap
+   ```
+   (`--duration` secs; auto-detects the COM port. It's time-bounded + shuts the dongle down cleanly.)
+4. **Analyze.** Open the `.pcap` in Wireshark, or run it through the tshark→SQLite indexer
+   (`sb20proxy.analysis.pcap_sqlite`) — **never hand-parse Nordic BLE pcaps**. Commit the `.pcap` to
+   `findings/captures/` as the canonical record + note it in the session / `decisions.md`.
+
+**Encrypted link?** If the app↔SB20 is bonded, payloads are ciphertext unless the sniffer caught the
+**pairing** — so capturing from *before the first connect* matters doubly. **Fresh/wiped dongle?**
+Re-flash via nrfutil DFU (it is **NOT** a UF2 drag-drop board) — see *How it was flashed* below.
+
 ## The hardware
 
 An **nRF52840 USB dongle** (Nordic `VID 1915`). As shipped here it ran the **nRF Connect "connectivity"
