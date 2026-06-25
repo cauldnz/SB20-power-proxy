@@ -25,9 +25,18 @@ signing key** into the vault.
     reading the committed header → the password is compiled in (as today) but never committed.
   - **Signed-pull backend** (P3/P4) holds the **signing key** in the vault; the device verifies with the
     embedded public key (vendored monocypher) — only the *private* key needs the vault.
-- **Onboard (owner action):** create an `sb20proxy` Machine Identity + project/environment in Infisical; add
-  `OTA_PASSWORD` (+ later the signing key). Hand over the `clientId`/`clientSecret` (these go in this dev
-  machine's env / deploy secret store — **never** Git). Then the build/flash tooling reads from the vault.
+- **Identity model — PER MACHINE, not per app (owner, 2026-06-25):** each of the owner's machines gets its
+  own Infisical **Machine Identity** (this dev box is the **Lenovo P1 work laptop**); a dev env on that
+  machine authenticates *as the machine* and pulls the secrets for the projects its identity is scoped to.
+  Secrets are organised per project; **auth is per machine**.
+- **Onboard (owner action):** (1) create this machine's Machine Identity — its `clientId`/`clientSecret` live
+  at the **machine/user level** (env / a local credential store, e.g. the Infisical CLI login), **never** in
+  any repo; (2) create/seed an SB20 project/environment with `OTA_PASSWORD` (+ later the signing key) and
+  grant this machine's identity read access. Then the build pulls from the vault *as the machine*.
+- **⚠️ Plane boundary:** this is a **work** laptop but the POS is **personal-plane** — the machine identity
+  here is for **personal** dev work (SB20 is a hobby); keep work/client secrets + content OUT of the personal
+  POS. (The platform's `SHARED-SERVICES.md` still describes a per-*app* identity — reconcile it to per-machine
+  there too; owner's repo/call.)
 
 ## 2. Observability — OTLP → Loki/Grafana
 A small **non-blocking** emitter (`sb20proxy.obs`) pushes structured **signals** to `wtrmax.local:4318/v1/logs`
