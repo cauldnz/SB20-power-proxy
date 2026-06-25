@@ -35,6 +35,30 @@ firmware\.venv\Scripts\python.exe "$env:USERPROFILE\.platformio\packages\framewo
 # USB flash (fallback): python code\scripts\flash_c3.py --env esp32c3-oled-live --port COM9
 ```
 
+## Secrets — Infisical → Windows Credential Manager
+
+The build authenticates to the POS Infisical vault with a least-privilege **Universal-Auth** machine
+identity (clientId/clientSecret; [cauldnz-pos#1](https://github.com/cauldnz/cauldnz-pos/issues/1)). Keep
+that credential in **Windows Credential Manager** (target `SB20/infisical/<identity>`), never in Git.
+
+```powershell
+# pull the read-only build identity from the NAS -> Credential Manager:
+.\tools\secrets-pull.ps1                      # identity = sb20-power-proxy (default)
+.\tools\secrets-pull.ps1 -SelfTest            # parser check only — no SSH, no write
+
+# store a freshly-provisioned dev identity (the provisioner prints the secret ONCE):
+ssh unraid "sh /tmp/new-machine-identity.sh chris-p1-sb20 --project sb20-power-proxy --write" |
+  .\tools\secrets-pull.ps1 -Identity chris-p1-sb20 -FromStdin
+
+# read it back (the build uses this to `infisical login`):
+.\tools\secrets-get.ps1                       # masked summary object
+.\tools\secrets-get.ps1 -Field clientSecret   # raw secret (for scripting / the build)
+```
+
+SSH must be **key-based / non-interactive**. The provisioner + runbook live in
+`cauldnz-pos:infra/identities/`; the two-pattern model (per-app read-only / per-machine read+write) is
+in [`code/findings/shared-services-adoption.md`](../code/findings/shared-services-adoption.md) §1.
+
 ## Linux / WSL (the desk Python tooling)
 
 The ANT+ desk tooling runs on Linux/WSL (native Windows is BLE-only). There, set up the full Python env

@@ -1852,3 +1852,27 @@ session-8 close-out + the zero-reset feature — PRs #136 / #138, both on `main`
   calibrates?) — deferred to the next on-bike session ([`session-09`](../../sessions/session-09-zero-reset-onair-confirm.md)).
   Needs the SB20 + Assioma + a pedal + the app calibrate; watch `/log` for the forwarded `0x0C` then the
   Assioma's `20 0c 01 …` result.
+
+## 2026-06-25 (pm) — Shared-services secrets: Windows Credential-Manager pull tooling + P1 machine identity
+- **cauldnz-pos shipped the machine-auth model** ([cauldnz-pos#1](https://github.com/cauldnz/cauldnz-pos/issues/1),
+  commit `c363a9d`): `infra/identities/new-machine-identity.sh` + a runbook + the two-pattern `SHARED-SERVICES.md`.
+  **Infisical has NO SSH-keypair machine auth** — Universal Auth (clientId/clientSecret → short-lived token) is
+  the method. (Refutes the "SSH key" preference for the *auth*; SSH is only the transport to the NAS.)
+- **Two patterns (use both):** per-app/service = **read-only**, project-scoped (what the SB20 *build* runs as);
+  per-machine = **read+write** (dev boxes, e.g. the P1 — can seed secrets). SB20 already onboarded by
+  cauldnz-pos: project `sb20-power-proxy` (envs dev/staging/prod) + a read-only identity; creds NAS-side at
+  `/mnt/user/appdata/pos-infisical/identities/sb20-power-proxy.creds`.
+- **Added `tools/secrets-pull.ps1` + `tools/secrets-get.ps1`** — the Windows counterpart to the bash runbook.
+  `secrets-pull` SSH-fetches a `.creds` block (or `-FromStdin` for the provisioner's one-time stdout) → stores
+  {host, projectId, env, clientId, clientSecret} as a JSON blob in **Windows Credential Manager** (native
+  `CredWriteW`, target `SB20/infisical/<identity>`, persist=LOCAL_MACHINE, never echoes the secret).
+  `secrets-get` reads it back (`-Field` / `-AsEnv`). Verified at the desk: `-SelfTest` parser PASS + a real
+  `CredWrite→CredRead→CredDelete` round-trip on a throwaway target PASS. The SSH + live-CredMgr paths are
+  manual (host-credential, like the on-air checks).
+- **P1 machine identity — decided: BOTH projects (`pos` + `sb20-power-proxy`), read+write.** The provisioner
+  grants one project per run and isn't idempotent on a name, so *today* that's two scoped identities
+  (`chris-p1-pos`, `chris-p1-sb20`); a single identity spanning both needs multi-`--project` support
+  (to propose to cauldnz-pos). The `sb20-power-proxy --write` identity is what **seeds** `OTA_PASSWORD`.
+- **Still queued (owner, NAS-side):** provision the P1 identity/ies; `secrets-pull` them into Cred Manager;
+  seed `OTA_PASSWORD` into the project. Then the agent wires the build (`secrets-get.ps1` → `infisical login`
+  → `infisical secrets get OTA_PASSWORD`), retiring the committed `ota_secret.h`.
