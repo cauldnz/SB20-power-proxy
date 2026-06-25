@@ -40,18 +40,28 @@ NAS-side at `/mnt/user/appdata/pos-infisical/identities/sb20-power-proxy.creds` 
   - **Signed-pull backend** (P3/P4) holds the **ed25519 signing key**; the device verifies with the embedded
     public key (vendored monocypher) — only the *private* key needs the vault.
 - **SB20 remaining steps:**
-  1. **Retrieve the read-only creds** onto this machine (owner): `ssh unraid "cat /mnt/user/appdata/pos-infisical/identities/sb20-power-proxy.creds"`
-     → store in the **OS credential store** (Windows Credential Manager), **never** Git.
+  1. **Retrieve the read-only creds** into Windows Credential Manager (owner, on this machine) —
+     turnkey via [`tools/secrets-pull.ps1`](../../tools/secrets-pull.ps1): SSH-fetches
+     `…/sb20-power-proxy.creds` from the NAS and stores it under Cred Manager target
+     `SB20/infisical/sb20-power-proxy` (**never** Git). Read back with `tools/secrets-get.ps1`.
   2. **Seed the build's secrets** into the `sb20-power-proxy` project — `OTA_PASSWORD` (from the current
      `ota_secret.h`) + later the signing key — via the **Infisical UI** (owner is admin) **or** a **`--write`
      identity** (the read-only SB20 identity can't write).
   3. **Agent wires the build** to pull `OTA_PASSWORD` from the vault at build time, retiring the committed
-     `ota_secret.h`. Real-data-first: verified against the live vault.
+     `ota_secret.h`: `secrets-get.ps1` → `infisical login` (UA) → `infisical secrets get OTA_PASSWORD`.
+     Real-data-first: verified against the live vault.
+- **P1 dev-box identity (read+write).** The per-machine pattern. Provision on the NAS (needs the admin
+  bootstrap token): `scp …/new-machine-identity.sh unraid:/tmp/`, then one run **per project** — the
+  script grants one project per run and isn't idempotent on a name, so today the P1 covers *both*
+  projects as two scoped identities: `… chris-p1-pos --project pos --write` and
+  `… chris-p1-sb20 --project sb20-power-proxy --write` (a single identity spanning both needs
+  multi-`--project` support — to propose to cauldnz-pos). Store each with
+  `secrets-pull.ps1 -Identity <name> -FromStdin` (pipe the one-time stdout). The `--write` identity on
+  `sb20-power-proxy` is what **seeds** `OTA_PASSWORD` for step 2.
 - Backlog (cauldnz-pos): per-env scoping (custom roles), OIDC/SPIFFE, self-service rotation via the control plane.
 - **⚠️ Plane boundary:** this is a **work** laptop but the POS is **personal-plane** — the machine identity
   here is for **personal** dev work (SB20 is a hobby); keep work/client secrets + content OUT of the personal
-  POS. (The platform's `SHARED-SERVICES.md` still describes a per-*app* identity — reconcile it to per-machine
-  there too; owner's repo/call.)
+  POS.
 
 ## 2. Observability — OTLP → Loki/Grafana
 A small **non-blocking** emitter (`sb20proxy.obs`) pushes structured **signals** to `wtrmax.local:4318/v1/logs`
