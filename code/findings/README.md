@@ -1,43 +1,83 @@
-# findings/
+# findings/ — the documentation map (find the doc before you build)
 
-This directory holds capture artefacts, analysis reports, and decision logs from project work. Treat it as **append-only history** — never delete or rewrite. When something breaks in Phase 4 that wasn't broken in Phase 1, the answer is often in here.
+This directory is the **source of truth for what's been measured, decided, and built** — captures,
+analysis, protocol specs, decision logs. Most of it is **append-only history**: when something breaks
+later that worked before, the answer is usually in here.
 
-> **Start here:** **[`phase-0-report.md`](phase-0-report.md)** is the current source of
-> truth (synthesis of what's proven, the spoof spec, device IDs, open items, plan).
-> **`decisions.md`** is the full chronological log. **[`captures/README.md`](captures/README.md)**
-> indexes the actual capture files. **`screenshots/`** holds app-UI references.
+> ## 🧭 Before you build tooling for — or judge the readiness/availability of — a subsystem, FIND ITS DOC BELOW AND READ IT.
+> Check for the **existing script/tooling** the doc names, too. **Don't re-derive or rebuild what's already
+> documented.** *(Session 9, 2026-06-26: a `doctor.ps1` nRF-sniffer gate **and** an "install Npcap" call were
+> both built on assumptions because nobody opened [`nrf-sniffer.md`](nrf-sniffer.md) — which documents the
+> real capture path (`scripts/sniff_ble.py` + Nordic SnifferAPI, **no Npcap**) and the tooling that already
+> existed. Time lost to a doc that was right there. CLAUDE.md makes "read the doc first" an invariant; this
+> index is where you look.)*
 
-## Structure
+## Orientation — start here
+- **[domain-primer.md](domain-primer.md)** — concepts + verified spec facts (CPS / FTMS / ANT+, erg, calibration, pedal meters). New to the domain? Start here.
+- **[phase-0-report.md](phase-0-report.md)** — the SB20 crank-spoof spec + overall state of knowledge.
+- **[decisions.md](decisions.md)** — append-only chronological log: every value chosen, hypothesis refuted, "it works now". The running source of truth.
+- **[forward-plan.md](forward-plan.md)** — the backlog / roadmap (§-numbered open items + future work).
 
-The block below is the *idealised* layout from project setup — the real Phase-0 sessions
-diverged from these placeholder names. Use `captures/README.md` for the authoritative
-capture inventory.
+## SB20 crank spoof (the BLE crank we impersonate)
+- **[session-G-ble-capture-spec.md](session-G-ble-capture-spec.md)** — what the ESP BLE proxy must reproduce, byte for byte.
+- **[shifter-ble-protocol.md](shifter-ble-protocol.md)** — the SB20 shifter-over-BLE map (char `0c46be60`, one-hot gear bitmap).
+- **[stages-app-config.md](stages-app-config.md)** — the Stages app's ride modes / profiles / button config (owner recon).
+- **[sb20-power-topology.md](sb20-power-topology.md)** — does erg run off the right meter, and is "200 W" really 200 W?
 
-```
-findings/
-├── README.md                    ← this file
-├── phase-0-report.md            ← ★ current source of truth (synthesis)
-├── decisions.md                 ← running chronological log
-├── captures/                    ← raw JSONL/FIT captures (+ captures/README.md index)
-├── screenshots/                 ← app-UI screenshots (stages-app, stages-power-app, favero-assioma-app)
-├── phase-1-demo/                ← (future) evidence that Phase 1 replay worked
-└── proxy-runs/                  ← (future) rolling logs from Phase 3+ deployment
-```
+## FTMS / erg control
+- **[ftms-protocol.md](ftms-protocol.md)** — ⭐ **canonical for FTMS** (service `0x1826`, control point `0x2AD9`, Set Target Power). → `code/src/sb20proxy/ble/ftms.py` + `ftms_erg.py`, `scripts/capture_ftms.py`, `scripts/ftms_workout.py`, `scripts/ftms_hw_loop.py`.
+- **[ftms-implementation-plan.md](ftms-implementation-plan.md)** — the spec-built implementation plan behind it.
+- **[ride-director.md](ride-director.md)** — the steerable session / erg engine. → `code/src/sb20proxy/ride/`, `scripts/ride_control.py`, `scripts/ride_web.py`.
+- **[ride-director-uplift-plan.md](ride-director-uplift-plan.md)** — the uplift build plan for it.
+- **[shifter-erg-control.md](shifter-erg-control.md)** — shifter buttons adjust the erg target (the SB20's missing feature).
+
+## Capture, sniffing & analysis (BLE + ANT+)
+- **[nrf-sniffer.md](nrf-sniffer.md)** — ⭐ **canonical for the nRF BLE sniffer** (passively watch the app↔SB20 link). The capture path is **`scripts/sniff_ble.py`** (Nordic SnifferAPI over the dongle's serial port — **NOT Npcap/tshark**, which is only the GUI alternative); `tools/doctor.ps1` gates the rig. **Read this before any nRF sniffing or capture-rig tooling.**
+- **[wsl-capture-runbook.md](wsl-capture-runbook.md)** — ANT+ capture in WSL (usbipd, the `[Errno 13]` perms gotcha, zombie-holder recovery). → `scripts/run_capture.sh`, `scripts/01_capture_stages.py` / `02_capture_assioma.py`.
+- **[traffic-observability.md](traffic-observability.md)** — the dual-radio "watch every meter + the SB20 on one clock, across rides" capture strategy.
+- **[sqlite-analysis-layer.md](sqlite-analysis-layer.md)** — the rebuildable SQLite index over JSONL/pcap captures (query it, don't dump raw captures into context). → `analysis/pcap_sqlite.py`, `jsonl_sqlite.py`, `scripts/13_build_sqlite.py`.
+
+## Meters & calibration
+- **[meter-to-meter-proxy.md](meter-to-meter-proxy.md)** — the corrector mode: read an XCadey, rebroadcast it on the Assioma scale under our own identity.
+- **[supported-meters.md](supported-meters.md)** — which power meters work / what we screen testers for.
+
+## Performance & coexistence
+- **[perf-coex-plan.md](perf-coex-plan.md)** — on-device load monitoring + the measure→improve→iterate loop (ESP32-C3).
+- **[perf-results.md](perf-results.md)** — measured perf/coex iterations (append-only).
+
+## OTA, secrets & home infra
+- **[ota-update-plan.md](ota-update-plan.md)** — the firmware-update security plan (authenticated push → signed-pull).
+- **[shared-services-adoption.md](shared-services-adoption.md)** — SB20 → cauldnz-pos infra (secrets / observability / local LLMs). → `tools/secrets-*.ps1`, `sb20proxy/obs.py`, `llm.py`.
+
+## Users / beta
+- **[beta-program.md](beta-program.md)** — running the pre-beta with ~10 SB20 testers (the live instance of `USERS-PLAYBOOK.md`).
+- **[pre-beta-plan.md](pre-beta-plan.md)** — the plan to get to ~10 collaborator-testers.
+
+## Research / roadmap
+- **[zwift-controls-research.md](zwift-controls-research.md)** — Zwift integration / controls research.
+
+## Also in here
+- **[captures/README.md](captures/README.md)** — the index of committed JSONL/pcap capture files (the canonical lossless record — never edit one).
+- **screenshots/** — app-UI references (Stages app, Stages Power app, Favero Assioma app).
+
+> Adding a new findings doc? **Add a one-line entry here** in the same change — **CI
+> (`code/tests/test_findings_index.py`) fails if a top-level findings doc is missing from this index, or if a
+> link here is dead**, so the map can't drift stale. (The doc itself should carry a `Status:` line + name the
+> tooling it governs.)
+
+---
 
 ## Naming conventions
 
-- Capture files: `<session-letter>-<device>-<scenario>-<YYYYMMDD-HHMM>.jsonl`
-  - Session letters refer to the sessions defined in `../03-central-hypothesis-and-phase-zero.md`
-  - Device: `stagesL`, `stagesR`, `assioma`, `sb20fec`
-  - Scenario: `steady`, `pairing`, `calibration`, `failure-mode`, `endurance`
-- Reports: `phase-N-<topic>.md`
-- Decision log entries: prefix with `## YYYY-MM-DD —` followed by a short title
+- Capture files: `<session-letter>-<device>-<scenario>-<YYYYMMDD-HHMM>.jsonl` (BLE pcaps: `.pcap`).
+  - Device: `stagesL`, `stagesR`, `assioma`, `xcadey`, `sb20`, `sb20fec`.
+  - Scenario: `steady`, `pairing`, `calibration`, `zero`, `erg`, `recon`, `failure-mode`, `endurance`.
+- Reports: `phase-N-<topic>.md` / `<subsystem>-<topic>.md`.
+- Decision-log entries: prefix with `## YYYY-MM-DD —` and a short title (append-only).
 
 ## Why commit captures?
 
-They're not source code, but they're load-bearing project history. Future
-debugging — and any future contributor's onboarding — will refer back to them.
-The on-disk size is small (a 15-minute Bike Power capture is well under 1 MB).
-
-If a capture grows beyond Github's reasonable file size, compress it
-(`gzip -k <file>`) and commit the `.gz`.
+They're not source code, but they're **load-bearing project history** — future debugging and onboarding
+refer back to them, and they ground every codec/fixture (real bytes, never invented). On-disk size is small
+(a 15-minute power capture is well under 1 MB). If one grows beyond a sensible size, `gzip -k <file>` and
+commit the `.gz`.
