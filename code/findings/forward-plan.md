@@ -577,3 +577,35 @@ zero-reset pass-through, but BOTH ways:
 
 **Pattern:** §10 (zero-reset) + §11 (crank length) are the same idea — the spoof as a **transparent config
 bridge** between the Stages app and the real power meter. Other config (cadence source, etc.) fits the mold.
+
+---
+
+## 12. Debug — why does changing BOTH crank ids (own-id L + phantom R) fail to pair? (session 8)
+
+**Question:** in session 8, setting the Stages app to **L=`62145` (our ESP) + R=`4964` (a phantom, nothing
+on air)** → the app reported **"pairing failed"** and the SB20 **never connected to our ESP** (`/log` saw
+nothing). Changing only **R→`4963`** (the real right crank, present) → connected immediately. So an **absent
+right id aborted the whole pairing** — the bike didn't even attempt the present left. We *inferred* "the bike
+needs a findable right crank" but never proved the **mechanism**.
+
+**Why it matters:** it gates whether a true **sole-source** setup (Assioma only, no real right crank) is
+possible — and the shape of any workaround. (Pairs with the single-right-crank / sole-source backlog.)
+
+**Hypotheses (session-8 data can't distinguish them — both produce "our ESP sees nothing"):**
+- **App-gatekeeper:** the Stages app scans for both ids, can't find `4964`, declares "pairing failed", and
+  never pushes the config to the bike → the bike never tries either.
+- **Bike-gatekeeper:** the app pushes both ids; the SB20 scans, can't find R, and aborts before connecting L
+  (i.e. it requires *both* configured cranks findable).
+
+**Debug plan (cheap — rides along with session 9; we're pairing the SB20→ESP there anyway):**
+1. Variants, watching `/log` on the ESP for *any* connect attempt:
+   - L=`62145` / R=`4964` (absent) → reproduce; does the ESP see a connect attempt at all?
+   - L=`62145` / R=`4963` (present) → connects (control).
+   - L=`<absent id>` / R=`4963` (present) → does the bike connect to the present R alone, or also abort?
+     (tests "both must be findable" vs "only the right matters").
+2. If still ambiguous, an **nRF sniff** of the app↔bike link (sniff BEFORE the pairing attempt — see
+   §Lessons in PLAYBOOK) shows whether the bike ever *receives* the phantom config → app- vs bike-gatekeeper.
+
+**If bike-gatekeeper (needs both findable):** a sole-source workaround to test is the **ESP advertising a
+SECOND, phantom-right peripheral** so both configured ids resolve to us. **If app-gatekeeper:** explore a
+different app pairing flow. Either way: capture-first, then decide.
