@@ -4,6 +4,10 @@ This directory is the **source of truth for what's been measured, decided, and b
 analysis, protocol specs, decision logs. Most of it is **append-only history**: when something breaks
 later that worked before, the answer is usually in here.
 
+> 🗺️ **This index is `findings/`-scoped.** For the **whole-repo** view — a *capabilities-already-built*
+> inventory + the map of every doc area (`sessions/`, `beta/`, `tools/`, the playbooks) — start at
+> [`PROJECT-MAP.md`](../../PROJECT-MAP.md) (repo root), then come here for the protocol/measurement detail.
+
 > ## 🧭 Before you build tooling for — or judge the readiness/availability of — a subsystem, FIND ITS DOC BELOW AND READ IT.
 > Check for the **existing script/tooling** the doc names, too. **Don't re-derive or rebuild what's already
 > documented.** *(Session 9, 2026-06-26: a `doctor.ps1` nRF-sniffer gate **and** an "install Npcap" call were
