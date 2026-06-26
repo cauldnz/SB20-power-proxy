@@ -1366,6 +1366,17 @@ void test_app_page_essentials() {
     TEST_ASSERT_TRUE(p.find("balance_pct") != std::string::npos);      // shows the L/R balance
     TEST_ASSERT_TRUE(p.find("href='/setup'") != std::string::npos);    // link to pick the source
     TEST_ASSERT_TRUE(p.find("href='/wifi/off'") != std::string::npos); // ride-mode (WiFi off) link
+    TEST_ASSERT_TRUE(p.find("href='/report'") != std::string::npos);   // the review-&-send report page
+}
+
+void test_report_page_review_and_send() {
+    std::string p = diagReportPageHtml();
+    TEST_ASSERT_TRUE(p.find("fetch('/diag'") != std::string::npos);   // shows the raw report for review
+    TEST_ASSERT_TRUE(p.find("Download") != std::string::npos);        // one-tap download
+    TEST_ASSERT_TRUE(p.find("mailto:") != std::string::npos);         // email-us affordance
+    TEST_ASSERT_TRUE(p.find("No location or personal data") != std::string::npos);  // consent copy
+    TEST_ASSERT_TRUE(p.find("until you") != std::string::npos);       // "nothing leaves until you act"
+    TEST_ASSERT_TRUE(p.find("href='/'") != std::string::npos);        // back to the dashboard
 }
 
 void test_diag_report() {
@@ -1980,6 +1991,7 @@ int runUnityTests() {
     RUN_TEST(test_saved_page_has_ssid_and_hints);
     RUN_TEST(test_saved_page_escapes_ssid);
     RUN_TEST(test_app_page_essentials);
+    RUN_TEST(test_report_page_review_and_send);
     RUN_TEST(test_diag_report);
     RUN_TEST(test_ride_mode_pages);
     RUN_TEST(test_perf_monitor_basic);

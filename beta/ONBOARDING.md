@@ -49,10 +49,11 @@ ride, **either**:
 3. Ride. The power your app shows should now match your meter's own app.
 
 ## If something's not right
-- **Your meter isn't in the scan list**, or the **power looks wrong** → don't fight it on the bike.
-  Grab a diagnostic for us: open `http://<board-ip>/diag`, **save the page**, and send us the file (plus
-  your meter's exact model). It contains your meter's raw signal — exactly what we need to add support.
-  We'll **push you an update over WiFi** — no need to send anything back.
+- **Your meter isn't in the scan list**, or the **power looks wrong** → don't fight it on the bike. On
+  the dashboard tap **"Send a report"** (or open `http://<board-ip>/report`). It **shows you exactly what
+  would be sent** — your meter's raw Bluetooth signal plus the board's config/status, **no location or
+  personal data** — then tap **Download** and email us the file (with your meter's exact model). Nothing
+  leaves the board until you choose to. We'll **push you an update over WiFi** — no need to send anything back.
 - **Screen/board froze** → unplug/replug, and tell us what you were doing.
 
 ## Updates

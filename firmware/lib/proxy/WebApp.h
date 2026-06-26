@@ -47,7 +47,7 @@ a.set{color:#3b82f6;text-decoration:none;font-size:.85rem;border:1px solid #2b36
 <div class='stat'><b>Forwarded</b><span id='fwd'>--</span></div>
 <div class='stat'><b>Firmware</b><span id='fw'>--</span></div>
 </div>
-<p style='text-align:center;margin-top:14px;font-size:.8rem'><a href='/calibrate' style='color:#8b93a7'>Calibrate a meter</a> &nbsp;&middot;&nbsp; <a href='/wifi/off' style='color:#8b93a7'>Ride mode &mdash; WiFi off</a> &nbsp;&middot;&nbsp; <a href='/diag' style='color:#8b93a7'>Diagnostic</a></p>
+<p style='text-align:center;margin-top:14px;font-size:.8rem'><a href='/calibrate' style='color:#8b93a7'>Calibrate a meter</a> &nbsp;&middot;&nbsp; <a href='/wifi/off' style='color:#8b93a7'>Ride mode &mdash; WiFi off</a> &nbsp;&middot;&nbsp; <a href='/report' style='color:#8b93a7'>Send a report</a></p>
 <script>
 var $=function(i){return document.getElementById(i)};
 var hist=[],MAX=90;
@@ -97,6 +97,63 @@ inline const char* rideModeDoneHtml() {
 <p>This page won't refresh (WiFi is off). <b>Power-cycle</b> the board when you want WiFi back for the
 dashboard or an update.</p>
 </body></html>)HTML";
+}
+
+// The tester report "review &amp; send" page (GET /report). CONSENT-FIRST: it fetches the raw /diag
+// report (config + status + the meter's raw CPS frames), shows it so the tester can READ exactly what
+// they'd send, then lets them Download it / Copy it / open an email &mdash; nothing leaves the device
+// until they choose to. The raw /diag stays plain text (parse_diag's input); this only wraps it for the
+// tester. Pure constant &mdash; host-tested like appPageHtml.
+inline const char* diagReportPageHtml() {
+    return R"HTML(<!DOCTYPE html><html><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>SB20 Proxy &mdash; Send a report</title>
+<style>
+:root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--accent:#3b82f6}
+*{box-sizing:border-box}
+body{margin:0 auto;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);max-width:560px;padding:16px}
+h1{font-size:1.2rem;margin:0 0 8px}
+.note{background:var(--card);border-radius:12px;padding:12px 14px;font-size:.85rem;color:var(--mut);margin-bottom:12px}
+.note b{color:var(--fg)}
+pre{background:#0a0d16;border:1px solid #2b3650;border-radius:10px;padding:12px;font-size:.72rem;line-height:1.35;white-space:pre-wrap;word-break:break-word;max-height:46vh;overflow:auto;margin:0 0 12px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+button,a.btn{flex:1;min-width:120px;text-align:center;padding:12px;font-size:.95rem;font-weight:600;border-radius:10px;border:0;cursor:pointer;text-decoration:none}
+.primary{background:var(--accent);color:#fff}
+.ghost{background:var(--card);color:var(--fg);border:1px solid #2b3650}
+.steps{font-size:.85rem;color:var(--mut);margin:12px 0}
+.steps b{color:var(--fg)}
+a.back{color:var(--mut);font-size:.8rem}
+#msg{font-size:.8rem;color:#22c55e;min-height:1.1em;margin-top:6px}
+</style></head><body>
+<h1>Send us a report</h1>
+<div class='note'>This is <b>exactly what you'd send us</b> &mdash; your meter's Bluetooth signal plus the
+board's config and status. <b>No location or personal data.</b> Nothing leaves the board until you tap
+Download or Email below &mdash; review it first.</div>
+<div class='steps'><b>1.</b> Read it below &nbsp; <b>2.</b> tap <b>Download</b> &nbsp; <b>3.</b> email us
+the file (attach it) at the address we gave you.</div>
+<pre id='rpt'>loading&hellip;</pre>
+<div class='row'>
+<button class='primary' onclick='dl()'>&#11015; Download .txt</button>
+<button class='ghost' onclick='cp()'>Copy</button>
+<a class='btn ghost' id='mail' href='#'>&#9993; Email us</a>
+</div>
+<div id='msg'></div>
+<p style='margin-top:14px'><a class='back' href='/'>&larr; Back to dashboard</a> &nbsp;&middot;&nbsp;
+<a class='back' href='/diag'>view raw</a></p>
+<script>
+var rpt='';
+function fname(){return 'sb20-report-'+new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)+'.txt';}
+fetch('/diag',{cache:'no-store'}).then(function(r){return r.text();}).then(function(t){
+rpt=t;document.getElementById('rpt').textContent=t;
+document.getElementById('mail').href='mailto:?subject='+encodeURIComponent('SB20 proxy report')
++'&body='+encodeURIComponent('My SB20 proxy diagnostic is attached (download it first, then attach the .txt).');
+}).catch(function(){document.getElementById('rpt').textContent='(could not load the report — reload this page)';});
+function dl(){var b=new Blob([rpt],{type:'text/plain'});var a=document.createElement('a');
+a.href=URL.createObjectURL(b);a.download=fname();document.body.appendChild(a);a.click();a.remove();
+document.getElementById('msg').textContent='Downloaded — now email us the file (attach it).';}
+function cp(){if(navigator.clipboard){navigator.clipboard.writeText(rpt).then(function(){
+document.getElementById('msg').textContent='Copied — paste it into a message to us.';});}}
+</script></body></html>)HTML";
 }
 
 }  // namespace sb20proxy

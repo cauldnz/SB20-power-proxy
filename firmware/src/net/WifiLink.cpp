@@ -341,6 +341,11 @@ void WifiLink::addConfigRoutes_() {
         const std::vector<std::string> frames = diagFrames_ ? diagFrames_() : std::vector<std::string>{};
         server_->send(200, "text/plain", renderDiagReport(cfg, st, frames).c_str());
     });
+    // GET /report -> the tester-facing "review & send" page. Consent-first: it fetches /diag, shows it
+    // for review, and offers Download / Copy / Email — nothing leaves the device until the tester acts.
+    server_->on("/report", HTTP_GET, [this]() {
+        server_->send(200, "text/html", diagReportPageHtml());
+    });
 }
 
 // The meter-to-meter calibration wizard (GET /calibrate + the POST actions). Pure render/parse live
