@@ -8,6 +8,11 @@ Read a power meter → correct it → re-broadcast it so a consumer accepts it a
 
 ## Where to start (current canonical docs)
 
+- **[`PROJECT-MAP.md`](PROJECT-MAP.md)** — ⭐ **read this FIRST when planning or scoping any work.** The
+  whole-repo map: a **"capabilities already built" inventory** (so you extend, never rebuild) plus the
+  index of every doc area (`findings/`, `sessions/`, `beta/`, `tools/`, the playbooks). Born from repeated
+  planning misses that nearly rebuilt already-shipped features — **find the capability there before you
+  build it.** CI-guarded (`code/tests/test_project_map.py`).
 - **`code/findings/domain-primer.md`** — **new to smart bikes / power meters / BLE fitness protocols? Start here.** General concepts + verified spec facts (CPS/FTMS/ANT+, erg, calibration, pedal meters) so you're grounded without relying on model-inherent knowledge; the project's *measured* bytes live in the docs below and win on conflict.
 - **`code/findings/decisions.md`** — append-only chronological log; the source of truth for what's decided/found (every numeric value, refuted hypothesis, "it works now").
 - **`code/findings/phase-0-report.md`** — the spoof spec + state of knowledge.
