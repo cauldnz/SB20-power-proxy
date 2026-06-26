@@ -27,6 +27,7 @@ later that worked before, the answer is usually in here.
 - **[shifter-ble-protocol.md](shifter-ble-protocol.md)** — the SB20 shifter-over-BLE map (char `0c46be60`, one-hot gear bitmap).
 - **[stages-app-config.md](stages-app-config.md)** — the Stages app's ride modes / profiles / button config (owner recon).
 - **[sb20-power-topology.md](sb20-power-topology.md)** — does erg run off the right meter, and is "200 W" really 200 W?
+- **[sb20-hardware-reference.md](sb20-hardware-reference.md)** — SB20 internals + behaviour from **community prior art** (PedalSmart.blog): nRF52832 cranks/bike, the ANT+-internal-vs-BLE topology + **why our BLE spoof works** ("Pair with Bluetooth"), **erg is gated on a working Stages crank**, crank-length-on-the-crank (§11 clue), torque/zero-reset facts. *Secondary source — our captures win on conflict.*
 
 ## FTMS / erg control
 - **[ftms-protocol.md](ftms-protocol.md)** — ⭐ **canonical for FTMS** (service `0x1826`, control point `0x2AD9`, Set Target Power). → `code/src/sb20proxy/ble/ftms.py` + `ftms_erg.py`, `scripts/capture_ftms.py`, `scripts/ftms_workout.py`, `scripts/ftms_hw_loop.py`.
