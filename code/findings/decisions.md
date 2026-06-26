@@ -1978,3 +1978,34 @@ session-8 close-out + the zero-reset feature — PRs #136 / #138, both on `main`
 - **Process lesson:** read the subsystem's canonical findings doc (here `nrf-sniffer.md`) BEFORE building
   tooling/checks for it — both the spawned doctor task and I built the gate on assumptions, not the doc. (A
   concurrent session also improved `nrf-sniffer.md` with a TL;DR quick-start, PR #159.)
+
+## 2026-06-26 — MCP workout builder + driver: desk-complete (forward-plan §13)
+
+Built the productized form of session-9's ad-hoc `ftms_workout.py` driver — an **MCP server that
+exposes the SB20 erg as agent-drivable workout tools** (compose a structured workout + drive it live
+over FTMS). Desk-only, fully host-tested, no bike. See [`mcp-workout-server.md`](mcp-workout-server.md).
+Landed as two PRs (the pure core, then the MCP server) per the desk-test-in-the-same-commit rule.
+
+- **`sb20proxy.workout` (PR #165):** `builder.build_plan(spec)` → a `ride.director.RidePlan` from a
+  built-in name / a structured dict (with `repeat` nodes; leaf segments via the existing validated
+  `ride.control.segment_from_json`) / a shorthand string (`"5min @ 130W; 6x(90s @ 430W; 3min @ 100W)"`).
+  `session.WorkoutSession` wraps a live `ride.state.LiveState` as the agent verbs (build / list /
+  start / stop / skip / goto / extend / set_target / message / set_profile / status). It's an
+  **adapter over already-built infra** (the Ride Director's `LiveState` + `apply_control` + `WORKOUTS`
+  + `ble.ftms_erg`), so the only new pure code is the builder + the controller wiring.
+- **`sb20proxy.mcp` (this PR):** `driver.ErgDriver` — the async drive loop that pumps an
+  `ErgController` toward `LiveState`'s `erg_setpoint_w` each poll, and **ALWAYS sends FTMS Reset on
+  teardown** (stop / duration-end / error) so the rider is never left at target — the teardown
+  `FtmsErgSession` lacks. `server.build_server()` registers the FastMCP tools incl. start_drive /
+  stop_drive / drive_status; the bleak connect is an **injectable transport provider** seam, so the
+  drive tools are host-tested against `InProcessFtmsServer`. Entry: `scripts/mcp_workout_server.py`;
+  the MCP SDK is the optional `[mcp]` extra (CI installs it so the server tests run).
+- **Decision — don't add pause/resume yet:** it needs a `LiveState` clock-freeze primitive; editing
+  that shared, tested module unsupervised wasn't worth it. Deferred (noted in §13).
+- **Cosmetic backlog confirmed already DONE:** `ProxyCore::reset()` + the `main.cpp`
+  connected→disconnected edge already zero stale `src_*`/`power_w` on meter drop; forward-plan §8
+  note corrected (it was stale).
+- **Tests:** +58 host cases across builder / session / driver / server. Full Python suite green
+  (430 passed), ruff clean (src+tests; scripts unlinted per policy). No hardware.
+- **Remaining (gated on the bike):** the live MCP-driven ride; persisted named-workout library;
+  observability/log surfacing. The FTMS erg bytes are already validated (Session 4; `G-sb20-ftms-erg-*`).
