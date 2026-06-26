@@ -39,8 +39,9 @@ while True:
 print("cells found:", len(cells))
 
 
-def page(inner, pad=10):
-    return (f"<!DOCTYPE html><html><head><meta charset='utf-8'>{style}</head>"
+def page(inner, pad=9):
+    return (f"<!DOCTYPE html><html><head><meta charset='utf-8'>{style}"
+            f"<style>html,body{{width:200px;overflow:hidden}}</style></head>"
             f"<body style='margin:0;background:#0a0c14;padding:{pad}px'>{inner}</body></html>")
 
 
@@ -58,7 +59,7 @@ def shot(html_path, png_path, w, h):
 for n, c in enumerate(cells, 1):
     p = REND / f"screen-{n}.html"
     p.write_text(page(f'<div class="gal" style="background:none;padding:0">{c}</div>'), encoding="utf-8")
-    shot(p, REND / f"screen-{n}.png", 210, 392)
+    shot(p, REND / f"screen-{n}.png", 200, 392)
 
 shot(SRC, REND / "all.png", 430, 1340)
 print("done")
