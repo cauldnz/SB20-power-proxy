@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SB20 proxy — LCD UI prototypes v1 (172×320)</title>
+<style>
+:root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--bad:#ef4444;--accent:#3b82f6;--line:#1c2334;--chip2:#2a3142}
+*{box-sizing:border-box}
+body{margin:0;background:#0a0c14;color:var(--fg);font-family:system-ui,-apple-system,sans-serif;padding:20px 14px 40px}
+h1{font-size:17px;font-weight:600;text-align:center;margin:0 0 4px}
+.sub{font-size:12px;color:var(--mut);text-align:center;margin:0 0 22px}
+.gal{display:flex;flex-wrap:wrap;gap:24px 16px;justify-content:center;align-items:flex-start}
+.cell{display:flex;flex-direction:column;align-items:center;gap:9px}
+.cap{font-size:12px;color:var(--mut);text-align:center}
+.dev{box-sizing:border-box;width:182px;padding:4px;background:#05070d;border:1px solid rgba(255,255,255,.1);border-radius:18px}
+.scr{width:172px;height:320px;background:var(--bg);color:var(--fg);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.tb{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;font-size:11px;color:var(--mut);border-bottom:1px solid var(--line)}
+.bd{padding:9px 11px;display:flex;flex-direction:column;gap:8px;flex:1;min-height:0}
+.k{font-size:11px;color:var(--mut)}
+.v{font-size:17px;font-weight:500}
+.u{font-size:11px;color:var(--mut)}
+.chip{background:var(--card);border-radius:10px;padding:8px 10px}
+.nav{margin-top:auto;display:flex;border-top:1px solid var(--line)}
+.nav span{flex:1;text-align:center;padding:8px 0;color:var(--mut);font-size:11px}
+.nav span.on{color:var(--accent)}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);vertical-align:middle;margin-right:4px}
+.btn{flex:1;text-align:center;padding:10px 0;border-radius:9px;font-size:12px;font-weight:500}
+.bp{background:var(--accent);color:#fff}
+.bgr{background:var(--card);color:var(--fg)}
+.row{display:flex;align-items:center;justify-content:space-between;padding:9px 1px;border-bottom:1px solid var(--line);font-size:13px}
+.tg{width:34px;height:20px;border-radius:10px;background:var(--chip2);position:relative;display:inline-block}
+.tg i{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--mut)}
+.bar{flex:1;height:18px;border-radius:3px}
+.tag{font-size:11px;background:var(--chip2);color:var(--mut);padding:2px 7px;border-radius:6px}
+</style>
+</head>
+<body>
+<h1>SB20 proxy — head-unit UI · v1</h1>
+<p class="sub">ESP32-S3-Touch-LCD-1.47 · drawn at the real 172 × 320 px · real fields &amp; palette</p>
+<div class="gal">
+
+<div class="cell"><div class="cap">1 · Ride dashboard</div>
+<div class="dev"><div class="scr">
+<div class="tb"><span>Stages 62144</span><span style="color:var(--ok)"><span class="dot"></span>live</span></div>
+<div class="bd">
+<div style="text-align:center;margin-top:2px"><div class="k" style="letter-spacing:.12em">POWER</div><div style="font-size:52px;font-weight:500;line-height:1.05">247<span class="u" style="font-size:15px"> W</span></div></div>
+<div style="display:flex;gap:8px">
+<div class="chip" style="flex:1"><div class="k">Cadence</div><div class="v">92<span class="u"> rpm</span></div></div>
+<div class="chip" style="flex:1"><div class="k">Balance L / R</div><div class="v">49<span class="u"> / </span>51</div></div></div>
+<div class="chip" style="display:flex;align-items:center;justify-content:space-between;font-size:13px"><span><span class="k">meter in </span>247</span><span style="color:var(--accent);font-size:16px">&rarr;</span><span><span class="k">crank out </span>247</span></div>
+<div style="display:flex;align-items:center;gap:6px;color:var(--ok);font-size:11px"><span>&#10003;</span> ASSIOMA17039L</div>
+<svg viewBox="0 0 150 32" style="width:100%;height:32px;margin-top:auto"><polyline points="0,24 15,19 30,26 45,13 60,18 75,7 90,16 105,9 120,21 135,11 150,16" fill="none" stroke="#3b82f6" stroke-width="2"/></svg>
+</div>
+<div class="nav"><span class="on">Ride</span><span>Setup</span><span>More</span></div>
+</div></div></div>
+
+<div class="cell"><div class="cap">2 · Pick your meter</div>
+<div class="dev"><div class="scr">
+<div class="tb"><span>&lsaquo; Setup</span><span>scanning&hellip;</span></div>
+<div class="bd" style="gap:7px">
+<div class="chip" style="border:1px solid var(--accent);display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px">ASSIOMA17039L</div><div class="k">pedals · &minus;52 dBm</div></div><span style="color:var(--accent);font-size:17px">&#10003;</span></div>
+<div class="chip" style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px">Stages 4963</div><div class="k">&minus;61 dBm</div></div><span class="tag">crank</span></div>
+<div class="chip" style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px">ASSIOMA22428R</div><div class="k">pedals · &minus;74 dBm</div></div></div>
+<div style="display:flex;align-items:center;justify-content:space-between;font-size:13px;padding:0 2px"><span>Single-sided &times;2</span><span class="tg"><i></i></span></div>
+<div style="display:flex;gap:8px;margin-top:auto"><span class="btn bgr">&#8635; Rescan</span><span class="btn bp">Use</span></div>
+</div>
+</div></div></div>
+
+<div class="cell"><div class="cap">3 · Calibrate (corrector)</div>
+<div class="dev"><div class="scr">
+<div class="tb"><span>&lsaquo; Calibrate</span><span style="color:var(--ok)">collecting</span></div>
+<div class="bd">
+<div style="display:flex;gap:8px">
+<div class="chip" style="flex:1"><div class="k">DUT · XCadey</div><div class="v">243<span class="u"> W</span></div></div>
+<div class="chip" style="flex:1"><div class="k">Ref · Assioma</div><div class="v">221<span class="u"> W</span></div></div></div>
+<div class="chip"><div style="display:flex;justify-content:space-between;font-size:12px"><span class="k">coverage</span><span>7 / 9 bins</span></div>
+<div style="display:flex;gap:3px;margin-top:8px"><span class="bar" style="background:#3b82f6"></span><span class="bar" style="background:#3b82f6"></span><span class="bar" style="background:#3b82f6"></span><span class="bar" style="background:#3b82f6"></span><span class="bar" style="background:#3b82f6"></span><span class="bar" style="background:#3b82f6"></span><span class="bar" style="background:#3b82f6"></span><span class="bar" style="background:#2a3142"></span><span class="bar" style="background:#2a3142"></span></div></div>
+<div style="display:flex;justify-content:space-between;font-size:13px;padding:0 2px"><span class="k">pairs</span><span>412</span></div>
+<div style="text-align:center;font-size:12px;color:var(--ok)">Hold ~250 W steady</div>
+<div style="display:flex;gap:8px;margin-top:auto"><span class="btn bgr">Cancel</span><span class="btn bp">Fit &amp; save</span></div>
+</div>
+</div></div></div>
+
+<div class="cell"><div class="cap">4 · Send a report</div>
+<div class="dev"><div class="scr">
+<div class="tb"><span>&lsaquo; Report</span><span style="color:var(--ok)">&#10003; safe</span></div>
+<div class="bd">
+<div class="chip" style="font-size:11px;color:var(--mut);line-height:1.55">This is exactly what you'd send — your meter's signal + the board config. <span style="color:var(--fg)">No location or personal data.</span></div>
+<div class="chip" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:#9fb0c8;line-height:1.55;flex:1;overflow:hidden">fw=sb20proxy v0.1.0<br>source=ASSIOMA17039L<br>[frames] 0x2A63<br>23009e0058161334&hellip;<br>23009f005a1a1391&hellip;</div>
+<div style="font-size:11px;color:var(--mut);text-align:center">Nothing leaves until you choose.</div>
+<div style="display:flex;gap:8px"><span class="btn bgr">Save&nbsp;SD</span><span class="btn bp">Share</span></div>
+</div>
+</div></div></div>
+
+<div class="cell"><div class="cap">5 · Workout / erg console</div>
+<div class="dev"><div class="scr">
+<div class="tb"><span>6 &times; 90s @ 430 W</span><span style="color:var(--ok)">erg</span></div>
+<div class="bd">
+<div class="chip" style="text-align:center"><div class="k">interval 3 / 6</div><div style="font-size:44px;font-weight:500;line-height:1.12">430<span class="u" style="font-size:14px"> W</span></div><div class="k">live 428 W</div></div>
+<div style="display:flex;justify-content:space-between;font-size:13px;padding:0 2px"><span><span class="k">seg </span>0:47</span><span><span class="k">total </span>18:20</span></div>
+<div style="display:flex;gap:4px"><span class="bar" style="height:6px;background:#22c55e"></span><span class="bar" style="height:6px;background:#22c55e"></span><span class="bar" style="height:6px;background:#3b82f6"></span><span class="bar" style="height:6px;background:#2a3142"></span><span class="bar" style="height:6px;background:#2a3142"></span><span class="bar" style="height:6px;background:#2a3142"></span></div>
+<div style="display:flex;gap:6px;margin-top:auto"><span class="btn bgr">Skip</span><span class="btn bgr">+30s</span><span class="btn" style="background:var(--bad);color:#fff">Stop</span></div>
+</div>
+</div></div></div>
+
+<div class="cell"><div class="cap">6 · Settings</div>
+<div class="dev"><div class="scr">
+<div class="tb"><span>&lsaquo; Settings</span><span></span></div>
+<div class="bd" style="gap:0">
+<div class="row"><span>Crank identity</span><span class="k">Stages 62144 &rsaquo;</span></div>
+<div class="row"><span>Single-sided &times;2</span><span class="tg"><i></i></span></div>
+<div class="row"><span>Ride mode · WiFi off</span><span style="color:var(--mut)">&rsaquo;</span></div>
+<div class="row"><span>microSD</span><span class="k">2.1 GB free</span></div>
+<div class="row"><span>Firmware</span><span class="k">v0.1.0</span></div>
+<div class="row" style="border-bottom:none"><span>Send a report</span><span style="color:var(--mut)">&rsaquo;</span></div>
+</div>
+</div></div></div>
+
+</div>
+</body>
+</html>
