@@ -6,8 +6,10 @@
 the recruiting kit — [`recruiting-and-selection.md`](../../beta/recruiting-and-selection.md) (funnel +
 selection + screening form + hosting), [`pitch-posts.md`](../../beta/pitch-posts.md) (ready-to-post
 Facebook copy), [`comms-templates.md`](../../beta/comms-templates.md) (lifecycle messages) — plus
-[onboarding](../../beta/ONBOARDING.md) + [ride protocol](../../beta/TESTER-RIDE-PROTOCOL.md). Meter
-compatibility + the meter-screening detail live in [`supported-meters.md`](supported-meters.md).
+[onboarding](../../beta/ONBOARDING.md), the [ride protocol](../../beta/TESTER-RIDE-PROTOCOL.md), and the
+[ride-feedback form](../../beta/RIDE-FEEDBACK-FORM.md). How we cut a build + push it to the fleet is
+[`beta/RELEASE-AND-OTA.md`](../../beta/RELEASE-AND-OTA.md). Meter compatibility + the meter-screening
+detail live in [`supported-meters.md`](supported-meters.md).
 
 > **The one principle that shapes everything: a tester's time on the bike is the scarcest, most
 > precious resource we have. We never send anyone to pedal until we have verified, off the bike, that
@@ -89,7 +91,8 @@ ship pre-flashed ─▶ tester sets up (off bike) ─▶ pre-flight verify (dash
   troubleshoot in the saddle.
 
 ## Feedback channels
-- A short structured **form** per ride (what worked / power match / any hang / which meter) — 60 seconds.
+- A short structured **form** per ride — [`beta/RIDE-FEEDBACK-FORM.md`](../../beta/RIDE-FEEDBACK-FORM.md)
+  (build / which meter / power match / any hang) — 60 seconds.
 - The **`/log` capture** for any meter/power issue (the real signal).
 - A **group thread / DM** for back-and-forth, but the form + log are the system of record.
 
