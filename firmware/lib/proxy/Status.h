@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <string>
 
+#include "Config.h"  // FIRMWARE_VERSION (the build stamp surfaced below)
+
 namespace sb20proxy {
 
 // A snapshot of the proxy's runtime state — the pure, host-testable observability model.
@@ -11,6 +13,7 @@ namespace sb20proxy {
 // proxy's stats line.
 struct ProxyStatus {
     const char* fw = "sb20proxy-esp32";
+    const char* version = Config::FIRMWARE_VERSION;  // semver build stamp (OTA currentVersion)
     bool sourceConnected = false;  // meter linked (always false in mock mode)
     bool mock = false;             // running the synthetic meter, no real source
     std::string srcName;           // the connected source's advertised name ("" if none)
@@ -49,6 +52,8 @@ inline std::string renderStatusJson(const ProxyStatus& s) {
     std::string j = "{";
     j += "\"fw\":\"";
     j += s.fw;
+    j += "\",\"version\":\"";
+    j += s.version;
     j += "\",\"source\":\"";
     j += source;
     j += "\",\"src_name\":\"" + jsonEscape(s.srcName) + "\"";
