@@ -578,6 +578,37 @@ zero-reset pass-through, but BOTH ways:
 **Pattern:** §10 (zero-reset) + §11 (crank length) are the same idea — the spoof as a **transparent config
 bridge** between the Stages app and the real power meter. Other config (cadence source, etc.) fits the mold.
 
+### Capture recipe — run this BEFORE building (real-data-first; folds into a bike session)
+
+Three grounding captures; the app→device writes are **proprietary**, so the primary tool is the **nRF
+sniffer** ([`nrf-sniffer.md`](nrf-sniffer.md) — `sniff_ble.py`, start it BEFORE the app connects), not a
+connect-and-subscribe central. Stage the nRF rig (doctor.ps1 green) at the desk first.
+
+1. **App → crank, crank-length SET (the `--` mystery).** nRF-sniff the **Stages app ↔ real Stages L crank**
+   link, then in the app change crank length (e.g. 172.5 → 165 mm). Expect the write on the Stages
+   proprietary char **`d445fe02`** (the `fe02` token), NOT standard CP `0x04`.
+   ```bash
+   python code/scripts/sniff_ble.py --scan-only --duration 12          # get the crank's adv MAC
+   python code/scripts/sniff_ble.py --device <crankMAC> --duration 300 \
+       --output code/findings/captures/SNIFF-stages-cranklen-$(date +%Y%m%d-%H%M).pcap
+   # ...now change crank length in the Stages app; then analyze the pcap (Wireshark / pcap_sqlite).
+   ```
+   Cross-check: with the **spoof** paired, watch the ESP `/log` while changing length — confirms whether
+   ANY write reaches us (sessions 8/9 saw none on standard CP → the proprietary path).
+2. **Crank-length read-back (meter → app).** Connect to the real crank and ask what length it reports —
+   grounds the lower-risk first stage (just answer the app's read with the source's real value):
+   ```bash
+   python code/scripts/06_capture_ble.py --address <crankMAC> --control-point request-crank-length \
+       --output code/findings/captures/G-stagesL-cranklen-readback-$(date +%Y%m%d-%H%M).jsonl
+   ```
+3. **Favero app → Assioma, crank-length SET (the forward target).** nRF-sniff the **Favero app ↔ Assioma**
+   link while changing crank length there — expect it over the Assioma's **Nordic-UART service**
+   (`6e400001…`, seen in `G-assioma17039-ble-zero-20260615`), NOT standard CP `0x04`.
+
+Commit the pcaps/JSONL to `findings/captures/`, note them in the session + `decisions.md`, then build the
+bridge in the staged order above (read-back first, then the app→meter forward). **Don't write the codec
+before these land** (capture-before-code).
+
 ---
 
 ## 12. Debug — why changing BOTH crank ids fails to pair (session 8) — ✅ MOSTLY RESOLVED (session 9, 2026-06-26)
