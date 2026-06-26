@@ -159,6 +159,12 @@ These are official Stages docs; they explain what we're working with. Cite them 
   single-crank mode** (pull the dead crank's battery + select "Stages Bike" as the power source → the bike
   **doubles** the surviving crank). Reframes our sole-source / crank-rescue path — see
   `code/findings/forward-plan.md` §12 + `decisions.md` 2026-06-27.
+- **Systematic harvest (2026-06-27)** — ~20 SB20 posts read + distilled into
+  [`code/findings/sb20-hardware-reference.md`](code/findings/sb20-hardware-reference.md): internals
+  (nRF52832 cranks + bike, CR2032, strain-gauge/accelerometer), the ANT+-internal-vs-BLE topology + **why
+  our BLE spoof is accepted** ("Pair with Bluetooth"), **erg gated on a working Stages crank**,
+  crank-length-stored-on-the-crank (the §11 `--` clue), torque = mass·g·crank-length + the crank-length
+  table, zero-reset/auto-zero, the FTMS 2-connection limit. Secondary source — our captures win on conflict.
 
 ## Favero Assioma documentation
 

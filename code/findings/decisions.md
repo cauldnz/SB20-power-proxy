@@ -2026,3 +2026,26 @@ reframes the sole-source path (full note in forward-plan.md §12):
   the both-findable rule may be **dual-config-specific**; single-crank config may need only **one** findable
   crank. If so, crank-rescue is simpler — configure single-crank, spoof the one surviving/master crank, let
   the bike double it — rather than the 2nd-phantom-right peripheral. **Queued to test next bike session.**
+
+## 2026-06-27 — Community research harvest (PedalSmart.blog) → sb20-hardware-reference.md
+
+Systematic read of ~20 SB20 posts on PedalSmart.blog (clean-room — understanding only) distilled into
+[`sb20-hardware-reference.md`](sb20-hardware-reference.md) (secondary source; our captures win on conflict).
+The findings that matter most for us:
+- ⭐ **Erg is gated on a "working" Stages crank.** A bare third-party meter → free-ride/sim only, NO erg
+  ("when Zwift requests erg, the SB20 stays in free-ride"), regardless of Zwift config. ⇒ **our crank spoof
+  is precisely what unlocks third-party erg** — it makes the SB20 believe its crank works. Corollary: a
+  spoof that pairs but isn't accepted *as a working crank* would silently give free-ride only. (Sessions
+  2–9 already show the SB20 ergs off our spoof — this is the mechanism.)
+- ⭐ **"Pair with Bluetooth" (Stages app → Devices → Power Meters) moves the crank↔bike link from ANT+ to
+  BLE.** Almost certainly why our BLE crank spoof is accepted at all (internal default is ANT+: R→L→bike).
+  Bench-confirm the bike is in this mode.
+- ⭐ **Crank length is stored ON the cranks**, set/read via the app's Power Meter tab (the app pushes *bike*
+  settings on restart but NOT crank settings — cranks read their own). Likely why the app shows `--` for our
+  spoof's crank length (§11): it's exchanged over the Stages proprietary path, not standard CP `0x04`.
+- **Internals:** bike + each crank run a **Nordic nRF52832**; cranks = CR2032 + strain gauge (torque) +
+  accelerometer (angle/cadence); R→L→bike consolidation; eddy-current brake at 24 V; LED red=power/blue=
+  connected; no Stages firmware since ~late 2023.
+- **Torque = mass·9.81·crank-length**; crank length scales power (±5 % is the de-facto user cal); zero-reset
+  is a torque *offset* (Nm), not a calibration, and the crank auto-zeros at rest. **FTMS connection limit = 2.**
+- Tools GearView/BattView are iOS dashboard/battery apps — no protocol/RE content.
