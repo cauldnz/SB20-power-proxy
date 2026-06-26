@@ -98,6 +98,21 @@ is CLAUDE.md → *Git & branch hygiene*; it works — follow it every time, incl
   with no branch/PR — validated + adopted them in one PR; meanwhile a concurrent session independently improved
   the same `nrf-sniffer.md` on its own branch (#159). The survey caught both, so each landed once — not lost,
   not doubled. Stage explicit file lists, never `git add -A`, when the tree may hold another session's work.)*
+- **Spawn a desk session into its OWN git worktree, not the shared checkout** (`git worktree add
+  ../sb20-<task> -b <branch>`, or the harness's worktree isolation). One session → one worktree → one branch
+  → one PR. This is the **proactive** fix for the shared-tree collisions the bullet above cleans up
+  *reactively*: a separate worktree gives each session its own HEAD + index + working files, so a concurrent
+  session can't switch your branch under you, change a file mid-edit, or commit your work under a name you
+  didn't pick. **Two caveats it does *not* solve:** (a) the dev venvs are repo-local + gitignored
+  (`code/.venv`, `firmware/.venv`), so a fresh worktree needs `tools\provision-dev-env.ps1` before
+  build/test/`doctor.ps1` build-checks pass — the heavy ESP32 toolchain in `~/.platformio` is shared, so it's
+  only the two pip venvs to rebuild; (b) worktrees isolate **git + files only** — the one ESP32 board, the
+  ANT+ stick / `usbipd` WSL attach, the nRF dongle, and Infisical creds are machine-global, so
+  on-bike/hardware sessions still **serialize on the one rig** regardless. So: worktree-per-session for
+  *desk* concurrency; the survey-and-reconcile bullet above stays the backstop. *(Session 9: the spawned
+  doctor-hardening task ran in the shared checkout — its branch was switched under it, a file changed beneath
+  a mid-edit, and its work was committed under a branch it didn't choose (#158); an isolated worktree
+  prevents all three.)*
 
 ## 5 · Environment gotchas (so the next session doesn't re-find them)
 
