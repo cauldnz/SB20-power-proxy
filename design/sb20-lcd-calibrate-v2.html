@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SB20 — Calibrate v2 (coverage grid)</title>
+<style>
+:root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--accent:#3b82f6;--line:#1c2334;--chip2:#2a3142}
+*{box-sizing:border-box}
+html,body{width:200px;overflow:hidden}
+body{margin:0;background:#0a0c14;color:var(--fg);font-family:system-ui,-apple-system,sans-serif;padding:9px}
+.dev{box-sizing:border-box;width:182px;margin:0 auto;padding:4px;background:#05070d;border:1px solid rgba(255,255,255,.1);border-radius:18px}
+.scr{width:172px;height:320px;background:var(--bg);color:var(--fg);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.tb{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;font-size:11px;color:var(--mut);border-bottom:1px solid var(--line)}
+.bd{padding:8px 11px;display:flex;flex-direction:column;gap:6px;flex:1;min-height:0}
+.k{font-size:11px;color:var(--mut)}
+.u{font-size:11px;color:var(--mut)}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+.gc{height:24px;border-radius:5px;background:var(--chip2)}
+.full{background:var(--ok)}
+.part{background:rgba(34,197,94,.38)}
+.now{position:relative;outline:2px solid var(--accent);outline-offset:-2px}
+.now::after{content:'';position:absolute;left:50%;top:50%;width:8px;height:8px;margin:-4px;border-radius:50%;background:#fff}
+.yax{display:flex;flex-direction:column;justify-content:space-around;align-items:flex-end;width:22px;font-size:11px;color:var(--mut)}
+.xax{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:4px}
+.xax span{text-align:center;font-size:11px;color:var(--mut)}
+.btn{flex:1;text-align:center;padding:10px 0;border-radius:9px;font-size:12px;font-weight:500}
+.bgr{background:var(--card);color:var(--fg)}
+.bdim{background:var(--card);color:#5a667e}
+</style>
+</head>
+<body>
+<div class="dev"><div class="scr">
+<div class="tb"><span>&lsaquo; Calibrate</span><span style="color:var(--ok)">collecting</span></div>
+<div class="bd">
+
+<div style="display:flex;align-items:baseline;justify-content:space-between">
+<div><span style="font-size:22px;font-weight:500">243</span><span class="u"> W</span> <span class="k">&middot; 88 rpm</span></div>
+<div style="font-size:13px"><b style="color:var(--ok)">11</b><span class="u"> / 16</span></div>
+</div>
+<div class="k" style="margin-top:-2px">ref 221 W&nbsp;&middot;&nbsp;&tau; &asymp; 26 N&middot;m</div>
+
+<div style="display:flex;gap:6px;margin-top:2px">
+<div class="yax"><span>400</span><span>300</span><span>200</span><span>100</span></div>
+<div style="flex:1">
+<div class="grid">
+<div class="gc part"></div><div class="gc full"></div><div class="gc full"></div><div class="gc"></div>
+<div class="gc full"></div><div class="gc full"></div><div class="gc full now"></div><div class="gc part"></div>
+<div class="gc full"></div><div class="gc full"></div><div class="gc full"></div><div class="gc full"></div>
+<div class="gc"></div><div class="gc full"></div><div class="gc full"></div><div class="gc part"></div>
+</div>
+<div class="xax"><span>60</span><span>75</span><span>90</span><span>105</span></div>
+</div>
+</div>
+<div style="text-align:center;font-size:12px;color:var(--ok);margin-top:2px">Fill the dark squares &mdash; 5 to go</div>
+
+<div style="display:flex;gap:8px;margin-top:auto">
+<span class="btn bgr">Cancel</span><span class="btn bdim">Fit &amp; save</span>
+</div>
+
+</div>
+</div></div>
+</body>
+</html>
