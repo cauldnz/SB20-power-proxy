@@ -107,6 +107,10 @@ This is how "any meter" actually scales with testers as partners:
 ### Phase 4 — Package + ship *(desk + owner)*
 One-page onboarding (unbox → set up → **pull the crank battery / pair to our ID** → ride → FAQ); confirm
 the ~10 C3-OLED boards; **flash + ship them pre-configured**; a known-good default build + an OTA channel.
+The build/version/release/push process is documented in [`beta/RELEASE-AND-OTA.md`](../../beta/RELEASE-AND-OTA.md)
+(firmware versioning + `qa_board.py` gate + interim push-OTA now / signed-pull when the backend lands);
+boards now stamp a `version` in `/status`+`/diag` so the fleet's state is visible. Onboarding +
+[ride-feedback form](../../beta/RIDE-FEEDBACK-FORM.md) are in `beta/`.
 
 ### Phase 5 — Recruit + run the beta
 ~10 collaborator-testers from the SB20 FB group across varied meters; ship/guide; weekly structured data
