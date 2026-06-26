@@ -1070,6 +1070,29 @@ void test_status_json_unknown_cadence() {
     TEST_ASSERT_TRUE(renderStatusJson(s).find("\"cadence_rpm\":-1") != std::string::npos);
 }
 
+void test_status_json_has_firmware_version() {
+    ProxyStatus s;  // version defaults to Config::FIRMWARE_VERSION
+    const std::string expect = std::string("\"version\":\"") + Config::FIRMWARE_VERSION + "\"";
+    TEST_ASSERT_TRUE(renderStatusJson(s).find(expect) != std::string::npos);
+}
+
+void test_diag_report_has_firmware_version() {
+    RuntimeConfig cfg = RuntimeConfig::defaults();
+    ProxyStatus st;  // version defaults to Config::FIRMWARE_VERSION
+    const std::string r = renderDiagReport(cfg, st, {});
+    TEST_ASSERT_TRUE(r.find(std::string("version=") + Config::FIRMWARE_VERSION) != std::string::npos);
+}
+
+void test_firmware_version_feeds_ota_decision() {
+    // The build's FIRMWARE_VERSION is what the OTA fleet channel compares against a release
+    // manifest: a strictly-newer, well-formed manifest updates; same/older does not.
+    OtaManifest newer;
+    newer.valid = true; newer.version = "999.0.0"; newer.url = "https://x/fw.bin"; newer.size = 1;
+    TEST_ASSERT_TRUE(shouldUpdate(Config::FIRMWARE_VERSION, newer));
+    OtaManifest same = newer; same.version = Config::FIRMWARE_VERSION;
+    TEST_ASSERT_FALSE(shouldUpdate(Config::FIRMWARE_VERSION, same));
+}
+
 // --- WiFi provisioning (the captive-portal pure logic) ------------------------
 
 void test_form_parse_basic() {
@@ -1923,6 +1946,9 @@ int runUnityTests() {
     RUN_TEST(test_status_json_no_balance_is_minus_one);
     RUN_TEST(test_status_json_source_state);
     RUN_TEST(test_status_json_unknown_cadence);
+    RUN_TEST(test_status_json_has_firmware_version);
+    RUN_TEST(test_diag_report_has_firmware_version);
+    RUN_TEST(test_firmware_version_feeds_ota_decision);
     RUN_TEST(test_form_parse_basic);
     RUN_TEST(test_form_parse_url_encoding);
     RUN_TEST(test_form_parse_empty_password);

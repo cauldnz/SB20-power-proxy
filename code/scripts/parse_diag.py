@@ -40,7 +40,7 @@ def main() -> int:
                                                            errors="replace").read()
     rep = parse_diag_report(text)
 
-    print(f"fw: {rep.fw or '?'}")
+    print(f"fw: {rep.fw or '?'}  build: {rep.status.get('version', '?')}")
     print(f"config: source_addr={rep.config.get('source_addr', '')!r} "
           f"name_filter={rep.config.get('source_name_filter', '')!r} "
           f"spoof={rep.config.get('spoof_name', '')!r}")

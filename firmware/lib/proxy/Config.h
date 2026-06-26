@@ -2,11 +2,22 @@
 
 #include <cstdint>
 
+// Firmware build version (semver) — the OTA fleet channel compares this against a release
+// manifest's version (OtaManifest::shouldUpdate), and it's surfaced in /status + /diag so we
+// know which build a tester is on. Override per release with a build flag in platformio.ini /
+// the release runbook:   build_flags = -DSB20_FIRMWARE_VERSION=\"0.2.0\"
+#ifndef SB20_FIRMWARE_VERSION
+#define SB20_FIRMWARE_VERSION "0.1.0"
+#endif
+
 namespace sb20proxy {
 
 // What the proxy spoofs and reads. Phase 0 / Phase 1 values; later these move to NVS +
 // an on-device setup wizard. Kept platform-agnostic so the core + tests see the same values.
 struct Config {
+    // Build version, surfaced in /status + /diag and used as the OTA "currentVersion".
+    static constexpr const char* FIRMWARE_VERSION = SB20_FIRMWARE_VERSION;
+
     // --- the crank we impersonate (the Stages L crank; values captured 2026-06-17 over BLE) ---
     static constexpr const char* SPOOF_NAME         = "Stages 62144";
     static constexpr const char* SPOOF_MANUFACTURER = "Stages Cycling";
