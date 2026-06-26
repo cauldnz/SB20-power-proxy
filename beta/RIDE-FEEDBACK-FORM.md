@@ -21,7 +21,8 @@ build (dashboard version): ......        date: ........        app (Zwift/etc): 
 5. Setup/ride friction (1 = effortless, 5 = painful):  __     biggest snag: ........
 6. Anything else (good or bad): ........................................................
 
-If #2 was "no" or #3 was off:  open  http://<board-ip>/diag , Save the page, attach it here.
+If #2 was "no" or #3 was off:  on the dashboard tap "Send a report" (or http://<board-ip>/report) —
+   review it, tap Download, and attach the .txt here.
 ```
 
 ## What each answer drives (for us — not the tester)

@@ -48,6 +48,7 @@ Status key: ✅ built & working · ⚙ partial / hardening · 🔒 built but blo
 | Capability | Status | Lives in |
 |---|---|---|
 | Tester `/diag` report (config + status + **raw CPS frames**) → `parse_diag.py` → golden-vector stub | ✅ | `DiagReport.h`, `scripts/parse_diag.py`, `analysis/diag.py` · [beta-program](code/findings/beta-program.md), [supported-meters](code/findings/supported-meters.md) |
+| Tester **review-&-send** report page `/report` (review on-device → Download/Copy/Email; consent-first) | ✅ | `WebApp.h` `diagReportPageHtml`, `WifiLink` |
 | Pre-ship QA acceptance card | ✅ | `scripts/qa_board.py`, `sb20proxy/qa/acceptance.py` |
 | Tester kit: onboarding, ride protocol, **ride-feedback form**, recruiting, pitch posts, comms | ✅ | [`beta/`](beta/ONBOARDING.md) |
 | Release & fleet-OTA runbook + firmware **version stamping** | ✅ | [`beta/RELEASE-AND-OTA.md`](beta/RELEASE-AND-OTA.md), `Config.h` `SB20_FIRMWARE_VERSION` → `/status`,`/diag` |
