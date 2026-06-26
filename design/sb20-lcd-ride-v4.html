@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SB20 — Ride v4</title>
+<style>
+:root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--accent:#3b82f6;--line:#1c2334}
+*{box-sizing:border-box}
+html,body{width:400px;overflow:hidden}
+body{margin:0;background:#0a0c14;color:var(--fg);font-family:system-ui,-apple-system,sans-serif;padding:9px;display:flex;gap:14px;justify-content:center}
+.cell{display:flex;flex-direction:column;align-items:center;gap:8px}
+.cap{font-size:12px;color:var(--mut)}
+.dev{box-sizing:border-box;width:182px;padding:4px;background:#05070d;border:1px solid rgba(255,255,255,.1);border-radius:18px}
+.scr{width:172px;height:320px;background:var(--bg);color:var(--fg);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.ttl{background:#151d2e;border-bottom:1px solid var(--line);padding:9px 10px;display:flex;align-items:center;justify-content:space-between;font-size:12px}
+.ids{display:flex;align-items:center;gap:5px}
+.gd{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.chev{color:var(--mut);font-size:14px}
+.bd{padding:10px 11px;display:flex;flex-direction:column;gap:9px;flex:1;min-height:0}
+.k{font-size:11px;color:var(--mut)}
+.v{font-size:17px;font-weight:500}
+.u{font-size:11px;color:var(--mut)}
+.chip{background:var(--card);border-radius:10px;padding:9px 11px}
+.nav{margin-top:auto;display:flex;border-top:1px solid var(--line)}
+.nav span{flex:1;text-align:center;padding:8px 0;color:var(--mut);font-size:11px}
+.nav span.on{color:var(--accent)}
+.col{flex:1;background:var(--card);border-radius:10px;padding:9px 10px}
+.badge{display:inline-block;font-size:10px;font-weight:500;padding:1px 8px;border-radius:6px}
+.bin{background:rgba(34,197,94,.16);color:var(--ok)}
+.bout{background:rgba(59,130,246,.18);color:var(--accent)}
+.nm{font-size:12px;font-weight:500;line-height:1.2;margin:6px 0 7px}
+.met{font-size:17px;font-weight:500}
+.sub{font-size:11px;color:var(--mut);line-height:1.55}
+.rule{border-top:1px solid var(--line);margin:6px 0 5px}
+</style>
+</head>
+<body>
+
+<div class="cell"><div class="cap">Riding</div>
+<div class="dev"><div class="scr">
+<div class="ttl">
+<span class="ids"><span class="gd"></span> ASSIOMA <span style="color:var(--accent)">&rarr;</span> <span class="gd"></span> 62144</span>
+<span class="chev">&#8964;</span>
+</div>
+<div class="bd">
+<div style="text-align:center;margin-top:6px"><div class="k" style="letter-spacing:.12em">POWER</div><div style="font-size:52px;font-weight:500;line-height:1">247<span class="u" style="font-size:15px"> W</span></div></div>
+<svg viewBox="0 0 150 32" preserveAspectRatio="none" style="width:100%;height:32px;margin-top:2px">
+<polyline points="0,26 14,21 28,27 42,14 56,19 70,8 84,17 98,10 112,22 126,11 140,16 150,13" fill="none" stroke="#3b82f6" stroke-width="2"/>
+<polygon points="0,26 14,21 28,27 42,14 56,19 70,8 84,17 98,10 112,22 126,11 140,16 150,13 150,32 0,32" fill="rgba(59,130,246,.16)"/>
+</svg>
+<div style="display:flex;gap:8px">
+<div class="chip" style="flex:1"><div class="k">Cadence</div><div class="v">92<span class="u"> rpm</span></div></div>
+<div class="chip" style="flex:1"><div class="k">Balance</div><div class="v">49<span class="u"> / </span>51</div></div>
+</div>
+</div>
+<div class="nav"><span class="on">Ride</span><span>Setup</span><span>More</span></div>
+</div></div></div>
+
+<div class="cell"><div class="cap">Title tapped &mdash; meters</div>
+<div class="dev"><div class="scr">
+<div class="ttl">
+<span class="ids"><span class="gd"></span> ASSIOMA <span style="color:var(--accent)">&rarr;</span> <span class="gd"></span> 62144</span>
+<span class="chev">&#8963;</span>
+</div>
+<div class="bd">
+<div style="display:flex;gap:8px">
+<div class="col">
+<span class="badge bin">IN</span>
+<div class="nm">ASSIOMA<br>17039L</div>
+<div class="met">247<span class="u"> W</span></div>
+<div class="sub">92 rpm</div>
+<div class="rule"></div>
+<div class="sub">&minus;52 dBm</div>
+<div class="sub">batt 78%</div>
+</div>
+<div class="col">
+<span class="badge bout">OUT</span>
+<div class="nm">Stages<br>62144</div>
+<div class="met">247<span class="u"> W</span></div>
+<div class="sub">92 rpm</div>
+<div class="rule"></div>
+<div class="sub">&minus;67 dBm</div>
+<div class="sub">batt 100%*</div>
+</div>
+</div>
+<div class="k" style="text-align:center;margin-top:4px">* value we advertise</div>
+</div>
+<div class="nav"><span class="on">Ride</span><span>Setup</span><span>More</span></div>
+</div></div></div>
+
+</body>
+</html>
