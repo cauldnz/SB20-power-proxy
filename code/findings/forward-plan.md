@@ -395,10 +395,10 @@ From `phase-0-report.md` §5 — track, don't block on:
   §5b. **The codec / `FtmsMeterClient` / `fake_trainer.py` / `ftms_erg.py` build is GATED on that ride
   capture** (golden vectors from real bytes, like CPS). Approved plan covers F1–F3; erg acceptance is
   the Session G Part C question the capture answers.
-- **Zero stale `src_*`/`power_w` on meter disconnect (cosmetic)** — backlog. On disconnect the board
-  keeps the last received values while flipping `source` to `searching`; `source` is the
-  authoritative "no live meter" flag, but a consumer reading only `power_w` would see a stale number.
-  Zero them in `onDisconnected()` / the status provider. Tiny; not urgent.
+- **Zero stale `src_*`/`power_w` on meter disconnect (cosmetic)** — ✅ **DONE.** `ProxyCore::reset()`
+  zeroes `lastSource_`/`lastOutput_`, and `main.cpp` calls it on the connected→disconnected edge
+  (`static bool wasConnected; if (wasConnected && !nowConnected) proxy.reset();`), so `/status`
+  stops showing stale `src_*`/`power_w` once the meter drops (`source` already flips to `searching`).
 - **Distinct advertised identity for the live crank vs a mock/sibling board** — backlog. Two boards
   both advertise `Stages 62144`, so `crank_reader` must target by `--address`. Optional: vary
   `SPOOF_NAME` per board (or append a short id) so they're distinguishable by name on the bench.
@@ -620,7 +620,17 @@ possible — and the shape of any workaround. (Pairs with the single-right-crank
 SECOND, phantom-right peripheral** so both configured ids resolve to us. **If app-gatekeeper:** explore a
 different app pairing flow. Either way: capture-first, then decide.
 
-## 13. MCP workout builder + driver (backlog; owner 2026-06-26)
+## 13. MCP workout builder + driver — ✅ DESK-COMPLETE (2026-06-26); on-bike drive pending
+
+> **✅ BUILT 2026-06-26** (PRs #165 + the MCP-server PR) — see
+> [`mcp-workout-server.md`](mcp-workout-server.md). The desk core + driver + FastMCP server are
+> done and host-tested (no bike): `sb20proxy.workout` (spec builder + `WorkoutSession`),
+> `sb20proxy.mcp.driver.ErgDriver` (async drive loop with **Reset-on-teardown** safety), and
+> `sb20proxy.mcp.server` (tools: build_workout / list_workouts / start / stop / skip / goto /
+> extend / set_target / message / set_profile / status / start_drive / stop_drive / drive_status),
+> run via `scripts/mcp_workout_server.py` (the `[mcp]` extra). **Remaining:** the on-bike
+> MCP-driven ride; a persisted named-workout library + adapt presets; observability/log surfacing;
+> a true pause/resume (needs a `LiveState` clock-freeze). Original idea + shape below.
 
 **Idea:** an **MCP server** that exposes the SB20 erg as agent-drivable tools — Claude (or any MCP client)
 can **compose a structured workout** from a spec / natural language ("6×90 s @ 430 W, 3 min recovery") and

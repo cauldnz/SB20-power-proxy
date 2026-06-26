@@ -31,7 +31,7 @@ jobs:
           cache-dependency-path: code/pyproject.toml
 
       - name: Install (dev extras)
-        run: pip install -e ".[dev,ota]"
+        run: pip install -e ".[dev,ota,mcp]"
 
       - name: Lint
         run: ruff check src tests

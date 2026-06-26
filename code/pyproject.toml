@@ -45,6 +45,12 @@ ota = [
     # Dev/release-only — the device verifies with vendored monocypher, not this.
     "cryptography>=42",
 ]
+mcp = [
+    # The Model Context Protocol SDK, for the agent-drivable workout server
+    # (scripts/mcp_workout_server.py / sb20proxy.mcp). Optional — the workout *core*
+    # (sb20proxy.workout) and the drive loop (sb20proxy.mcp.driver) need none of it.
+    "mcp>=1.0",
+]
 
 [project.scripts]
 sb20proxy = "sb20proxy.cli:main"
