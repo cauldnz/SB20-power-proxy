@@ -14,7 +14,7 @@ runs **LVGL**.
 
 | | C3-OLED (beta default) | S3-Touch-LCD-1.47 (advanced) | What it fixes for us |
 |---|---|---|---|
-| Cores | 1 | **2** | The C3 hangs under WiFi+BLE+OLED coex → we ship "Ride mode: WiFi off" as a workaround ([perf-coex-plan](perf-coex-plan.md)). Dual-core lets us pin BLE to one core, WiFi+UI to the other → **kill the coex hang**. |
+| Cores | 1 | **2** | Headroom / insurance, **not** a fix for a live problem. The C3's early loop-stall was **root-caused to the OLED render blocking the loop and already fixed** (moved off the hot loop → loop-max 96→12 ms, stalls 161→0, a 5-min loaded soak ran stall-free + no reboots — [perf-results](perf-results.md)). Dual-core just gives more margin (and is the easier coex case); "Ride mode: WiFi off" is belt-and-braces, not proven-necessary. |
 | RAM | ~400 KB | 512 KB + **8 MB PSRAM** | Headroom for an LVGL UI, OTA image buffering, on-device capture/log, on-device fit. |
 | Flash | 4 MB | **16 MB** | Room for a big UI asset set + dual OTA slots + a default-build library. |
 | Display | 72×40 mono OLED | **172×320 colour touch** | A real on-device UI → **no phone needed** for setup/ride/calibration. |
@@ -22,17 +22,20 @@ runs **LVGL**.
 | Flashing | USB-JTAG (wedges — [[esp32-c3-flashing]]) | **native USB-CDC** | No USB-JTAG "no serial data" hangs; clean flashing/recovery. |
 | Cost / size | tiny, ~US$3 | bigger, pricier | ⇒ genuinely **optional/advanced**, not the default unit. |
 
-## 2. What it *uniquely* unlocks (the headline three)
+## 2. What it *uniquely* unlocks (the headline two)
 
-1. **Rock-solid coex (dual-core).** Pin the BLE central+peripheral to one core, WiFi + LVGL display to the
-   other → eliminate the intermittent hang that forces the C3's "WiFi-off ride mode." The dashboard + OTA
-   stay live the **whole** ride. This alone is a premium "it just works" differentiator.
-2. **Standalone touch head-unit — no phone.** Do the entire flow on the 172×320 touch screen: scan → tap
+1. **Standalone touch head-unit — no phone.** Do the entire flow on the 172×320 touch screen: scan → tap
    your meter → pick crank identity / ×2 → live ride display → calibrate → "send a report." The proxy stops
-   being a hidden box you configure by phone and becomes a **self-contained device + display**.
-3. **On-device capture to microSD.** Log raw CPS frames + ride power/cadence to the card → the beta data
+   being a hidden box you configure by phone and becomes a **self-contained device + display**. *This is the
+   real differentiator.*
+2. **On-device capture to microSD.** Log raw CPS frames + ride power/cadence to the card → the beta data
    loop becomes "it's a file on the SD," far richer/longer than the `/diag` ring, and we get **on-device
    ride logging** that feeds our SQLite/analysis pipeline ([sqlite-analysis-layer](sqlite-analysis-layer.md)).
+3. **Native USB + 8 MB PSRAM / 16 MB flash** — clean flashing/recovery (no C3 USB-JTAG wedge) and headroom
+   for LVGL + OTA buffering + on-device fit.
+
+*(Dual-core is a nice-to-have margin, not a headline — the C3's loop-stall was already root-caused and
+fixed, and ran stall-free in a loaded soak; see §1 + [perf-results](perf-results.md).)*
 
 ## 3. Feature ideas (each reuses an existing capability — just a new render target)
 
@@ -65,9 +68,10 @@ Our firmware already splits a **pure, host-tested core** (`firmware/lib/proxy/`)
 - the web UI stays (the S3 still serves `/` `/setup` `/report`), so the touch UI is *additive*, not a rewrite.
 
 **Phasing (each a small PR; bench-gated):** P1 bring-up (BLE proxy + status text on the LCD, no touch) →
-P2 dual-core coex (pin BLE, prove no hang in a soak) → P3 touch setup/source-pick → P4 touch dashboard +
-workout console → P5 SD capture logging. Stop at any phase — even P1+P2 (a rock-solid colour-status unit) is
-a real win.
+P2 touch setup/source-pick → P3 touch dashboard + workout console → P4 SD capture logging. *(Pinning BLE to
+its own core for extra coex margin is a cheap optional tweak, not a phase — the C3's stall is already
+fixed.)* Stop at any phase — even P1 (a colour-status bench unit) is useful; the touch phases (P2+) are the
+"advanced" payoff.
 
 ## 6. Risks / open questions
 
@@ -84,8 +88,11 @@ a real win.
 
 ## 7. Recommendation
 
-When it arrives, the highest-leverage low-risk first step is **P1+P2**: bring the existing BLE proxy up on
-the S3 and show status on the colour LCD, then **pin BLE to a core and soak it** — if that kills the coex
-hang, the S3 instantly becomes our **rock-solid session/bench instrument** (and a credible premium tier)
-with almost no new product surface. The touch UI (P3+) is where the "advanced" story gets exciting, but it's
-optional and can follow the pre-beta work. Treat the S3 as **our instrument first, a product tier second.**
+When it arrives, the highest-leverage low-risk first step is **P1**: bring the existing BLE proxy up on the
+S3 and show status on the colour LCD — that alone makes it a usable bench/session instrument (native USB,
+bigger screen) for almost no new surface. The **touch UI (P3+) is where the actual "advanced" value is** —
+no-phone setup, on-screen calibration/workout, SD capture — so that's the part worth investing in if the
+tier proceeds. **Don't over-rotate on the dual-core/coex angle:** the C3's loop-stall was already fixed and
+soak-clean ([perf-results](perf-results.md)), so the S3 buys *margin*, not a rescue. Treat the S3 as **our
+instrument + a touch-UX testbed first, a product tier second** — and keep it strictly optional so it never
+pulls focus from the pre-beta path.
