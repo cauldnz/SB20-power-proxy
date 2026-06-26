@@ -20,6 +20,30 @@ Read a power meter → correct it → re-broadcast it so a consumer accepts it a
 - **[`code/findings/README.md`](code/findings/README.md)** — the **index / map of every findings doc** (subsystem → its canonical doc + the tooling that doc governs). **Before building tooling for — or judging the readiness/availability of — any subsystem, find its doc here and read it; don't rebuild what's documented.** Kept complete by CI (see the invariant in §Engineering disciplines), so it won't drift stale.
 - The numbered root docs (`01-…`–`10-…`, `HANDOFF.md`, `START-HERE.md`) are the **pre-pivot brief** — useful background, but superseded by the findings docs above (per `README.md`).
 
+## Showing visuals to the owner (remote mode) — render HTML → PNG → github.com URL
+
+The owner often runs Claude Code in **remote mode**, where they **cannot** see: `show_widget`/visualize
+widgets, files on the local `C:` drive, or the Launch-preview panel. They **can** see: **images you
+`Read` (they display inline)** and **`github.com` blob URLs** they open while logged in. So to show any
+UI mockup / diagram / chart / visual, use this loop (full recipe + a shareable teaching prompt:
+[`design/REMOTE-RENDER-RECIPE.md`](design/REMOTE-RENDER-RECIPE.md)):
+
+1. **Author it as a self-contained HTML file** in the repo (`design/`) — no external CDNs (renders
+   offline + on the private repo); prefer Unicode glyphs over icon webfonts for zero-dependency.
+2. **Render to PNG with headless Chrome** (`C:\Program Files\Google\Chrome\Application\chrome.exe`; Edge
+   works too):
+   `chrome --headless=new --disable-gpu --hide-scrollbars --no-first-run --force-device-scale-factor=3 --window-size=<W>,<H> --user-data-dir=<tmp> --screenshot=<out.png> "file:///<abs>.html"`
+   - **Pin the page width + `overflow:hidden`** (`html,body{width:NNNpx;overflow:hidden}`) or a wide line
+     pushes the layout past the window and Chrome clips the right edge. **`--window-size` height must be ≥
+     the content** or the bottom clips (if your fixed-size screen overflows, that's a real layout bug to
+     fix, not a crop). `--force-device-scale-factor=3` = crisp/zoomable. Delete the throwaway `--user-data-dir` after.
+3. **`Read` the PNG to verify** — it shows inline, which also gives the remote owner a thumbnail.
+4. **Commit the PNG (+ HTML source + the render script) to a design branch and push;** keep one PR open as
+   the iteration home so re-pushes refresh the same URLs.
+5. **Hand the owner the `github.com` blob URL** — `https://github.com/<owner>/<repo>/blob/<branch>/<path>.png`
+   (renders under their session, private-repo-OK). **Never** give `raw.githubusercontent.com` URLs — they
+   need a token for private repos and 404 in a browser. Reusable renderer: `design/render/_gen.py`.
+
 ## Setup
 
 Python desk-tooling (Linux / WSL Ubuntu), from `code/` — build/run/test commands are in §Commands:
