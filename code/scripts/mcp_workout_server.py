@@ -37,7 +37,8 @@ def main(argv: list[str] | None = None) -> int:
         description="Run the SB20 workout MCP server (stdio).",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--ftp", type=int, default=250, help="rider FTP (watts) for %FTP / zone targets")
+    p.add_argument("--ftp", type=int, default=250,
+                   help="rider FTP (watts) for percent-FTP / zone targets")
     p.add_argument("--scale", default="stages", help="meter scale the FTP is measured on")
     p.add_argument("--name", default="sb20-workout", help="MCP server name")
     args = p.parse_args(argv)
