@@ -2009,3 +2009,20 @@ Landed as two PRs (the pure core, then the MCP server) per the desk-test-in-the-
   (430 passed), ruff clean (src+tests; scripts unlinted per policy). No hardware.
 - **Remaining (gated on the bike):** the live MCP-driven ride; persisted named-workout library;
   observability/log surfacing. The FTMS erg bytes are already validated (Session 4; `G-sb20-ftms-erg-*`).
+
+## 2026-06-27 — Prior art (PedalSmart.blog): SB20 native single-crank mode → simpler crank-rescue
+
+Owner shared the PedalSmart.blog post "SB20: one of my power meter cranks have…" (2024-12). Non-technical
+(no IDs/ANT+/BLE specifics — understanding only, nothing to clean-room), but it corroborates our model and
+reframes the sole-source path (full note in forward-plan.md §12):
+- **Master-slave confirmed:** the **Left crank aggregates** R+L and sends one consolidated L:R message —
+  the crank our spoof impersonates.
+- **Native single-crank mode:** the SB20's own dead-crank fix is **pull the dead crank's battery + select
+  "Stages Bike" as the power source**, after which **the bike doubles the surviving crank**. This validates
+  our `singleSidedDouble` ×2 (the bike really doubles a lone crank) and is the SB20's documented behaviour,
+  not a guess.
+- **Reframes §12 / sole-source:** session 9's "the SB20 needs BOTH configured crank ids findable" was
+  measured with the app in **dual-crank** config. The blog's path is **single-crank** config. ⟹ hypothesis:
+  the both-findable rule may be **dual-config-specific**; single-crank config may need only **one** findable
+  crank. If so, crank-rescue is simpler — configure single-crank, spoof the one surviving/master crank, let
+  the bike double it — rather than the 2nd-phantom-right peripheral. **Queued to test next bike session.**

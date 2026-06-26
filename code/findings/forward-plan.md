@@ -623,6 +623,24 @@ available session 9). **Next-ride variant (owner):** known-good `62145`/`4963` b
 **battery pulled** — does a *known* id that's offline behave like an *unknown* one? (isolates "unknown id"
 from "id present-but-not-on-air").
 
+**Prior art — PedalSmart.blog ("SB20: one of my power meter cranks have…", 2024-12; owner-shared 2026-06-27).**
+A non-technical owner write-up (no IDs/protocol — understanding only, nothing to clean-room) that
+corroborates two things and reframes the sole-source path:
+- **Master-slave confirmed:** *"Right Crank measures power and sends it to the Left Crank. The Left Crank
+  adds its measurements and sends a single message with consolidated L:R data."* The L crank is the
+  aggregator — what our spoof impersonates.
+- **The SB20 has a native single-crank mode:** the documented dead-crank fix is **pull the dead crank's
+  battery** + **select "Stages Bike" as the power source**, after which *"the SB20 will automatically
+  compensate … by **doubling** readings from the good power meter."* (Validates our `singleSidedDouble`
+  ×2 — the bike really does double a lone crank.)
+- **Testable hypothesis it implies (next ride):** session 9's "needs BOTH ids findable" was measured with
+  the app set to **two** crank ids. The blog's path is a **single-crank configuration**. So the "both
+  findable" rule may be **specific to dual-crank config** — in single-crank mode the SB20 may need only
+  **one** findable crank. If true, **crank-rescue gets simpler**: configure the bike for single-crank
+  (one battery out + bike-as-source), have our spoof be that one surviving/master crank, and rely on the
+  bike's native doubling — instead of the 2nd-phantom-right path. **Add to the next bike session:** set the
+  app to single-crank and confirm one findable spoof crank pairs (vs the dual-config two-findable rule).
+
 **Original question (session 8):** setting the Stages app to **L=`62145` (our ESP) + R=`4964` (a phantom, nothing
 on air)** → the app reported **"pairing failed"** and the SB20 **never connected to our ESP** (`/log` saw
 nothing). Changing only **R→`4963`** (the real right crank, present) → connected immediately. So an **absent

@@ -154,6 +154,11 @@ These are official Stages docs; they explain what we're working with. Cite them 
   invaluable for understanding the SB20's internals if we ever open one up, and the **shifter-button
   repair** material is directly relevant to the future "read the SB20 shifters over BLE"
   investigation (see `code/findings/forward-plan.md` → backlog).
+- **"SB20: one of my power meter cranks have…" (2024-12)** — the dead-crank post (owner-shared 2026-06-27).
+  Confirms the **master-slave** crank model (L aggregates R+L) and documents the SB20's **native
+  single-crank mode** (pull the dead crank's battery + select "Stages Bike" as the power source → the bike
+  **doubles** the surviving crank). Reframes our sole-source / crank-rescue path — see
+  `code/findings/forward-plan.md` §12 + `decisions.md` 2026-06-27.
 
 ## Favero Assioma documentation
 
