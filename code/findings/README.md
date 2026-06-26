@@ -61,6 +61,7 @@ later that worked before, the answer is usually in here.
 
 ## Research / roadmap
 - **[zwift-controls-research.md](zwift-controls-research.md)** — Zwift integration / controls research.
+- **[advanced-board-s3-touch.md](advanced-board-s3-touch.md)** — planning ideas for an optional **"advanced" hardware tier** (Waveshare ESP32-S3-Touch-LCD-1.47): dual-core kills the C3 coex hang, a touch head-unit (no phone), SD capture — reusing the existing proxy core.
 
 ## Also in here
 - **[captures/README.md](captures/README.md)** — the index of committed JSONL/pcap capture files (the canonical lossless record — never edit one).
