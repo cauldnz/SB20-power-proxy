@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SB20 — Workout / erg v1</title>
+<style>
+:root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--accent:#3b82f6;--warn:#f59e0b;--line:#1c2334;--chip2:#2a3142}
+*{box-sizing:border-box}
+html,body{width:200px;overflow:hidden}
+body{margin:0;background:#0a0c14;color:var(--fg);font-family:system-ui,-apple-system,sans-serif;padding:9px;display:flex;justify-content:center}
+.dev{box-sizing:border-box;width:182px;margin:0 auto;padding:4px;background:#05070d;border:1px solid rgba(255,255,255,.1);border-radius:18px}
+.scr{width:172px;height:320px;background:var(--bg);color:var(--fg);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.tb{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;font-size:12px;border-bottom:1px solid var(--line)}
+.tb .nmw{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bd{padding:8px 10px;display:flex;flex-direction:column;gap:6px;flex:1;min-height:0}
+.k{font-size:12px;color:var(--mut)}
+.seg{display:flex;align-items:baseline;justify-content:space-between;font-size:12px;color:var(--mut)}
+.seg b{color:var(--fg);font-weight:500}
+.tgt{text-align:center}
+.tgt .lab{font-size:12px;color:var(--accent);letter-spacing:.1em}
+.tgt .big{font-size:42px;font-weight:500;line-height:1}
+.tgt .u{font-size:14px;color:var(--mut)}
+.now{text-align:center;font-size:12px;margin-top:-1px}
+.now b{font-weight:500}
+.prog{position:relative;height:13px;border-radius:6px;background:var(--chip2);overflow:hidden}
+.prog i{position:absolute;top:0;bottom:0;left:0;background:var(--accent)}
+.prog span{position:absolute;left:7px;top:0;line-height:13px;font-size:11px;color:#fff;font-weight:500}
+.next{font-size:12px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.next b{color:var(--fg);font-weight:500}
+.chips{display:flex;gap:7px}
+.chip{flex:1;background:var(--card);border-radius:9px;padding:6px 9px}
+.chip .v{font-size:16px;font-weight:500}
+.btnrow{display:flex;gap:8px;margin-top:auto}
+.btn{flex:1;text-align:center;padding:9px 0;border-radius:9px;font-size:13px;font-weight:500}
+.bgr{background:var(--card);color:var(--fg)}
+.bp{background:var(--accent);color:#fff}
+.nav{display:flex;border-top:1px solid var(--line)}
+.nav span{flex:1;text-align:center;padding:8px 0;color:var(--mut);font-size:12px}
+.nav span.on{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="dev"><div class="scr">
+<div class="tb"><span class="nmw">&#9679; 4&times;8 Threshold</span><span class="k">14:32</span></div>
+<div class="bd">
+
+<div class="seg"><span>Interval <b>2</b> of 4</span><span><b style="color:var(--fg)">3:21</b> left</span></div>
+
+<div class="tgt"><div class="lab">TARGET</div><div class="big">250<span class="u"> W</span></div></div>
+<div class="now"><span class="k">now</span> <b style="color:var(--ok)">248 W</b> <span class="k">&middot; on target</span></div>
+
+<div class="prog"><i style="width:58%"></i><span>4:39 / 8:00</span></div>
+
+<div class="next">next &middot; <b>90 W</b> recovery &middot; 2:00</div>
+
+<div class="chips">
+<div class="chip"><div class="k">Cadence</div><div class="v">94<span class="k"> rpm</span></div></div>
+<div class="chip"><div class="k">Avg W</div><div class="v">251</div></div>
+</div>
+
+<div class="btnrow">
+<span class="btn bgr">&#10073;&#10073; Pause</span><span class="btn bp">Skip &#9656;</span>
+</div>
+
+</div>
+<div class="nav"><span class="on">Ride</span><span>Setup</span><span>More</span></div>
+</div></div>
+</body>
+</html>
