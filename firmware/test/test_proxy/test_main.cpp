@@ -950,6 +950,8 @@ void test_render_config_page_marks_selected_and_badges() {
     TEST_ASSERT_TRUE(h.find("class='dev sel'") != std::string::npos);   // the pinned one is selected
     TEST_ASSERT_TRUE(h.find("crank") != std::string::npos);             // the Stages crank badge
     TEST_ASSERT_TRUE(h.find("checkbox' name='single' value='1' checked") != std::string::npos);
+    TEST_ASSERT_TRUE(h.find("class='nav'") != std::string::npos);       // the shared bottom Ride/Setup/More nav
+    TEST_ASSERT_TRUE(h.find("action='/setup/save'") != std::string::npos);  // the save contract is intact
 }
 
 void test_render_config_page_escapes_name() {

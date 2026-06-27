@@ -71,46 +71,68 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
         "<title>SB20 Proxy &mdash; Power source</title>";
     if (scanning) h += "<meta http-equiv='refresh' content='2'>";
     h += "<style>"
-         "body{font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;"
-         "padding:16px;color:#111;background:#fafafa}"
-         "h1{font-size:1.3rem}"
-         ".msg{background:#fdecea;border:1px solid #f5c2c7;color:#842029;padding:8px 12px;"
-         "border-radius:6px}"
-         ".row{display:flex;align-items:center;justify-content:space-between;margin:10px 0 4px}"
-         ".devs{display:flex;flex-direction:column;gap:6px;margin:8px 0}"
-         ".dev{display:flex;align-items:center;gap:10px;width:100%;padding:12px;font-size:1rem;"
-         "text-align:left;background:#fff;border:1px solid #ccc;border-radius:8px;cursor:pointer}"
-         ".dev.sel{border-color:#2a6df4;background:#eef4ff}"
-         ".dev .nm{flex:1;overflow:hidden}"
-         ".dev .nm small{color:#666;font-weight:400}"
-         ".badge{font-size:.7rem;padding:1px 6px;border-radius:10px;background:#e7f5ec;color:#1d6b34}"
-         ".badge.crank{background:#fff3cd;color:#7a5b00}"
-         ".sig{display:inline-flex;align-items:flex-end;gap:2px;height:14px}"
-         ".sig i{width:4px;background:#ccc;border-radius:1px}"
+         ":root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--accent:#3b82f6;"
+         "--line:#1c2334;--chip2:#2a3142}"
+         "*{box-sizing:border-box}"
+         "body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);"
+         "color:var(--fg);overflow-x:hidden}"
+         ".wrap{max-width:480px;margin:0 auto;padding:0 14px 84px}"
+         ".tb{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;"
+         "gap:8px;background:#151d2e;border-bottom:1px solid var(--line);padding:13px 14px;"
+         "margin:0 -14px 12px;font-size:.98rem;font-weight:600}"
+         ".tb a.scan{color:var(--ok);font-size:.85rem;font-weight:500;text-decoration:none}"
+         ".hint{color:var(--mut);font-size:.85rem}"
+         ".msg{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#fca5a5;"
+         "padding:9px 12px;border-radius:9px;margin:8px 0}"
+         ".ok{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.4);color:var(--ok);"
+         "padding:9px 12px;border-radius:9px;margin:8px 0}"
+         ".devs{display:flex;flex-direction:column;gap:8px;margin:10px 0}"
+         ".dev{display:flex;align-items:center;gap:10px;width:100%;padding:11px 12px;font-size:1rem;"
+         "text-align:left;background:var(--card);border:1px solid var(--line);border-radius:11px;"
+         "color:var(--fg);cursor:pointer;font-family:inherit}"
+         ".dev.sel{border-color:var(--accent)}"
+         ".dev .nm{flex:1;min-width:0;overflow:hidden;font-size:.92rem;font-weight:600}"
+         ".dev .nm small{color:var(--mut);font-weight:400;font-size:.78rem}"
+         ".badge{font-size:.68rem;padding:2px 7px;border-radius:7px;background:rgba(34,197,94,.16);"
+         "color:var(--ok);flex-shrink:0}"
+         ".badge.crank{background:var(--chip2);color:var(--mut)}"
+         ".sig{display:inline-flex;align-items:flex-end;gap:2px;height:14px;flex-shrink:0}"
+         ".sig i{width:4px;background:var(--chip2);border-radius:1px}"
          ".sig i:nth-child(1){height:5px}.sig i:nth-child(2){height:8px}"
          ".sig i:nth-child(3){height:11px}.sig i:nth-child(4){height:14px}"
-         ".sig i.on{background:#2a8a3e}"
-         "input[type=text]{width:100%;box-sizing:border-box;padding:10px;font-size:1rem;"
-         "border:1px solid #ccc;border-radius:8px;margin:4px 0 12px}"
+         ".sig i.on{background:var(--ok)}"
+         "input[type=text]{width:100%;padding:11px;font-size:1rem;background:#0a0d16;color:var(--fg);"
+         "border:1px solid var(--line);border-radius:9px;margin:5px 0 12px}"
          "label{font-weight:600;font-size:.9rem}"
-         ".chk{display:flex;align-items:center;gap:8px;font-weight:400;margin:8px 0 14px}"
+         ".chk{display:flex;align-items:center;gap:9px;font-weight:400;font-size:.9rem;margin:8px 0 14px}"
          ".chk input{width:auto;margin:0}"
-         "button.go{width:100%;padding:12px;font-size:1rem;font-weight:600;color:#fff;"
-         "background:#2a6df4;border:0;border-radius:8px;cursor:pointer}"
-         "a{color:#2a6df4}.hint{color:#666;font-size:.85rem}"
-         ".ok{background:#e7f5ec;border:1px solid #b7e0c4;color:#1d6b34;padding:8px 12px;"
-         "border-radius:6px;margin:8px 0}"
-         "</style></head><body>"
-         "<h1>Choose your power source</h1>"
+         "details{margin:4px 0 6px}summary{cursor:pointer;font-weight:600;margin:6px 0 10px;color:var(--fg)}"
+         "button.go{width:100%;padding:13px;font-size:1rem;font-weight:600;color:#fff;"
+         "background:var(--accent);border:0;border-radius:10px;cursor:pointer}"
+         ".reset{width:100%;padding:11px;background:transparent;border:1px solid rgba(239,68,68,.5);"
+         "color:#f87171;border-radius:10px;cursor:pointer}"
+         "a{color:var(--accent)}"
+         ".nav{position:fixed;left:0;right:0;bottom:0;display:flex;max-width:480px;margin:0 auto;"
+         "background:#10141f;border-top:1px solid var(--line)}"
+         ".nav a{flex:1;text-align:center;padding:12px 0;color:var(--mut);font-size:.85rem;text-decoration:none}"
+         ".nav a.on{color:var(--accent)}"
+         ".sheet{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--card);"
+         "border-top:1px solid var(--line);border-radius:16px 16px 0 0;max-width:480px;margin:0 auto;"
+         "padding:8px 0 14px;transform:translateY(110%);transition:transform .2s}"
+         ".sheet.open{transform:none}"
+         ".sheet a{display:block;padding:14px 20px;color:var(--fg);text-decoration:none;font-size:.95rem;"
+         "border-bottom:1px solid var(--line)}.sheet a:last-child{border-bottom:0}"
+         ".scrim{position:fixed;inset:0;z-index:15;background:rgba(0,0,0,.5);display:none}"
+         ".scrim.open{display:block}"
+         "</style></head><body><div class='wrap'>"
+         "<div class='tb'><span>Pick your meter</span><a class='scan' href='/setup/scan'>";
+    h += scanning ? "Scanning&hellip;" : "&#8635; Scan";
+    h += "</a></div>"
          "<p class='hint'>Pick the meter (or surviving crank) the SB20 should read.</p>";
     // Live "currently reading X" / "searching" banner — lets a tester verify the source is
     // connected before riding (the pre-flight-verify principle), straight from this page.
     if (!currentStatus.empty()) h += "<p class='ok'>" + htmlEscape(currentStatus) + "</p>";
     if (!message.empty()) h += "<p class='msg'>" + htmlEscape(message) + "</p>";
-
-    h += "<div class='row'><label>Nearby sources</label><a href='/setup/scan'>";
-    h += scanning ? "Scanning&hellip;" : "Scan";
-    h += "</a></div>";
 
     if (ds.empty()) {
         h += "<p class='hint'>";
@@ -167,15 +189,25 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
          // mis-picks). Separate form; confirm before it reboots.
          "<form method='POST' action='/setup/reset' style='margin-top:18px' "
          "onsubmit='return confirm(\"Reset source and crank identity to defaults?\")'>"
-         "<button type='submit' style='width:100%;padding:10px;background:#fff;border:1px solid #d33;"
-         "color:#d33;border-radius:8px;cursor:pointer'>Reset to defaults</button></form>"
+         "<button class='reset' type='submit'>Reset to defaults</button></form>"
          "<script>function pick(b){"
          "document.getElementById('addr').value=b.getAttribute('data-addr');"
          "var ds=document.querySelectorAll('.dev');for(var i=0;i<ds.length;i++)ds[i].classList.remove('sel');"
-         "b.classList.add('sel');}</script>";
+         "b.classList.add('sel');}"
+         "function more(o){document.getElementById('sheet').classList.toggle('open',!!o);"
+         "document.getElementById('scrim').classList.toggle('open',!!o);}</script>";
 
     h += renderLogToggleFooter(logState);
-    h += "</body></html>";
+    h += "</div>"  // .wrap
+         "<div class='scrim' id='scrim' onclick='more(0)'></div>"
+         "<div class='sheet' id='sheet'>"
+         "<a href='/calibrate'>Calibrate a meter</a>"
+         "<a href='/wifi/off'>Ride mode &mdash; WiFi off</a>"
+         "<a href='/report'>Send a report</a>"
+         "<a href='/'>Dashboard</a></div>"
+         "<nav class='nav'><a href='/'>Ride</a><a class='on' href='/setup'>Setup</a>"
+         "<a href='#' onclick='more(1);return false;'>More</a></nav>"
+         "</body></html>";
     return h;
 }
 
@@ -190,9 +222,9 @@ inline std::string renderConfigSavedPage(const RuntimeConfig& cfg) {
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>SB20 Proxy &mdash; Saved</title>"
         "<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;"
-        "padding:16px;color:#111;background:#fafafa}h1{font-size:1.3rem}"
-        ".ok{background:#e7f5ec;border:1px solid #b7e0c4;color:#1d6b34;padding:10px 14px;"
-        "border-radius:8px}li{margin:6px 0}a{color:#2a6df4}</style></head><body>"
+        "padding:16px;color:#e8ecf4;background:#0f1320}h1{font-size:1.3rem}"
+        ".ok{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.4);color:#22c55e;"
+        "padding:10px 14px;border-radius:10px}li{margin:6px 0}a{color:#3b82f6}</style></head><body>"
         "<h1>Saved &#10003;</h1>"
         "<p class='ok'>Source set to <b>" + src + "</b>" +
         (cfg.singleSidedDouble ? " (single-sided &times;2)" : "") +
