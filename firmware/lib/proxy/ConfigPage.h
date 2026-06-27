@@ -116,14 +116,6 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
          "background:#10141f;border-top:1px solid var(--line)}"
          ".nav a{flex:1;text-align:center;padding:12px 0;color:var(--mut);font-size:.85rem;text-decoration:none}"
          ".nav a.on{color:var(--accent)}"
-         ".sheet{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--card);"
-         "border-top:1px solid var(--line);border-radius:16px 16px 0 0;max-width:480px;margin:0 auto;"
-         "padding:8px 0 14px;transform:translateY(110%);transition:transform .2s}"
-         ".sheet.open{transform:none}"
-         ".sheet a{display:block;padding:14px 20px;color:var(--fg);text-decoration:none;font-size:.95rem;"
-         "border-bottom:1px solid var(--line)}.sheet a:last-child{border-bottom:0}"
-         ".scrim{position:fixed;inset:0;z-index:15;background:rgba(0,0,0,.5);display:none}"
-         ".scrim.open{display:block}"
          "</style></head><body><div class='wrap'>"
          "<div class='tb'><span>Pick your meter</span><a class='scan' href='/setup/scan'>";
     h += scanning ? "Scanning&hellip;" : "&#8635; Scan";
@@ -193,20 +185,12 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
          "<script>function pick(b){"
          "document.getElementById('addr').value=b.getAttribute('data-addr');"
          "var ds=document.querySelectorAll('.dev');for(var i=0;i<ds.length;i++)ds[i].classList.remove('sel');"
-         "b.classList.add('sel');}"
-         "function more(o){document.getElementById('sheet').classList.toggle('open',!!o);"
-         "document.getElementById('scrim').classList.toggle('open',!!o);}</script>";
+         "b.classList.add('sel');}</script>";
 
     h += renderLogToggleFooter(logState);
     h += "</div>"  // .wrap
-         "<div class='scrim' id='scrim' onclick='more(0)'></div>"
-         "<div class='sheet' id='sheet'>"
-         "<a href='/calibrate'>Calibrate a meter</a>"
-         "<a href='/wifi/off'>Ride mode &mdash; WiFi off</a>"
-         "<a href='/report'>Send a report</a>"
-         "<a href='/'>Dashboard</a></div>"
          "<nav class='nav'><a href='/'>Ride</a><a class='on' href='/setup'>Setup</a>"
-         "<a href='#' onclick='more(1);return false;'>More</a></nav>"
+         "<a href='/more'>More</a></nav>"
          "</body></html>";
     return h;
 }

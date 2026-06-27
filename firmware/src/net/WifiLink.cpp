@@ -230,6 +230,8 @@ void WifiLink::startStationServer_() {
     auto serveDash = [this]() { server_->send(200, "text/html", appPageHtml()); };
     server_->on("/", HTTP_GET, serveDash);
     server_->on("/ui", HTTP_GET, serveDash);
+    // GET /more -> the Settings / "More" tab (status summary + nav hub; fills from /status client-side).
+    server_->on("/more", HTTP_GET, [this]() { server_->send(200, "text/html", settingsPageHtml()); });
     // GET /status -> the status JSON the dashboard polls (was GET /; tools that curled / should
     // use /status now). Kept compact + unchanged in shape.
     server_->on("/status", HTTP_GET, [this]() {

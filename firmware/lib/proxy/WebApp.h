@@ -48,13 +48,6 @@ canvas{width:100%;height:96px;display:block;margin-top:6px}
 .nav{position:fixed;left:0;right:0;bottom:0;display:flex;max-width:480px;margin:0 auto;background:#10141f;border-top:1px solid var(--line)}
 .nav a{flex:1;text-align:center;padding:12px 0;color:var(--mut);font-size:.85rem;text-decoration:none}
 .nav a.on{color:var(--accent)}
-.sheet{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--card);border-top:1px solid var(--line);
- border-radius:16px 16px 0 0;max-width:480px;margin:0 auto;padding:8px 0 14px;transform:translateY(110%);transition:transform .2s}
-.sheet.open{transform:none}
-.sheet a{display:block;padding:14px 20px;color:var(--fg);text-decoration:none;font-size:.95rem;border-bottom:1px solid var(--line)}
-.sheet a:last-child{border-bottom:0}
-.scrim{position:fixed;inset:0;z-index:15;background:rgba(0,0,0,.5);display:none}
-.scrim.open{display:block}
 </style></head><body>
 <div class='wrap'>
 <button class='ttl' id='ttl' onclick='toggle()'>
@@ -77,19 +70,11 @@ canvas{width:100%;height:96px;display:block;margin-top:6px}
 <div class='chip'><div class='ck'>Balance</div><div class='cv' id='bal'>--</div></div>
 </div>
 </div>
-<div class='scrim' id='scrim' onclick='more(0)'></div>
-<div class='sheet' id='sheet'>
-<a href='/calibrate'>Calibrate a meter</a>
-<a href='/wifi/off'>Ride mode &mdash; WiFi off</a>
-<a href='/report'>Send a report</a>
-<a href='/setup'>Settings</a>
-</div>
-<nav class='nav'><a class='on' href='/'>Ride</a><a href='/setup'>Setup</a><a href='#' onclick='more(1);return false;'>More</a></nav>
+<nav class='nav'><a class='on' href='/'>Ride</a><a href='/setup'>Setup</a><a href='/more'>More</a></nav>
 <script>
 var $=function(i){return document.getElementById(i)};
 var hist=[],MAX=90;
 function toggle(){$('ttl').classList.toggle('open');$('details').classList.toggle('open');}
-function more(o){$('sheet').classList.toggle('open',!!o);$('scrim').classList.toggle('open',!!o);}
 function fmtUp(ms){var s=Math.floor(ms/1000),h=Math.floor(s/3600);s%=3600;var m=Math.floor(s/60);s%=60;return (h?h+'h ':'')+(m||h?m+'m ':'')+s+'s';}
 function draw(){var c=$('chart'),r=window.devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*r;c.height=h*r;var x=c.getContext('2d');x.scale(r,r);x.clearRect(0,0,w,h);if(hist.length<2)return;var mx=100;for(var i=0;i<hist.length;i++){if(hist[i]>mx)mx=hist[i];}x.beginPath();for(var i=0;i<hist.length;i++){var px=i/(MAX-1)*w,py=h-8-(hist[i]/mx)*(h-16);if(i){x.lineTo(px,py);}else{x.moveTo(px,py);}}x.strokeStyle='#3b82f6';x.lineWidth=2;x.stroke();x.lineTo((hist.length-1)/(MAX-1)*w,h);x.lineTo(0,h);x.closePath();x.fillStyle='rgba(59,130,246,.16)';x.fill();}
 function tick(){fetch('/status',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
@@ -105,6 +90,61 @@ $('rssi').textContent=d.rssi+' dBm';$('up').textContent=fmtUp(d.ms);$('heap').te
 hist.push(d.power_w);if(hist.length>MAX){hist.shift();}draw();
 }).catch(function(){$('dIn').classList.remove('on');$('dOut').classList.remove('on');});}
 setInterval(tick,1000);tick();window.addEventListener('resize',draw);
+</script></body></html>)HTML";
+}
+
+// The Settings / "More" page (GET /more) — the third bottom-nav tab. A status summary + a nav hub:
+// it reads live mode / identity / source / firmware / uptime from the same /status JSON the dashboard
+// polls, and each row links to the page that edits it (source + identity + mode on /setup, ride mode
+// on /wifi/off, the meter corrector on /calibrate, the diagnostic on /report). Unlike the LCD's
+// QR hand-off, "Send a report" just opens /report — on the phone you're already there. Pure constant,
+// host-tested like appPageHtml.
+inline const char* settingsPageHtml() {
+    return R"HTML(<!DOCTYPE html><html><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>SB20 Proxy &mdash; Settings</title>
+<style>
+:root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--accent:#3b82f6;--line:#1c2334}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);overflow-x:hidden}
+.wrap{max-width:480px;margin:0 auto;padding:0 14px 84px}
+.tb{position:sticky;top:0;z-index:5;background:#151d2e;border-bottom:1px solid var(--line);
+ padding:13px 14px;margin:0 -14px 6px;font-size:.98rem;font-weight:600;
+ display:flex;align-items:center;justify-content:space-between}
+.tb small{font-weight:400;color:var(--mut);font-size:.8rem}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 2px;
+ border-bottom:1px solid var(--line);color:var(--fg);text-decoration:none}
+.lbl{font-size:.98rem}
+.right{display:flex;align-items:center;gap:8px;min-width:0}
+.val{font-size:.9rem;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:190px}
+.val.ok{color:var(--ok)}
+.chev{color:var(--mut);font-size:1.1rem;flex-shrink:0}
+.foot{text-align:center;font-size:.8rem;color:var(--mut);padding:14px 0}
+.nav{position:fixed;left:0;right:0;bottom:0;display:flex;max-width:480px;margin:0 auto;background:#10141f;border-top:1px solid var(--line)}
+.nav a{flex:1;text-align:center;padding:12px 0;color:var(--mut);font-size:.85rem;text-decoration:none}
+.nav a.on{color:var(--accent)}
+</style></head><body><div class='wrap'>
+<div class='tb'><span>Settings</span><small id='host'>sb20proxy</small></div>
+<a class='row' href='/setup'><span class='lbl'>Mode</span><span class='right'><span class='val' id='mode'>&hellip;</span><span class='chev'>&#8250;</span></span></a>
+<a class='row' href='/setup'><span class='lbl'>Identity</span><span class='right'><span class='val' id='ident'>&hellip;</span><span class='chev'>&#8250;</span></span></a>
+<a class='row' href='/setup'><span class='lbl'>Source</span><span class='right'><span class='val ok' id='src'>&hellip;</span><span class='chev'>&#8250;</span></span></a>
+<a class='row' href='/calibrate'><span class='lbl'>Calibrate a meter</span><span class='chev'>&#8250;</span></a>
+<a class='row' href='/wifi/off'><span class='lbl'>Ride mode &mdash; WiFi off</span><span class='chev'>&#8250;</span></a>
+<a class='row' href='/report'><span class='lbl'>Send a report</span><span class='chev'>&#8250;</span></a>
+<div class='row' style='border-bottom:none'><span class='lbl'>Firmware</span><span class='val' id='ver'>&hellip;</span></div>
+<div class='foot'>sb20proxy.local &middot; up <span id='up'>&mdash;</span></div>
+</div>
+<nav class='nav'><a href='/'>Ride</a><a href='/setup'>Setup</a><a class='on' href='/more'>More</a></nav>
+<script>
+var $=function(i){return document.getElementById(i)};
+function fmtUp(ms){var s=Math.floor(ms/1000),h=Math.floor(s/3600);s%=3600;var m=Math.floor(s/60);s%=60;return (h?h+'h ':'')+(m||h?m+'m ':'')+s+'s';}
+fetch('/status',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
+$('mode').textContent=(d.mode==='corrector'?'Corrector':'Crank spoof');
+$('ident').textContent=(d.identity||'--');
+$('src').textContent=(d.src_name||(d.source==='mock'?'mock':d.source||'searching'));
+$('ver').textContent='v'+(d.version||'?');
+$('up').textContent=fmtUp(d.ms);
+}).catch(function(){});
 </script></body></html>)HTML";
 }
 
