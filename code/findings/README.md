@@ -36,6 +36,7 @@ later that worked before, the answer is usually in here.
 - **[ride-director-uplift-plan.md](ride-director-uplift-plan.md)** — the uplift build plan for it.
 - **[shifter-erg-control.md](shifter-erg-control.md)** — shifter buttons adjust the erg target (the SB20's missing feature).
 - **[mcp-workout-server.md](mcp-workout-server.md)** — drive the SB20 erg as agent (MCP) tools: compose a structured workout + drive it live over FTMS. → `code/src/sb20proxy/workout/`, `code/src/sb20proxy/mcp/`, `scripts/mcp_workout_server.py`.
+- **[on-device-workout-engine.md](on-device-workout-engine.md)** — *(PLANNED)* the **on-device** workout executor: a structured workout uploaded over a `/workout` route, persisted, and run deterministically as the FTMS erg controller. Canonical format = compact JSON (1:1 with the Python `Segment`); FIT/ZWO are desk-side import formats. Backlog: [`forward-plan.md`](forward-plan.md) §14.
 
 ## Capture, sniffing & analysis (BLE + ANT+)
 - **[nrf-sniffer.md](nrf-sniffer.md)** — ⭐ **canonical for the nRF BLE sniffer** (passively watch the app↔SB20 link). The capture path is **`scripts/sniff_ble.py`** (Nordic SnifferAPI over the dongle's serial port — **NOT Npcap/tshark**, which is only the GUI alternative); `tools/doctor.ps1` gates the rig. **Read this before any nRF sniffing or capture-rig tooling.**
