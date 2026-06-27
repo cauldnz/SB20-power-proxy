@@ -114,6 +114,7 @@ inline std::string settingsPageHtml() {
 <a class='row' href='/setup'><span class='lbl'>Mode</span><span class='right'><span class='val' id='mode'>&hellip;</span><span class='chev'>&#8250;</span></span></a>
 <a class='row' href='/setup'><span class='lbl'>Identity</span><span class='right'><span class='val' id='ident'>&hellip;</span><span class='chev'>&#8250;</span></span></a>
 <a class='row' href='/setup'><span class='lbl'>Source</span><span class='right'><span class='val ok' id='src'>&hellip;</span><span class='chev'>&#8250;</span></span></a>
+<a class='row' href='/workout'><span class='lbl'>Workout</span><span class='chev'>&#8250;</span></a>
 <a class='row' href='/calibrate'><span class='lbl'>Calibrate a meter</span><span class='chev'>&#8250;</span></a>
 <a class='row' href='/wifi/off'><span class='lbl'>Ride mode &mdash; WiFi off</span><span class='chev'>&#8250;</span></a>
 <a class='row' href='/report'><span class='lbl'>Send a report</span><span class='chev'>&#8250;</span></a>
@@ -131,6 +132,97 @@ $('src').textContent=(d.src_name||(d.source==='mock'?'mock':d.source||'searching
 $('ver').textContent='v'+(d.version||'?');
 $('up').textContent=fmtUp(d.ms);
 }).catch(function(){});
+</script></body></html>)HTML";
+}
+
+// The Workout / erg screen (GET /workout). Polls GET /workout/state for the live cursor (profile +
+// current/next segment + target + clock) and GET /status for the rider's actual power, draws the
+// interval profile chart (done / current / upcoming), and drives the engine via POST /workout/{start,
+// pause,resume,skip,stop}. When nothing's loaded it shows the built-in preset picker (POST
+// /workout/preset?key=) + a paste box (POST /workout/load). Pure constant; host-tested like the rest.
+inline std::string workoutPageHtml() {
+    return std::string(R"HTML(<!DOCTYPE html><html><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>SB20 Proxy &mdash; Workout</title>
+<style>)HTML") + webuiCss() + R"HTML(
+.seg{display:flex;align-items:baseline;justify-content:space-between;font-size:.85rem;color:var(--mut);margin-top:10px}
+.seg b{color:var(--fg);font-weight:600}
+.tgt{text-align:center;margin-top:8px}
+.tgt .lab{font-size:.78rem;color:var(--accent);letter-spacing:.12em}
+.tgt .big{font-size:3.6rem;font-weight:700;line-height:1}.tgt .big small{font-size:1rem;color:var(--mut);font-weight:500}
+.now{text-align:center;font-size:.85rem;color:var(--mut);margin-top:-2px}
+.now b{color:var(--ok);font-weight:600}
+.wo{display:flex;align-items:flex-end;gap:2px;height:64px;margin:14px 0 4px;border-bottom:1px solid var(--line);padding-bottom:1px}
+.wo div{flex:1;min-width:0;border-radius:2px 2px 0 0}
+.wo .done{background:rgba(34,197,94,.45)}
+.wo .cur{background:var(--accent);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.75)}
+.wo .up{background:rgba(139,147,167,.32)}
+.next{font-size:.85rem;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.next b{color:var(--fg);font-weight:600}
+.btns{display:flex;gap:8px;margin-top:14px}
+.btns button{flex:1;padding:13px 0;border-radius:10px;font-size:.95rem;font-weight:600;border:0;cursor:pointer;font-family:inherit}
+.bp{background:var(--accent);color:#fff}.bg{background:var(--card);color:var(--fg);border:1px solid var(--line)}
+.bd{background:transparent;color:#f87171;border:1px solid rgba(239,68,68,.5)}
+.sect{font-size:.78rem;color:var(--mut);letter-spacing:.04em;margin:18px 0 8px;text-transform:uppercase}
+.presets{display:flex;flex-direction:column;gap:8px}
+.presets button{width:100%;text-align:left;padding:14px;border-radius:11px;background:var(--card);border:1px solid var(--line);color:var(--fg);font-size:.95rem;cursor:pointer;font-family:inherit}
+details summary{cursor:pointer;color:var(--mut);font-size:.85rem;margin-top:14px}
+textarea{width:100%;height:120px;margin:8px 0;background:#0a0d16;color:var(--fg);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.8rem}
+</style></head><body><div class='wrap'>
+<div class='tb'><span id='wname'>Workout</span><span class='hint' id='wtot'></span></div>
+<div id='console' style='display:none'>
+<div class='seg'><span id='segline'>&mdash;</span><span id='leftline'></span></div>
+<div class='tgt'><div class='lab'>TARGET</div><div class='big'><span id='tgt'>--</span><small> W</small></div></div>
+<div class='now'><span class='hint'>now</span> <b id='now'>--</b> <span class='hint' id='cad'></span></div>
+<div class='wo' id='chart'></div>
+<div class='next' id='next'></div>
+<div class='btns' id='btns'></div>
+</div>
+<div id='picker'>
+<div class='sect'>Pick a workout</div>
+<div class='presets'>
+<button onclick="loadPreset('4x8')">4&times;8 Threshold &middot; <span class='hint'>~48 min</span></button>
+<button onclick="loadPreset('ss3x12')">Sweet Spot 3&times;12 &middot; <span class='hint'>~62 min</span></button>
+<button onclick="loadPreset('vo25x3')">VO2 5&times;3 &middot; <span class='hint'>~40 min</span></button>
+<button onclick="loadPreset('endur45')">Endurance 45 &middot; <span class='hint'>~45 min</span></button>
+</div>
+<details><summary>Paste a workout (JSON)</summary>
+<textarea id='json' placeholder='{"name":"My workout","ftp_w":250,"segments":[...]}'></textarea>
+<button class='bp' style='width:100%;padding:12px;border:0;border-radius:10px;font-weight:600;cursor:pointer' onclick='loadJson()'>Load</button>
+</details>
+</div>
+</div>
+<nav class='nav'><a href='/'>Ride</a><a href='/setup'>Setup</a><a href='/more'>More</a></nav>
+<script>
+var $=function(i){return document.getElementById(i)};
+function fmtT(s){if(s<0)s=0;var m=Math.floor(s/60);s=Math.floor(s%60);return m+':'+(s<10?'0':'')+s;}
+function post(p){return fetch(p,{method:'POST'}).then(tick);}
+function loadPreset(k){return fetch('/workout/preset?key='+k,{method:'POST'}).then(tick);}
+function loadJson(){return fetch('/workout/load',{method:'POST',body:$('json').value}).then(tick);}
+function chart(segs,idx){var c=$('chart');c.innerHTML='';var mx=1;for(var i=0;i<segs.length;i++){if(segs[i].w>mx)mx=segs[i].w;}
+for(var i=0;i<segs.length;i++){var d=document.createElement('div');var h=Math.max(8,Math.round(segs[i].w/mx*60));
+d.style.height=h+'px';d.style.flexGrow=Math.max(1,segs[i].t);d.className=(i<idx?'done':(i===idx?'cur':'up'));c.appendChild(d);}}
+function btns(d){var b=$('btns');b.innerHTML='';function mk(t,cls,fn){var x=document.createElement('button');x.textContent=t;x.className=cls;x.onclick=fn;b.appendChild(x);}
+if(!d.running){mk('Start','bp',function(){post('/workout/start')});}
+else{if(d.paused)mk('Resume','bp',function(){post('/workout/resume')});else mk('Pause','bg',function(){post('/workout/pause')});
+mk('Skip','bg',function(){post('/workout/skip')});mk('Stop','bd',function(){post('/workout/stop')});}}
+function tick(){return Promise.all([
+fetch('/workout/state',{cache:'no-store'}).then(function(r){return r.json();}),
+fetch('/status',{cache:'no-store'}).then(function(r){return r.json();}).catch(function(){return{};})
+]).then(function(a){var d=a[0],s=a[1];
+if(!d.loaded){$('console').style.display='none';$('picker').style.display='block';$('wname').textContent='Workout';$('wtot').textContent='';return;}
+$('picker').style.display='none';$('console').style.display='block';
+$('wname').textContent=d.name||'Workout';
+$('wtot').textContent=fmtT(d.total_elapsed_s)+' / '+fmtT(d.total_elapsed_s+d.total_remaining_s);
+$('segline').innerHTML=(d.finished?'<b>Done</b>':('<b>'+(d.seg_label||'')+'</b> &middot; '+(d.seg_index+1)+' of '+d.seg_count));
+$('leftline').innerHTML=(d.finished?'':('<b>'+fmtT(d.seg_remaining_s)+'</b> left'));
+$('tgt').textContent=(d.seg_target_w<0?'--':d.seg_target_w);
+$('now').textContent=((s.power_w===undefined)?'--':s.power_w)+' W';
+$('cad').innerHTML=((s.cadence_rpm===undefined||s.cadence_rpm<0)?'':('&middot; '+s.cadence_rpm+' rpm'));
+$('next').innerHTML=(d.next_label?('next &middot; <b>'+d.next_label+'</b> &middot; '+(d.next_target_w<0?'--':d.next_target_w+' W')):'last block');
+chart(d.segments||[],d.finished?(d.seg_count):d.seg_index);btns(d);
+});}
+setInterval(tick,1000);tick();
 </script></body></html>)HTML";
 }
 
