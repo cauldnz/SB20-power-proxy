@@ -19,13 +19,15 @@ body{margin:0;background:#0a0c14;color:var(--fg);font-family:system-ui,-apple-sy
 .seg b{color:var(--fg);font-weight:500}
 .tgt{text-align:center}
 .tgt .lab{font-size:12px;color:var(--accent);letter-spacing:.1em}
-.tgt .big{font-size:42px;font-weight:500;line-height:1}
+.tgt .big{font-size:40px;font-weight:500;line-height:1}
 .tgt .u{font-size:14px;color:var(--mut)}
 .now{text-align:center;font-size:12px;margin-top:-1px}
 .now b{font-weight:500}
-.prog{position:relative;height:13px;border-radius:6px;background:var(--chip2);overflow:hidden}
-.prog i{position:absolute;top:0;bottom:0;left:0;background:var(--accent)}
-.prog span{position:absolute;left:7px;top:0;line-height:13px;font-size:11px;color:#fff;font-weight:500}
+.wo{display:flex;align-items:flex-end;gap:2px;height:38px;border-bottom:1px solid var(--line);padding-bottom:1px}
+.wo div{flex:1;min-width:0;border-radius:2px 2px 0 0}
+.wo .done{background:rgba(34,197,94,.45)}
+.wo .cur{background:var(--accent);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.75)}
+.wo .up{background:rgba(139,147,167,.32)}
 .next{font-size:12px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .next b{color:var(--fg);font-weight:500}
 .chips{display:flex;gap:7px}
@@ -50,9 +52,17 @@ body{margin:0;background:#0a0c14;color:var(--fg);font-family:system-ui,-apple-sy
 <div class="tgt"><div class="lab">TARGET</div><div class="big">250<span class="u"> W</span></div></div>
 <div class="now"><span class="k">now</span> <b style="color:var(--ok)">248 W</b> <span class="k">&middot; on target</span></div>
 
-<div class="prog"><i style="width:58%"></i><span>4:39 / 8:00</span></div>
-
-<div class="next">next &middot; <b>90 W</b> recovery &middot; 2:00</div>
+<div class="wo">
+<div class="done" style="height:18px"></div>
+<div class="done" style="height:34px"></div>
+<div class="done" style="height:13px"></div>
+<div class="cur" style="height:34px"></div>
+<div class="up" style="height:13px"></div>
+<div class="up" style="height:34px"></div>
+<div class="up" style="height:13px"></div>
+<div class="up" style="height:34px"></div>
+<div class="up" style="height:15px"></div>
+</div>
 
 <div class="chips">
 <div class="chip"><div class="k">Cadence</div><div class="v">94<span class="k"> rpm</span></div></div>
