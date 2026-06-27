@@ -1,10 +1,11 @@
 # On-device workout engine — structured workout over a route, deterministic execution
 
-**Status: IN PROGRESS (2026-06-28).** Phases 2–3 built — the firmware engine + runtime + web
-Workout screen + `/workout` routes are on `main` (PRs #186/#187 + the routes PR). Remaining: phase 1
-(desk ZWO/FIT importers) and phase 4 (wire the per-segment target → FTMS Set-Target-Power,
-bench-gated). Backlogged at [`forward-plan.md`](forward-plan.md) §14. Design + format decision below;
-the build mirrors the existing Python model rather than forking a new one.
+**Status: IN PROGRESS (2026-06-28).** Phases 1–3 built — desk ZWO/FIT importers, the firmware engine
++ runtime + web Workout screen + `/workout` routes are on `main` (PRs #186/#187/#188 + the importer
+PR). **Remaining: phase 4** — wire the per-segment target → FTMS Set-Target-Power (bench-gated; the
+first on-bike smoke test of the screen + importer rides along with session 5). Backlogged at
+[`forward-plan.md`](forward-plan.md) §14. Design + format decision below; the build mirrors the
+existing Python model rather than forking a new one.
 
 > Related, already built (reuse — do NOT rebuild):
 > - [`ride-director.md`](ride-director.md) — the **Python** steerable session engine
@@ -68,8 +69,10 @@ Device speaks JSON over a route, executes deterministically as the FTMS erg cont
 desk-side import formats that compile down to that JSON.
 
 ## Phasing (see forward-plan §14 for the backlog entry)
-1. **Desk importers** — `workout/` gains `from_zwo()` + `from_fit()` → canonical JSON (host-tested
-   against committed sample `.zwo`/`.fit` fixtures); a tiny exporter from the existing `Workout`. *(TODO)*
+1. ✅ **Desk importers** — `workout/importers.py`: `from_zwo()` (stdlib XML, fully tested) +
+   `from_fit()` (lazy `fitparse`, the pure step→segment map host-tested) + `to_device_json()`;
+   `scripts/import_workout.py` converts + optionally POSTs to `/workout/load`. FIT *power* decode is
+   best-effort until validated against a real exported `.fit` (flagged in the session-5 add-on).
 2. ✅ **Firmware executor** — `firmware/lib/proxy/WorkoutEngine.h` (no radio): model + tolerant JSON
    parser + target resolution + the `workoutStateAt` stepper (`DirectorState` port) + state/profile
    JSON renderer. Golden-vector parity vs the Python director (`test_workout_engine_parity.py`). PR #186.
