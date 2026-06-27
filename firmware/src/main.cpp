@@ -9,6 +9,7 @@
 #include "Config.h"
 #include "ConfigStore.h"  // NVS-backed RuntimeConfig (the user's source/doubling)
 #include "Correction.h"
+#include "WorkoutRuntime.h"  // live workout clock + engine (lib/proxy)
 #include "PerfMonitor.h"
 #include "PerfStats.h"
 #include "ProxyCore.h"
@@ -58,6 +59,8 @@ static ProxyCore proxy(meter, crank,
 
 #if USE_WIFI
 static WifiLink wifi;
+#include "WorkoutStore.h"            // NVS-backed workout JSON (the loaded structured workout)
+static WorkoutRuntime g_wk;          // the live workout clock the /workout screen drives
 #endif
 
 #if USE_OLED
@@ -355,6 +358,25 @@ void setup() {
         },
         []() { meter.clearCandidates(); });                      // scan: refresh the candidate list
 #endif
+
+    // Workout screen (GET /workout): the live engine + presets driven over the web UI. Loading is
+    // live (no reboot — a workout is data, not identity) and persisted to NVS so it survives a
+    // power-cycle. The FTMS erg write of g_wk's target is the next phase (bench-gated).
+    {
+        const std::string saved = WorkoutStore::load();
+        if (!saved.empty()) g_wk.load(parseWorkout(saved));
+    }
+    wifi.setWorkoutUi(
+        []() { return g_wk.json(millis()); },
+        [](const std::string& json) -> bool {
+            Workout w = parseWorkout(json);
+            if (w.segments.empty()) return false;  // reject malformed / empty
+            g_wk.load(w);
+            WorkoutStore::save(json);
+            return true;
+        },
+        [](const std::string& action) { g_wk.control(action, millis()); });
+
     ArduinoOTA.onProgress([](unsigned int, unsigned int) { ++g_loopBeat; });  // keep WD fed during OTA
     esp_timer_create_args_t wdArgs = {};
     wdArgs.callback = &stallWatchdogCb;

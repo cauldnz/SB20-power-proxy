@@ -1,9 +1,10 @@
 # On-device workout engine — structured workout over a route, deterministic execution
 
-**Status: PLANNED (2026-06-27, owner).** Backlogged at [`forward-plan.md`](forward-plan.md) §14.
-No code yet — this is the design + format decision so the build mirrors the existing Python model
-rather than forking a new one. Governs the firmware workout executor + the `/workout` routes and the
-desk-side FIT/ZWO importers (none of which exist yet).
+**Status: IN PROGRESS (2026-06-28).** Phases 2–3 built — the firmware engine + runtime + web
+Workout screen + `/workout` routes are on `main` (PRs #186/#187 + the routes PR). Remaining: phase 1
+(desk ZWO/FIT importers) and phase 4 (wire the per-segment target → FTMS Set-Target-Power,
+bench-gated). Backlogged at [`forward-plan.md`](forward-plan.md) §14. Design + format decision below;
+the build mirrors the existing Python model rather than forking a new one.
 
 > Related, already built (reuse — do NOT rebuild):
 > - [`ride-director.md`](ride-director.md) — the **Python** steerable session engine
@@ -68,10 +69,13 @@ desk-side import formats that compile down to that JSON.
 
 ## Phasing (see forward-plan §14 for the backlog entry)
 1. **Desk importers** — `workout/` gains `from_zwo()` + `from_fit()` → canonical JSON (host-tested
-   against committed sample `.zwo`/`.fit` fixtures); a tiny exporter from the existing `Workout`.
-2. **Firmware executor** — port `DirectorState` to a pure `firmware/lib/proxy/WorkoutEngine.h`
-   (no radio); golden-vector parity tests vs the Python director.
-3. **Routes + persistence** — `WifiLink` `/workout` GET/POST + `{start,pause,skip,stop}`; persist to
-   flash; pure render/parse host-tested like `ConfigPage.h`.
-4. **Wire to FTMS** — executor's per-segment target → the FTMS Set-Target-Power write; bench-gated
-   (coex when stacked on the CPS spoof + WiFi), then on-bike drive.
+   against committed sample `.zwo`/`.fit` fixtures); a tiny exporter from the existing `Workout`. *(TODO)*
+2. ✅ **Firmware executor** — `firmware/lib/proxy/WorkoutEngine.h` (no radio): model + tolerant JSON
+   parser + target resolution + the `workoutStateAt` stepper (`DirectorState` port) + state/profile
+   JSON renderer. Golden-vector parity vs the Python director (`test_workout_engine_parity.py`). PR #186.
+3. ✅ **Runtime + routes + screen** — `WorkoutRuntime.h` (the live clock, injected time, host-tested),
+   `WorkoutPresets.h` (4 built-in workouts), `workoutPageHtml()` (the Workout screen), and the
+   `WifiLink` `/workout` (+ `/state`) + POST `/workout/{load,preset,start,pause,resume,skip,stop}`
+   routes wired in `main.cpp` with NVS persistence (`WorkoutStore`). PRs #187 + this one.
+4. **Wire to FTMS** — the runtime's per-segment target → the FTMS Set-Target-Power write; bench-gated
+   (coex when stacked on the CPS spoof + WiFi), then on-bike drive. *(TODO)*

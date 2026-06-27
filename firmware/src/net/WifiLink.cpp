@@ -22,6 +22,7 @@
 #include "SetupPin.h"          // pure per-device setup-AP PIN derivation (host-tested)
 #include "DiagReport.h"        // pure tester /diag report (config + status + raw meter frames)
 #include "WebApp.h"            // static streaming dashboard served at GET /ui (renders in the phone)
+#include "WorkoutPresets.h"    // built-in workouts (presetJson) for the /workout/preset route
 #include "net/DebugLog.h"      // recent-log ring served at GET /log (serial is flaky on the C3)
 #include "net/WifiCreds.h"     // NVS-backed credential storage
 
@@ -256,6 +257,7 @@ void WifiLink::startStationServer_() {
     addConfigRoutes_();  // GET /setup picker + POST /setup/save + GET /setup/scan
     addCalibrationRoutes_();  // GET /calibrate + POST start/finish/save/cancel — the meter-to-meter wizard
     addRideModeRoute_();  // GET/POST /wifi/off — turn WiFi off for a BLE-only ride
+    addWorkoutRoutes_();  // GET /workout (+ /state) + POST /workout/{load,preset,controls}
     addLogRoutes_();
     server_->begin();
 }
@@ -277,6 +279,42 @@ void WifiLink::addRideModeRoute_() {
         radioOff_ = true;
         logf("[wifi] ride mode: WiFi off (BLE-only) until power-cycle");
     });
+}
+
+// The Workout screen: GET /workout serves the page (pure workoutPageHtml), GET /workout/state the
+// live cursor JSON the page polls, and the POSTs drive the engine via hooks. Loading is live (no
+// reboot) — a workout is data, not identity. Presets are resolved here (WorkoutPresets.h) and fed
+// through the same load hook as a pasted workout.
+void WifiLink::addWorkoutRoutes_() {
+    server_->on("/workout", HTTP_GET, [this]() {
+        server_->send(200, "text/html", workoutPageHtml().c_str());
+    });
+    server_->on("/workout/state", HTTP_GET, [this]() {
+        const std::string j = workoutState_ ? workoutState_() : std::string("{\"loaded\":false}");
+        server_->send(200, "application/json", j.c_str());
+    });
+    server_->on("/workout/load", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        const bool ok = workoutLoad_ && workoutLoad_(formBody(server_));
+        server_->send(ok ? 200 : 400, "text/plain", ok ? "loaded\n" : "bad workout\n");
+    });
+    server_->on("/workout/preset", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        const std::string j = presetJson(std::string(server_->arg("key").c_str()));
+        const bool ok = !j.empty() && workoutLoad_ && workoutLoad_(j);
+        server_->send(ok ? 200 : 400, "text/plain", ok ? "loaded\n" : "unknown preset\n");
+    });
+    // The control verbs all share one hook; register them from a small table.
+    static const char* kVerbs[] = {"start", "pause", "resume", "skip", "stop"};
+    for (const char* v : kVerbs) {
+        const std::string path = std::string("/workout/") + v;
+        const std::string verb = v;
+        server_->on(path.c_str(), HTTP_POST, [this, verb]() {
+            if (!csrfOk_()) return;
+            if (workoutControl_) workoutControl_(verb);
+            server_->send(200, "text/plain", "ok\n");
+        });
+    }
 }
 
 // The source-setup UI: pick which power meter / surviving crank the proxy reads, over WiFi. The
