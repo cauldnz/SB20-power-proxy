@@ -1,4 +1,7 @@
 #pragma once
+#include <string>
+
+#include "WebUi.h"  // shared palette + base layout + bottom-nav CSS
 
 namespace sb20proxy {
 
@@ -7,15 +10,11 @@ namespace sb20proxy {
 // chart entirely in the browser — so the ESP32 only serves the small JSON it already serves and all
 // the UI cost lives on the phone. A header link goes to /setup (pick the source). Static (no
 // device-side templating), so it is just a constant; a host test guards the essentials survive edits.
-inline const char* appPageHtml() {
-    return R"HTML(<!DOCTYPE html><html><head><meta charset='utf-8'>
+inline std::string appPageHtml() {
+    return std::string(R"HTML(<!DOCTYPE html><html><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>SB20 Proxy</title>
-<style>
-:root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--bad:#ef4444;--accent:#3b82f6;--line:#1c2334;--chip2:#2a3142}
-*{box-sizing:border-box}
-body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);overflow-x:hidden}
-.wrap{max-width:480px;margin:0 auto;padding:0 14px 84px}
+<style>)HTML") + webuiCss() + R"HTML(
 .ttl{position:sticky;top:0;z-index:5;width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;
  background:#151d2e;border:0;border-bottom:1px solid var(--line);color:var(--fg);
  padding:12px 4px;margin:0 -14px 0;width:calc(100% + 28px);font-size:.95rem;cursor:pointer;font-family:inherit}
@@ -45,9 +44,6 @@ canvas{width:100%;height:96px;display:block;margin-top:6px}
 .chip{flex:1;min-width:0;background:var(--card);border-radius:12px;padding:12px 14px}
 .ck{font-size:.78rem;color:var(--mut)}
 .cv{font-size:1.7rem;font-weight:700;margin-top:2px}.cv small{font-size:.85rem;color:var(--mut);font-weight:500}
-.nav{position:fixed;left:0;right:0;bottom:0;display:flex;max-width:480px;margin:0 auto;background:#10141f;border-top:1px solid var(--line)}
-.nav a{flex:1;text-align:center;padding:12px 0;color:var(--mut);font-size:.85rem;text-decoration:none}
-.nav a.on{color:var(--accent)}
 </style></head><body>
 <div class='wrap'>
 <button class='ttl' id='ttl' onclick='toggle()'>
@@ -99,18 +95,11 @@ setInterval(tick,1000);tick();window.addEventListener('resize',draw);
 // on /wifi/off, the meter corrector on /calibrate, the diagnostic on /report). Unlike the LCD's
 // QR hand-off, "Send a report" just opens /report — on the phone you're already there. Pure constant,
 // host-tested like appPageHtml.
-inline const char* settingsPageHtml() {
-    return R"HTML(<!DOCTYPE html><html><head><meta charset='utf-8'>
+inline std::string settingsPageHtml() {
+    return std::string(R"HTML(<!DOCTYPE html><html><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>SB20 Proxy &mdash; Settings</title>
-<style>
-:root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--accent:#3b82f6;--line:#1c2334}
-*{box-sizing:border-box}
-body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);overflow-x:hidden}
-.wrap{max-width:480px;margin:0 auto;padding:0 14px 84px}
-.tb{position:sticky;top:0;z-index:5;background:#151d2e;border-bottom:1px solid var(--line);
- padding:13px 14px;margin:0 -14px 6px;font-size:.98rem;font-weight:600;
- display:flex;align-items:center;justify-content:space-between}
+<style>)HTML") + webuiCss() + R"HTML(
 .tb small{font-weight:400;color:var(--mut);font-size:.8rem}
 .row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 2px;
  border-bottom:1px solid var(--line);color:var(--fg);text-decoration:none}
@@ -120,9 +109,6 @@ body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg
 .val.ok{color:var(--ok)}
 .chev{color:var(--mut);font-size:1.1rem;flex-shrink:0}
 .foot{text-align:center;font-size:.8rem;color:var(--mut);padding:14px 0}
-.nav{position:fixed;left:0;right:0;bottom:0;display:flex;max-width:480px;margin:0 auto;background:#10141f;border-top:1px solid var(--line)}
-.nav a{flex:1;text-align:center;padding:12px 0;color:var(--mut);font-size:.85rem;text-decoration:none}
-.nav a.on{color:var(--accent)}
 </style></head><body><div class='wrap'>
 <div class='tb'><span>Settings</span><small id='host'>sb20proxy</small></div>
 <a class='row' href='/setup'><span class='lbl'>Mode</span><span class='right'><span class='val' id='mode'>&hellip;</span><span class='chev'>&#8250;</span></span></a>
