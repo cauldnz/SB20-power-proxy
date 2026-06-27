@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SB20 — Pick your meter v3</title>
+<style>
+:root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--accent:#3b82f6;--line:#1c2334;--chip2:#2a3142}
+*{box-sizing:border-box}
+html,body{width:200px;overflow:hidden}
+body{margin:0;background:#0a0c14;color:var(--fg);font-family:system-ui,-apple-system,sans-serif;padding:9px;display:flex;justify-content:center}
+.dev{box-sizing:border-box;width:182px;margin:0 auto;padding:4px;background:#05070d;border:1px solid rgba(255,255,255,.1);border-radius:18px}
+.scr{width:172px;height:320px;background:var(--bg);color:var(--fg);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.tb{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;font-size:13px;font-weight:500;border-bottom:1px solid var(--line)}
+.bd{padding:8px 10px;display:flex;flex-direction:column;gap:7px;flex:1;min-height:0}
+.k{font-size:12px;color:var(--mut)}
+.row{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:7px 10px}
+.row.sel{border-color:var(--accent)}
+.r1{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.nm{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tag{font-size:11px;background:var(--chip2);color:var(--mut);padding:1px 6px;border-radius:6px}
+.chk{color:var(--accent);font-size:16px;flex-shrink:0}
+.r2{display:flex;align-items:center;gap:7px;margin-top:3px}
+.bars{display:inline-flex;align-items:flex-end;gap:2px;height:12px;flex-shrink:0}
+.bars i{width:3px;border-radius:1px}
+.sub{font-size:12px;color:var(--mut)}
+.live{color:var(--ok)}
+.tg{width:34px;height:20px;border-radius:10px;background:var(--chip2);position:relative;display:inline-block}
+.tg i{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--mut)}
+.btn{flex:1;text-align:center;padding:9px 0;border-radius:9px;font-size:13px;font-weight:500}
+.bgr{background:var(--card);color:var(--fg)}
+.bp{background:var(--accent);color:#fff}
+.nav{margin-top:auto;display:flex;border-top:1px solid var(--line)}
+.nav span{flex:1;text-align:center;padding:8px 0;color:var(--mut);font-size:12px}
+.nav span.on{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="dev"><div class="scr">
+<div class="tb"><span>Pick your meter</span><span style="color:var(--ok);font-size:12px;font-weight:400">scanning&hellip;</span></div>
+<div class="bd">
+
+<div class="row sel">
+<div class="r1"><span class="nm">ASSIOMA17039L</span><span class="chk">&#10003;</span></div>
+<div class="r2"><span class="bars"><i style="height:5px;background:var(--ok)"></i><i style="height:8px;background:var(--ok)"></i><i style="height:10px;background:var(--ok)"></i><i style="height:12px;background:var(--ok)"></i></span><span class="sub live">182 W &middot; 88 rpm</span></div>
+</div>
+
+<div class="row">
+<div class="r1"><span class="nm">Stages 4963 <span class="tag">crank</span></span></div>
+<div class="r2"><span class="bars"><i style="height:5px;background:var(--ok)"></i><i style="height:8px;background:var(--ok)"></i><i style="height:10px;background:var(--ok)"></i><i style="height:12px;background:var(--chip2)"></i></span><span class="sub live">121 W &middot; 61 rpm</span></div>
+</div>
+
+<div class="row">
+<div class="r1"><span class="nm">ASSIOMA22428R</span></div>
+<div class="r2"><span class="bars"><i style="height:5px;background:var(--ok)"></i><i style="height:8px;background:var(--ok)"></i><i style="height:10px;background:var(--chip2)"></i><i style="height:12px;background:var(--chip2)"></i></span><span class="sub">idle &middot; no power yet</span></div>
+</div>
+
+<div style="display:flex;align-items:center;justify-content:space-between;padding:2px;font-size:13px">
+<span>Single-sided &times;2 <span class="k" style="border:1px solid var(--line);border-radius:50%;padding:0 5px">?</span></span><span class="tg"><i></i></span>
+</div>
+
+<div style="display:flex;gap:8px;margin-top:auto">
+<span class="btn bgr">&#8635; Rescan</span><span class="btn bp">Use</span>
+</div>
+</div>
+<div class="nav"><span>Ride</span><span class="on">Setup</span><span>More</span></div>
+</div></div>
+</body>
+</html>

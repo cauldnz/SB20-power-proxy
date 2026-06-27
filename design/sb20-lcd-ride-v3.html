@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SB20 — Ride v3 (In→Out title bar)</title>
+<style>
+:root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--accent:#3b82f6;--line:#1c2334;--chip2:#2a3142}
+*{box-sizing:border-box}
+html,body{width:400px;overflow:hidden}
+body{margin:0;background:#0a0c14;color:var(--fg);font-family:system-ui,-apple-system,sans-serif;padding:9px;display:flex;gap:14px;justify-content:center}
+.cell{display:flex;flex-direction:column;align-items:center;gap:8px}
+.cap{font-size:12px;color:var(--mut)}
+.dev{box-sizing:border-box;width:182px;padding:4px;background:#05070d;border:1px solid rgba(255,255,255,.1);border-radius:18px}
+.scr{width:172px;height:320px;background:var(--bg);color:var(--fg);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.ttl{background:#141b2b;border-bottom:1px solid var(--line);padding:8px 9px;display:flex;align-items:center;justify-content:space-between;font-size:12px}
+.ttl .ids{display:flex;align-items:center;gap:4px}
+.gd{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.bd{padding:8px 11px;display:flex;flex-direction:column;gap:8px;flex:1;min-height:0}
+.k{font-size:11px;color:var(--mut)}
+.v{font-size:17px;font-weight:500}
+.u{font-size:11px;color:var(--mut)}
+.chip{background:var(--card);border-radius:10px;padding:8px 10px}
+.nav{margin-top:auto;display:flex;border-top:1px solid var(--line)}
+.nav span{flex:1;text-align:center;padding:8px 0;color:var(--mut);font-size:11px}
+.nav span.on{color:var(--accent)}
+.iocol{flex:1;background:var(--card);border-radius:10px;padding:8px 8px}
+.badge{display:inline-block;font-size:10px;font-weight:500;padding:1px 7px;border-radius:6px}
+.bin{background:rgba(34,197,94,.16);color:var(--ok)}
+.bout{background:rgba(59,130,246,.18);color:var(--accent)}
+</style>
+</head>
+<body>
+
+<div class="cell"><div class="cap">Riding (title bar collapsed)</div>
+<div class="dev"><div class="scr">
+<div class="ttl">
+<span class="ids"><span class="gd"></span>ASSIOMA <span style="color:var(--accent)">&rarr;</span> <span class="gd"></span>62144</span>
+<span class="k">247 W&nbsp;&#8964;</span>
+</div>
+<div class="bd">
+<div style="text-align:center;margin-top:4px"><div class="k" style="letter-spacing:.12em">POWER</div><div style="font-size:50px;font-weight:500;line-height:1.02">247<span class="u" style="font-size:14px"> W</span></div></div>
+<svg viewBox="0 0 150 34" preserveAspectRatio="none" style="width:100%;height:34px">
+<polyline points="0,27 14,22 28,28 42,15 56,20 70,9 84,18 98,11 112,23 126,12 140,17 150,14" fill="none" stroke="#3b82f6" stroke-width="2"/>
+<polygon points="0,27 14,22 28,28 42,15 56,20 70,9 84,18 98,11 112,23 126,12 140,17 150,14 150,34 0,34" fill="rgba(59,130,246,.16)"/>
+</svg>
+<div style="display:flex;gap:8px">
+<div class="chip" style="flex:1"><div class="k">Cadence</div><div class="v">92<span class="u"> rpm</span></div></div>
+<div class="chip" style="flex:1"><div class="k">Balance</div><div class="v">49<span class="u"> / </span>51</div></div>
+</div>
+</div>
+<div class="nav"><span class="on">Ride</span><span>Setup</span><span>More</span></div>
+</div></div></div>
+
+<div class="cell"><div class="cap">Tap title &rarr; meter details</div>
+<div class="dev"><div class="scr">
+<div class="ttl" style="background:#16203400;background:#172138">
+<span class="ids"><span class="gd"></span>ASSIOMA <span style="color:var(--accent)">&rarr;</span> <span class="gd"></span>62144</span>
+<span class="k">247 W&nbsp;&#8963;</span>
+</div>
+<div class="bd" style="gap:7px">
+<div style="display:flex;gap:7px">
+<div class="iocol">
+<span class="badge bin">IN</span>
+<div style="font-size:12px;margin-top:4px;line-height:1.15">ASSIOMA<br>17039L</div>
+<div class="k">&hellip;8c:f3:fe</div>
+<div style="margin-top:5px"><span style="font-size:16px;font-weight:500">247</span><span class="u"> W</span></div>
+<div style="font-size:12px">92<span class="u"> rpm</span></div>
+<div class="k" style="margin-top:3px">&minus;52 dBm</div>
+<div class="k">batt 78%</div>
+</div>
+<div class="iocol">
+<span class="badge bout">OUT</span>
+<div style="font-size:12px;margin-top:4px;line-height:1.15">Stages<br>62144</div>
+<div class="k">to SB20</div>
+<div style="margin-top:5px"><span style="font-size:16px;font-weight:500">247</span><span class="u"> W</span></div>
+<div style="font-size:12px">92<span class="u"> rpm</span></div>
+<div class="k" style="margin-top:3px">&minus;67 dBm</div>
+<div class="k">batt 100%*</div>
+</div>
+</div>
+<div class="k" style="text-align:center">tap title bar to close &#8963;</div>
+</div>
+<div class="nav"><span class="on">Ride</span><span>Setup</span><span>More</span></div>
+</div></div></div>
+
+</body>
+</html>
