@@ -56,6 +56,32 @@ Ride **easy → hard** so the coverage bands fill; the wizard lights each band a
 - Note the fitted **curve breakpoints + residual** (from the Fitted screen) and whether the Garmin agreed
   with the Assioma on the spot-check. → promote to `decisions.md`.
 
+## Opportunistic add-on — the new phone web UI + workout import (no extra bike time)
+While the board + phone are up, smoke-test the redesigned web UI and the workout importer (both
+desk-built; this is their first on-device run). None of this needs the track bike specifically — any
+board on a trainer works.
+
+1. **The five screens render + are live on the phone:** open `http://sb20proxy.local/` and walk the
+   bottom nav — **Ride** (IN→OUT title, big power, sparkline, tap-title detail), **Setup** (`/setup`),
+   **More** (`/more`: Mode / Identity / Source / Workout / Calibrate / Send a report / Firmware), and
+   from More → **Calibrate** and **Workout**. Power should update live on Ride as you pedal.
+2. **Workout screen — built-in preset:** More → **Workout** → tap **4×8 Threshold** (or any preset).
+   Confirm the profile chart draws, **Start** runs the clock, the **TARGET** + "now" power update,
+   **Pause/Resume/Skip** behave, and the loaded workout **survives a power-cycle** (reboot → still
+   loaded). *Erg is NOT driven yet — display/clock only (the FTMS erg write is §14 phase 4).*
+3. **Workout import (`.zwo` → device):** from the desk machine, convert + push a real Zwift workout:
+   ```bash
+   python code/scripts/import_workout.py <some.zwo> --ftp <yourFTP> --post http://sb20proxy.local
+   ```
+   Confirm the Workout screen shows the imported name + profile (or paste the printed JSON into the
+   screen's "Paste a workout" box if the device isn't reachable from that machine). If you have a Garmin
+   `.fit` workout, try it too and **eyeball the targets vs the source app** — FIT power decode is
+   best-effort until validated against a real file (record any mismatch → `decisions.md`).
+
+**Record:** which screens looked right/wrong on the actual phone, whether the preset ran + persisted,
+and whether the imported workout's targets matched the source. Bugs here are desk-fixable (pure render
++ importers are host-tested) — note them for a follow-up PR.
+
 ## Fallback (if on-device coex won't hold)
 The old desk path still works: capture both meters together and fit on the desk —
 `07_capture_multi.py` → `09_fit_calibration.py --target xcadey --ref assioma` (the on-device fit is

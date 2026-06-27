@@ -14,6 +14,22 @@ thing is tested with a fake clock and the in-process FTMS twin (no bike).
 from __future__ import annotations
 
 from .builder import WorkoutSpecError, build_plan
+from .importers import (
+    WorkoutImportError,
+    fit_steps_to_segments,
+    from_fit,
+    from_zwo,
+    to_device_json,
+)
 from .session import WorkoutSession
 
-__all__ = ["build_plan", "WorkoutSpecError", "WorkoutSession"]
+__all__ = [
+    "build_plan",
+    "WorkoutSpecError",
+    "WorkoutSession",
+    "WorkoutImportError",
+    "from_zwo",
+    "from_fit",
+    "fit_steps_to_segments",
+    "to_device_json",
+]
