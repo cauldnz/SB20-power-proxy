@@ -17,6 +17,9 @@ struct ProxyStatus {
     bool sourceConnected = false;  // meter linked (always false in mock mode)
     bool mock = false;             // running the synthetic meter, no real source
     std::string srcName;           // the connected source's advertised name ("" if none)
+    std::string identity;          // the name we ADVERTISE (the OUT side): Stages spoof, or our
+                                   // own corrector name. Set from RuntimeConfig at boot.
+    bool corrector = false;        // false = SPOOF (impersonate a crank); true = CORRECTOR mode
     int32_t forwarded = 0;         // readings relayed to the crank
     // The proxy carries two power streams; the UI shows both so each direction is visible:
     //   * src*  — what we RECEIVED from the meter (the BLE-central / goal-#1 side)
@@ -57,6 +60,12 @@ inline std::string renderStatusJson(const ProxyStatus& s) {
     j += "\",\"source\":\"";
     j += source;
     j += "\",\"src_name\":\"" + jsonEscape(s.srcName) + "\"";
+    // The OUT side: the identity we advertise + which product mode we're in. The dashboard title
+    // renders "<src_name> -> <identity>"; the settings page shows the mode.
+    j += ",\"identity\":\"" + jsonEscape(s.identity) + "\"";
+    j += ",\"mode\":\"";
+    j += s.corrector ? "corrector" : "spoof";
+    j += "\"";
     j += ",\"forwarded\":" + std::to_string(s.forwarded);
     // src_* = received from the meter (goal #1); power_w/cadence_rpm = broadcast to the crank (goal #2)
     j += ",\"src_power_w\":" + std::to_string(s.srcPowerW);
