@@ -1033,6 +1033,7 @@ void test_status_json_mock() {
     s.srcPowerW = 220;
     s.srcCadenceRpm = 88;
     s.srcName = "ASSIOMA \"L\"";  // includes a quote -> must be JSON-escaped
+    s.identity = "Stages 62144";  // the OUT side we advertise
     s.srcBalanceHalfPct = 88;   // 44 % left
     s.lastPowerW = 200;
     s.lastCadenceRpm = 90;
@@ -1040,6 +1041,8 @@ void test_status_json_mock() {
     s.uptimeMs = 12345;
     std::string j = renderStatusJson(s);
     TEST_ASSERT_TRUE(j.find("\"source\":\"mock\"") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"identity\":\"Stages 62144\"") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"mode\":\"spoof\"") != std::string::npos);  // default mode
     TEST_ASSERT_TRUE(j.find("\"forwarded\":5") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"src_power_w\":220") != std::string::npos);   // received from meter
     TEST_ASSERT_TRUE(j.find("\"src_cadence_rpm\":88") != std::string::npos);
@@ -1056,6 +1059,15 @@ void test_status_json_no_balance_is_minus_one() {
     std::string j = renderStatusJson(s);
     TEST_ASSERT_TRUE(j.find("\"src_balance_pct\":-1") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"balance_pct\":-1") != std::string::npos);
+}
+
+void test_status_json_mode_corrector() {
+    ProxyStatus s;
+    s.corrector = true;
+    s.identity = "SB20 Corrector";
+    std::string j = renderStatusJson(s);
+    TEST_ASSERT_TRUE(j.find("\"mode\":\"corrector\"") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"identity\":\"SB20 Corrector\"") != std::string::npos);
 }
 
 void test_status_json_source_state() {
@@ -1356,14 +1368,16 @@ void test_saved_page_escapes_ssid() {
 void test_app_page_essentials() {
     std::string p = appPageHtml();
     TEST_ASSERT_TRUE(p.find("SB20 Proxy") != std::string::npos);   // titled
-    TEST_ASSERT_TRUE(p.find("fetch(") != std::string::npos);       // polls the device
-    TEST_ASSERT_TRUE(p.find("<canvas") != std::string::npos);      // the live chart
+    TEST_ASSERT_TRUE(p.find("fetch('/status'") != std::string::npos);  // polls /status (not /)
+    TEST_ASSERT_TRUE(p.find("<canvas") != std::string::npos);      // the live sparkline
     TEST_ASSERT_TRUE(p.find("power_w") != std::string::npos);      // reads the broadcast power field
     TEST_ASSERT_TRUE(p.find("src_power_w") != std::string::npos);  // reads the received power field
-    TEST_ASSERT_TRUE(p.find("METER IN") != std::string::npos);     // shows the in->out flow
-    TEST_ASSERT_TRUE(p.find("CRANK OUT") != std::string::npos);
-    TEST_ASSERT_TRUE(p.find("fetch('/status'") != std::string::npos);  // polls /status (not /)
-    TEST_ASSERT_TRUE(p.find("balance_pct") != std::string::npos);      // shows the L/R balance
+    TEST_ASSERT_TRUE(p.find("d.identity") != std::string::npos);   // shows the OUT identity (in->out title)
+    TEST_ASSERT_TRUE(p.find(">IN<") != std::string::npos);         // the expandable IN card badge
+    TEST_ASSERT_TRUE(p.find(">OUT<") != std::string::npos);        // the OUT card badge
+    TEST_ASSERT_TRUE(p.find(">POWER<") != std::string::npos);      // the big power hero
+    TEST_ASSERT_TRUE(p.find("balance_pct") != std::string::npos);  // shows the L/R balance
+    TEST_ASSERT_TRUE(p.find("class='nav'") != std::string::npos);  // the bottom Ride/Setup/More nav
     TEST_ASSERT_TRUE(p.find("href='/setup'") != std::string::npos);    // link to pick the source
     TEST_ASSERT_TRUE(p.find("href='/wifi/off'") != std::string::npos); // ride-mode (WiFi off) link
     TEST_ASSERT_TRUE(p.find("href='/report'") != std::string::npos);   // the review-&-send report page
@@ -1955,6 +1969,7 @@ int runUnityTests() {
     RUN_TEST(test_proxy_reset_clears_stale_readings);
     RUN_TEST(test_status_json_mock);
     RUN_TEST(test_status_json_no_balance_is_minus_one);
+    RUN_TEST(test_status_json_mode_corrector);
     RUN_TEST(test_status_json_source_state);
     RUN_TEST(test_status_json_unknown_cadence);
     RUN_TEST(test_status_json_has_firmware_version);

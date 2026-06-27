@@ -243,8 +243,12 @@ void setup() {
     pinMode(Config::STATUS_LED_PIN, OUTPUT);  // onboard status LED (active-low)
     // Join WiFi + bring up OTA and the status HTTP server. The provider renders live state
     // from the ProxyCore each request (curl http://<ip>/ — the reliable window into the C3).
-    wifi.begin("sb20proxy", []() {
+    wifi.begin("sb20proxy",
+               [identity = cfg.spoofName,
+                corrector = (cfg.mode == ProxyMode::Corrector)]() {
         ProxyStatus s;
+        s.identity = identity;   // the OUT name we advertise (stable until a reboot)
+        s.corrector = corrector;
 #if USE_MOCK_METER
         s.mock = true;
 #else

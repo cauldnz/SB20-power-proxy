@@ -12,56 +12,98 @@ inline const char* appPageHtml() {
 <meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>SB20 Proxy</title>
 <style>
-:root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--bad:#ef4444}
+:root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--bad:#ef4444;--accent:#3b82f6;--line:#1c2334;--chip2:#2a3142}
 *{box-sizing:border-box}
-body{margin:0 auto;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);max-width:560px;padding:16px}
-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-h1{font-size:1.1rem;margin:0;font-weight:600}
-.dot{width:10px;height:10px;border-radius:50%;background:var(--bad);display:inline-block;margin-left:6px;vertical-align:middle}
-.dot.on{background:var(--ok)}
-.big{display:flex;gap:12px;margin-bottom:12px}
-.card{background:var(--card);border-radius:14px;padding:16px;flex:1}
-.lbl{color:var(--mut);font-size:.75rem;text-transform:uppercase;letter-spacing:.05em}
-.val{font-size:2.4rem;font-weight:700;line-height:1.1;margin-top:2px}
-.val small{font-size:1rem;color:var(--mut);font-weight:500}
-canvas{width:100%;height:120px;background:var(--card);border-radius:14px;margin-bottom:12px;display:block}
-.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.stat{background:var(--card);border-radius:10px;padding:10px 12px;font-size:.9rem}
-.stat b{display:block;color:var(--mut);font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
-.flow{display:flex;align-items:center;justify-content:center;gap:14px;background:var(--card);border-radius:14px;padding:10px;margin-bottom:12px;font-size:1rem}
-.flow .io{color:var(--mut)}.flow .io b{color:var(--fg);font-size:1.3rem}.flow .arrow{color:#3b82f6;font-size:1.3rem}
-a.set{color:#3b82f6;text-decoration:none;font-size:.85rem;border:1px solid #2b3650;padding:5px 10px;border-radius:8px}
+body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);overflow-x:hidden}
+.wrap{max-width:480px;margin:0 auto;padding:0 14px 84px}
+.ttl{position:sticky;top:0;z-index:5;width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;
+ background:#151d2e;border:0;border-bottom:1px solid var(--line);color:var(--fg);
+ padding:12px 4px;margin:0 -14px 0;width:calc(100% + 28px);font-size:.95rem;cursor:pointer;font-family:inherit}
+.ids{display:flex;align-items:center;gap:7px;padding-left:14px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.gd{width:9px;height:9px;border-radius:50%;background:var(--bad);flex-shrink:0}
+.gd.on{background:var(--ok)}
+.arr{color:var(--accent)}
+.chev{color:var(--mut);font-size:1rem;padding-right:18px;transition:transform .15s}
+.ttl.open .chev{transform:rotate(180deg)}
+.details{display:none;margin-top:12px}
+.details.open{display:block}
+.cols{display:flex;gap:10px}
+.col{flex:1;min-width:0;background:var(--card);border-radius:12px;padding:12px}
+.badge{display:inline-block;font-size:.7rem;font-weight:600;padding:2px 9px;border-radius:7px;letter-spacing:.04em}
+.bin{background:rgba(34,197,94,.16);color:var(--ok)}
+.bout{background:rgba(59,130,246,.18);color:var(--accent)}
+.cn{font-size:.85rem;font-weight:600;margin:8px 0 6px;word-break:break-word}
+.cp{font-size:1.5rem;font-weight:700;line-height:1}.cp small{font-size:.8rem;color:var(--mut);font-weight:500}
+.cs{font-size:.8rem;color:var(--mut);margin-top:4px}
+.dev{margin-top:10px;font-size:.78rem;color:var(--mut);line-height:1.7;word-break:break-word}
+.dev b{color:var(--fg);font-weight:500}
+.power{text-align:center;margin-top:18px}
+.plabel{font-size:.78rem;color:var(--mut);letter-spacing:.14em}
+.pbig{font-size:4.6rem;font-weight:700;line-height:1;margin-top:2px}.pbig small{font-size:1.2rem;color:var(--mut);font-weight:500}
+canvas{width:100%;height:96px;display:block;margin-top:6px}
+.chips{display:flex;gap:10px;margin-top:14px}
+.chip{flex:1;min-width:0;background:var(--card);border-radius:12px;padding:12px 14px}
+.ck{font-size:.78rem;color:var(--mut)}
+.cv{font-size:1.7rem;font-weight:700;margin-top:2px}.cv small{font-size:.85rem;color:var(--mut);font-weight:500}
+.nav{position:fixed;left:0;right:0;bottom:0;display:flex;max-width:480px;margin:0 auto;background:#10141f;border-top:1px solid var(--line)}
+.nav a{flex:1;text-align:center;padding:12px 0;color:var(--mut);font-size:.85rem;text-decoration:none}
+.nav a.on{color:var(--accent)}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--card);border-top:1px solid var(--line);
+ border-radius:16px 16px 0 0;max-width:480px;margin:0 auto;padding:8px 0 14px;transform:translateY(110%);transition:transform .2s}
+.sheet.open{transform:none}
+.sheet a{display:block;padding:14px 20px;color:var(--fg);text-decoration:none;font-size:.95rem;border-bottom:1px solid var(--line)}
+.sheet a:last-child{border-bottom:0}
+.scrim{position:fixed;inset:0;z-index:15;background:rgba(0,0,0,.5);display:none}
+.scrim.open{display:block}
 </style></head><body>
-<header><h1>SB20 Proxy <span id='dot' class='dot'></span></h1><a class='set' href='/setup'>&#9881; Source</a></header>
-<div class='big'>
-<div class='card'><div class='lbl'>Power</div><div class='val'><span id='pw'>--</span> <small>W</small></div></div>
-<div class='card'><div class='lbl'>Cadence</div><div class='val'><span id='cad'>--</span> <small>rpm</small></div></div>
+<div class='wrap'>
+<button class='ttl' id='ttl' onclick='toggle()'>
+<span class='ids'><span class='gd' id='dIn'></span> <span id='nIn'>&hellip;</span>
+<span class='arr'>&rarr;</span> <span class='gd' id='dOut'></span> <span id='nOut'>&hellip;</span></span>
+<span class='chev'>&#8964;</span></button>
+<div class='details' id='details'>
+<div class='cols'>
+<div class='col'><span class='badge bin'>IN</span><div class='cn' id='dnIn'>&mdash;</div>
+<div class='cp'><span id='dpIn'>--</span><small> W</small></div><div class='cs'><span id='dcIn'>--</span> rpm</div></div>
+<div class='col'><span class='badge bout'>OUT</span><div class='cn' id='dnOut'>&mdash;</div>
+<div class='cp'><span id='dpOut'>--</span><small> W</small></div><div class='cs'><span id='dcOut'>--</span> rpm</div></div>
 </div>
-<div class='flow'><span class='io'>METER IN <b id='in'>--</b> W</span><span class='arrow'>&#8594;</span><span class='io'>CRANK OUT <b id='out'>--</b> W</span></div>
+<div class='dev'>WiFi <b id='rssi'>--</b> &middot; up <b id='up'>--</b> &middot; heap <b id='heap'>--</b> &middot; fwd <b id='fwd'>--</b> &middot; <b id='fw'>--</b></div>
+</div>
+<div class='power'><div class='plabel'>POWER</div><div class='pbig'><span id='pw'>--</span><small> W</small></div></div>
 <canvas id='chart'></canvas>
-<div class='stats'>
-<div class='stat'><b>Source</b><span id='src'>--</span></div>
-<div class='stat'><b>Balance L/R</b><span id='bal'>--</span></div>
-<div class='stat'><b>WiFi</b><span id='rssi'>--</span></div>
-<div class='stat'><b>Uptime</b><span id='up'>--</span></div>
-<div class='stat'><b>Forwarded</b><span id='fwd'>--</span></div>
-<div class='stat'><b>Firmware</b><span id='fw'>--</span></div>
+<div class='chips'>
+<div class='chip'><div class='ck'>Cadence</div><div class='cv'><span id='cad'>--</span><small> rpm</small></div></div>
+<div class='chip'><div class='ck'>Balance</div><div class='cv' id='bal'>--</div></div>
 </div>
-<p style='text-align:center;margin-top:14px;font-size:.8rem'><a href='/calibrate' style='color:#8b93a7'>Calibrate a meter</a> &nbsp;&middot;&nbsp; <a href='/wifi/off' style='color:#8b93a7'>Ride mode &mdash; WiFi off</a> &nbsp;&middot;&nbsp; <a href='/report' style='color:#8b93a7'>Send a report</a></p>
+</div>
+<div class='scrim' id='scrim' onclick='more(0)'></div>
+<div class='sheet' id='sheet'>
+<a href='/calibrate'>Calibrate a meter</a>
+<a href='/wifi/off'>Ride mode &mdash; WiFi off</a>
+<a href='/report'>Send a report</a>
+<a href='/setup'>Settings</a>
+</div>
+<nav class='nav'><a class='on' href='/'>Ride</a><a href='/setup'>Setup</a><a href='#' onclick='more(1);return false;'>More</a></nav>
 <script>
 var $=function(i){return document.getElementById(i)};
 var hist=[],MAX=90;
+function toggle(){$('ttl').classList.toggle('open');$('details').classList.toggle('open');}
+function more(o){$('sheet').classList.toggle('open',!!o);$('scrim').classList.toggle('open',!!o);}
 function fmtUp(ms){var s=Math.floor(ms/1000),h=Math.floor(s/3600);s%=3600;var m=Math.floor(s/60);s%=60;return (h?h+'h ':'')+(m||h?m+'m ':'')+s+'s';}
-function draw(){var c=$('chart'),r=window.devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*r;c.height=h*r;var x=c.getContext('2d');x.scale(r,r);x.clearRect(0,0,w,h);if(hist.length<2)return;var mx=100;for(var i=0;i<hist.length;i++){if(hist[i]>mx)mx=hist[i];}x.beginPath();for(var i=0;i<hist.length;i++){var px=i/(MAX-1)*w,py=h-8-(hist[i]/mx)*(h-16);if(i){x.lineTo(px,py);}else{x.moveTo(px,py);}}x.strokeStyle='#3b82f6';x.lineWidth=2;x.stroke();x.lineTo((hist.length-1)/(MAX-1)*w,h);x.lineTo(0,h);x.closePath();x.fillStyle='rgba(59,130,246,.15)';x.fill();}
+function draw(){var c=$('chart'),r=window.devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*r;c.height=h*r;var x=c.getContext('2d');x.scale(r,r);x.clearRect(0,0,w,h);if(hist.length<2)return;var mx=100;for(var i=0;i<hist.length;i++){if(hist[i]>mx)mx=hist[i];}x.beginPath();for(var i=0;i<hist.length;i++){var px=i/(MAX-1)*w,py=h-8-(hist[i]/mx)*(h-16);if(i){x.lineTo(px,py);}else{x.moveTo(px,py);}}x.strokeStyle='#3b82f6';x.lineWidth=2;x.stroke();x.lineTo((hist.length-1)/(MAX-1)*w,h);x.lineTo(0,h);x.closePath();x.fillStyle='rgba(59,130,246,.16)';x.fill();}
 function tick(){fetch('/status',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
-$('dot').classList.add('on');
+var inOn=(d.source==='connected'||d.source==='mock');
+$('dIn').classList.toggle('on',inOn);$('dOut').classList.add('on');
+$('nIn').textContent=(d.src_name||(d.source==='mock'?'mock':d.source||'searching'));
+$('nOut').textContent=(d.identity||'crank');
 $('pw').textContent=d.power_w;$('cad').textContent=(d.cadence_rpm<0?'--':d.cadence_rpm);
-$('in').textContent=(d.src_power_w===undefined?'--':d.src_power_w);$('out').textContent=d.power_w;
-$('src').textContent=(d.src_name?d.src_name+' ('+d.source+')':d.source);$('rssi').textContent=d.rssi+' dBm';
-$('bal').textContent=(d.balance_pct===undefined||d.balance_pct<0?'--':('L'+d.balance_pct+' / R'+(100-d.balance_pct)));
-$('up').textContent=fmtUp(d.ms);$('fwd').textContent=d.forwarded;$('fw').textContent=d.fw;
+$('bal').textContent=(d.balance_pct===undefined||d.balance_pct<0?'--':(d.balance_pct+' / '+(100-d.balance_pct)));
+$('dnIn').textContent=(d.src_name||d.source||'--');$('dpIn').textContent=(d.src_power_w===undefined?'--':d.src_power_w);$('dcIn').textContent=(d.src_cadence_rpm<0?'--':d.src_cadence_rpm);
+$('dnOut').textContent=(d.identity||'--');$('dpOut').textContent=d.power_w;$('dcOut').textContent=(d.cadence_rpm<0?'--':d.cadence_rpm);
+$('rssi').textContent=d.rssi+' dBm';$('up').textContent=fmtUp(d.ms);$('heap').textContent=Math.round(d.heap/1024)+'k';$('fwd').textContent=d.forwarded;$('fw').textContent=(d.identity?d.version:d.fw);
 hist.push(d.power_w);if(hist.length>MAX){hist.shift();}draw();
-}).catch(function(){$('dot').classList.remove('on');});}
+}).catch(function(){$('dIn').classList.remove('on');$('dOut').classList.remove('on');});}
 setInterval(tick,1000);tick();window.addEventListener('resize',draw);
 </script></body></html>)HTML";
 }
