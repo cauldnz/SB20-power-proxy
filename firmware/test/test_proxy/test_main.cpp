@@ -1381,9 +1381,20 @@ void test_app_page_essentials() {
     TEST_ASSERT_TRUE(p.find(">POWER<") != std::string::npos);      // the big power hero
     TEST_ASSERT_TRUE(p.find("balance_pct") != std::string::npos);  // shows the L/R balance
     TEST_ASSERT_TRUE(p.find("class='nav'") != std::string::npos);  // the bottom Ride/Setup/More nav
-    TEST_ASSERT_TRUE(p.find("href='/setup'") != std::string::npos);    // link to pick the source
-    TEST_ASSERT_TRUE(p.find("href='/wifi/off'") != std::string::npos); // ride-mode (WiFi off) link
-    TEST_ASSERT_TRUE(p.find("href='/report'") != std::string::npos);   // the review-&-send report page
+    TEST_ASSERT_TRUE(p.find("href='/setup'") != std::string::npos);    // Setup tab -> pick the source
+    TEST_ASSERT_TRUE(p.find("href='/more'") != std::string::npos);     // More tab -> Settings page
+}
+
+void test_settings_page_essentials() {
+    std::string p = settingsPageHtml();
+    TEST_ASSERT_TRUE(p.find("fetch('/status'") != std::string::npos);   // fills mode/identity/source live
+    TEST_ASSERT_TRUE(p.find("d.identity") != std::string::npos);
+    TEST_ASSERT_TRUE(p.find("d.mode") != std::string::npos);
+    TEST_ASSERT_TRUE(p.find("href='/setup'") != std::string::npos);     // Mode/Identity/Source -> /setup
+    TEST_ASSERT_TRUE(p.find("href='/calibrate'") != std::string::npos); // calibrate row
+    TEST_ASSERT_TRUE(p.find("href='/wifi/off'") != std::string::npos);  // ride-mode row
+    TEST_ASSERT_TRUE(p.find("href='/report'") != std::string::npos);    // send-a-report row
+    TEST_ASSERT_TRUE(p.find("class='nav'") != std::string::npos);       // shared bottom nav, More active
 }
 
 void test_report_page_review_and_send() {
@@ -2009,6 +2020,7 @@ int runUnityTests() {
     RUN_TEST(test_saved_page_has_ssid_and_hints);
     RUN_TEST(test_saved_page_escapes_ssid);
     RUN_TEST(test_app_page_essentials);
+    RUN_TEST(test_settings_page_essentials);
     RUN_TEST(test_report_page_review_and_send);
     RUN_TEST(test_diag_report);
     RUN_TEST(test_ride_mode_pages);
