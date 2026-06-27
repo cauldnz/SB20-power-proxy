@@ -83,25 +83,55 @@ inline const char* calibrationStartError(const CalForm& f) {
 
 namespace detail {
 inline std::string calStyle() {
-    return "<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:0 auto;"
-           "padding:16px;color:#111;background:#fafafa}h1{font-size:1.3rem}"
-           ".msg{background:#fdecea;border:1px solid #f5c2c7;color:#842029;padding:8px 12px;border-radius:6px}"
-           ".ok{background:#e7f5ec;border:1px solid #b7e0c4;color:#1d6b34;padding:8px 12px;border-radius:6px}"
-           ".devs{display:flex;flex-direction:column;gap:6px;margin:8px 0}"
-           ".dev{display:flex;align-items:center;gap:8px;padding:10px;background:#fff;border:1px solid #ccc;border-radius:8px}"
-           ".dev .nm{flex:1;overflow:hidden}.dev .nm small{color:#666}"
-           ".pick{display:flex;gap:6px}.pick button{padding:6px 10px;border:1px solid #2a6df4;background:#fff;"
-           "color:#2a6df4;border-radius:6px;cursor:pointer;font-size:.85rem}.pick button.on{background:#2a6df4;color:#fff}"
-           ".bands{display:flex;flex-direction:column;gap:4px;margin:10px 0}"
-           ".band{display:flex;align-items:center;gap:8px}.band .lab{width:84px;font-size:.85rem;color:#444}"
-           ".bar{flex:1;height:14px;background:#eee;border-radius:7px;overflow:hidden}"
-           ".bar i{display:block;height:100%;background:#2a8a3e}.band .n{width:28px;text-align:right;font-size:.85rem}"
-           "button.go{width:100%;padding:12px;font-size:1rem;font-weight:600;color:#fff;background:#2a6df4;"
-           "border:0;border-radius:8px;cursor:pointer;margin-top:8px}button.go[disabled]{background:#9bb6ee;cursor:default}"
-           "button.sec{width:100%;padding:10px;background:#fff;border:1px solid #888;border-radius:8px;cursor:pointer;margin-top:8px}"
-           "input[type=text]{width:100%;box-sizing:border-box;padding:10px;font-size:1rem;border:1px solid #ccc;border-radius:8px;margin:4px 0 12px}"
-           "label{font-weight:600;font-size:.9rem}a{color:#2a6df4}.hint{color:#666;font-size:.85rem}"
-           "table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:3px 6px;border-bottom:1px solid #eee;font-size:.9rem}"
+    return "<style>"
+           ":root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--accent:#3b82f6;"
+           "--line:#1c2334;--chip2:#2a3142}"
+           "*{box-sizing:border-box}"
+           "body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);"
+           "color:var(--fg);overflow-x:hidden}"
+           ".wrap{max-width:480px;margin:0 auto;padding:0 14px 84px}"
+           ".tb{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;"
+           "gap:8px;background:#151d2e;border-bottom:1px solid var(--line);padding:13px 14px;"
+           "margin:0 -14px 12px;font-size:.98rem;font-weight:600}"
+           ".row{display:flex;align-items:center;justify-content:space-between;margin:10px 0 4px}"
+           ".row a{color:var(--ok);font-size:.85rem;text-decoration:none}"
+           ".msg{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#fca5a5;"
+           "padding:9px 12px;border-radius:9px;margin:8px 0}"
+           ".ok{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.4);color:var(--ok);"
+           "padding:9px 12px;border-radius:9px;margin:8px 0}"
+           ".devs{display:flex;flex-direction:column;gap:8px;margin:10px 0}"
+           ".dev{display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--card);"
+           "border:1px solid var(--line);border-radius:11px}"
+           ".dev .nm{flex:1;min-width:0;overflow:hidden;font-size:.92rem;font-weight:600}"
+           ".dev .nm small{color:var(--mut);font-weight:400;font-size:.78rem}"
+           ".pick{display:flex;gap:6px;flex-shrink:0}.pick button{padding:7px 11px;border:1px solid var(--accent);"
+           "background:transparent;color:var(--accent);border-radius:7px;cursor:pointer;font-size:.82rem}"
+           ".pick button.on{background:var(--accent);color:#fff}"
+           ".bands{display:flex;flex-direction:column;gap:6px;margin:12px 0}"
+           ".band{display:flex;align-items:center;gap:10px}.band .lab{width:78px;font-size:.82rem;color:var(--mut)}"
+           ".bar{flex:1;height:14px;background:var(--chip2);border-radius:7px;overflow:hidden}"
+           ".bar i{display:block;height:100%;background:var(--ok)}.band .n{width:28px;text-align:right;"
+           "font-size:.82rem;color:var(--mut)}"
+           "button.go{width:100%;padding:13px;font-size:1rem;font-weight:600;color:#fff;background:var(--accent);"
+           "border:0;border-radius:10px;cursor:pointer;margin-top:10px}"
+           "button.go[disabled]{background:#2a3550;color:#7a86a3;cursor:default}"
+           "button.sec{width:100%;padding:11px;background:transparent;border:1px solid var(--line);"
+           "color:var(--fg);border-radius:10px;cursor:pointer;margin-top:8px}"
+           "input[type=text]{width:100%;padding:11px;font-size:1rem;background:#0a0d16;color:var(--fg);"
+           "border:1px solid var(--line);border-radius:9px;margin:5px 0 12px}"
+           "label{font-weight:600;font-size:.9rem}a{color:var(--accent)}.hint{color:var(--mut);font-size:.85rem}"
+           "table{width:100%;border-collapse:collapse;margin:8px 0}"
+           "td{padding:5px 6px;border-bottom:1px solid var(--line);font-size:.9rem}"
+           ".nav{position:fixed;left:0;right:0;bottom:0;display:flex;max-width:480px;margin:0 auto;"
+           "background:#10141f;border-top:1px solid var(--line)}"
+           ".nav a{flex:1;text-align:center;padding:12px 0;color:var(--mut);font-size:.85rem;text-decoration:none}"
+           ".nav a.on{color:var(--accent)}"
+           ".sheet{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--card);"
+           "border-top:1px solid var(--line);border-radius:16px 16px 0 0;max-width:480px;margin:0 auto;"
+           "padding:8px 0 14px;transform:translateY(110%);transition:transform .2s}.sheet.open{transform:none}"
+           ".sheet a{display:block;padding:14px 20px;color:var(--fg);text-decoration:none;font-size:.95rem;"
+           "border-bottom:1px solid var(--line)}.sheet a:last-child{border-bottom:0}"
+           ".scrim{position:fixed;inset:0;z-index:15;background:rgba(0,0,0,.5);display:none}.scrim.open{display:block}"
            "</style>";
 }
 
@@ -127,7 +157,9 @@ inline std::string renderCalibrationPage(const CalWizardView& v) {
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>SB20 Proxy &mdash; Calibrate</title>";
     if (v.scanning || v.state == CalState::Collecting) h += "<meta http-equiv='refresh' content='2'>";
-    h += detail::calStyle() + "</head><body><h1>Meter calibration</h1>";
+    h += detail::calStyle() +
+         "</head><body><div class='wrap'>"
+         "<div class='tb'><span>Calibrate a meter</span></div>";
     if (!v.message.empty()) h += "<p class='msg'>" + htmlEscape(v.message) + "</p>";
 
     if (v.state == CalState::Idle) {
@@ -219,7 +251,18 @@ inline std::string renderCalibrationPage(const CalWizardView& v) {
              "<form method='POST' action='/calibrate/cancel'>"
              "<button class='sec' type='submit'>Discard &amp; recalibrate</button></form>";
     }
-    h += "<p style='margin-top:16px'><a href='/'>&larr; Dashboard</a></p></body></html>";
+    h += "</div>"  // .wrap
+         "<div class='scrim' id='scrim' onclick='more(0)'></div>"
+         "<div class='sheet' id='sheet'>"
+         "<a href='/setup'>Pick a meter</a>"
+         "<a href='/wifi/off'>Ride mode &mdash; WiFi off</a>"
+         "<a href='/report'>Send a report</a>"
+         "<a href='/'>Dashboard</a></div>"
+         "<nav class='nav'><a href='/'>Ride</a><a href='/setup'>Setup</a>"
+         "<a href='#' onclick='more(1);return false;'>More</a></nav>"
+         "<script>function more(o){document.getElementById('sheet').classList.toggle('open',!!o);"
+         "document.getElementById('scrim').classList.toggle('open',!!o);}</script>"
+         "</body></html>";
     return h;
 }
 

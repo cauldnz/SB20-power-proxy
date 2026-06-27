@@ -774,6 +774,7 @@ void test_calibration_page_idle_lists_meters_and_pickers() {
     TEST_ASSERT_TRUE(h.find("/calibrate/start") != std::string::npos);
     TEST_ASSERT_TRUE(h.find(">DUT<") != std::string::npos);   // the per-row role buttons
     TEST_ASSERT_TRUE(h.find(">Ref<") != std::string::npos);
+    TEST_ASSERT_TRUE(h.find("class='nav'") != std::string::npos);  // shared bottom nav
 }
 
 void test_calibration_page_collecting_shows_coverage_and_gates_finish() {
