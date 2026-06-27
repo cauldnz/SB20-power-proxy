@@ -33,8 +33,18 @@
 #include "StatusLed.h"
 #include "OledScreen.h"
 #include "WebApp.h"
+#include "WorkoutEngine.h"
 
 using namespace sb20proxy;
+
+// A shared golden workout (mirrored by code/tests/test_workout_engine_parity.py) — the parity anchor
+// between this C++ engine and the Python ride director.
+static const char* kGoldenWorkout = R"({ "name":"4x8 Threshold", "ftp_w":285,
+  "segments":[ {"t":600,"label":"Warm-up","pct_ftp":0.55},
+               {"t":480,"label":"Interval 1","power_w":250,"cadence_rpm":90},
+               {"t":120,"label":"Recovery","power_w":90},
+               {"t":480,"label":"Interval 2","power_w":250},
+               {"t":120,"label":"Recovery","power_w":90} ] })";
 
 void setUp() {}
 void tearDown() {}
@@ -1404,6 +1414,61 @@ void test_settings_page_essentials() {
     TEST_ASSERT_TRUE(p.find("class='nav'") != std::string::npos);       // shared bottom nav, More active
 }
 
+// --- workout engine (the on-device DirectorState port) ------------------------
+
+void test_workout_parse_and_resolve() {
+    Workout w = parseWorkout(kGoldenWorkout);
+    TEST_ASSERT_EQUAL_STRING("4x8 Threshold", w.name.c_str());
+    TEST_ASSERT_EQUAL_INT(285, w.ftpW);
+    TEST_ASSERT_EQUAL_INT(5, (int)w.segments.size());
+    TEST_ASSERT_EQUAL_INT(1800, (int)w.totalS());
+    TEST_ASSERT_EQUAL_INT(90, w.segments[1].cadenceRpm);
+    TEST_ASSERT_EQUAL_INT(157, segmentTargetW(w.segments[0], w.ftpW));  // 0.55*285 -> 157 (pct_ftp)
+    TEST_ASSERT_EQUAL_INT(250, segmentTargetW(w.segments[1], w.ftpW));  // power_w wins
+}
+
+void test_workout_target_precedence_and_zone() {
+    WkSegment s; s.powerW = 300; s.pctFtp = 0.50f; s.zone = "Z2";
+    TEST_ASSERT_EQUAL_INT(300, segmentTargetW(s, 285));    // power_w wins over pct/zone
+    WkSegment p; p.pctFtp = 0.90f;
+    TEST_ASSERT_EQUAL_INT(257, segmentTargetW(p, 285));    // 0.90*285 = 256.5 -> 257
+    WkSegment z; z.zone = "Z4";
+    TEST_ASSERT_EQUAL_INT(279, segmentTargetW(z, 285));    // Z4 0.98*285 = 279.3 -> 279
+    WkSegment none;
+    TEST_ASSERT_EQUAL_INT(-1, segmentTargetW(none, 285));  // nothing set -> free
+}
+
+void test_workout_stepper_golden() {
+    Workout w = parseWorkout(kGoldenWorkout);
+    WkState a = workoutStateAt(w, 0);
+    TEST_ASSERT_EQUAL_INT(0, a.segIndex); TEST_ASSERT_EQUAL_INT(157, a.targetW);
+    TEST_ASSERT_EQUAL_INT(600, (int)a.segRemainingS); TEST_ASSERT_EQUAL_INT(1800, (int)a.totalRemainingS);
+    WkState b = workoutStateAt(w, 900);   // 300 s into Interval 1 (600..1080)
+    TEST_ASSERT_EQUAL_INT(1, b.segIndex); TEST_ASSERT_EQUAL_INT(250, b.targetW);
+    TEST_ASSERT_EQUAL_INT(300, (int)b.segElapsedS); TEST_ASSERT_EQUAL_INT(180, (int)b.segRemainingS);
+    WkState c = workoutStateAt(w, 1080);  // start of Recovery 1
+    TEST_ASSERT_EQUAL_INT(2, c.segIndex); TEST_ASSERT_EQUAL_INT(90, c.targetW);
+    WkState d = workoutStateAt(w, 1800);  // done
+    TEST_ASSERT_TRUE(d.finished); TEST_ASSERT_EQUAL_INT(5, d.segIndex);
+    TEST_ASSERT_EQUAL_INT(-1, d.targetW); TEST_ASSERT_EQUAL_INT(0, (int)d.totalRemainingS);
+}
+
+void test_workout_parse_malformed_is_empty() {
+    TEST_ASSERT_EQUAL_INT(0, (int)parseWorkout("").segments.size());
+    TEST_ASSERT_EQUAL_INT(0, (int)parseWorkout("{not json").segments.size());
+    TEST_ASSERT_EQUAL_INT(0, (int)parseWorkout("{\"name\":\"x\"}").segments.size());  // no segments
+}
+
+void test_workout_render_json() {
+    Workout w = parseWorkout(kGoldenWorkout);
+    std::string j = renderWorkoutJson(w, workoutStateAt(w, 900), true, false);
+    TEST_ASSERT_TRUE(j.find("\"seg_label\":\"Interval 1\"") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"seg_target_w\":250") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"next_label\":\"Recovery\"") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"running\":true") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"segments\":[{\"t\":600,\"w\":157") != std::string::npos);  // profile
+}
+
 void test_report_page_review_and_send() {
     std::string p = diagReportPageHtml();
     TEST_ASSERT_TRUE(p.find("fetch('/diag'") != std::string::npos);   // shows the raw report for review
@@ -2029,6 +2094,11 @@ int runUnityTests() {
     RUN_TEST(test_app_page_essentials);
     RUN_TEST(test_webui_css_is_shared);
     RUN_TEST(test_settings_page_essentials);
+    RUN_TEST(test_workout_parse_and_resolve);
+    RUN_TEST(test_workout_target_precedence_and_zone);
+    RUN_TEST(test_workout_stepper_golden);
+    RUN_TEST(test_workout_parse_malformed_is_empty);
+    RUN_TEST(test_workout_render_json);
     RUN_TEST(test_report_page_review_and_send);
     RUN_TEST(test_diag_report);
     RUN_TEST(test_ride_mode_pages);
