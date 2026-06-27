@@ -227,11 +227,11 @@ void WifiLink::startStationServer_() {
     server_ = new WebServer(80);
     collectCsrfHeaders_();  // so csrfOk_() can read Origin/Referer on the mutating POST routes
     // GET / -> the dashboard (what a tester sees opening the board's IP); /ui is kept as an alias.
-    auto serveDash = [this]() { server_->send(200, "text/html", appPageHtml()); };
+    auto serveDash = [this]() { server_->send(200, "text/html", appPageHtml().c_str()); };
     server_->on("/", HTTP_GET, serveDash);
     server_->on("/ui", HTTP_GET, serveDash);
     // GET /more -> the Settings / "More" tab (status summary + nav hub; fills from /status client-side).
-    server_->on("/more", HTTP_GET, [this]() { server_->send(200, "text/html", settingsPageHtml()); });
+    server_->on("/more", HTTP_GET, [this]() { server_->send(200, "text/html", settingsPageHtml().c_str()); });
     // GET /status -> the status JSON the dashboard polls (was GET /; tools that curled / should
     // use /status now). Kept compact + unchanged in shape.
     server_->on("/status", HTTP_GET, [this]() {

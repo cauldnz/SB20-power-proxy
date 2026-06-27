@@ -7,6 +7,7 @@
 #include "Correction.h"          // CorrectionCurve
 #include "Provisioning.h"        // urlDecode / htmlEscape / rssiBars
 #include "SourceCandidate.h"     // SourceCandidate + dedupeAndSortSources
+#include "WebUi.h"               // shared palette + base layout + bottom-nav CSS
 
 namespace sb20proxy {
 
@@ -83,16 +84,7 @@ inline const char* calibrationStartError(const CalForm& f) {
 
 namespace detail {
 inline std::string calStyle() {
-    return "<style>"
-           ":root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--accent:#3b82f6;"
-           "--line:#1c2334;--chip2:#2a3142}"
-           "*{box-sizing:border-box}"
-           "body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);"
-           "color:var(--fg);overflow-x:hidden}"
-           ".wrap{max-width:480px;margin:0 auto;padding:0 14px 84px}"
-           ".tb{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;"
-           "gap:8px;background:#151d2e;border-bottom:1px solid var(--line);padding:13px 14px;"
-           "margin:0 -14px 12px;font-size:.98rem;font-weight:600}"
+    return std::string("<style>") + webuiCss() +
            ".row{display:flex;align-items:center;justify-content:space-between;margin:10px 0 4px}"
            ".row a{color:var(--ok);font-size:.85rem;text-decoration:none}"
            ".msg{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#fca5a5;"
@@ -122,10 +114,6 @@ inline std::string calStyle() {
            "label{font-weight:600;font-size:.9rem}a{color:var(--accent)}.hint{color:var(--mut);font-size:.85rem}"
            "table{width:100%;border-collapse:collapse;margin:8px 0}"
            "td{padding:5px 6px;border-bottom:1px solid var(--line);font-size:.9rem}"
-           ".nav{position:fixed;left:0;right:0;bottom:0;display:flex;max-width:480px;margin:0 auto;"
-           "background:#10141f;border-top:1px solid var(--line)}"
-           ".nav a{flex:1;text-align:center;padding:12px 0;color:var(--mut);font-size:.85rem;text-decoration:none}"
-           ".nav a.on{color:var(--accent)}"
            "</style>";
 }
 

@@ -6,6 +6,7 @@
 #include "Provisioning.h"     // reuse urlDecode / htmlEscape / rssiBars (the captive-portal helpers)
 #include "RuntimeConfig.h"
 #include "SourceCandidate.h"  // SourceCandidate + dedupeAndSortSources (the scanned-source model)
+#include "WebUi.h"            // shared palette + base layout + bottom-nav CSS
 
 namespace sb20proxy {
 
@@ -70,18 +71,9 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>SB20 Proxy &mdash; Power source</title>";
     if (scanning) h += "<meta http-equiv='refresh' content='2'>";
-    h += "<style>"
-         ":root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--accent:#3b82f6;"
-         "--line:#1c2334;--chip2:#2a3142}"
-         "*{box-sizing:border-box}"
-         "body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);"
-         "color:var(--fg);overflow-x:hidden}"
-         ".wrap{max-width:480px;margin:0 auto;padding:0 14px 84px}"
-         ".tb{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;"
-         "gap:8px;background:#151d2e;border-bottom:1px solid var(--line);padding:13px 14px;"
-         "margin:0 -14px 12px;font-size:.98rem;font-weight:600}"
-         ".tb a.scan{color:var(--ok);font-size:.85rem;font-weight:500;text-decoration:none}"
-         ".hint{color:var(--mut);font-size:.85rem}"
+    h += "<style>";
+    h += webuiCss();  // shared palette + base layout + bottom-nav
+    h += ".tb a.scan{color:var(--ok);font-size:.85rem;font-weight:500;text-decoration:none}"
          ".msg{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#fca5a5;"
          "padding:9px 12px;border-radius:9px;margin:8px 0}"
          ".ok{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.4);color:var(--ok);"
@@ -112,10 +104,6 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
          ".reset{width:100%;padding:11px;background:transparent;border:1px solid rgba(239,68,68,.5);"
          "color:#f87171;border-radius:10px;cursor:pointer}"
          "a{color:var(--accent)}"
-         ".nav{position:fixed;left:0;right:0;bottom:0;display:flex;max-width:480px;margin:0 auto;"
-         "background:#10141f;border-top:1px solid var(--line)}"
-         ".nav a{flex:1;text-align:center;padding:12px 0;color:var(--mut);font-size:.85rem;text-decoration:none}"
-         ".nav a.on{color:var(--accent)}"
          "</style></head><body><div class='wrap'>"
          "<div class='tb'><span>Pick your meter</span><a class='scan' href='/setup/scan'>";
     h += scanning ? "Scanning&hellip;" : "&#8635; Scan";

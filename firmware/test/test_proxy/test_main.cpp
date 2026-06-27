@@ -1385,6 +1385,13 @@ void test_app_page_essentials() {
     TEST_ASSERT_TRUE(p.find("href='/more'") != std::string::npos);     // More tab -> Settings page
 }
 
+void test_webui_css_is_shared() {
+    std::string c = webuiCss();
+    TEST_ASSERT_TRUE(c.find("--accent:#3b82f6") != std::string::npos);  // the shared palette
+    TEST_ASSERT_TRUE(c.find(".nav a.on") != std::string::npos);          // the shared bottom nav
+    TEST_ASSERT_TRUE(c.find("<style>") == std::string::npos);            // no wrapper — pages add it
+}
+
 void test_settings_page_essentials() {
     std::string p = settingsPageHtml();
     TEST_ASSERT_TRUE(p.find("fetch('/status'") != std::string::npos);   // fills mode/identity/source live
@@ -2020,6 +2027,7 @@ int runUnityTests() {
     RUN_TEST(test_saved_page_has_ssid_and_hints);
     RUN_TEST(test_saved_page_escapes_ssid);
     RUN_TEST(test_app_page_essentials);
+    RUN_TEST(test_webui_css_is_shared);
     RUN_TEST(test_settings_page_essentials);
     RUN_TEST(test_report_page_review_and_send);
     RUN_TEST(test_diag_report);
