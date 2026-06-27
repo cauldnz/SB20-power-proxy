@@ -89,6 +89,19 @@ public:
         calScan_ = scan;
     }
 
+    // Wire the Workout screen (GET /workout page, GET /workout/state JSON, POST /workout/{load,
+    // preset,start,pause,resume,skip,stop}). `state` returns the live cursor JSON; `load` ingests a
+    // workout JSON (true if accepted); `control` dispatches a verb to the runtime. Decoupled from the
+    // engine via hooks; presets are resolved in the route (WorkoutPresets.h) and fed through `load`.
+    using WorkoutStateProvider = std::function<std::string()>;
+    using WorkoutLoadHook = std::function<bool(const std::string& json)>;
+    using WorkoutControlHook = std::function<void(const std::string& action)>;
+    void setWorkoutUi(WorkoutStateProvider state, WorkoutLoadHook load, WorkoutControlHook control) {
+        workoutState_ = state;
+        workoutLoad_ = load;
+        workoutControl_ = control;
+    }
+
     // Call from loop(): services HTTP + OTA (station) or the captive DNS + portal (setup), and
     // promotes to healthy (which cancels the boot-guard and validates the running OTA image).
     void handle();
@@ -104,6 +117,7 @@ private:
     void addConfigRoutes_();     // GET /setup picker + POST /setup/save + GET /setup/scan
     void addCalibrationRoutes_();  // GET /calibrate + POST start/finish/save/cancel + GET scan
     void addRideModeRoute_();    // GET /wifi/off (confirm) + POST /wifi/off (radio down for riding)
+    void addWorkoutRoutes_();    // GET /workout (+ /state) + POST /workout/{load,preset,controls}
     void startPortal_();         // SoftAP + captive DNS + setup routes
     void addLogRoutes_();        // GET /log + /log/on + /log/off (shared by both modes)
     void addForgetRoute_(const char* msg);  // POST /forget: clear creds + reboot (shared by both modes)
@@ -128,6 +142,9 @@ private:
     CalSaveHook calSave_;
     CalSimpleHook calCancel_;
     CalSimpleHook calScan_;
+    WorkoutStateProvider workoutState_;
+    WorkoutLoadHook workoutLoad_;
+    WorkoutControlHook workoutControl_;
     IProvisioningDisplay* display_ = nullptr;
     const char* hostname_ = "sb20proxy";
     std::vector<ScannedNet> networks_;  // APs scanned for the portal picker (RSSI + secured)
