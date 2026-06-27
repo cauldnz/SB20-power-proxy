@@ -34,6 +34,8 @@
 #include "OledScreen.h"
 #include "WebApp.h"
 #include "WorkoutEngine.h"
+#include "WorkoutPresets.h"
+#include "WorkoutRuntime.h"
 
 using namespace sb20proxy;
 
@@ -1469,6 +1471,38 @@ void test_workout_render_json() {
     TEST_ASSERT_TRUE(j.find("\"segments\":[{\"t\":600,\"w\":157") != std::string::npos);  // profile
 }
 
+void test_workout_runtime_clock() {
+    WorkoutRuntime rt;
+    TEST_ASSERT_TRUE(rt.load(parseWorkout(presetJson("4x8"))));
+    TEST_ASSERT_EQUAL_INT(0, (int)rt.elapsedS(5000));            // not started -> 0
+    rt.start(1000);
+    TEST_ASSERT_EQUAL_INT(650, (int)rt.elapsedS(1000 + 650000)); // 650 s in
+    rt.pause(1000 + 650000);
+    rt.resume(1000 + 670000);                                    // 20 s paused
+    TEST_ASSERT_EQUAL_INT(650, (int)rt.elapsedS(1000 + 670000)); // pause removed from elapsed
+    rt.skip(1000 + 670000);                                      // Interval 1 (600..1080) -> Recovery
+    TEST_ASSERT_EQUAL_INT(2, rt.state(1000 + 670000).segIndex);
+    rt.stop();
+    TEST_ASSERT_FALSE(rt.running);
+}
+
+void test_workout_presets_parse() {
+    TEST_ASSERT_EQUAL_INT(4, (int)workoutPresets().size());
+    for (const auto& p : workoutPresets())
+        TEST_ASSERT_TRUE(parseWorkout(p.json).segments.size() > 0);  // every preset is valid JSON
+    TEST_ASSERT_EQUAL_INT(0, (int)presetJson("nope").size());        // unknown key -> ""
+}
+
+void test_workout_page_essentials() {
+    std::string p = workoutPageHtml();
+    TEST_ASSERT_TRUE(p.find("fetch('/workout/state'") != std::string::npos);  // polls the live cursor
+    TEST_ASSERT_TRUE(p.find("/workout/start") != std::string::npos);          // controls
+    TEST_ASSERT_TRUE(p.find("/workout/preset") != std::string::npos);         // preset load
+    TEST_ASSERT_TRUE(p.find(">TARGET<") != std::string::npos);                // the erg target hero
+    TEST_ASSERT_TRUE(p.find("loadPreset('4x8')") != std::string::npos);       // a preset button
+    TEST_ASSERT_TRUE(p.find("class='nav'") != std::string::npos);             // shared bottom nav
+}
+
 void test_report_page_review_and_send() {
     std::string p = diagReportPageHtml();
     TEST_ASSERT_TRUE(p.find("fetch('/diag'") != std::string::npos);   // shows the raw report for review
@@ -2099,6 +2133,9 @@ int runUnityTests() {
     RUN_TEST(test_workout_stepper_golden);
     RUN_TEST(test_workout_parse_malformed_is_empty);
     RUN_TEST(test_workout_render_json);
+    RUN_TEST(test_workout_runtime_clock);
+    RUN_TEST(test_workout_presets_parse);
+    RUN_TEST(test_workout_page_essentials);
     RUN_TEST(test_report_page_review_and_send);
     RUN_TEST(test_diag_report);
     RUN_TEST(test_ride_mode_pages);
