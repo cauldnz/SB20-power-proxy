@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SB20 — Settings v1</title>
+<style>
+:root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--accent:#3b82f6;--line:#1c2334;--chip2:#2a3142}
+*{box-sizing:border-box}
+html,body{width:200px;overflow:hidden}
+body{margin:0;background:#0a0c14;color:var(--fg);font-family:system-ui,-apple-system,sans-serif;padding:9px;display:flex;justify-content:center}
+.dev{box-sizing:border-box;width:182px;margin:0 auto;padding:4px;background:#05070d;border:1px solid rgba(255,255,255,.1);border-radius:18px}
+.scr{width:172px;height:320px;background:var(--bg);color:var(--fg);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.tb{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;font-size:13px;font-weight:500;border-bottom:1px solid var(--line)}
+.tb .v{font-size:11px;font-weight:400;color:var(--mut)}
+.bd{padding:0 10px;flex:1;min-height:0;overflow:hidden}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)}
+.lbl{font-size:13px;white-space:nowrap}
+.right{display:flex;align-items:center;gap:6px;min-width:0}
+.val{font-size:12px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:104px}
+.val.ok{color:var(--ok)}
+.chev{color:var(--mut);font-size:14px;flex-shrink:0}
+.tg{width:32px;height:19px;border-radius:10px;background:var(--chip2);position:relative;flex-shrink:0}
+.tg i{position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:var(--mut)}
+.tg.on{background:rgba(59,130,246,.5)}
+.tg.on i{left:15px;background:var(--accent)}
+.qr{width:15px;height:15px;display:grid;grid-template-columns:repeat(3,1fr);gap:1px;flex-shrink:0}
+.qr i{background:var(--accent);border-radius:1px}
+.qr i.o{background:transparent}
+.foot{text-align:center;font-size:11px;color:var(--mut);padding:7px 0}
+.nav{display:flex;border-top:1px solid var(--line)}
+.nav span{flex:1;text-align:center;padding:8px 0;color:var(--mut);font-size:12px}
+.nav span.on{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="dev"><div class="scr">
+<div class="tb"><span>Settings</span><span class="v">sb20proxy</span></div>
+<div class="bd">
+
+<div class="row"><span class="lbl">Mode</span>
+<span class="right"><span class="val">Crank spoof</span><span class="chev">&#8250;</span></span></div>
+
+<div class="row"><span class="lbl">Identity</span>
+<span class="right"><span class="val">Stages 62144</span><span class="chev">&#8250;</span></span></div>
+
+<div class="row"><span class="lbl">Source</span>
+<span class="right"><span class="val ok">ASSIOMA17039L</span><span class="chev">&#8250;</span></span></div>
+
+<div class="row"><span class="lbl">Wi-Fi in ride</span>
+<span class="right"><span class="val">off</span><span class="tg"><i></i></span></span></div>
+
+<div class="row"><span class="lbl">Send a report</span>
+<span class="right"><span class="val">phone</span><span class="qr"><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i></span><span class="chev">&#8250;</span></span></div>
+
+<div class="row" style="border-bottom:none"><span class="lbl">Firmware</span>
+<span class="right"><span class="val">v0.1.0</span><span class="chev">&#8250;</span></span></div>
+
+</div>
+<div class="foot">sb20proxy.local &middot; 192.168.1.42</div>
+<div class="nav"><span>Ride</span><span>Setup</span><span class="on">More</span></div>
+</div></div>
+</body>
+</html>
