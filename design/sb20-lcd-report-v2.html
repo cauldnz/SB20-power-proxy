@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SB20 — Send a report v2</title>
+<style>
+:root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--accent:#3b82f6;--line:#1c2334;--chip2:#2a3142}
+*{box-sizing:border-box}
+html,body{width:200px;overflow:hidden}
+body{margin:0;background:#0a0c14;color:var(--fg);font-family:system-ui,-apple-system,sans-serif;padding:9px;display:flex;justify-content:center}
+.dev{box-sizing:border-box;width:182px;margin:0 auto;padding:4px;background:#05070d;border:1px solid rgba(255,255,255,.1);border-radius:18px}
+.scr{width:172px;height:320px;background:var(--bg);color:var(--fg);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.tb{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;font-size:12px;color:var(--mut);border-bottom:1px solid var(--line)}
+.bd{padding:9px 10px;display:flex;flex-direction:column;gap:8px;flex:1;min-height:0}
+.note{background:var(--card);border-radius:10px;padding:8px 10px;font-size:12px;color:var(--mut);line-height:1.45}
+.note b{color:var(--fg);font-weight:500}
+.pre{background:#0a0d16;border:1px solid var(--line);border-radius:8px;padding:8px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#9fb0c8;line-height:1.5;flex:1;overflow:hidden}
+.hint{font-size:12px;color:var(--mut);text-align:center}
+.btn{flex:1;text-align:center;padding:10px 0;border-radius:9px;font-size:13px;font-weight:500}
+.bgr{background:var(--card);color:var(--fg)}
+.bp{background:var(--accent);color:#fff}
+.nav{margin-top:auto;display:flex;border-top:1px solid var(--line)}
+.nav span{flex:1;text-align:center;padding:8px 0;color:var(--mut);font-size:12px}
+.nav span.on{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="dev"><div class="scr">
+<div class="tb"><span>&lsaquo; Report</span><span style="color:var(--ok)">&#10003; safe</span></div>
+<div class="bd">
+<div style="font-size:12px;color:var(--mut)">Review what you'll send &middot; <span style="color:var(--ok)">no personal data</span></div>
+<div class="pre">fw=sb20proxy v0.1.0<br>in&nbsp;&nbsp;= ASSIOMA17039L<br>out = Stages 62144<br>flags=0x23 &middot; bal 49/51<br>[frames] 0x2A63<br>&nbsp;23009e0058161334&hellip;<br>&nbsp;23009f005a1a1391&hellip;<br>&nbsp;23009f005c1f1402&hellip;<br>&nbsp;23009f005e231505&hellip;</div>
+<div class="hint">Nothing's sent until you tap.</div>
+<div style="display:flex;gap:8px">
+<span class="btn bgr">Save to SD</span><span class="btn bp">Show QR</span>
+</div>
+</div>
+<div class="nav"><span>Ride</span><span>Setup</span><span class="on">More</span></div>
+</div></div>
+</body>
+</html>
