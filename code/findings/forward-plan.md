@@ -702,3 +702,33 @@ blog-idea note): the assistant runs the session, the rider just pedals.
 
 **Seed:** `code/scripts/ftms_workout.py` (built session 9) is the prototype to refactor behind the MCP server.
 Real-data-first: the FTMS erg path is already byte-validated (session 4; `G-sb20-ftms-erg-*.jsonl`).
+
+## 14. On-device workout engine — structured workout over a route, deterministic execution (owner 2026-06-27)
+
+> **Design captured:** [`on-device-workout-engine.md`](on-device-workout-engine.md). PLANNED — no code yet.
+
+**Idea:** set a structured workout **on the device** via a `/workout` route, persist it, and have the
+**device itself execute it deterministically** (own the clock + the erg setpoint, drive the SB20 over
+FTMS). This is the on-device counterpart to §13's desk/MCP driver, and it's what backs the LCD
+workout/erg screen (`design/sb20-lcd-workout-v1.html`).
+
+**Format decision (the owner's "FIT but binary → JSON" question):** the **on-device canonical format
+is compact JSON, 1:1 with the existing Python `Segment`** (`ride/director.py`) — ArduinoJson parses it,
+the LCD profile chart renders from it, and it earns **golden-vector parity tests against the Python
+director**. **FIT/ZWO are desk-side import formats** (convert with `fitparse` / a ZWO-XML reader in
+`workout/` → emit the JSON → POST). Do NOT parse FIT on the MCU.
+
+**Reuse — do NOT rebuild:** `ride/director.py` (`Segment`/`Workout`/`RidePlan`/`Cursor`/`DirectorState`
+— the reference executor to port), `ride/workouts.py` (Coggan zones), `Ftms.h` + the erg client (the
+target write). The firmware executor is a **pure port** behind the radio seam (host-tested, no board).
+
+**Phases (each = a PR; host-tested in-commit):**
+1. **Desk importers** — `workout/from_zwo()` + `from_fit()` → canonical JSON, against committed sample
+   `.zwo`/`.fit` fixtures (real-data-first); a small exporter from the existing `Workout`.
+2. **Firmware executor** — `firmware/lib/proxy/WorkoutEngine.h` (pure port of `DirectorState`, no
+   radio); golden-vector parity tests vs the Python director.
+3. **Routes + persistence** — `WifiLink` `/workout` GET/POST + `{start,pause,skip,stop}`; persist to
+   flash; pure render/parse host-tested like `ConfigPage.h`.
+4. **Wire to FTMS** — per-segment target → Set-Target-Power; bench-gated (coex on the C3 when stacked
+   on the CPS spoof + WiFi), then the on-bike drive. **Safety:** every stop/disconnect/error resets erg
+   to neutral (the §13 try/finally rule).
