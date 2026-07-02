@@ -33,6 +33,8 @@
 #include "StatusLed.h"
 #include "OledScreen.h"
 #include "WebApp.h"
+#include "LcdCanvas.h"
+#include "LcdUi.h"
 #include "WorkoutEngine.h"
 #include "WorkoutPresets.h"
 #include "WorkoutRuntime.h"
@@ -1503,6 +1505,120 @@ void test_workout_page_essentials() {
     TEST_ASSERT_TRUE(p.find("class='nav'") != std::string::npos);             // shared bottom nav
 }
 
+// --- LCD head-unit UI (the S3-Touch 172x320 screens + tap routing) ------------
+
+static bool lcdPixelPresent(const LcdCanvas& c, uint16_t color) {
+    for (auto p : c.px) if (p == color) return true;
+    return false;
+}
+
+void test_lcd_canvas_geometry_and_text() {
+    LcdCanvas c;
+    TEST_ASSERT_EQUAL_INT(172, LCD_W);
+    TEST_ASSERT_EQUAL_INT(320, LCD_H);
+    TEST_ASSERT_EQUAL_INT((int)(172 * 320), (int)c.px.size());
+    c.fillRect(10, 10, 20, 20, LCD_ACCENT);
+    TEST_ASSERT_EQUAL_UINT16(LCD_ACCENT, c.get(15, 15));
+    TEST_ASSERT_EQUAL_UINT16(LCD_BG, c.get(0, 0));          // outside the rect
+    // text advances by 8*scale per char and lands pixels
+    LcdCanvas t;
+    int w = t.text(0, 0, "AB", 2, LCD_FG);
+    TEST_ASSERT_EQUAL_INT(2 * 8 * 2, w);
+    TEST_ASSERT_TRUE(lcdPixelPresent(t, LCD_FG));
+    // UTF-8 design glyphs are sanitized, not dropped (width stays in sync)
+    TEST_ASSERT_EQUAL_INT(3 * 8, LcdCanvas::textWidth("4\xC3\x97""8", 1));  // "4×8" -> 3 chars
+}
+
+void test_lcd_bmp_header_valid() {
+    LcdCanvas c;
+    auto bmp = lcdCanvasToBmp(c);
+    TEST_ASSERT_TRUE(bmp.size() > 54);
+    TEST_ASSERT_EQUAL_UINT8('B', bmp[0]);
+    TEST_ASSERT_EQUAL_UINT8('M', bmp[1]);
+    TEST_ASSERT_EQUAL_UINT8(24, bmp[28]);  // 24bpp
+    const int rowBytes = ((LCD_W * 3 + 3) / 4) * 4;
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)(54 + rowBytes * LCD_H), (uint32_t)bmp.size());
+}
+
+void test_lcd_render_all_screens_nonblank() {
+    LcdViews v;
+    LcdUiState st;
+    v.ride.srcName = "ASSIOMA"; v.ride.outName = "62144"; v.ride.watts = 247; v.ride.srcOn = true;
+    Workout w = parseWorkout(presetJson("4x8"));
+    v.wk.loaded = true; v.wk.running = true; v.wk.w = &w; v.wk.st = workoutStateAt(w, 900);
+    v.setup.devices = {{"aa", "ASSIOMA", -45, true, false, false}};
+    v.more.mode = "Crank spoof"; v.more.version = "0.1.0";
+    v.cal.state = CalState::Collecting; v.cal.coverage = {8, 6, 8};
+    for (auto scr : {LcdScreen::Ride, LcdScreen::Workout, LcdScreen::Setup, LcdScreen::More,
+                     LcdScreen::Calibrate}) {
+        st.screen = scr;
+        LcdCanvas c;
+        lcdRender(c, st, v);
+        TEST_ASSERT_TRUE(lcdPixelPresent(c, LCD_FG));       // drew some foreground text
+        TEST_ASSERT_TRUE(lcdPixelPresent(c, LCD_ACCENT));   // the active nav tab is accent
+    }
+}
+
+void test_lcd_tap_nav_switches_screen() {
+    LcdUiState st; st.screen = LcdScreen::Ride;
+    LcdViews v;
+    lcdHandleTap(st, v, LCD_W / 2, LCD_H - 8);              // middle tab -> Setup
+    TEST_ASSERT_EQUAL_INT((int)LcdScreen::Setup, (int)st.screen);
+    lcdHandleTap(st, v, LCD_W - 10, LCD_H - 8);             // right tab -> More
+    TEST_ASSERT_EQUAL_INT((int)LcdScreen::More, (int)st.screen);
+    lcdHandleTap(st, v, 10, LCD_H - 8);                     // left tab -> Ride
+    TEST_ASSERT_EQUAL_INT((int)LcdScreen::Ride, (int)st.screen);
+}
+
+void test_lcd_tap_ride_title_toggles_details() {
+    LcdUiState st; st.screen = LcdScreen::Ride; st.rideDetails = false;
+    LcdViews v;
+    lcdHandleTap(st, v, 40, 10);                            // title bar
+    TEST_ASSERT_TRUE(st.rideDetails);
+    lcdHandleTap(st, v, 40, 10);
+    TEST_ASSERT_FALSE(st.rideDetails);
+}
+
+void test_lcd_tap_workout_controls_and_presets() {
+    LcdViews v;
+    LcdUiState st; st.screen = LcdScreen::Workout;
+    // not-loaded -> a preset row loads that preset index
+    v.wk.loaded = false;
+    UiAction a = lcdHandleTap(st, v, 80, lcdlay::PICK_ROW0 + 5);
+    TEST_ASSERT_EQUAL_INT((int)UiAction::WorkoutPreset, (int)a.type);
+    TEST_ASSERT_EQUAL_INT(0, a.index);
+    // running -> the three-button row maps Pause / Skip / Stop
+    Workout w = parseWorkout(presetJson("4x8"));
+    v.wk.loaded = true; v.wk.running = true; v.wk.paused = false; v.wk.w = &w;
+    a = lcdHandleTap(st, v, 10, lcdlay::WK_BTN_Y + 5);
+    TEST_ASSERT_EQUAL_INT((int)UiAction::WorkoutPause, (int)a.type);
+    a = lcdHandleTap(st, v, LCD_W - 10, lcdlay::WK_BTN_Y + 5);
+    TEST_ASSERT_EQUAL_INT((int)UiAction::WorkoutStop, (int)a.type);
+    // not-running -> the single button is Start
+    v.wk.running = false;
+    a = lcdHandleTap(st, v, LCD_W / 2, lcdlay::WK_BTN_Y + 5);
+    TEST_ASSERT_EQUAL_INT((int)UiAction::WorkoutStart, (int)a.type);
+}
+
+void test_lcd_tap_calibrate_roles_and_start() {
+    LcdViews v;
+    v.cal.state = CalState::Idle;
+    v.cal.devices = {{"aa", "XCADEY", -45, true, false, false},
+                     {"bb", "ASSIOMA", -50, true, false, false}};
+    LcdUiState st; st.screen = LcdScreen::Calibrate;
+    // tapping the DUT chip on row 0 picks the DUT
+    UiAction a = lcdHandleTap(st, v, LCD_W - lcdlay::PAD - 60, lcdlay::CAL_ROW0 + 24);
+    TEST_ASSERT_EQUAL_INT((int)UiAction::CalPickDut, (int)a.type);
+    TEST_ASSERT_EQUAL_INT(0, a.index);
+    // the Ref chip on row 1 picks the Ref
+    a = lcdHandleTap(st, v, LCD_W - lcdlay::PAD - 18, lcdlay::CAL_ROW0 + lcdlay::CAL_ROW_H + 24);
+    TEST_ASSERT_EQUAL_INT((int)UiAction::CalPickRef, (int)a.type);
+    TEST_ASSERT_EQUAL_INT(1, a.index);
+    // the big button starts
+    a = lcdHandleTap(st, v, LCD_W / 2, lcdlay::CAL_BTN_Y + 5);
+    TEST_ASSERT_EQUAL_INT((int)UiAction::CalStart, (int)a.type);
+}
+
 void test_report_page_review_and_send() {
     std::string p = diagReportPageHtml();
     TEST_ASSERT_TRUE(p.find("fetch('/diag'") != std::string::npos);   // shows the raw report for review
@@ -2136,6 +2252,13 @@ int runUnityTests() {
     RUN_TEST(test_workout_runtime_clock);
     RUN_TEST(test_workout_presets_parse);
     RUN_TEST(test_workout_page_essentials);
+    RUN_TEST(test_lcd_canvas_geometry_and_text);
+    RUN_TEST(test_lcd_bmp_header_valid);
+    RUN_TEST(test_lcd_render_all_screens_nonblank);
+    RUN_TEST(test_lcd_tap_nav_switches_screen);
+    RUN_TEST(test_lcd_tap_ride_title_toggles_details);
+    RUN_TEST(test_lcd_tap_workout_controls_and_presets);
+    RUN_TEST(test_lcd_tap_calibrate_roles_and_start);
     RUN_TEST(test_report_page_review_and_send);
     RUN_TEST(test_diag_report);
     RUN_TEST(test_ride_mode_pages);

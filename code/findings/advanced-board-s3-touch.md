@@ -1,9 +1,62 @@
 # "Advanced" board idea — Waveshare ESP32-S3-Touch-LCD-1.47
 
-**Status: exploratory planning (2026-06-27).** Owner has one arriving. Idea: an **optional "advanced"
-hardware tier** alongside the shippable [ESP32-C3 0.42" OLED beta board](../../06-prior-art-and-references.md)
-([[esp32-c3-oled-beta-board]] memory). Ideas only — not committed work; grounded in the
-[capability inventory](../../PROJECT-MAP.md) so each reuses what we already have.
+**Status: BUILD STARTED — UI complete + host-tested; on-hardware bring-up BLOCKED (2026-07-02).**
+The full head-unit UI + firmware seam are built and verified in software; the board itself will not
+boot the Arduino image (see §"Bring-up status" below). Prior: exploratory planning (2026-06-27) —
+an **optional "advanced" hardware tier** alongside the shippable [ESP32-C3 0.42" OLED beta
+board](../../06-prior-art-and-references.md) ([[esp32-c3-oled-beta-board]] memory).
+
+## Bring-up status (2026-07-02) — the blocker + exactly what was tried
+
+**What's DONE (software, all verified):**
+- **PlatformIO env** `esp32s3-touch` (+ `-live`, `-live-bench`, `-ota`) — compiles + flashes clean
+  (~1.16 MB image). Pin map from the board BSP: LCD **JD9853** 172×320 on SPI2 (MOSI 39 / SCLK 38 /
+  CS 21 / DC 45 / RST 40 / BL 46, INVON, col-offset 34); touch **AXS5106** on I²C (SDA 42 / SCL 41,
+  RST 48 / INT 47, addr 0x63).
+- **The whole head-unit UI as pure, host-tested code:** `lib/proxy/LcdCanvas.h` (RGB565 + 8×8 font +
+  BMP encode), `LcdFont.h` (generated from the public-domain font8x8), `LcdUi.h` — the **5 locked
+  screens** (Ride / Workout / Setup / More / Calibrate) + tap hit-testing → typed `UiAction`s.
+  **7 host tests** (`test_lcd_*`), and **all 5 screens rendered to PNG and visually confirmed**
+  (design/render or the scratchpad ui_*.png).
+- **Hardware seam** `src/disp/LcdDisplay.h` (JD9853 init table + SPI blit + AXS5106 read), `main.cpp`
+  `lcdTask` (render on core 1 + touch) + a **USB-serial bench console** (`SCREEN` / `TAP x y` /
+  `STATE`) and `code/scripts/bench_s3.py` to drive it headless.
+
+**The blocker:** the Arduino image **hangs before `setup()` runs** on this board. Reproduced on the
+**minimal base proxy** (`esp32s3-min`: no LCD, no WiFi — near-identical to the working C3 firmware)
+→ so it is a **board / Arduino-core issue, not our UI code**. Symptoms: no BLE crank advert (base MAC
+`a4:cb:8f:da:e9:cc`), no app serial, and **NVS never written** (empty `sb20perf/reboots` +
+`bootstage`) = setup()'s first lines never run.
+
+**Ruled out** (each rebuilt + reflashed + checked for the crank advert):
+static-init framebuffer (now lazy-allocated), PSRAM (`BOARD_HAS_PSRAM` removed — S3R8 octal PSRAM
+isn't mapped during C++ static init), flash mode (`dio` and `qio`), the LCD code entirely (minimal
+build), and USB-CDC-on-boot (`CDC_ON_BOOT=0`). None boot.
+
+**Why it's hard to crack blind:** the board's **native-USB serial is flaky** (a documented project
+gotcha — we read the C3 over HTTP for this reason), and even the ROM/USB-Serial-JTAG boot log never
+reached the host, so there's **no panic backtrace** to read.
+
+**NEXT STEP (needs a human at the bench):**
+1. **Get the panic.** Solder/clip a 3.3 V USB-UART to **GPIO43 (U0TXD)** + GND and monitor at
+   115200 — the ROM + panic backtrace come out UART0 regardless of the USB weirdness. That one line
+   almost certainly names the fault.
+2. **Or switch toolchain.** The known-good reference for THIS board
+   (`miguelgarcia/waveshare-ESP32-S3-Touch-LCD-1.47-espidf-platform-template`) is **ESP-IDF**, and
+   uses `qio_opi` + `flash_mode=qio` + `psram_type=opi`. Our `platform = espressif32@~6.7.0`
+   (Arduino core 2.0.x / IDF 4.4) may be too old for this S3 module — try the **pioarduino** platform
+   (Arduino 3.x / IDF 5.x) for the S3 env, or an ESP-IDF build.
+3. To re-run the diagnostic: `pio run -e esp32s3-min -t upload --upload-port COM16`, then
+   `python <scratchpad>/readboot.py` reads how far `setup()` got from NVS `bootstage`.
+
+**Where the code is:** `firmware/lib/proxy/{LcdCanvas,LcdUi,LcdFont}.h`, `firmware/src/disp/LcdDisplay.h`,
+the `#if USE_LCD` blocks in `firmware/src/main.cpp`, `code/scripts/bench_s3.py`. The pure layer is
+CI-green; nothing here blocks the C3 path.
+
+---
+
+Idea (original 2026-06-27 planning below): not committed as a product — grounded in the
+[capability inventory](../../PROJECT-MAP.md) so each feature reuses what we already have.
 
 ## The board (verified spec — waveshare.com / wiki)
 **ESP32-S3R8:** dual-core Xtensa LX7 @ 240 MHz · **8 MB PSRAM · 16 MB flash** · **1.47" capacitive-touch
