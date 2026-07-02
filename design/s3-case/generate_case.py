@@ -27,20 +27,19 @@ import adsk.core, adsk.fusion, os, traceback
 
 # ---- EDIT THESE (mm) -------------------------------------------------------------------------
 P = dict(
-    # PCB (Waveshare drawing — verify with calipers)
-    board_w=24.5, board_l=39.0, board_t=1.6, lcd_off_y=0.0,
-    # 4x M2 holes / standoffs, XY from board centre (+Y = USB/top edge)
-    hx_top=8.89, hx_bot=8.50, hy=12.70,
-    # rear stack (owner-measured)
-    header_clear=8.0,      # rear header pin height off the PCB back  -> cavity depth under the board
+    # PCB — EXACT from the Waveshare STEP model (BOARD body): 24.06 x 44.01 x 1.2 mm.
+    board_w=24.1, board_l=44.0, board_t=1.2,
+    lcd_off_y=-1.2,        # STEP: display module centre is 1.2 mm toward the USB (-Y) end
+    # 4x M2 holes / standoffs — EXACT from the STEP (HEX_STUDS at (+/-8.50, +/-19.50)); near the ends.
+    hx_top=8.50, hx_bot=8.50, hy=19.50,
+    # rear stack — STEP: header male pins reach ~9 mm below the PCB back; brass M2 standoffs are H4.
+    header_clear=9.0,      # cavity depth under the board (enclose the 9 mm pins). Set ~2 if you CUT the pins.
     standoff_h=4.0,        # brass female M2 standoff height (already on the board back)
-    pillar_od=4.0,         # printed pillar OD — kept slim: the header rows run the full side edges,
-                           #   so a fat pillar at a corner hole would foul the nearest header pin.
-    m2_clear=2.3,          # screw shank clearance through pillar+floor
-    m2_head=4.2, head_depth=1.6,   # counterbore for the M2 button head on the OUTSIDE of the case back
-    # buttons (from the Waveshare interface diagram): BOOT is top-LEFT, RST is top-RIGHT, both near the
-    #   USB (top) edge. So one slot on each side wall, up near the USB end. VERIFY actuation dir on the board.
-    btn_left_y=-13.5, btn_right_y=-13.5, btn_w=3.5, btn_h=2.8,   # -Y is the USB/top edge here
+    pillar_od=4.0,         # slim: header columns run x~+/-8.9 down both sides; a fat pillar would foul them
+    m2_clear=2.3, m2_head=4.2, head_depth=1.6,   # M2 screw clearance + button-head counterbore (case back)
+    # buttons — STEP: two SWITCHER-4.5x3.3 at (+/-9.56, -14.50) on the BACK face (they actuate toward -Z).
+    #   So access is a hole in the FLOOR under each (poke with a tool / printed plunger), NOT a side slot.
+    btn_x=9.56, btn_y=-14.5, btn_hole=3.0,
     # fits / walls
     fit=0.35, bez_fit=0.30, wall=2.0, floor_t=1.5, front_clear=2.4,
     usb_w=10.0, usb_h=4.2, corner_r=2.5,
@@ -145,15 +144,10 @@ def run(_ctx=None):
             adsk.core.Point3D.create((-P['usb_w'] / 2) * M, (-(outer_l / 2 + 1)) * M, 0),
             adsk.core.Point3D.create((P['usb_w'] / 2) * M, (-(inner_l / 2 - 0.2)) * M, 0))
         ext(back, u.profiles.item(0), -(shell_h - usb_bottom), CUT)
-        # button slots: BOOT on the left (-X) wall, RST on the right (+X) wall, near the USB (-Y) end.
-        btn_bottom = board_back + bt / 2 - P['btn_h'] / 2
-        for (side, by) in ((-1, P['btn_left_y']), (+1, P['btn_right_y'])):
-            s = back.sketches.add(plane_at(back, shell_h))
-            x0, x1 = (-(outer_w / 2 + 1), -(inner_w / 2 - 0.2)) if side < 0 else (inner_w / 2 - 0.2, outer_w / 2 + 1)
-            s.sketchCurves.sketchLines.addTwoPointRectangle(
-                adsk.core.Point3D.create(x0 * M, (by - P['btn_w'] / 2) * M, 0),
-                adsk.core.Point3D.create(x1 * M, (by + P['btn_w'] / 2) * M, 0))
-            ext(back, s.profiles.item(0), -(shell_h - btn_bottom), CUT)
+        # button access: BOOT/RST actuate off the BACK face (STEP), so a hole through the floor under
+        # each — poke with a tool, or drop in a printed plunger.
+        for bx in (P['btn_x'], -P['btn_x']):
+            ext(back, circle(back, back.xYConstructionPlane, bx, P['btn_y'], P['btn_hole']), floor_t + 0.3, CUT)
         fillet_corners(back, outer_w / 2, outer_l / 2, P['corner_r'])
 
         # ---------------- Bezel_Front ----------------
