@@ -15,9 +15,12 @@ v3 (2026-07-03): mounting reworked for the REAL hardware (owner):
   * **4 mm female M2 brass standoffs** already fitted in the mounting holes (back side)  -> 4 mm printed
     pillars make up the gap (8 - 4); M2 button-head screw from the case back into each standoff (~M2x8).
   * headers + standoffs are on the BACK (non-screen side).
+v4 (same day): button + pillar layout corrected from the Waveshare **Interface Introduction** diagram —
+BOOT is top-LEFT, RST is top-RIGHT (both by the USB), and the header rows run the FULL length of both
+side edges, so the corner pillars are kept slim (4 mm) to avoid fouling the nearest header pin.
 This makes the case ~13–14 mm thick (the 8 mm headers dominate). Display window is exact (LBS147TC-IF15).
-STILL CONFIRM from a back-side photo: the M2 hole XY (hx_*/hy), the header footprint (so the pillars
-don't clash with a header block), the button positions (btn_*), and the exact standoff height.
+STILL CONFIRM on the real board: whether BOOT/RST actuate sideways (through the wall slots) or off the
+back face; the exact standoff height; and that the slim pillars clear your header pins.
 Print bezel window-down, tray open-up; PLA/PETG, 0.2 mm, 3 perimeters.
 """
 import adsk.core, adsk.fusion, os, traceback
@@ -31,11 +34,13 @@ P = dict(
     # rear stack (owner-measured)
     header_clear=8.0,      # rear header pin height off the PCB back  -> cavity depth under the board
     standoff_h=4.0,        # brass female M2 standoff height (already on the board back)
-    pillar_od=5.2,         # printed pillar OD (must seat the brass standoff foot)
+    pillar_od=4.0,         # printed pillar OD — kept slim: the header rows run the full side edges,
+                           #   so a fat pillar at a corner hole would foul the nearest header pin.
     m2_clear=2.3,          # screw shank clearance through pillar+floor
     m2_head=4.2, head_depth=1.6,   # counterbore for the M2 button head on the OUTSIDE of the case back
-    # buttons — NOT dimensioned in the drawing; a GUESS on the left (-X) wall. VERIFY from a photo.
-    btn_on='left', btn1_y=-9.0, btn2_y=-14.0, btn_w=3.5, btn_h=2.6,
+    # buttons (from the Waveshare interface diagram): BOOT is top-LEFT, RST is top-RIGHT, both near the
+    #   USB (top) edge. So one slot on each side wall, up near the USB end. VERIFY actuation dir on the board.
+    btn_left_y=-13.5, btn_right_y=-13.5, btn_w=3.5, btn_h=2.8,   # -Y is the USB/top edge here
     # fits / walls
     fit=0.35, bez_fit=0.30, wall=2.0, floor_t=1.5, front_clear=2.4,
     usb_w=10.0, usb_h=4.2, corner_r=2.5,
@@ -140,12 +145,11 @@ def run(_ctx=None):
             adsk.core.Point3D.create((-P['usb_w'] / 2) * M, (-(outer_l / 2 + 1)) * M, 0),
             adsk.core.Point3D.create((P['usb_w'] / 2) * M, (-(inner_l / 2 - 0.2)) * M, 0))
         ext(back, u.profiles.item(0), -(shell_h - usb_bottom), CUT)
-        # two side button slots (open-top). VERIFY positions.
+        # button slots: BOOT on the left (-X) wall, RST on the right (+X) wall, near the USB (-Y) end.
         btn_bottom = board_back + bt / 2 - P['btn_h'] / 2
-        for by in (P['btn1_y'], P['btn2_y']):
+        for (side, by) in ((-1, P['btn_left_y']), (+1, P['btn_right_y'])):
             s = back.sketches.add(plane_at(back, shell_h))
-            x0 = (inner_w / 2 - 0.2) if P['btn_on'] == 'right' else -(outer_w / 2 + 1)
-            x1 = (outer_w / 2 + 1) if P['btn_on'] == 'right' else -(inner_w / 2 - 0.2)
+            x0, x1 = (-(outer_w / 2 + 1), -(inner_w / 2 - 0.2)) if side < 0 else (inner_w / 2 - 0.2, outer_w / 2 + 1)
             s.sketchCurves.sketchLines.addTwoPointRectangle(
                 adsk.core.Point3D.create(x0 * M, (by - P['btn_w'] / 2) * M, 0),
                 adsk.core.Point3D.create(x1 * M, (by + P['btn_w'] / 2) * M, 0))
