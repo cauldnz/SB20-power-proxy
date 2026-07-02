@@ -2115,3 +2115,15 @@ The findings that matter most for us:
   log via `<scratchpad>/capture_s3_boot.py`. Native host suite still green (177) + C3 `esp32c3-oled-live`
   still compiles (monocypher manifest + WiFiClient include are no-ops on the old platform). Full write-up:
   [`advanced-board-s3-touch.md`](advanced-board-s3-touch.md) §"Bring-up RESOLVED".
+
+## 2026-07-03 — S3 live meter-read validated via digital twin (no bike needed).
+- Closed the "S3 live read untested" gap using the existing bench rig instead of the Assioma: flashed
+  **`esp32s3-pio-live-bench`** (reads any CPS, `-DMETER_MATCH_ANY_CPS=1`) and ran the WinRT
+  **`fake_meter.py --watts 200 --steady`** (200 W / 85 rpm CPS peripheral). The S3 **scanned, connected,
+  subscribed** (fake_meter logged `subscribers=1`) and its serial `STATE` reported **`power:200, cad:85`**
+  — the full live BLE central path (scan → connect → decode CPS → display) works on the S3 on the
+  pioarduino platform, same as the C3. Board reflashed to ride-safe **`esp32s3-pio-live`** (ASSIOMA-only)
+  after. Note: could/should have done this the first night (had the twin + the nRF52840) — owner feedback,
+  see [[try-newer-toolchain-early]] sibling lesson: use the digital twin to test protocol paths off-bike.
+- The remaining S3 unknowns are on-bike only: the real Assioma pair + the SB20 accepting the S3's spoofed
+  crank (the rebroadcast path is the same code the C3 proved).
