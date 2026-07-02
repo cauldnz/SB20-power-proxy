@@ -44,6 +44,22 @@ PLA/PETG, 0.2 mm, 3 perimeters. Tray open-side up, bezel window-down (no support
 for the board slip fit and `pillar_od`/`m2_clear` for the standoff + screw. Print the **bezel first** as a
 cheap fit-check.
 
+## Prior art (compared 2026-07-03) — and why this is parked
+Two proven MakerWorld cases fit this exact board (the S3 shares the C6's form factor):
+- **"…C6-Touch-LCD-1.47 Case"** (`user_283131238`, ~457 dl, 5.0★) — *"Should also fit the …ESP32-S3…"*.
+  **Slim** because it's *"with cut-out for gpio"* (it does **not** enclose the headers) + a button hole.
+  Publishes a **FreeCAD** source.
+- **"…C6-Touch-LCD-1.47 (Headerless)"** (`altuntas`, ~164 dl, 4.8★, *"fits like a glove"*) — slimmest;
+  its notes say it *"requires 4 pieces of M2×8 (Hex Socket Head) screws"* — i.e. **the exact
+  screw-into-standoff mount this design uses.**
+
+Takeaways: (1) the **M2×8 standoff-screw mount here is right** (independently confirmed); (2) this design
+**over-encloses the 9 mm headers → ~14 mm** — the proven approach is **slim/headerless** (cut the breakout
+pins, `header_clear≈2` → ~7–8 mm). For a *generic* enclosure the MakerWorld cases are print-ready; **this
+repo's value is the STEP-accurate parametric generator** as a base for a *bike-specific* case (bar/GoPro
+mount) later. **Parked at v5** (owner call, 2026-07-03) — the accurate board reference + generator are the
+keeper.
+
 ## Left for the real board / a test print
 - Confirm BOOT/RST really actuate off the back (STEP says so) — if side-actuated, switch to wall slots.
 - Verify the slim pillars clear the header pins, and the bezel fit.
