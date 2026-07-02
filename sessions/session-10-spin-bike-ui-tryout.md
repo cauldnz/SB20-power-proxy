@@ -17,10 +17,11 @@ handoff below).
   shows the IP once joined.)*
 - Your **power meter** (Assioma) on the spin bike, **phone**, and the **SB20** (or the spin bike's head).
 
-> ⚠️ **The S3-Touch head-unit is a parallel track and is NOT ready.** Its firmware + full UI are built
-> and host-tested, but the board won't boot the image yet. Do **not** rely on it for this ride. Next
-> step to unblock it: [`advanced-board-s3-touch.md`](../code/findings/advanced-board-s3-touch.md)
-> §"Bring-up status" (a UART on GPIO43 for the panic, or the pioarduino/IDF-5 platform).
+> ℹ️ **The S3-Touch head-unit is a parallel track — now bench-working, but still not part of THIS ride.**
+> As of 2026-07-03 the board **boots + renders the full UI + touch works** on the **pioarduino (IDF 5.5)**
+> platform (`esp32s3-pio` env; all 5 screens captured live off the panel; BLE spoof up). It is **not yet
+> ridden on the bike** — the C3-OLED + phone remains the proven ride path for this session. S3 write-up:
+> [`advanced-board-s3-touch.md`](../code/findings/advanced-board-s3-touch.md) §"Bring-up RESOLVED".
 
 ## Pre-flight (off the bike — the gate; don't pedal until green)
 1. Power the C3-OLED board. The OLED shows **Connecting → its IP** (it rejoins your saved WiFi).
@@ -60,5 +61,6 @@ handoff below).
 - **Went well:**
 - **Went wrong / slow / confusing (+ root cause):**
 - **Changes before next session (process / run-sheet / tooling):**
-- **Next gate:** unblock the S3-Touch head-unit (UART-on-GPIO43 panic capture) so the touch UI can
-  replace the phone.
+- **Next gate:** ~~unblock the S3-Touch head-unit~~ **DONE 2026-07-03** — S3 boots + full touch UI works on
+  the pioarduino platform (bench-verified). Next S3 gate: an `esp32s3-pio-live` build reading the real
+  Assioma, then ride it on the bike as a head-unit alternative to the phone.

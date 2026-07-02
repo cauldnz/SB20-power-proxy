@@ -1,0 +1,9 @@
+{
+  "name": "monocypher",
+  "version": "4.0.2",
+  "description": "Vendored Monocypher (Ed25519) — signed-OTA manifest verification (lib/proxy OtaVerify.h). No manifest existed, so plain-`deep` LDF (needed for the S3 pioarduino build; deep+ mis-resolves Arduino-3.x WiFi) couldn't auto-discover this flat-layout lib. This makes it explicit.",
+  "license": "CC0-1.0",
+  "build": {
+    "flags": ["-I."]
+  }
+}

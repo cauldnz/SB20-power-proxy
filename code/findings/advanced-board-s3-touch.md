@@ -1,12 +1,52 @@
 # "Advanced" board idea — Waveshare ESP32-S3-Touch-LCD-1.47
 
-**Status: BUILD STARTED — UI complete + host-tested; on-hardware bring-up BLOCKED (2026-07-02).**
-The full head-unit UI + firmware seam are built and verified in software; the board itself will not
-boot the Arduino image (see §"Bring-up status" below). Prior: exploratory planning (2026-06-27) —
-an **optional "advanced" hardware tier** alongside the shippable [ESP32-C3 0.42" OLED beta
+**Status: ✅ BOOTS + ADVERTISES (2026-07-02, evening) — bring-up UNBLOCKED via the pioarduino platform.**
+The full head-unit UI + firmware seam are built and host-tested; the board now **boots the firmware
+and advertises the Stages crank on air** after switching the S3 off the stock Arduino-2.0.x/IDF-4.4
+core (whose 2nd-stage bootloader crash-looped on this module) onto **pioarduino 55.03.39
+(Arduino 3.3.9 / IDF 5.5.4)**. See §"Bring-up RESOLVED" below; the older §"Bring-up status" is kept as
+the diagnosis trail. Prior: exploratory planning (2026-06-27) — an **optional "advanced" hardware
+tier** alongside the shippable [ESP32-C3 0.42" OLED beta
 board](../../06-prior-art-and-references.md) ([[esp32-c3-oled-beta-board]] memory).
 
-## Bring-up status (2026-07-02) — the blocker + exactly what was tried
+## Bring-up RESOLVED (2026-07-02 pm) — pioarduino (Arduino 3.x / IDF 5.5) boots it
+
+**Root cause:** the stock `platform = espressif32@~6.7.0` (Arduino core 2.0.17 / **IDF 4.4**) ships a
+2nd-stage bootloader too old for this S3 module. The ROM handed off to it (`entry 0x403c98d0`) and it
+**reset before printing its own banner** — `rst:0x3 RTC_SW_SYS_RST` (DIO) / `rst:0x7 TG0WDT_SYS_RST`
+(QIO), across every flash-mode/freq combo (DIO/QIO × 80/40 MHz) and on a minimal base sketch. Not a
+flash-tuning problem — a **core/bootloader-version** problem. (This corrects the earlier "hangs before
+setup()" reading: a boot log captured by holding serial open across a physical RESET showed the crash
+is in the **2nd-stage bootloader**, before the app is even loaded.)
+
+**Fix:** new PlatformIO envs on the **pioarduino** platform —
+`platform = https://github.com/pioarduino/platform-espressif32/releases/download/55.03.39/platform-espressif32.zip`
+(Arduino 3.3.9 / IDF 5.5.4, modern S3 bootloader). Envs: **`esp32s3-pio-min`** (minimal DIAG probe)
+and **`esp32s3-pio`** / `-live` / `-live-bench` / `-ota` (full LCD UI). First boot log (esp32s3-pio-min):
+`[sb20proxy] BLE crank proxy starting` → `[diag] alive 0..7 heap=286584` → `NimBLE-init done` →
+`spoofing as 'Stages 62144'`; **0 boot-loops**; BLE scan sees **`A4:CB:8F:DA:E9:CD` = "Stages 62144"**
+(RSSI −46, CPS + Stages services).
+
+**Four migration gotchas (all fixed in-repo):**
+1. **Toolchain install fails under Git-Bash/MSYS** ("MSys/Mingw is not supported" — leaves an empty,
+   binary-less `toolchain-xtensa-esp-elf`). **Run all pioarduino `pio` commands from native PowerShell**
+   via the penv: `& "$env:USERPROFILE\.platformio\penv\Scripts\python.exe" -m platformio run -e … `.
+2. **Arduino 3.x WiFi split** → `fatal error: Network.h: No such file` under the global `deep+` LDF
+   (espressif/arduino-esp32#9782 — the `+` variants evaluate preprocessor conditionals and mis-resolve
+   the bundled framework libs). Fix: **`lib_ldf_mode = deep`** (no `+`) on the S3 pio envs.
+3. Plain `deep` won't auto-discover the flat-layout, manifest-less **`lib/monocypher`** → added a
+   minimal `lib/monocypher/library.json` and an explicit `symlink://lib/monocypher` in `lib_deps`.
+4. `WiFiClient` no longer transitively included → added `#include <WiFiClient.h>` to `src/net/OtaPull.cpp`;
+   the LEDC backlight in `src/disp/LcdDisplay.h` ported to the 3.x pin-based API behind
+   `#if ESP_ARDUINO_VERSION_MAJOR >= 3` (`ledcAttach`/`ledcWrite(pin,…)`).
+
+**Flash the S3 (native USB-JTAG, COM16):** the USB-JTAG drops the stub at 460800 (same as the C3), so
+`pio -t upload` (which uses 460800) hangs at connect. **Flash the merged image at a safe baud instead:**
+`python -m esptool --chip esp32s3 --port COM16 --baud 115200 --before default_reset --after hard_reset
+write_flash --flash_size 16MB 0x0 .pio/build/esp32s3-pio/firmware.factory.bin`. Boot log via
+`<scratchpad>/capture_s3_boot.py` (resets + holds serial open, since auto-reset is unreliable).
+
+## Bring-up status (2026-07-02) — the blocker + exactly what was tried [SUPERSEDED by the section above]
 
 **What's DONE (software, all verified):**
 - **PlatformIO env** `esp32s3-touch` (+ `-live`, `-live-bench`, `-ota`) — compiles + flashes clean
