@@ -5,6 +5,7 @@ firmware). Designed in Fusion 360; parametric generator + STLs here.
 
 ![assembled](render-assembled.png)
 ![exploded](render-exploded.png)
+![layout](render-layout.png)
 ![underside](render-underside.png)
 
 ## How it mounts (v3 — built around the real hardware)
@@ -17,6 +18,9 @@ non-screen side), so:
   pillar, into each female standoff. ~**M2 × 8 mm**, ×4.
 - The **bezel** press-fits into the front and frames the display (two-level window — underside recess
   clears the raised glass, top opening exposes just the active area).
+- **Buttons** (from the Waveshare interface diagram): **BOOT top-left, RST top-right**, both by the USB —
+  so there's a slot in each side wall up at the USB end. The header rows run the **full length of both
+  side edges**, so the corner pillars are kept **slim (4 mm)** to avoid fouling the nearest header pin.
 
 Because the 8 mm headers are enclosed, the case is ~**13.5 mm** thick. If you'd rather it were slimmer,
 either clip the headers and drop `header_clear`, or ask for a back-cutout variant.
@@ -33,12 +37,13 @@ either clip the headers and drop `header_clear`, or ask for a back-cutout varian
 | PCB ≈ **24.5 × 39 × 1.6 mm** | Waveshare drawing | good — caliper |
 | 4× M2 holes — top 17.78 / bottom 17.00 apart, 25.40 vertical | Waveshare drawing | good — confirm XY |
 | Rear headers **8 mm**, 4 mm female M2 standoffs, both on the **back** | owner-measured | **given** |
-| **Header footprint / position** (must not clash with the corner pillars) | — | **verify from a back photo** |
-| **Button (BOOT/RESET) positions** | not dimensioned | **guess — must verify** |
+| Buttons: **BOOT top-left, RST top-right**, header rows down **both** side edges | Waveshare interface diagram | good |
+| **Button actuation direction** (side-actuated through the wall slots vs. off the back face) | — | **check on the board** |
+| **Slim pillars clear the header pins** at the corners | — | **check on the board / a test print** |
 
-So before printing: from a **back-side photo** confirm the M2 hole XY (`hx_top/hx_bot/hy`), that the
-**header block doesn't sit where a pillar is**, and the **button positions** (`btn1_y/btn2_y/btn_on`).
-Then edit `P{}` in [`generate_case.py`](generate_case.py) and re-run.
+So before printing, on the real board confirm: whether **BOOT/RST press sideways** (the wall slots work)
+or off the **back** (then they need back-face access instead); the **standoff height**; and that the 4 mm
+pillars don't touch a header pin. Then edit `P{}` in [`generate_case.py`](generate_case.py) and re-run.
 
 ## Regenerate
 Fusion 360 → **Utilities ▸ Scripts and Add-Ins ▸ Scripts ▸ +** → add [`generate_case.py`](generate_case.py)
