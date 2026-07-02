@@ -16,6 +16,7 @@ struct SourceCandidate {
     int rssi = -100;       // dBm, closer to 0 = stronger
     bool isCps = false;    // advertises Cycling Power Service 0x1818
     bool isStagesCrank = false;  // name starts with "Stages " (a native crank)
+    bool isFtms = false;   // advertises Fitness Machine Service 0x1826 (an erg-able trainer)
 };
 
 // Add/refresh one scanned device in a bounded candidate list, in place. Dedups by address (keeps
@@ -30,6 +31,7 @@ inline void addCandidate(std::vector<SourceCandidate>& list, const SourceCandida
             if (e.name.empty() && !c.name.empty()) e.name = c.name;
             e.isCps = e.isCps || c.isCps;
             e.isStagesCrank = e.isStagesCrank || c.isStagesCrank;
+            e.isFtms = e.isFtms || c.isFtms;
             return;
         }
     }
@@ -57,6 +59,9 @@ inline std::vector<SourceCandidate> dedupeAndSortSources(const std::vector<Sourc
             if (e.address == d.address) {
                 if (d.rssi > e.rssi) e.rssi = d.rssi;
                 if (e.name.empty()) e.name = d.name;
+                e.isCps = e.isCps || d.isCps;
+                e.isStagesCrank = e.isStagesCrank || d.isStagesCrank;
+                e.isFtms = e.isFtms || d.isFtms;
                 merged = true;
                 break;
             }

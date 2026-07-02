@@ -2049,3 +2049,29 @@ The findings that matter most for us:
 - **Torque = mass·9.81·crank-length**; crank length scales power (±5 % is the de-facto user cal); zero-reset
   is a torque *offset* (Nm), not a calibration, and the crank auto-zeros at rest. **FTMS connection limit = 2.**
 - Tools GearView/BattView are iOS dashboard/battery apps — no protocol/RE content.
+
+## 2026-07-02 — S3-Touch head-unit: UI built + host-tested; on-hardware bring-up BLOCKED. C3-OLED reflashed for the ride.
+- **Two new boards arrived + identified:** Waveshare **ESP32-S3-Touch-LCD-1.47** (esptool: ESP32-S3, 8 MB
+  PSRAM, base MAC `a4:cb:8f:da:e9:cc`, on **COM16**); a second AliExpress board couldn't be identified
+  (listing not fetchable; enumerated as a generic "General UDisk" mass-storage + a code-43 device — likely
+  a bad/charge-only cable). C3-OLED bike board = **COM9** (`38:44:be:45:e9:a4`), nRF sniffer = COM13.
+- **S3 head-unit UI = DONE in software, verified.** `firmware/lib/proxy/{LcdCanvas,LcdUi,LcdFont}.h`: pure
+  172×320 RGB565 UI — the **5 locked screens** (Ride/Workout/Setup/More/Calibrate) + tap→`UiAction`
+  routing; **7 host tests** (`test_lcd_*`, 177 total green) and **all 5 screens rendered to PNG + eyeballed**
+  (`design/render/s3-lcd-*.png`). Seam `src/disp/LcdDisplay.h` (JD9853 SPI 172×320 col-offset 34 + AXS5106
+  touch @0x63, pin map from the board BSP) + `main.cpp` `lcdTask` + a USB-serial bench console + `bench_s3.py`.
+- **BLOCKER — the S3 won't boot the Arduino image.** Hangs before `setup()` on EVERY S3 build incl. the
+  **minimal base proxy** (`esp32s3-min`, ~identical to the working C3) → **board/Arduino-core issue, not
+  our code**. No BLE advert, no serial, empty NVS. **Ruled out:** static-init framebuffer (now lazy), PSRAM
+  (`BOARD_HAS_PSRAM` removed — octal PSRAM unmapped during static init), flash-mode dio/qio, the LCD code,
+  USB-CDC-on-boot. The board's **native-USB serial is flaky** (documented) and even the ROM/JTAG boot log
+  never reached the host → no panic backtrace. **NEXT:** UART on **GPIO43 (U0TXD)** for the panic, or the
+  **pioarduino (IDF 5.x)** platform (our `espressif32@~6.7.0` = IDF 4.4 may be too old for this module). The
+  known-good reference is ESP-IDF (`miguelgarcia/…espidf-platform-template`, `qio_opi`+`flash_mode=qio`).
+  Full write-up: [`advanced-board-s3-touch.md`](advanced-board-s3-touch.md) §"Bring-up status".
+- **Ride path for the morning = C3-OLED + phone UI (WORKS).** Reflashed COM9 to current `main`
+  (`esp32c3-oled-live`): verified back up — crank advert `Stages 62145` (−36 dBm), WiFi reachable, `/status`
+  carries the new `identity`/`mode`, `/more` (Settings) serves, and POST `/workout/preset?key=4x8` loaded the
+  9-segment workout. Run-sheet: [`session-10-spin-bike-ui-tryout.md`](../../sessions/session-10-spin-bike-ui-tryout.md).
+- **Guardrail note:** an attempt to auto-materialise the WiFi password from the C3's NVS dump (to seed the
+  S3's `wifi_secret.h`) was correctly blocked; pivoted to a credential-free USB-serial bench instead.
