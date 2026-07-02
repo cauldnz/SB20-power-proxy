@@ -57,6 +57,23 @@ handoff below).
 - Note anything that looked wrong on the real phone (font sizes, truncation, taps) — those are
   desk-fixable (the render/parse is host-tested) → a follow-up PR.
 
+## 🧪 Stretch — try the S3-Touch head-unit on the bike (EXPERIMENTAL, optional)
+The **S3-Touch board (COM16)** is now flashed with **`esp32s3-pio-live`** and, at the bench, **boots,
+advertises `Stages 62144`, and its 172×320 touch UI works** (all 5 screens + tap nav verified). It's
+configured to read your **Assioma** (`source=ASSIOMA`). What is **NOT yet tested:** the live Assioma
+connection (no meter at the desk) and on-bike SB20 pairing — so treat this as an experiment, **not** the
+proven path (the C3 + phone above is that).
+- **To try it:** power the S3 near the bike. On the panel's **Ride** screen, pedal — if it connects to the
+  Assioma, POWER should track and the IN→OUT title shows Assioma → Stages. Pair the SB20 to `Stages 62144`
+  exactly as with the C3 (session 8/9 rules). Walk the 5 screens by tapping (**Ride/Setup/More**, then
+  **More → Workout / Calibrate**).
+- **The physical panel is the ground truth** — the bench serial-screenshot tool corrupts the 220 KB frame
+  under BLE-scan contention (oversized BMP), so trust your eyes, not a bench capture.
+- **Reflash / recover:** `python code/scripts/flash_s3.py --env esp32s3-pio-live --port COM16`
+  (or `--env esp32s3-pio` for the mock-data demo build). Boots in ~3 s; advert confirms it's up.
+- **If it misbehaves**, no problem — fall back to the C3 + phone. Note what the panel showed (power not
+  tracking? screen glitch? touch dead?) → a desk follow-up (render/parse is host-tested).
+
 ## Retro (fill in at the end — [`PLAYBOOK.md`](PLAYBOOK.md) §4)
 - **Went well:**
 - **Went wrong / slow / confusing (+ root cause):**
