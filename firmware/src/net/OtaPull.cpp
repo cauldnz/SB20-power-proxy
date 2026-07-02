@@ -7,6 +7,7 @@
 
 #include <HTTPClient.h>
 #include <Update.h>
+#include <WiFiClient.h>        // Arduino 3.x no longer pulls WiFiClient in via HTTPClient.h
 #include <WiFiClientSecure.h>
 
 #include "net/DebugLog.h"

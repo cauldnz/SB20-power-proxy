@@ -43,8 +43,15 @@ public:
         SPI.begin(PIN_SCLK, /*miso=*/-1, PIN_MOSI, PIN_CS);
         sendInit_();
         // --- backlight: LEDC PWM (5 kHz / 10-bit, per the BSP) ---
+        // Arduino-ESP32 3.x replaced the channel-based LEDC API (ledcSetup +
+        // ledcAttachPin) with a pin-based one (ledcAttach). The S3 head-unit runs
+        // on the pioarduino platform (3.x); keep the 2.x path for the legacy core.
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+        ledcAttach(PIN_BL, 5000, 10);
+#else
         ledcSetup(kBlChannel, 5000, 10);
         ledcAttachPin(PIN_BL, kBlChannel);
+#endif
         setBrightness(100);
         // --- touch: reset pulse, then plain register reads ---
         pinMode(PIN_TP_RST, OUTPUT);
@@ -60,7 +67,12 @@ public:
 
     void setBrightness(uint8_t pct) {
         if (pct > 100) pct = 100;
-        ledcWrite(kBlChannel, (uint32_t)pct * 1023 / 100);
+        const uint32_t duty = (uint32_t)pct * 1023 / 100;
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+        ledcWrite(PIN_BL, duty);        // 3.x: address the pin, not the channel
+#else
+        ledcWrite(kBlChannel, duty);
+#endif
     }
 
     // Push the whole canvas to the panel (~22 ms at 40 MHz). Call from a dedicated task.
@@ -190,16 +202,20 @@ private:
         SPI.endTransaction();
     }
 
+    // The AXS5106 wants the register write and the data read as TWO separate I2C transactions
+    // (write-with-STOP, then read-with-START) — see the vendor BSP esp_lcd_touch_axs5106.c
+    // (i2c_master_transmit then i2c_master_receive). A repeated-start (endTransmission(false))
+    // makes the Arduino-3.x/IDF-5 "ng" I2C driver return ESP_ERR_INVALID_STATE, so use STOP (true).
     bool probeTouch_() {
         Wire.beginTransmission(TOUCH_ADDR);
         Wire.write((uint8_t)0x01);
-        if (Wire.endTransmission(false) != 0) return false;
+        if (Wire.endTransmission(true) != 0) return false;
         return Wire.requestFrom((int)TOUCH_ADDR, 1) == 1;
     }
     bool readRegs_(uint8_t reg, uint8_t* buf, size_t n) {
         Wire.beginTransmission(TOUCH_ADDR);
         Wire.write(reg);
-        if (Wire.endTransmission(false) != 0) return false;
+        if (Wire.endTransmission(true) != 0) return false;
         if (Wire.requestFrom((int)TOUCH_ADDR, (int)n) != (int)n) return false;
         for (size_t i = 0; i < n; ++i) buf[i] = Wire.read();
         return true;

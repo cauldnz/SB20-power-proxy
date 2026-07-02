@@ -2075,3 +2075,43 @@ The findings that matter most for us:
   9-segment workout. Run-sheet: [`session-10-spin-bike-ui-tryout.md`](../../sessions/session-10-spin-bike-ui-tryout.md).
 - **Guardrail note:** an attempt to auto-materialise the WiFi password from the C3's NVS dump (to seed the
   S3's `wifi_secret.h`) was correctly blocked; pivoted to a credential-free USB-serial bench instead.
+
+## 2026-07-02 (pm→2026-07-03) — S3-Touch head-unit UNBLOCKED: boots + full UI renders on the pioarduino (IDF5) platform.
+- **Root cause of the boot-loop:** NOT flash tuning. A boot log captured by holding serial open across a
+  physical RESET showed the **2nd-stage bootloader itself crash-loops** — ROM hands off (`entry 0x403c98d0`)
+  and it resets *before printing its banner*: `rst:0x3 RTC_SW_SYS_RST` (DIO) / `rst:0x7 TG0WDT_SYS_RST` (QIO),
+  across DIO/QIO × 80/40 MHz. The stock `espressif32@~6.7.0` (Arduino 2.0.17 / **IDF 4.4**) bootloader is too
+  old for this S3 module. (Corrects the 2026-07-02 "hangs before setup()" reading.)
+- **Fix — pioarduino platform (Arduino 3.3.9 / IDF 5.5.4).** New envs on
+  `github.com/pioarduino/platform-espressif32 …/55.03.39`: `esp32s3-pio-min` (DIAG probe) +
+  `esp32s3-pio`/`-live`/`-live-bench`/`-ota` (full LCD UI). First boot: `[sb20proxy] … starting` →
+  `[diag] alive 0..7` → `NimBLE-init done` → `spoofing as 'Stages 62144'`; **0 boot-loops**; BLE scan sees
+  **`a4:cb:8f:da:e9:cd` = "Stages 62144"** (−46 dBm, CPS + Stages svcs).
+- **Four migration gotchas (all fixed in-repo):** (1) pioarduino's toolchain installer **rejects
+  Git-Bash/MSYS** ("MSys/Mingw is not supported", leaves an empty toolchain) → run its `pio` from **native
+  PowerShell** (`…/.platformio/penv/Scripts/python.exe -m platformio …`). (2) Arduino-3.x WiFi split →
+  `fatal error: Network.h` under the global `deep+` LDF (espressif/arduino-esp32#9782 — the `+` variants
+  eval preprocessor conditionals) → **`lib_ldf_mode = deep`** on the S3 envs. (3) plain `deep` won't
+  auto-discover the flat, manifest-less **`lib/monocypher`** → added `lib/monocypher/library.json` +
+  `symlink://lib/monocypher` in lib_deps. (4) `#include <WiFiClient.h>` in `src/net/OtaPull.cpp` (no longer
+  transitive); `LcdDisplay.h` LEDC backlight ported to the 3.x pin API behind `ESP_ARDUINO_VERSION_MAJOR>=3`.
+- **Full head-unit UI verified ON HARDWARE.** Two more fixes to get the panel lit: **PSRAM** enabled
+  (`board_build.arduino.memory_type = dio_opi` — keeps the DIO flash that boots + the S3R8 octal PSRAM) so
+  the 172×320×2 = 110 KB `LcdCanvas` framebuffer stops throwing `std::bad_alloc`→`abort()`; and **touch I2C**
+  switched to a **STOP-condition read** (`endTransmission(true)`, matching the vendor BSP
+  `esp_lcd_touch_axs5106.c` two-transaction pattern) — the repeated-start (`false`) made the IDF5 "ng" I2C
+  driver return `ESP_ERR_INVALID_STATE`. Result: `[lcd] JD9853 172x320 up; touch(AXS5106)=alive`, no abort,
+  stable in `loop()`. **All 5 screens captured live off the panel** (serial `SCREEN`→BMP): Ride (140 W +
+  sparkline), Setup, More/Settings, Workout (4×8 Threshold, TARGET 138 W + interval chart), Calibrate; and
+  **on-device tap nav works** (injected `TAP` Ride→Setup→More→Workout→Calibrate; `touch:1`).
+- **Flash the S3** (USB-JTAG drops the stub at 460800, so `pio -t upload` hangs — flash the merged image at
+  115200): `python -m esptool --chip esp32s3 --port COM16 --baud 115200 --before default_reset --after
+  hard_reset write_flash --flash_size 16MB 0x0 .pio/build/esp32s3-pio/firmware.factory.bin`. **Use esptool
+  ≥5.x, NOT PlatformIO's penv esptool 4.5.1** — 4.5.1 mis-writes the flash-size field of the merged image's
+  bootloader header (8 MB on this **16 MB** chip, device 0x4018), so the bootloader rejects the 16 MB
+  partition table (`partition 3 … exceeds flash chip size 0x800000`) and boot-loops (`rst:0x3`; briefly
+  bricked the board mid-session until reflashed with esptool 5.3.1). New helper **`code/scripts/flash_s3.py`**
+  probes candidate pythons for esptool ≥4.11, flashes the factory image, and `--verify-ble`s the advert. Boot
+  log via `<scratchpad>/capture_s3_boot.py`. Native host suite still green (177) + C3 `esp32c3-oled-live`
+  still compiles (monocypher manifest + WiFiClient include are no-ops on the old platform). Full write-up:
+  [`advanced-board-s3-touch.md`](advanced-board-s3-touch.md) §"Bring-up RESOLVED".
