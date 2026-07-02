@@ -44,7 +44,15 @@ and **`esp32s3-pio`** / `-live` / `-live-bench` / `-ota` (full LCD UI). First bo
 `pio -t upload` (which uses 460800) hangs at connect. **Flash the merged image at a safe baud instead:**
 `python -m esptool --chip esp32s3 --port COM16 --baud 115200 --before default_reset --after hard_reset
 write_flash --flash_size 16MB 0x0 .pio/build/esp32s3-pio/firmware.factory.bin`. Boot log via
-`<scratchpad>/capture_s3_boot.py` (resets + holds serial open, since auto-reset is unreliable).
+`<scratchpad>/capture_s3_boot.py` (resets + holds serial open, since auto-reset is unreliable). Or just
+**`python code/scripts/flash_s3.py --env esp32s3-pio[-live] --verify-ble "Stages 62144"`** (picks a good
+esptool, flashes, confirms the advert).
+
+**Bench-screenshot caveat:** the serial `SCREEN` console reliably dumps the framebuffer (a clean BMP is
+**exactly 165174 B**) on the **mock** build, but on the **-live** build the BLE central's constant
+scanning contends with the USB-CDC and corrupts the ~220 KB transfer (oversized BMP → visual "tearing"
+that is NOT a render bug — the STATE JSON and the panel itself are fine). For clean bench screenshots use
+the mock env; on the live build, trust the physical panel.
 
 ## Bring-up status (2026-07-02) — the blocker + exactly what was tried [SUPERSEDED by the section above]
 
