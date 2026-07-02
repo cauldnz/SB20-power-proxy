@@ -60,9 +60,10 @@ handoff below).
 ## 🧪 Stretch — try the S3-Touch head-unit on the bike (EXPERIMENTAL, optional)
 The **S3-Touch board (COM16)** is now flashed with **`esp32s3-pio-live`** and, at the bench, **boots,
 advertises `Stages 62144`, and its 172×320 touch UI works** (all 5 screens + tap nav verified). It's
-configured to read your **Assioma** (`source=ASSIOMA`). What is **NOT yet tested:** the live Assioma
-connection (no meter at the desk) and on-bike SB20 pairing — so treat this as an experiment, **not** the
-proven path (the C3 + phone above is that).
+configured to read your **Assioma** (`source=ASSIOMA`). Its **live BLE meter-read is now bench-validated**
+(a fake 200 W CPS meter → the S3 showed `power:200, cad:85`, 2026-07-03), so the read path works. What
+remains **on-bike only:** pairing the *real* Assioma + the SB20 accepting the S3's spoofed crank — so
+still treat this as an experiment, **not** the proven path (the C3 + phone above is that).
 - **To try it:** power the S3 near the bike. On the panel's **Ride** screen, pedal — if it connects to the
   Assioma, POWER should track and the IN→OUT title shows Assioma → Stages. Pair the SB20 to `Stages 62144`
   exactly as with the C3 (session 8/9 rules). Walk the 5 screens by tapping (**Ride/Setup/More**, then
