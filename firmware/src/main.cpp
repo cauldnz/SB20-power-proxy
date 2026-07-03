@@ -468,8 +468,24 @@ static void lcdTask(void*) {
     LcdViews views;
     uint32_t lastData = 0;
     bool wasCal = false;
+#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
+    pinMode(0, INPUT_PULLUP);       // the CYD's BOOT button (active low)
+    uint32_t bootHeldSince = 0;
+#endif
     for (;;) {
 #if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
+        // BOOT button held ~1s -> start the touch-cal ritual. Touch-INDEPENDENT: this is the
+        // recovery path when the film is so mis-calibrated the More->Touch cal row can't be hit.
+        if (digitalRead(0) == LOW) {
+            if (bootHeldSince == 0) bootHeldSince = millis();
+            else if (millis() - bootHeldSince > 1000 && !g_tcal.active) {
+                Serial.println("[tcal] BOOT button held - ritual started");
+                g_tcal = CalRitual{};
+                g_tcal.active = true;
+            }
+        } else {
+            bootHeldSince = 0;
+        }
         if (g_tcal.active) {
             touchCalTick();
             lvglUiCalShow(g_tcal.idx, g_tcal.done, g_tcal.testX, g_tcal.testY);
