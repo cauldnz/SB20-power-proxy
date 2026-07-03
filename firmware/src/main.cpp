@@ -57,6 +57,9 @@
   #else
     #include "disp/LcdDisplay.h"  // JD9853 LCD + AXS5106 touch seam (S3-Touch board)
   #endif
+  #if defined(USE_LVGL) && USE_LVGL
+    #include "ui/LvglUi.h"        // LVGL v9 UI (replaces the LcdCanvas renderer on device)
+  #endif
 #endif
 
 using namespace sb20proxy;
@@ -435,6 +438,66 @@ static void lcdExecute(const UiAction& a, const LcdViews& v) {
     }
 }
 
+#if defined(USE_LVGL) && USE_LVGL
+// LVGL variant of the LCD task: LVGL owns rendering + touch (via the driver hooks); we feed it
+// fresh views at 5 Hz and drain widget-emitted UiActions into the same lcdExecute paths.
+static volatile bool g_lvglDumpReq = false;  // SCREEN cmd -> dump runs in THIS task (lv not threadsafe)
+static bool lvglTouchHook(int& x, int& y) {
+    static int injTicks = 0;
+    static int ix = 0, iy = 0;
+    if (g_lcdInjX >= 0) { ix = g_lcdInjX; iy = g_lcdInjY; g_lcdInjX = -1; injTicks = 3; }
+    if (injTicks > 0) { --injTicks; x = ix; y = iy; return true; }  // synthetic TAP: brief press
+#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
+    if (g_tcal.active) return false;  // the ritual owns the raw film; block UI clicks
+#endif
+    return lcd.readTouchState(x, y);
+}
+static void lvglFlushHook(int x1, int y1, int x2, int y2, const uint16_t* px) {
+    lcd.blitArea(x1, y1, x2, y2, px);
+}
+
+static void lcdTask(void*) {
+    LvglDriverHooks hooks{lvglFlushHook, lvglTouchHook};
+    lvglUiInit(hooks, LCD_W, LCD_H);
+    LcdViews views;
+    uint32_t lastData = 0;
+    bool wasCal = false;
+    for (;;) {
+#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
+        if (g_tcal.active) {
+            touchCalTick();
+            lvglUiCalShow(g_tcal.idx, g_tcal.done, g_tcal.testX, g_tcal.testY);
+            wasCal = true;
+        } else if (wasCal) {
+            wasCal = false;
+            lvglUiCalShow(-1, -1, -1, -1);  // ritual over: restore the regular screen
+        }
+#endif
+        uint32_t now = millis();
+        if (now - lastData >= 200 && !wasCal) {
+            lastData = now;
+            lcdLock();
+            buildLcdViews(views);
+            lvglUiUpdate(views);
+            g_lcdUi.screen = lvglUiCurrentScreen();  // keep STATE/serial in sync
+            lcdUnlock();
+        }
+        UiAction a;
+        while (lvglUiPollAction(a)) {
+            lcdLock();
+            buildLcdViews(views);
+            lcdExecute(a, views);
+            lcdUnlock();
+        }
+        if (g_lvglDumpReq) {  // serial SCREEN: dump from the LVGL thread (lv is not thread-safe)
+            g_lvglDumpReq = false;
+            lvglUiScreenDumpBegin();
+        }
+        lvglUiTick();
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+#else  // !USE_LVGL — the LcdCanvas renderer path
 static void lcdTask(void*) {
     LcdViews views;
     uint32_t lastRender = 0;
@@ -488,6 +551,7 @@ static void lcdTask(void*) {
         vTaskDelay(pdMS_TO_TICKS(20));  // 50 Hz touch poll
     }
 }
+#endif  // USE_LVGL
 
 // Serial bench console (headless overnight verification, no WiFi/creds needed):
 //   SCREEN  -> base64(BMP) of the current frame, one line, wrapped in <BMP.. ..BMP>
@@ -502,6 +566,11 @@ static void lcdSerialConsole() {
         if (ch != '\n') { line += ch; if (line.size() > 64) line.clear(); continue; }
         std::string cmd = line; line.clear();
         if (cmd == "SCREEN") {
+#if defined(USE_LVGL) && USE_LVGL
+            // LVGL path: request a dump; the LVGL task performs it (lv is not thread-safe).
+            g_lvglDumpReq = true;
+        } else if (false) {
+#else
             // Stream a TOP-DOWN 24bpp BMP (negative biHeight) band by band, so it works with
             // the banded no-PSRAM canvas too (no full-frame buffer is ever allocated).
             const int rowBytes = ((LCD_W * 3 + 3) / 4) * 4;
@@ -555,6 +624,7 @@ static void lcdSerialConsole() {
             if (bits > 0) emit(kB64[(acc << (6 - bits)) & 0x3F]);
             if (on) Serial.write(obuf, on);
             Serial.println("BMP>");
+#endif  // !USE_LVGL
         } else if (cmd.rfind("TAP ", 0) == 0) {
             int x = 0, y = 0;
             if (sscanf(cmd.c_str() + 4, "%d %d", &x, &y) == 2) {
