@@ -21,7 +21,10 @@
 #include "TouchCal.h"
 
 #ifndef CYD_INVERT
-#define CYD_INVERT 1        // the 2-USB CYD wants INVON; set 0 if colors look negative
+#define CYD_INVERT 0        // owner's unit: INVOFF (the "CYD2USB wants INVON" folklore was wrong here)
+#endif
+#ifndef CYD_MADCTL
+#define CYD_MADCTL 0x00     // portrait, RGB, no mirror (0x48 = MX|BGR showed mirrored+wrong colors)
 #endif
 // XPT2046 raw ranges (community calibration for the ESP32-2432S028R touch film).
 #ifndef CYD_TP_XMIN
@@ -58,8 +61,8 @@ public:
         cmd_(0x01); delay(150);                  // SWRESET (the CYD ties TFT reset to EN)
         cmd_(0x11); delay(120);                  // SLPOUT
         cmd_(0x3A); dat_(0x55);                  // COLMOD: 16bpp
-        cmd_(0x36); dat_(0x48);                  // MADCTL: portrait, BGR order
-        cmd_(CYD_INVERT ? 0x21 : 0x20);          // INVON/INVOFF (2-USB variant wants ON)
+        cmd_(0x36); dat_(CYD_MADCTL);            // MADCTL (orientation + color order; photo-tuned)
+        cmd_(CYD_INVERT ? 0x21 : 0x20);          // INVON/INVOFF (photo-tuned per unit)
         cmd_(0x29); delay(20);                   // DISPON
         spi_.endTransaction();
         // --- backlight: LEDC PWM (GPIO21) ---
@@ -142,6 +145,18 @@ public:
         if (y >= LCD_H) y = LCD_H - 1;
         outX = x;
         outY = y;
+    }
+
+    // Live panel tweaks (serial INV/MAD commands — dial orientation/colors without reflashing)
+    void setInvert(bool on) {
+        spi_.beginTransaction(SPISettings(40000000, MSBFIRST, SPI_MODE0));
+        cmd_(on ? 0x21 : 0x20);
+        spi_.endTransaction();
+    }
+    void setMadctl(uint8_t v) {
+        spi_.beginTransaction(SPISettings(40000000, MSBFIRST, SPI_MODE0));
+        cmd_(0x36); dat_(v);
+        spi_.endTransaction();
     }
 
     void setCal(const TouchCalFit& f) { cal_ = f; }

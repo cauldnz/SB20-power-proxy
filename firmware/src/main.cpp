@@ -648,6 +648,12 @@ static void lcdSerialConsole() {
             Serial.printf("{\"cal_valid\":%d,\"sx\":%.5f,\"ox\":%.1f,\"sy\":%.5f,\"oy\":%.1f,"
                           "\"ritual\":%d,\"point\":%d}\n", f.valid, (double)f.sx, (double)f.ox,
                           (double)f.sy, (double)f.oy, g_tcal.active, g_tcal.idx);
+        } else if (cmd.rfind("INV ", 0) == 0) {   // live panel tweak: inversion on/off
+            lcd.setInvert(cmd.back() == '1');
+            Serial.println("[lcd] inversion set");
+        } else if (cmd.rfind("MAD ", 0) == 0) {   // live panel tweak: MADCTL byte (hex)
+            lcd.setMadctl((uint8_t)strtoul(cmd.c_str() + 4, nullptr, 16));
+            Serial.println("[lcd] madctl set");
         } else if (cmd == "CALCLEAR") {           // wipe the stored cal + restart the ritual
             Preferences p;
             if (p.begin("sb20touch", false)) { p.clear(); p.end(); }
