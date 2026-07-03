@@ -2127,3 +2127,29 @@ The findings that matter most for us:
   see [[try-newer-toolchain-early]] sibling lesson: use the digital twin to test protocol paths off-bike.
 - The remaining S3 unknowns are on-bike only: the real Assioma pair + the SB20 accepting the S3's spoofed
   crank (the rebroadcast path is the same code the C3 proved).
+
+## 2026-07-03 (pm) — third head-unit: the AliExpress "Cheap Yellow Display" ported + twin-tested in an evening.
+- **The mystery AliExpress board identified** (listing finally readable in a browser): **ESP32-2432S028R
+  "CYD"** — classic ESP32-D0WD-V3 (4 MB flash, NO PSRAM), 2.8" 240×320 TFT, XPT2046 resistive touch,
+  CH340 on **COM17** (`8c:94:df:93:cc:8c`). The owner's 2-port variant ("CYD2USB"): **only the Micro-USB
+  enumerates** (the USB-C was why it looked dead before); panel probes **ST7789-family + INVON** (0xD3
+  reads all-zero → not ILI9341) via the new `cyd_probe_main.cpp` serial probe (register-ID reads, color
+  bars, raw-touch dump — identifies the panel without eyes).
+- **The full bike computer runs on it** (envs `esp32cyd`/`-live`/`-live-bench`): the SAME pure UI at
+  240 px wide (`-DLCD_PANEL_W=240` — LcdUi lays out from LCD_W), rendered in **4 horizontal bands**
+  (`-DLCD_BANDS=4`, 38 KB each) because 153 KB of frame can't sit beside WiFi+BLE without PSRAM. Banded
+  == full-frame **pixel-identical by host test** (`test_lcd_banded_render_matches_full`; 178 native green).
+  Serial `SCREEN` now streams a top-down BMP band-by-band (works on every LCD board).
+- **Digital-twin loop PROVEN end-to-end on the CYD:** `fake_meter.py --watts 200` → CYD central connects
+  (`subs=1`, STATE `power:200 cad:85`) → rebroadcasts as **`Stages 62144`** (−42 dBm) → `crank_reader.py`
+  decodes **200 W / 85 rpm / L50-R50** in byte-faithful `0x2F` frames (`2f00c800…`). Tap-nav + workout
+  preset (target 138 W) verified over serial; workout persisted across a reflash (NVS).
+- **Port gotchas (all fixed in-repo,** [`cyd-board.md`](cyd-board.md)**):** (1) **GPIO 8 is a FLASH pin on
+  classic ESP32** — the C3's STATUS_LED_PIN=8 wedged the chip at `pinMode` → TG1WDT boot loop; now
+  `-DSB20_STATUS_LED_PIN` (CYD=4, the RGB-red). (2) The 300 KB `SCREEN` dump blocked loop() >15 s and our
+  own **loop-stall watchdog rebooted the board mid-stream**; the emit path now feeds `g_loopBeat` + batches
+  512-B writes. (3) Classic-ESP32 toolchain first-install corrupted under Git-Bash → **PowerShell/penv for
+  all pio runs** (now a standing rule). (4) CH340: clear DTR/RTS **before** opening the port or it resets.
+- Three head-unit tiers now run the one core: **C3-OLED** (shipping beta) · **S3-Touch** (premium 172×320
+  capacitive) · **CYD** (budget ~AU$23 240×320 resistive). Remaining CYD unknowns: real-finger touch
+  calibration + panel colors (INVON assumed) — one human glance/tap to confirm.

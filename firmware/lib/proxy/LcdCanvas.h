@@ -8,14 +8,30 @@
 
 namespace sb20proxy {
 
-// The pure 172x320 RGB565 canvas behind the S3-Touch head-unit UI (design/sb20-lcd-*.html —
-// the locked 1:1 designs). Everything here runs on the HOST: the LcdUi screens draw into this
-// buffer, host tests rasterize + assert on it (and dump BMPs I can look at before a board is
-// ever flashed), and the seam (src/disp/LcdDisplay) only blasts the finished buffer over SPI.
-// The same discipline as OledScreen.h, scaled up to colour.
+// The pure RGB565 canvas behind the head-unit UI (design/sb20-lcd-*.html — the locked 1:1
+// designs). Everything here runs on the HOST: the LcdUi screens draw into this buffer, host
+// tests rasterize + assert on it (and dump BMPs I can look at before a board is ever flashed),
+// and the seam (src/disp/*Display) only blasts the finished buffer over SPI. The same
+// discipline as OledScreen.h, scaled up to colour.
+//
+// Panel size is a build-time parameter: 172x320 (S3-Touch JD9853, the default) or 240x320
+// (ESP32-2432S028R "CYD" ILI9341/ST7789) via -DLCD_PANEL_W=240. The UI lays itself out from
+// LCD_W/LCD_H, so the same pure renderer serves both panels.
+//
+// BANDED RENDERING (for boards with no PSRAM, e.g. the classic-ESP32 CYD where a full
+// 240x320x2 = 153 KB frame can't sit beside WiFi+BLE): a canvas may hold only a horizontal
+// slice ("band") of the virtual LCD_W x LCD_H frame. Drawing uses full-frame coordinates —
+// writes outside the band are simply clipped — so the UI renders unchanged; the device loops
+// setBand(y0) -> render -> blit per band. Full-frame remains the default (bandH == LCD_H).
 
-constexpr int LCD_W = 172;
-constexpr int LCD_H = 320;
+#ifndef LCD_PANEL_W
+#define LCD_PANEL_W 172
+#endif
+#ifndef LCD_PANEL_H
+#define LCD_PANEL_H 320
+#endif
+constexpr int LCD_W = LCD_PANEL_W;
+constexpr int LCD_H = LCD_PANEL_H;
 
 // --- palette: the design tokens (design/sb20-lcd-*.html :root) as RGB565 -----------------
 constexpr uint16_t lcdRgb(uint8_t r, uint8_t g, uint8_t b) {
@@ -53,16 +69,26 @@ constexpr uint16_t LCD_BADGE_OUT   = lcdMix(0x3b, 0x82, 0xf6, 0x1a, 0x20, 0x30, 
 // --- the canvas ---------------------------------------------------------------------------
 struct LcdCanvas {
     std::vector<uint16_t> px;
+    int bandY0 = 0;       // first virtual-frame row this buffer holds
+    int bandH  = LCD_H;   // rows it holds (LCD_H = the full frame, the default)
+
     LcdCanvas() : px((size_t)LCD_W * LCD_H, LCD_BG) {}
+    // A band canvas: holds `rows` rows of the virtual frame; position it with setBand().
+    explicit LcdCanvas(int rows) : px((size_t)LCD_W * rows, LCD_BG), bandH(rows) {}
+    void setBand(int y0) { bandY0 = y0; }
 
     void clear(uint16_t c = LCD_BG) { for (auto& p : px) p = c; }
 
     inline void set(int x, int y, uint16_t c) {
         if (x < 0 || y < 0 || x >= LCD_W || y >= LCD_H) return;
+        y -= bandY0;
+        if (y < 0 || y >= bandH) return;
         px[(size_t)y * LCD_W + x] = c;
     }
     inline uint16_t get(int x, int y) const {
         if (x < 0 || y < 0 || x >= LCD_W || y >= LCD_H) return 0;
+        y -= bandY0;
+        if (y < 0 || y >= bandH) return 0;
         return px[(size_t)y * LCD_W + x];
     }
 
@@ -70,8 +96,10 @@ struct LcdCanvas {
         if (w <= 0 || h <= 0) return;
         int x0 = x < 0 ? 0 : x, y0 = y < 0 ? 0 : y;
         int x1 = x + w > LCD_W ? LCD_W : x + w, y1 = y + h > LCD_H ? LCD_H : y + h;
+        if (y0 < bandY0) y0 = bandY0;                          // clip to the band
+        if (y1 > bandY0 + bandH) y1 = bandY0 + bandH;
         for (int yy = y0; yy < y1; ++yy) {
-            uint16_t* row = &px[(size_t)yy * LCD_W];
+            uint16_t* row = &px[(size_t)(yy - bandY0) * LCD_W];
             for (int xx = x0; xx < x1; ++xx) row[xx] = c;
         }
     }
@@ -194,7 +222,7 @@ inline std::vector<uint8_t> lcdCanvasToBmp(const LcdCanvas& c) {
     for (int y = 0; y < LCD_H; ++y) {
         uint8_t* row = p + 54 + (size_t)(LCD_H - 1 - y) * rowBytes;  // bottom-up
         for (int x = 0; x < LCD_W; ++x) {
-            uint16_t v = c.px[(size_t)y * LCD_W + x];
+            uint16_t v = c.get(x, y);   // band-safe (full-frame canvases behave as before)
             uint8_t r = (uint8_t)(((v >> 11) & 0x1F) << 3);
             uint8_t g = (uint8_t)(((v >> 5) & 0x3F) << 2);
             uint8_t b = (uint8_t)((v & 0x1F) << 3);

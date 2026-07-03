@@ -82,8 +82,14 @@ struct Config {
     static constexpr float CORRECTION_SCALE  = 1.0f;
     static constexpr float CORRECTION_OFFSET = 0.0f;
 
-    // --- board (ESP32-C3 Super Mini) ---
-    static constexpr int STATUS_LED_PIN = 8;  // onboard LED, active-low (LOW = lit)
+    // --- board status LED (active-low, LOW = lit) ---
+    // Default 8 = the C3 Super Mini's onboard LED. Boards MUST override where 8 is not safe:
+    // on a classic ESP32, GPIOs 6-11 are the SPI-FLASH bus — driving GPIO 8 wedges the chip
+    // (TG1WDT boot loop; found porting to the CYD, whose RGB-red lives on GPIO 4).
+#ifndef SB20_STATUS_LED_PIN
+#define SB20_STATUS_LED_PIN 8
+#endif
+    static constexpr int STATUS_LED_PIN = SB20_STATUS_LED_PIN;
 
     // --- WiFi setup AP (always WPA2-protected) ---
     // OLED builds: the AP password is a per-device 8-digit PIN derived from the chip MAC + this secret

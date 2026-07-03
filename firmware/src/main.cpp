@@ -51,8 +51,12 @@
   #include "disp/OledDisplay.h"
 #endif
 #if USE_LCD
-  #include "LcdUi.h"            // pure 172x320 head-unit UI (screens + tap routing)
-  #include "disp/LcdDisplay.h"  // JD9853 LCD + AXS5106 touch seam (S3-Touch board)
+  #include "LcdUi.h"              // pure head-unit UI (screens + tap routing; LCD_W x LCD_H)
+  #if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
+    #include "disp/CydDisplay.h"  // ILI9341/ST7789 + XPT2046 seam (ESP32-2432S028R "CYD")
+  #else
+    #include "disp/LcdDisplay.h"  // JD9853 LCD + AXS5106 touch seam (S3-Touch board)
+  #endif
 #endif
 
 using namespace sb20proxy;
@@ -164,17 +168,34 @@ static void oledTask(void*) {
 #endif  // USE_OLED
 
 #if USE_LCD
-// The S3-Touch head-unit. The pure UI (lib/proxy/LcdUi.h) renders into a canvas from view structs
-// built from live state; this task blits it over SPI + reads touches. Runs on core 1 so the ~22 ms
-// SPI blit never competes with BLE/loop on core 0. All shared state (g_wk, g_lcdUi) is touched only
-// under g_lcdMux, shared with the WiFi /workout hooks so a tap and an HTTP control can't race.
-static LcdDisplay lcd;
+// The LCD head-unit (S3-Touch JD9853 or the CYD's ILI9341/ST7789). The pure UI (lib/proxy/LcdUi.h)
+// renders into a canvas from view structs built from live state; this task blits it over SPI +
+// reads touches. Runs on core 1 so the SPI blit never competes with BLE/loop on core 0. All shared
+// state (g_wk, g_lcdUi) is touched only under g_lcdMux, shared with the WiFi /workout hooks so a
+// tap and an HTTP control can't race.
+#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
+using PanelDisplay = CydDisplay;
+#else
+using PanelDisplay = LcdDisplay;
+#endif
+static PanelDisplay lcd;
 static LcdUiState g_lcdUi;
-// The 110 KB framebuffer is allocated LAZILY (first use, at runtime) — a std::vector this large in a
+// LCD_BANDS: on no-PSRAM boards (the classic-ESP32 CYD) the full frame can't sit beside WiFi+BLE,
+// so the canvas holds one horizontal band and the render loop sweeps it down the frame (the pure
+// renderer is band-agnostic — proven pixel-identical by test_lcd_banded_render_matches_full).
+#ifndef LCD_BANDS
+#define LCD_BANDS 1
+#endif
+static_assert(LCD_H % LCD_BANDS == 0, "LCD_BANDS must divide LCD_H");
+// The framebuffer is allocated LAZILY (first use, at runtime) — a std::vector this large in a
 // global constructor runs during C++ static init, before the Arduino heap is fully ready on the S3,
 // and aborts the boot. A function-local static defers it to the LCD task's first iteration.
 static LcdCanvas& g_lcdFrame() {
+#if LCD_BANDS > 1
+    static LcdCanvas frame(LCD_H / LCD_BANDS);
+#else
     static LcdCanvas frame;
+#endif
     return frame;
 }
 static std::string g_lcdIdentity, g_lcdSource, g_lcdMeterAddr;  // captured from cfg at boot
@@ -333,15 +354,22 @@ static void lcdTask(void*) {
             lcdUnlock();
             lastRender = 0;  // force an immediate repaint after a tap
         }
-        // 2) render at ~5 Hz (or right after a tap)
+        // 2) render at ~5 Hz (or right after a tap). With LCD_BANDS>1 the canvas is one
+        // horizontal slice: sweep it down the frame, rendering + blitting per band (the pure
+        // renderer clips out-of-band writes, so it just re-runs per band).
         uint32_t now = millis();
         if (now - lastRender >= 200) {
             lastRender = now;
-            lcdLock();
-            buildLcdViews(views);
-            lcdRender(g_lcdFrame(), g_lcdUi, views);
-            lcdUnlock();
-            lcd.blit(g_lcdFrame());
+            const int rows = LCD_H / LCD_BANDS;
+            for (int b = 0; b < LCD_BANDS; ++b) {
+                lcdLock();
+                buildLcdViews(views);
+                g_lcdFrame().setBand(b * rows);
+                g_lcdFrame().clear();
+                lcdRender(g_lcdFrame(), g_lcdUi, views);
+                lcdUnlock();
+                lcd.blit(g_lcdFrame());
+            }
         }
         vTaskDelay(pdMS_TO_TICKS(20));  // 50 Hz touch poll
     }
@@ -360,16 +388,58 @@ static void lcdSerialConsole() {
         if (ch != '\n') { line += ch; if (line.size() > 64) line.clear(); continue; }
         std::string cmd = line; line.clear();
         if (cmd == "SCREEN") {
-            lcdLock();
-            std::vector<uint8_t> bmp = lcdCanvasToBmp(g_lcdFrame());
-            lcdUnlock();
-            Serial.print("<BMP");
+            // Stream a TOP-DOWN 24bpp BMP (negative biHeight) band by band, so it works with
+            // the banded no-PSRAM canvas too (no full-frame buffer is ever allocated).
+            const int rowBytes = ((LCD_W * 3 + 3) / 4) * 4;
+            const uint32_t dataSize = (uint32_t)rowBytes * LCD_H;
+            uint8_t hdr[54] = {0};
+            auto w32 = [&](int off, uint32_t v) {
+                hdr[off] = v & 0xFF; hdr[off + 1] = (v >> 8) & 0xFF;
+                hdr[off + 2] = (v >> 16) & 0xFF; hdr[off + 3] = (v >> 24) & 0xFF;
+            };
+            hdr[0] = 'B'; hdr[1] = 'M';
+            w32(2, 54 + dataSize); w32(10, 54); w32(14, 40);
+            w32(18, (uint32_t)LCD_W); w32(22, (uint32_t)(-LCD_H));  // negative = top-down rows
+            hdr[26] = 1; hdr[28] = 24; w32(34, dataSize);
             uint32_t acc = 0; int bits = 0;
-            for (uint8_t b : bmp) {
+            // batch the base64 stream (per-byte Serial.write takes a UART lock each call), and
+            // FEED THE LOOP-STALL WATCHDOG from the emit path — a full-screen stream blocks
+            // loop() for ~30 s at 115200, well past the 15 s stall window (found on the CYD:
+            // the watchdog restarted the board mid-SCREEN).
+            static uint8_t obuf[512]; size_t on = 0;
+            auto emit = [&](char c) {
+                obuf[on++] = (uint8_t)c;
+                if (on == sizeof(obuf)) { Serial.write(obuf, on); on = 0; ++g_loopBeat; }
+            };
+            auto put = [&](uint8_t b) {
                 acc = (acc << 8) | b; bits += 8;
-                while (bits >= 6) { bits -= 6; Serial.write(kB64[(acc >> bits) & 0x3F]); }
+                while (bits >= 6) { bits -= 6; emit(kB64[(acc >> bits) & 0x3F]); }
+            };
+            Serial.print("<BMP");
+            for (int i = 0; i < 54; ++i) put(hdr[i]);
+            const int rows = LCD_H / LCD_BANDS;
+            LcdViews views;
+            for (int b = 0; b < LCD_BANDS; ++b) {
+                // hold the lock across the band's render AND row stream: the lcdTask shares
+                // this canvas and would re-band/re-render it under our feet otherwise.
+                lcdLock();
+                buildLcdViews(views);
+                g_lcdFrame().setBand(b * rows);
+                g_lcdFrame().clear();
+                lcdRender(g_lcdFrame(), g_lcdUi, views);
+                for (int y = b * rows; y < (b + 1) * rows; ++y) {
+                    for (int x = 0; x < LCD_W; ++x) {
+                        uint16_t v = g_lcdFrame().get(x, y);
+                        put((uint8_t)((v & 0x1F) << 3));           // B
+                        put((uint8_t)(((v >> 5) & 0x3F) << 2));    // G
+                        put((uint8_t)(((v >> 11) & 0x1F) << 3));   // R
+                    }
+                    for (int p = LCD_W * 3; p < rowBytes; ++p) put(0);
+                }
+                lcdUnlock();
             }
-            if (bits > 0) Serial.write(kB64[(acc << (6 - bits)) & 0x3F]);
+            if (bits > 0) emit(kB64[(acc << (6 - bits)) & 0x3F]);
+            if (on) Serial.write(obuf, on);
             Serial.println("BMP>");
         } else if (cmd.rfind("TAP ", 0) == 0) {
             int x = 0, y = 0;
@@ -677,7 +747,13 @@ void setup() {
     bootStage("pre-lcd");
     lcd.begin();
     bootStage("post-lcd");
-    Serial.printf("[lcd] JD9853 172x320 up; touch(AXS5106)=%s\n", lcd.touchAlive() ? "alive" : "DEAD");
+#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
+    Serial.printf("[lcd] CYD %dx%d up (%d band%s); touch(XPT2046)=%s\n", LCD_W, LCD_H, LCD_BANDS,
+                  LCD_BANDS > 1 ? "s" : "", lcd.touchAlive() ? "alive" : "DEAD");
+#else
+    Serial.printf("[lcd] JD9853 %dx%d up; touch(AXS5106)=%s\n", LCD_W, LCD_H,
+                  lcd.touchAlive() ? "alive" : "DEAD");
+#endif
     // Render on core 1 so the SPI blit never competes with BLE/loop on core 0.
     xTaskCreatePinnedToCore(lcdTask, "lcd", 12288, nullptr, 2, nullptr, 1);
 #endif
