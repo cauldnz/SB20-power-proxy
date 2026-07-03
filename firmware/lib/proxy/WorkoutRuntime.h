@@ -53,6 +53,12 @@ struct WorkoutRuntime {
         running = false;
         paused = false;
     }
+    // Drop the loaded workout entirely (back to the picker). Stops any run.
+    void unload() {
+        workout = Workout{};
+        running = false;
+        paused = false;
+    }
 
     // Seconds of *workout* time elapsed (pauses removed). 0 when not running.
     long elapsedS(uint32_t now) const {

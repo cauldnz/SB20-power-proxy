@@ -1677,10 +1677,24 @@ void test_lcd_tap_workout_controls_and_presets() {
     TEST_ASSERT_EQUAL_INT((int)UiAction::WorkoutPause, (int)a.type);
     a = lcdHandleTap(st, v, LCD_W - 10, lcdlay::WK_BTN_Y + 5);
     TEST_ASSERT_EQUAL_INT((int)UiAction::WorkoutStop, (int)a.type);
-    // not-running -> the single button is Start
+    // not-running -> Start (left half) | Change (right half, back to the picker)
     v.wk.running = false;
-    a = lcdHandleTap(st, v, LCD_W / 2, lcdlay::WK_BTN_Y + 5);
+    a = lcdHandleTap(st, v, 10, lcdlay::WK_BTN_Y + 5);
     TEST_ASSERT_EQUAL_INT((int)UiAction::WorkoutStart, (int)a.type);
+    a = lcdHandleTap(st, v, LCD_W - 10, lcdlay::WK_BTN_Y + 5);
+    TEST_ASSERT_EQUAL_INT((int)UiAction::WorkoutUnload, (int)a.type);
+}
+
+void test_workout_runtime_unload_returns_to_picker() {
+    WorkoutRuntime rt;
+    rt.load(parseWorkout(presetJson("4x8")));
+    rt.start(1000);
+    TEST_ASSERT_FALSE(rt.workout.segments.empty());
+    TEST_ASSERT_TRUE(rt.running);
+    rt.unload();
+    TEST_ASSERT_TRUE(rt.workout.segments.empty());   // loaded=false -> the picker shows again
+    TEST_ASSERT_FALSE(rt.running);
+    TEST_ASSERT_FALSE(rt.paused);
 }
 
 void test_lcd_tap_calibrate_roles_and_start() {
@@ -2345,6 +2359,7 @@ int runUnityTests() {
     RUN_TEST(test_lcd_tap_nav_switches_screen);
     RUN_TEST(test_lcd_tap_ride_title_toggles_details);
     RUN_TEST(test_lcd_tap_workout_controls_and_presets);
+    RUN_TEST(test_workout_runtime_unload_returns_to_picker);
     RUN_TEST(test_lcd_tap_calibrate_roles_and_start);
     RUN_TEST(test_report_page_review_and_send);
     RUN_TEST(test_diag_report);

@@ -54,6 +54,16 @@ SD on VSPI (CS=5).
 4. **CH340 auto-reset:** opening the COM port pulses EN unless DTR/RTS are cleared **before**
    `open()` (pyserial: set `s.dtr = s.rts = False` on the unopened object). Flashing itself is
    painless (no USB-JTAG stub bug — 460800 works).
+5. **This unit's XPT2046 idle Z2 reads MID-SCALE (~2045), not the datasheet ~4095.** The composite
+   pressure `Z1+4095-Z2` therefore reads ~2050 UNTOUCHED = a permanent phantom press that swallows
+   every tap (LVGL pinned in pressed state). And a Z1>200 gate drops weak right-edge presses (Z1
+   scales with raw X; this film's X is inverted). The working gate: **Z1 alone with a low floor**
+   (`CYD_TP_ZMIN`, default 40 — idle Z1 is a clean 0). Probe any unit first: serial **`RAWZ`**
+   prints one `{down,rx,ry,z,z1,z2}` sample (2026-07-03).
+6. **LVGL's builtin fixed pool is a trap on this board** — 48 KB exhausted with the full widget
+   tree (NULL glyph-buf write → StoreProhibited; asserts compiled out), and 72 KB of .bss doesn't
+   link once the live build's NimBLE central is in (dram0 overflow). LVGL runs **malloc-backed**
+   (`LV_STDLIB_CLIB` in `include/lv_conf.h`); live-bench idles ~35 KB free heap.
 
 ## Twin-test record (2026-07-03)
 `esp32cyd-live-bench` + `fake_meter.py --watts 200 --steady`: CYD scanned/connected/subscribed

@@ -29,6 +29,7 @@ void lvglUiTick();                                    // pump lv timers (call ev
 void lvglUiUpdate(const LcdViews& v);                 // refresh the active screen's data
 bool lvglUiPollAction(UiAction& out);                 // widget events -> UiActions
 LcdScreen lvglUiCurrentScreen();
+bool lvglUiRideDetails();                             // Ride IN/OUT pop-down open?
 void lvglUiShowScreen(LcdScreen s);
 
 // Touch-calibration ritual rendering (logic stays in main's touchCalTick):

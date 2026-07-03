@@ -4,8 +4,8 @@
  * Minimal-override style: lv_conf_internal.h supplies defaults for everything not defined here,
  * so this file only pins what matters to us:
  *   - RGB565 (the panels' native format; the SPI seams' writePixels() does the byte swap)
- *   - LVGL's builtin allocator with a bounded pool — the no-PSRAM CYD budgets ~48 KB for UI heap
- *     on top of a ~1/8-frame partial draw buffer (LVGL's standard low-RAM mode)
+ *   - malloc-backed LVGL heap (no fixed pool; see the note at LV_USE_STDLIB_MALLOC) on top of a
+ *     ~1/8-frame partial draw buffer (LVGL's standard low-RAM mode)
  *   - software rendering incl. the complex path (rounded corners / gradients per the HTML design)
  *   - the widgets the five screens use; theme off — we style everything from the design tokens
  */
@@ -14,8 +14,13 @@
 
 #define LV_COLOR_DEPTH 16
 
-#define LV_USE_STDLIB_MALLOC LV_STDLIB_BUILTIN
-#define LV_MEM_SIZE (48 * 1024U)
+/* LVGL heap = the C heap (FreeRTOS malloc), NOT the builtin fixed pool. The 48K builtin pool
+ * was exhausted once the full five-screen widget tree existed — the first glyph draw-buf alloc
+ * returned NULL -> StoreProhibited in lv_draw_unit_draw_letter (asserts are off, so the NULL
+ * write went straight through). And a bigger static pool doesn't fit: 72K of .bss overflows the
+ * classic ESP32's dram0 segment once the live build's NimBLE central links in. malloc-backed
+ * LVGL takes only what it uses and shares the runtime heap with everything else. */
+#define LV_USE_STDLIB_MALLOC LV_STDLIB_CLIB
 
 #define LV_USE_OS LV_OS_NONE
 #define LV_USE_DRAW_SW 1
