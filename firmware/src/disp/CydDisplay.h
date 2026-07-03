@@ -147,6 +147,30 @@ public:
     void setCal(const TouchCalFit& f) { cal_ = f; }
     const TouchCalFit& cal() const { return cal_; }
 
+    // --- LVGL seam: area blit + level-triggered touch state -------------------------------
+    void blitArea(int x1, int y1, int x2, int y2, const uint16_t* px) {
+        spi_.beginTransaction(SPISettings(40000000, MSBFIRST, SPI_MODE0));
+        setWindow_(x1, y1, x2 - x1 + 1, y2 - y1 + 1);
+        digitalWrite(PIN_DC, HIGH);
+        digitalWrite(PIN_CS, LOW);
+        const uint8_t* p = (const uint8_t*)px;
+        size_t left = (size_t)(x2 - x1 + 1) * (y2 - y1 + 1) * 2;
+        while (left) {
+            size_t chunk = left > 8192 ? 8192 : left;
+            spi_.writePixels(p, chunk);
+            p += chunk;
+            left -= chunk;
+        }
+        digitalWrite(PIN_CS, HIGH);
+        spi_.endTransaction();
+    }
+    bool readTouchState(int& x, int& y) {  // true WHILE pressed (LVGL indev semantics)
+        uint16_t rx, ry, z;
+        if (!readRaw(rx, ry, z)) return false;
+        rawToScreen(rx, ry, x, y);
+        return true;
+    }
+
     bool touchAlive() const { return touchAlive_; }
 
     // On-board RGB status LED (active low): handy boot/link indicator.

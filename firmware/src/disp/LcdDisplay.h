@@ -120,6 +120,39 @@ public:
 
     bool touchAlive() const { return touchAlive_; }
 
+    // --- LVGL seam: area blit + level-triggered touch state -------------------------------
+    void blitArea(int x1, int y1, int x2, int y2, const uint16_t* px) {
+        SPI.beginTransaction(SPISettings(40000000, MSBFIRST, SPI_MODE0));
+        setWindow_(x1, y1, x2 - x1 + 1, y2 - y1 + 1);
+        digitalWrite(PIN_DC, HIGH);
+        digitalWrite(PIN_CS, LOW);
+        const uint8_t* p = (const uint8_t*)px;
+        size_t left = (size_t)(x2 - x1 + 1) * (y2 - y1 + 1) * 2;
+        while (left) {
+            size_t chunk = left > 8192 ? 8192 : left;
+            SPI.writePixels(p, chunk);
+            p += chunk;
+            left -= chunk;
+        }
+        digitalWrite(PIN_CS, HIGH);
+        SPI.endTransaction();
+    }
+    bool readTouchState(int& x, int& y) {  // true WHILE pressed (LVGL indev semantics)
+        if (!touchAlive_) return false;
+        uint8_t d[14] = {0};
+        if (!readRegs_(0x01, d, sizeof(d))) return false;
+        if ((d[1] & 0x0F) == 0) return false;
+        int rawX = ((d[2] & 0x0F) << 8) | d[3];
+        int rawY = ((d[4] & 0x0F) << 8) | d[5];
+        x = (LCD_W - 1) - rawX;
+        y = rawY;
+        if (x < 0) x = 0;
+        if (x >= LCD_W) x = LCD_W - 1;
+        if (y < 0) y = 0;
+        if (y >= LCD_H) y = LCD_H - 1;
+        return true;
+    }
+
 private:
     static constexpr int kBlChannel = 0;
     bool wasDown_ = false;
