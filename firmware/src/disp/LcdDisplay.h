@@ -122,8 +122,11 @@ public:
 
     // --- LVGL seam: area blit + level-triggered touch state -------------------------------
     void blitArea(int x1, int y1, int x2, int y2, const uint16_t* px) {
-        SPI.beginTransaction(SPISettings(40000000, MSBFIRST, SPI_MODE0));
+        // setWindow_ FIRST — it owns its own SPI transaction (like blit() above). Nesting it
+        // inside ours deadlocks the IDF5 core's non-recursive SPI bus lock: the LVGL task froze
+        // forever at its first flush, right after "[lvgl] init done" (S3 stall, 2026-07-04).
         setWindow_(x1, y1, x2 - x1 + 1, y2 - y1 + 1);
+        SPI.beginTransaction(SPISettings(40000000, MSBFIRST, SPI_MODE0));
         digitalWrite(PIN_DC, HIGH);
         digitalWrite(PIN_CS, LOW);
         const uint8_t* p = (const uint8_t*)px;
