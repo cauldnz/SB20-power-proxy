@@ -161,7 +161,7 @@ struct {
     lv_obj_t* rowMeta[6];
     lv_obj_t *bScan, *bSave;
 } S{};
-struct { lv_obj_t* val[7]; lv_obj_t* ip; } M{};
+struct { lv_obj_t* val[8]; lv_obj_t* ip; } M{};
 struct { lv_obj_t *sub, *btn; } CAL{};
 struct { lv_obj_t *cross_h, *cross_v, *box, *head, *sub, *test_h, *test_v; } TC{};
 
@@ -424,6 +424,10 @@ void moreRowCb(lv_event_t* e) {
         a.type = UiAction::SetBrightness;
         a.index = g_brightness >= 100 ? 25 : g_brightness + 25;
         emitAction(a);
+    } else if (idx == 7) {  // Touch cal -> run the tap-the-crosshair ritual
+        UiAction a;
+        a.type = UiAction::TouchCalStart;
+        emitAction(a);
     }
 }
 
@@ -431,13 +435,18 @@ void buildMore() {
     lv_obj_t* s = g_scrObj[2] = mkScreen();
     lv_obj_t* h = mkLabel(s, &lv_inter_sb_20, C_FG(), "Settings");
     lv_obj_align(h, LV_ALIGN_TOP_LEFT, 10, 8);
-    static const char* rowName[7] = {"Workout", "Calibrate", "Mode", "Identity",
-                                     "Source",  "Trainer",   "Bright"};
-    for (int i = 0; i < 7; ++i) {
+    static const char* rowName[8] = {"Workout", "Calibrate", "Mode", "Identity",
+                                     "Source",  "Trainer",   "Bright", "Touch cal"};
+#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
+    const int nRows = 8;   // resistive film -> expose the cal ritual in the UI
+#else
+    const int nRows = 7;   // capacitive (S3) needs no touch cal
+#endif
+    for (int i = 0; i < nRows; ++i) {
         lv_obj_t* row = lv_button_create(s);
         lv_obj_remove_style_all(row);
-        lv_obj_set_size(row, g_hor - 20, 32);
-        lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 40 + i * 34);
+        lv_obj_set_size(row, g_hor - 20, 27);
+        lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 36 + i * 29);
         lv_obj_set_style_border_color(row, C_LINE(), 0);
         lv_obj_set_style_border_width(row, 1, 0);
         lv_obj_set_style_border_side(row, LV_BORDER_SIDE_BOTTOM, 0);
@@ -449,7 +458,7 @@ void buildMore() {
         lv_obj_add_event_cb(row, moreRowCb, LV_EVENT_CLICKED, (void*)(intptr_t)i);
     }
     M.ip = mkLabel(s, &lv_inter_12, C_MUT(), "");
-    lv_obj_align(M.ip, LV_ALIGN_BOTTOM_MID, 0, -38);
+    lv_obj_align(M.ip, LV_ALIGN_BOTTOM_MID, 0, -34);
     mkNav(s, 2);
 }
 
@@ -652,6 +661,9 @@ void lvglUiUpdate(const LcdViews& v) {
     lv_label_set_text(M.val[5], v.more.trainer.empty() ? "not set" : v.more.trainer.c_str());
     snprintf(buf, sizeof(buf), "%d%%", (int)v.more.brightness);
     lv_label_set_text(M.val[6], buf);
+#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
+    if (M.val[7]) lv_label_set_text(M.val[7], ">");
+#endif
     lv_label_set_text(M.ip, v.more.ip.empty() ? "no wifi" : v.more.ip.c_str());
 }
 
