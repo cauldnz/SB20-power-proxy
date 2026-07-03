@@ -415,6 +415,12 @@ static void lcdExecute(const UiAction& a, const LcdViews& v) {
         case UiAction::WorkoutSkip:   g_wk.skip(millis()); break;
         case UiAction::WorkoutStop:   g_wk.stop(); break;
         case UiAction::SetBrightness: lcd.setBrightness((uint8_t)a.index); break;
+#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
+        case UiAction::TouchCalStart:
+            g_tcal = CalRitual{};
+            g_tcal.active = true;
+            break;
+#endif
         case UiAction::SetupPick: {
             const auto ds = dedupeAndSortSources(v.setup.devices);
             if (a.index >= 0 && a.index < (int)ds.size()) {

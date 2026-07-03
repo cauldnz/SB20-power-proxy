@@ -40,6 +40,7 @@ struct UiAction {
         CalPickRef,      // index = device index
         CalStart, CalFinish, CalSave, CalCancel,
         SetBrightness,   // index = new %
+        TouchCalStart,   // run the resistive touch-cal ritual (CYD builds)
     };
     Type type = None;
     int index = -1;
