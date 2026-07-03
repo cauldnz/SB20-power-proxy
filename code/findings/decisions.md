@@ -2153,3 +2153,27 @@ The findings that matter most for us:
 - Three head-unit tiers now run the one core: **C3-OLED** (shipping beta) · **S3-Touch** (premium 172×320
   capacitive) · **CYD** (budget ~AU$23 240×320 resistive). Remaining CYD unknowns: real-finger touch
   calibration + panel colors (INVON assumed) — one human glance/tap to confirm.
+
+## 2026-07-03 (late) — ARCHITECTURE: LVGL v9 adopted for the head-unit UI (owner decision).
+- **Owner call** ("less Super Mario Bros, more like the HTML app"; asked "are you using a UI framework?"
+  and picked **Adopt LVGL** over a hand-rolled AA-font uplift): the device UI is now **LVGL v9 + Inter**
+  (vendored SIL-OFL TTFs → 4bpp AA fonts via lv_font_conv at 12/16/20sb/28sb/64sb). CYD verified on
+  hardware (screenshots `design/render/cyd-lvgl-*.png`); S3 builds green (flash when reconnected); C3
+  untouched. PR #204; also that day: touch-cal ritual (#202, rendered via LVGL now) and the CYD port
+  (#201).
+- **The boundaries that made it cheap:** LvglUi consumes the SAME view-model (`LcdViews`, built by
+  main's `buildLcdViews`) and emits the SAME `UiAction`s — main.cpp's data/action plumbing, the workout
+  engine, the twin tests, and the RAWTAP-testable cal ritual all carried over unchanged. The pure
+  LcdCanvas/LcdUi renderer stays host-tested (181 native) as the non-LVGL fallback; **LVGL host-snapshot
+  testing is the open follow-up** (compile LVGL in the native env, golden-image the screens in CI).
+- **Integration gotchas (all fixed in-repo, will bite again otherwise):** (1) lv_font_conv emits
+  COMPRESSED glyphs by default → text silently invisible without `LV_USE_FONT_COMPRESSED 1`.
+  (2) `lv_conf.h` must reach the LIBRARY build too (`-Iinclude` in build_flags) or lvgl compiles against
+  defaults = silent ABI mismatch (the "Possible failure to include lv_conf.h" pragma is the tell).
+  (3) **LVGL is not thread-safe** — the serial SCREEN dump must run in the LVGL task (a console-task
+  `lv_refr_now` raced to 0 areas). (4) The screen array is indexed by the `LcdScreen` enum
+  (Ride,Setup,More,Workout,Calibrate) — a mis-ordered array swapped Setup/Workout. (5) Generated font
+  .c files are unguarded C → non-LVGL envs exclude `src/ui/` via the base build_src_filter.
+- **Memory/flash:** ~1/8-frame partial render buffer (~19 KB) — the no-PSRAM CYD needs no PSRAM; LVGL+
+  fonts ≈ +260 KB flash (CYD at 77% of min_spiffs). SCREEN now streams LVGL flush areas as
+  `<AREA x1 y1 x2 y2 b64>` blocks (grabber: scratchpad `grab_lvgl_screen.py` → reassembled PNG).
