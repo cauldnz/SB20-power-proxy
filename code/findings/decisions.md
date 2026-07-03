@@ -2177,3 +2177,33 @@ The findings that matter most for us:
 - **Memory/flash:** ~1/8-frame partial render buffer (~19 KB) — the no-PSRAM CYD needs no PSRAM; LVGL+
   fonts ≈ +260 KB flash (CYD at 77% of min_spiffs). SCREEN now streams LVGL flush areas as
   `<AREA x1 y1 x2 y2 b64>` blocks (grabber: scratchpad `grab_lvgl_screen.py` → reassembled PNG).
+
+## 2026-07-03 (later) — CYD UI fully wired + two LVGL/touch landmines found on real hardware (owner bench test).
+- **Owner's first real UI session found the LVGL port half-wired:** no Ride details pop-down, no way
+  back to the workout picker once a workout was loaded (NVS re-loads it every boot — the picker was
+  unreachable forever), Setup Rescan wired to nothing, and the touch-cal ritual wouldn't register the
+  right-edge targets. All fixed + headlessly verified (TAP/STATE over serial): title-bar tap toggles
+  IN/OUT detail cards; **Change** button (loaded && !running) emits the new `UiAction::WorkoutUnload`
+  (runtime `unload()` + `WorkoutStore::clear()`); `SetupScan` → `meter.clearCandidates()`.
+- **LANDMINE 1 — LVGL's 48 KB builtin pool exhausted = NULL-write crash, not an error.** The full
+  five-screen widget tree left no headroom; the FIRST glyph draw-buf alloc returned NULL and
+  `lv_draw_unit_draw_letter` wrote `draw_buf->header.h` through it → StoreProhibited @0x6 on core 1
+  (asserts are compiled out). A bigger static pool doesn't fit either: 72 KB of .bss overflows classic-
+  ESP32 dram0 once the live build's NimBLE central links in (+11.6 KB over). **Fix: malloc-backed LVGL**
+  (`LV_USE_STDLIB_MALLOC LV_STDLIB_CLIB`) — no fixed pool, no .bss, heap is the ceiling. Live-bench
+  runs at ~35 KB free heap on the CYD. Likely also the S3 LVGL first-flash stall (same pool; verify).
+- **LANDMINE 2 — this CYD's XPT2046 idle Z2 sits MID-SCALE (~2045), not the datasheet ~4095.** The
+  original Z1>200 gate dropped right-edge presses (Z1 scales with raw X; this film's X is inverted →
+  right edge = weak Z1) — the owner's "top-right cal target won't register". The datasheet composite
+  `Z1+4095-Z2` was WORSE: idle composite ≈2050 = a permanent phantom press that swallowed every tap
+  (LVGL saw an eternal press pinned at one point). **Fix: gate on Z1 alone with a low floor**
+  (`CYD_TP_ZMIN`, default 40; idle Z1 is a clean 0 on this film) + the ritual now rides through ≤3
+  dropout ticks mid-press. New serial `RAWZ` probe prints one `{down,rx,ry,z,z1,z2}` sample — use it
+  per-unit before trusting any pressure threshold.
+- Also: `buildLcdViews` was calling `ConfigStore::load()` (an NVS open) every 200 ms frame on live
+  builds — 5 flash reads/s + a NOT_FOUND error log each on never-configured boards; it now reads the
+  existing `g_calibrating` runtime flag. The live envs (`esp32cyd-live*`, `esp32s3-pio-live*`) were
+  missing the LVGL build flags entirely (only mock envs had them — child build_flags REPLACE the
+  parent's in PlatformIO); fixed, and the CYD live-bench chain re-proven: fake_meter (WinRT) →
+  CYD central → LVGL Ride screen showing the ramp @88 rpm. WinRT fake_meter stops advertising after
+  a central disconnects (board reflash) — restart the script to re-link.

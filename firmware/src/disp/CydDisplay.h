@@ -27,6 +27,9 @@
 #define CYD_MADCTL 0x00     // portrait, RGB, no mirror (0x48 = MX|BGR showed mirrored+wrong colors)
 #endif
 // XPT2046 raw ranges (community calibration for the ESP32-2432S028R touch film).
+#ifndef CYD_TP_ZMIN
+#define CYD_TP_ZMIN 40      // Z1 press floor: idle reads 0; edge presses read weak (see readRaw)
+#endif
 #ifndef CYD_TP_XMIN
 #define CYD_TP_XMIN 200
 #endif
@@ -125,8 +128,16 @@ public:
     // One pressure-gated raw sample (median-of-3 when pressed). True while the film is pressed.
     // Public so the calibration ritual (TouchCal.h + main.cpp) can collect raw points.
     bool readRaw(uint16_t& rx, uint16_t& ry, uint16_t& z) {
+        // Pressure gate = Z1 with a LOW floor. Two dead ends led here (RAWZ probe, 2026-07-03):
+        //   * Z1 > 200 (the original): Z1 scales with raw X, so presses on the low-raw-X side
+        //     (this film's RIGHT edge — X runs inverted) read weak and got gated out — the
+        //     "top-right cal target won't register" bug.
+        //   * Z1 + 4095 - Z2 (the datasheet composite): this clone's idle Z2 sits MID-SCALE
+        //     (~2045, not ~4095), so the composite reads ~2050 untouched — a permanent phantom
+        //     press that swallowed every real and injected tap.
+        // Idle Z1 is a clean 0 on this film; even a weak edge press lifts it well past the floor.
         z = tpRead_(0xB1);
-        if (z <= 200 || z >= 4000) { tpRead_(0x90); return false; }
+        if (z < CYD_TP_ZMIN || z > 4000) { tpRead_(0x90); return false; }
         rx = tpMedian3_(0xD1);
         ry = tpMedian3_(0x91);
         tpRead_(0x90);  // power down between frames
@@ -161,6 +172,9 @@ public:
 
     void setCal(const TouchCalFit& f) { cal_ = f; }
     const TouchCalFit& cal() const { return cal_; }
+    // Raw Z1/Z2 channel reads for the serial RAWZ probe (per-unit pressure-gate tuning).
+    uint16_t dbgZ1() { return tpRead_(0xB1); }
+    uint16_t dbgZ2() { uint16_t v = tpRead_(0xC1); tpRead_(0x90); return v; }
 
     // --- LVGL seam: area blit + level-triggered touch state -------------------------------
     void blitArea(int x1, int y1, int x2, int y2, const uint16_t* px) {

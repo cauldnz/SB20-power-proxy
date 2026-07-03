@@ -33,6 +33,7 @@ struct UiAction {
         None,
         WorkoutPreset,   // index = preset index (workoutPresets()[index])
         WorkoutStart, WorkoutPause, WorkoutResume, WorkoutSkip, WorkoutStop,
+        WorkoutUnload,   // drop the loaded workout -> back to the preset picker
         SetupScan,
         SetupPick,       // index = device index (CPS -> meter, FTMS -> trainer)
         SetupSave,
@@ -403,7 +404,8 @@ inline void lcdRenderWorkout(LcdCanvas& c, const WorkoutView& v) {
             c.text(bx + (bw - LcdCanvas::textWidth(label, 1)) / 2, WK_BTN_Y + 13, label, 1, fg);
         };
         if (!v.running) {
-            btn(0, 1, "S T A R T", LCD_ACCENT, LCD_WHITE);
+            btn(0, 2, "S T A R T", LCD_ACCENT, LCD_WHITE);
+            btn(1, 2, "Change", LCD_CHIP, LCD_FG);   // back to the preset picker
         } else {
             btn(0, 3, v.paused ? "Resume" : "Pause", LCD_CHIP, LCD_FG);
             btn(1, 3, "Skip", LCD_CHIP, LCD_FG);
@@ -619,7 +621,10 @@ inline UiAction lcdHandleTap(LcdUiState& st, const LcdViews& v, int x, int y) {
                 return a;
             }
             if (y >= WK_BTN_Y && y < WK_BTN_Y + WK_BTN_H) {
-                if (!w.running) { a.type = UiAction::WorkoutStart; return a; }
+                if (!w.running) {
+                    a.type = (x < LCD_W / 2) ? UiAction::WorkoutStart : UiAction::WorkoutUnload;
+                    return a;
+                }
                 int slot = (x - PAD) / ((LCD_W - PAD * 2) / 3);
                 if (slot <= 0) a.type = w.paused ? UiAction::WorkoutResume : UiAction::WorkoutPause;
                 else if (slot == 1) a.type = UiAction::WorkoutSkip;

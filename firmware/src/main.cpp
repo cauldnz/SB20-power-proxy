@@ -219,6 +219,7 @@ struct CalRitual {
     TouchCalPoint pts[TOUCH_CAL_POINTS] = {};
     float accX = 0, accY = 0;          // raw accumulation for the current press
     int nAcc = 0;
+    int gap = 0;                       // consecutive dropout ticks ridden through mid-press
     bool wasDown = false;
     int done = -1;                     // -1 collecting · 1 saved · 0 failed (brief, then retry)
     uint32_t doneAt = 0;
@@ -272,7 +273,10 @@ static void touchCalTick() {
     }
     if (down) {
         g_tcal.accX += rx; g_tcal.accY += ry; ++g_tcal.nAcc;
-    } else if (g_tcal.wasDown && g_tcal.nAcc >= 5) {  // a solid press just released -> record
+        g_tcal.gap = 0;
+    } else if (g_tcal.nAcc > 0 && g_tcal.gap < 3) {
+        ++g_tcal.gap;  // edge presses flicker below the pressure gate: ride out short dropouts
+    } else if (g_tcal.nAcc >= 5) {                    // a solid press just released -> record
         int tx, ty;
         touchCalTarget(g_tcal.idx, tx, ty);
         g_tcal.pts[g_tcal.idx] = {g_tcal.accX / g_tcal.nAcc, g_tcal.accY / g_tcal.nAcc,
@@ -280,7 +284,7 @@ static void touchCalTick() {
         Serial.printf("[tcal] point %d/%d raw=(%.0f,%.0f) target=(%d,%d)\n", g_tcal.idx + 1,
                       TOUCH_CAL_POINTS, (double)g_tcal.pts[g_tcal.idx].rawX,
                       (double)g_tcal.pts[g_tcal.idx].rawY, tx, ty);
-        g_tcal.accX = g_tcal.accY = 0; g_tcal.nAcc = 0;
+        g_tcal.accX = g_tcal.accY = 0; g_tcal.nAcc = 0; g_tcal.gap = 0;
         if (++g_tcal.idx >= TOUCH_CAL_POINTS) {
             TouchCalFit f = touchCalFit(g_tcal.pts, TOUCH_CAL_POINTS);
             if (f.valid) {
@@ -297,8 +301,8 @@ static void touchCalTick() {
             g_tcal.doneAt = millis();
             g_tcal.testX = g_tcal.testY = -1;
         }
-    } else {
-        g_tcal.accX = g_tcal.accY = 0; g_tcal.nAcc = 0;  // too-short blip: discard
+    } else if (g_tcal.nAcc > 0) {
+        g_tcal.accX = g_tcal.accY = 0; g_tcal.nAcc = 0; g_tcal.gap = 0;  // too-short blip: discard
     }
     g_tcal.wasDown = down;
 }
@@ -368,8 +372,9 @@ static void buildLcdViews(LcdViews& v) {
     // Calibrate wizard view (live builds carry the session; bench shows the idle prompt)
     CalWizardView& cal = v.cal;
 #if !USE_MOCK_METER
-    const RuntimeConfig cc = ConfigStore::load();
-    if (cc.calibrating) {
+    // g_calibrating mirrors the NVS flag; reading ConfigStore here meant an nvs_open per
+    // 200 ms frame (5 flash reads/s + a NOT_FOUND error log each on never-configured boards).
+    if (g_calibrating) {
         if (g_cal.fitted()) {
             cal.state = CalState::Fitted;
             const Correction& fit = g_cal.fit();
@@ -414,6 +419,17 @@ static void lcdExecute(const UiAction& a, const LcdViews& v) {
         case UiAction::WorkoutResume: g_wk.resume(millis()); break;
         case UiAction::WorkoutSkip:   g_wk.skip(millis()); break;
         case UiAction::WorkoutStop:   g_wk.stop(); break;
+        case UiAction::WorkoutUnload:
+            g_wk.unload();
+#if USE_WIFI
+            WorkoutStore::clear();  // else the NVS copy re-loads it on the next boot
+#endif
+            break;
+        case UiAction::SetupScan:
+#if !USE_MOCK_METER
+            meter.clearCandidates();  // the scan keeps running; this restarts the list fresh
+#endif
+            break;
         case UiAction::SetBrightness: lcd.setBrightness((uint8_t)a.index); break;
 #if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
         case UiAction::TouchCalStart:
@@ -464,7 +480,9 @@ static void lvglFlushHook(int x1, int y1, int x2, int y2, const uint16_t* px) {
 
 static void lcdTask(void*) {
     LvglDriverHooks hooks{lvglFlushHook, lvglTouchHook};
+    Serial.println("[lvgl] init...");
     lvglUiInit(hooks, LCD_W, LCD_H);
+    Serial.println("[lvgl] init done");
     LcdViews views;
     uint32_t lastData = 0;
     bool wasCal = false;
@@ -502,6 +520,7 @@ static void lcdTask(void*) {
             buildLcdViews(views);
             lvglUiUpdate(views);
             g_lcdUi.screen = lvglUiCurrentScreen();  // keep STATE/serial in sync
+            g_lcdUi.rideDetails = lvglUiRideDetails();
             lcdUnlock();
         }
         UiAction a;
@@ -516,6 +535,14 @@ static void lcdTask(void*) {
             lvglUiScreenDumpBegin();
         }
         lvglUiTick();
+        {   // liveness heartbeat: proves this task is pumping (S3 stall diagnosis, 2026-07-03)
+            static uint32_t hb = 0;
+            if (millis() - hb >= 5000) {
+                hb = millis();
+                Serial.printf("[lvgl] alive scr=%d heap=%u stack=%u\n", (int)lvglUiCurrentScreen(),
+                              (unsigned)ESP.getFreeHeap(), (unsigned)uxTaskGetStackHighWaterMark(nullptr));
+            }
+        }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
@@ -670,6 +697,11 @@ static void lcdSerialConsole() {
             Serial.printf("{\"cal_valid\":%d,\"sx\":%.5f,\"ox\":%.1f,\"sy\":%.5f,\"oy\":%.1f,"
                           "\"ritual\":%d,\"point\":%d}\n", f.valid, (double)f.sx, (double)f.ox,
                           (double)f.sy, (double)f.oy, g_tcal.active, g_tcal.idx);
+        } else if (cmd == "RAWZ") {  // one raw pressure sample: is the film phantom-pressed?
+            uint16_t rx = 0, ry = 0, z = 0;
+            const bool down = lcd.readRaw(rx, ry, z);
+            Serial.printf("{\"down\":%d,\"rx\":%u,\"ry\":%u,\"z\":%u,\"z1\":%u,\"z2\":%u}\n",
+                          down, rx, ry, z, lcd.dbgZ1(), lcd.dbgZ2());
         } else if (cmd.rfind("INV ", 0) == 0) {   // live panel tweak: inversion on/off
             lcd.setInvert(cmd.back() == '1');
             Serial.println("[lcd] inversion set");

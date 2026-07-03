@@ -147,10 +147,15 @@ struct {
     lv_obj_t *srcDot, *srcName, *outDot, *outName, *hero, *unitW, *cad, *bal;
     lv_obj_t* chart;
     lv_chart_series_t* ser;
+    // details pop-down (title-bar tap): IN/OUT cards replace the chart + chips
+    lv_obj_t *chev, *cardCad, *cardBal, *det;
+    lv_obj_t *dInName, *dInW, *dInCad, *dInMeta;
+    lv_obj_t *dOutName, *dOutW, *dOutCad, *dOutMeta;
 } R{};
+bool g_rideDetails = false;
 struct {
     lv_obj_t *title, *clock, *stepLine, *target, *now, *ergLine;
-    lv_obj_t *bStart, *bPause, *bSkip, *bStop, *bPauseLabel;
+    lv_obj_t *bStart, *bChange, *bPause, *bSkip, *bStop, *bPauseLabel;
     lv_obj_t *pickPanel, *runPanel;
     lv_obj_t* prof;
     lv_chart_series_t* profSer;
@@ -159,7 +164,7 @@ struct {
     lv_obj_t* rows[6];
     lv_obj_t* rowName[6];
     lv_obj_t* rowMeta[6];
-    lv_obj_t *bScan, *bSave;
+    lv_obj_t *bScan, *bSave, *empty;
 } S{};
 struct { lv_obj_t* val[8]; lv_obj_t* ip; } M{};
 struct { lv_obj_t *sub, *btn; } CAL{};
@@ -213,6 +218,21 @@ lv_obj_t* mkScreen() {
 }
 
 // --- Ride -------------------------------------------------------------------
+void rideDetailsSet(bool on) {
+    g_rideDetails = on;
+    auto vis = [](lv_obj_t* o, bool show) {
+        if (!o) return;
+        if (show) lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+    };
+    vis(R.det, on);
+    vis(R.chart, !on);
+    vis(R.cardCad, !on);
+    vis(R.cardBal, !on);
+    if (R.chev) lv_label_set_text(R.chev, on ? "^" : "v");
+}
+void rideTitleCb(lv_event_t*) { rideDetailsSet(!g_rideDetails); }
+
 void buildRide() {
     lv_obj_t* s = g_scrObj[0] = mkScreen();
     lv_obj_t* tb = mkPanel(s);
@@ -230,9 +250,13 @@ void buildRide() {
     R.outDot = mkDot(tb, C_OK());
     lv_obj_align(R.outDot, LV_ALIGN_LEFT_MID, g_hor / 2 + 6, 0);
     R.outName = mkLabel(tb, &lv_inter_16, C_FG());
-    lv_obj_set_width(R.outName, g_hor / 2 - 24);
+    lv_obj_set_width(R.outName, g_hor / 2 - 40);
     lv_label_set_long_mode(R.outName, LV_LABEL_LONG_DOT);
     lv_obj_align(R.outName, LV_ALIGN_LEFT_MID, g_hor / 2 + 20, 0);
+    R.chev = mkLabel(tb, &lv_inter_16, C_MUT(), "v");
+    lv_obj_align(R.chev, LV_ALIGN_RIGHT_MID, -6, 0);
+    lv_obj_add_flag(tb, LV_OBJ_FLAG_CLICKABLE);           // tap the title -> IN/OUT details
+    lv_obj_add_event_cb(tb, rideTitleCb, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t* pw = mkLabel(s, &lv_inter_12, C_MUT(), "P O W E R");
     lv_obj_align(pw, LV_ALIGN_TOP_MID, 0, 46);
@@ -265,6 +289,35 @@ void buildRide() {
     mkLabel(c2, &lv_inter_12, C_MUT(), "Balance");
     R.bal = mkLabel(c2, &lv_inter_sb_28, C_FG(), "--");
     lv_obj_align(R.bal, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    R.cardCad = c1;
+    R.cardBal = c2;
+
+    // details pop-down: IN/OUT cards replace the chart + chips while open
+    R.det = mkPanel(s);
+    lv_obj_set_size(R.det, g_hor, 134);
+    lv_obj_align(R.det, LV_ALIGN_TOP_MID, 0, 138);
+    lv_obj_add_flag(R.det, LV_OBJ_FLAG_HIDDEN);
+    const int dw = (g_hor - 26) / 2;
+    auto mkSide = [&](lv_align_t al, int ox, const char* badge, lv_color_t bc, lv_obj_t** name,
+                      lv_obj_t** watts, lv_obj_t** cad, lv_obj_t** meta) {
+        lv_obj_t* card = mkCard(R.det);
+        lv_obj_set_size(card, dw, 134);
+        lv_obj_align(card, al, ox, 0);
+        mkLabel(card, &lv_inter_12, bc, badge);
+        *name = mkLabel(card, &lv_inter_12, C_FG());
+        lv_obj_set_width(*name, dw - 20);
+        lv_label_set_long_mode(*name, LV_LABEL_LONG_DOT);
+        lv_obj_align(*name, LV_ALIGN_TOP_LEFT, 0, 18);
+        *watts = mkLabel(card, &lv_inter_sb_28, C_FG(), "0");
+        lv_obj_align(*watts, LV_ALIGN_TOP_LEFT, 0, 38);
+        *cad = mkLabel(card, &lv_inter_12, C_MUT(), "--");
+        lv_obj_align(*cad, LV_ALIGN_TOP_LEFT, 0, 74);
+        *meta = mkLabel(card, &lv_inter_12, C_MUT(), "");
+        lv_obj_align(*meta, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    };
+    mkSide(LV_ALIGN_TOP_LEFT, 10, "IN", C_OK(), &R.dInName, &R.dInW, &R.dInCad, &R.dInMeta);
+    mkSide(LV_ALIGN_TOP_RIGHT, -10, "OUT", C_ACCENT(), &R.dOutName, &R.dOutW, &R.dOutCad,
+           &R.dOutMeta);
 
     mkNav(s, 0);
 }
@@ -278,6 +331,7 @@ void wkActionCb(lv_event_t* e) {
                                                         : UiAction::WorkoutPause;
     else if (!strcmp(act, "skip")) a.type = UiAction::WorkoutSkip;
     else if (!strcmp(act, "stop")) a.type = UiAction::WorkoutStop;
+    else if (!strcmp(act, "change")) a.type = UiAction::WorkoutUnload;
     emitAction(a);
 }
 void wkPresetCb(lv_event_t* e) {
@@ -346,8 +400,12 @@ void buildWorkout() {
 
     W.bStart = mkButton(W.runPanel, "S T A R T", C_ACCENT(), C_FG(), &lv_inter_sb_20,
                         wkActionCb, (void*)"start");
-    lv_obj_set_size(W.bStart, g_hor - 20, 42);
-    lv_obj_align(W.bStart, LV_ALIGN_BOTTOM_MID, 0, -2);
+    lv_obj_set_size(W.bStart, (g_hor - 25) * 2 / 3, 42);
+    lv_obj_align(W.bStart, LV_ALIGN_BOTTOM_LEFT, 10, -2);
+    W.bChange = mkButton(W.runPanel, "Change", C_CARD(), C_FG(), &lv_inter_16, wkActionCb,
+                         (void*)"change");
+    lv_obj_set_size(W.bChange, (g_hor - 25) / 3, 42);
+    lv_obj_align(W.bChange, LV_ALIGN_BOTTOM_RIGHT, -10, -2);
     const int bw = (g_hor - 20 - 10) / 3;
     W.bPause = mkButton(W.runPanel, "Pause", C_CARD(), C_FG(), &lv_inter_16, wkActionCb,
                         (void*)"pause");
@@ -403,6 +461,8 @@ void buildSetup() {
         lv_obj_add_event_cb(row, setupPickCb, LV_EVENT_CLICKED, (void*)(intptr_t)i);
         S.rows[i] = row;
     }
+    S.empty = mkLabel(s, &lv_inter_12, C_MUT(), "no devices - wake the meter + Rescan");
+    lv_obj_align(S.empty, LV_ALIGN_TOP_MID, 0, 64);
     S.bScan = mkButton(s, "Rescan", C_CARD(), C_FG(), &lv_inter_16, setupActCb,
                        (void*)(intptr_t)UiAction::SetupScan);
     lv_obj_set_size(S.bScan, (g_hor - 30) / 2, 36);
@@ -578,6 +638,22 @@ void lvglUiUpdate(const LcdViews& v) {
     else snprintf(buf, sizeof(buf), "--");
     lv_label_set_text(R.bal, buf);
     lv_chart_set_next_value(R.chart, R.ser, v.ride.watts < 0 ? 0 : v.ride.watts);
+    if (g_rideDetails) {  // details pop-down open: refresh the IN/OUT cards
+        lv_label_set_text(R.dInName, v.ride.srcName.empty() ? "searching" : v.ride.srcName.c_str());
+        lv_label_set_text(R.dOutName, v.ride.outName.c_str());
+        snprintf(buf, sizeof(buf), "%dW", (int)v.ride.srcWatts);
+        lv_label_set_text(R.dInW, buf);
+        snprintf(buf, sizeof(buf), "%dW", (int)v.ride.watts);
+        lv_label_set_text(R.dOutW, buf);
+        if (v.ride.cadence >= 0) snprintf(buf, sizeof(buf), "%d rpm", (int)v.ride.cadence);
+        else snprintf(buf, sizeof(buf), "-- rpm");
+        lv_label_set_text(R.dInCad, buf);
+        lv_label_set_text(R.dOutCad, buf);
+        snprintf(buf, sizeof(buf), "%ld dBm", (long)v.ride.wifiRssi);
+        lv_label_set_text(R.dInMeta, buf);
+        snprintf(buf, sizeof(buf), "up %lum", (unsigned long)(v.ride.uptimeMs / 60000u));
+        lv_label_set_text(R.dOutMeta, buf);
+    }
 
     // Workout
     const WorkoutView& w = v.wk;
@@ -618,12 +694,14 @@ void lvglUiUpdate(const LcdViews& v) {
 
         if (w.running) {
             lv_obj_add_flag(W.bStart, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(W.bChange, LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(W.bPause, LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(W.bSkip, LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(W.bStop, LV_OBJ_FLAG_HIDDEN);
             lv_label_set_text(W.bPauseLabel, w.paused ? "Resume" : "Pause");
         } else {
             lv_obj_remove_flag(W.bStart, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(W.bChange, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(W.bPause, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(W.bSkip, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(W.bStop, LV_OBJ_FLAG_HIDDEN);
@@ -636,6 +714,8 @@ void lvglUiUpdate(const LcdViews& v) {
     }
 
     // Setup
+    if (v.setup.devices.empty()) lv_obj_remove_flag(S.empty, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(S.empty, LV_OBJ_FLAG_HIDDEN);
     for (int i = 0; i < 6; ++i) {
         if (i < (int)v.setup.devices.size()) {
             const auto& dev = v.setup.devices[i];
@@ -714,6 +794,7 @@ void lvglUiScreenDumpBegin() {
     Serial.println("<DUMPDONE>");
 }
 bool lvglUiScreenDumpActive() { return g_dumpActive; }
+bool lvglUiRideDetails() { return g_rideDetails; }
 
 }  // namespace sb20proxy
 #endif  // USE_LVGL
