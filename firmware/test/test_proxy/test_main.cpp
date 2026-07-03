@@ -1559,6 +1559,38 @@ void test_lcd_render_all_screens_nonblank() {
     }
 }
 
+// Banded rendering (the no-PSRAM CYD path, LCD_BANDS>1): rendering the frame in N horizontal
+// slices through the SAME pure renderer must be pixel-identical to one full-frame render, for
+// every screen — writes outside the band clip away, so the UI code needs no band awareness.
+void test_lcd_banded_render_matches_full() {
+    LcdViews v;
+    LcdUiState st;
+    v.ride.srcName = "ASSIOMA"; v.ride.outName = "62144"; v.ride.watts = 247; v.ride.srcOn = true;
+    Workout w = parseWorkout(presetJson("4x8"));
+    v.wk.loaded = true; v.wk.running = true; v.wk.w = &w; v.wk.st = workoutStateAt(w, 900);
+    v.setup.devices = {{"aa", "ASSIOMA", -45, true, false, false}};
+    v.more.mode = "Crank spoof"; v.more.version = "0.1.0";
+    v.cal.state = CalState::Collecting; v.cal.coverage = {8, 6, 8};
+    const int bands = 4, rows = LCD_H / bands;
+    for (auto scr : {LcdScreen::Ride, LcdScreen::Workout, LcdScreen::Setup, LcdScreen::More,
+                     LcdScreen::Calibrate}) {
+        st.screen = scr;
+        LcdCanvas full;
+        lcdRender(full, st, v);
+        LcdCanvas band(rows);
+        long mismatches = 0;
+        for (int b = 0; b < bands && mismatches == 0; ++b) {
+            band.setBand(b * rows);
+            band.clear();
+            lcdRender(band, st, v);
+            for (int y = b * rows; y < (b + 1) * rows && mismatches == 0; ++y)
+                for (int x = 0; x < LCD_W; ++x)
+                    if (full.get(x, y) != band.get(x, y)) { ++mismatches; break; }
+        }
+        TEST_ASSERT_EQUAL_INT_MESSAGE(0, (int)mismatches, "banded render != full-frame render");
+    }
+}
+
 void test_lcd_tap_nav_switches_screen() {
     LcdUiState st; st.screen = LcdScreen::Ride;
     LcdViews v;
@@ -2255,6 +2287,7 @@ int runUnityTests() {
     RUN_TEST(test_lcd_canvas_geometry_and_text);
     RUN_TEST(test_lcd_bmp_header_valid);
     RUN_TEST(test_lcd_render_all_screens_nonblank);
+    RUN_TEST(test_lcd_banded_render_matches_full);
     RUN_TEST(test_lcd_tap_nav_switches_screen);
     RUN_TEST(test_lcd_tap_ride_title_toggles_details);
     RUN_TEST(test_lcd_tap_workout_controls_and_presets);

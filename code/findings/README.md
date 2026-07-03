@@ -63,6 +63,7 @@ later that worked before, the answer is usually in here.
 ## Research / roadmap
 - **[zwift-controls-research.md](zwift-controls-research.md)** — Zwift integration / controls research.
 - **[advanced-board-s3-touch.md](advanced-board-s3-touch.md)** — planning ideas for an optional **"advanced" hardware tier** (Waveshare ESP32-S3-Touch-LCD-1.47): dual-core kills the C3 coex hang, a touch head-unit (no phone), SD capture — reusing the existing proxy core.
+- **[cyd-board.md](cyd-board.md)** — the AliExpress **ESP32-2432S028R "Cheap Yellow Display"** (classic ESP32 + 2.8" 240×320 resistive touch, COM17): ported + twin-tested head-unit target (`esp32cyd*` envs, banded no-PSRAM rendering) + the port gotchas (GPIO8 = flash pin!).
 
 ## Also in here
 - **[captures/README.md](captures/README.md)** — the index of committed JSONL/pcap capture files (the canonical lossless record — never edit one).
