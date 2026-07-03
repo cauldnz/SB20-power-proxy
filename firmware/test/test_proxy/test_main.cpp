@@ -35,6 +35,7 @@
 #include "WebApp.h"
 #include "LcdCanvas.h"
 #include "LcdUi.h"
+#include "TouchCal.h"
 #include "WorkoutEngine.h"
 #include "WorkoutPresets.h"
 #include "WorkoutRuntime.h"
@@ -1591,6 +1592,56 @@ void test_lcd_banded_render_matches_full() {
     }
 }
 
+// --- resistive touch calibration (TouchCal.h) — pure fit + apply + the crosshair screen ----
+// Synthesize taps through a known raw->screen mapping (with per-tap noise), fit, and check the
+// fit maps fresh raw samples back to screen within a few pixels. The X axis is INVERTED (raw
+// grows right-to-left, as on the real CYD film) to prove direction falls out of the data.
+void test_touchcal_fit_recovers_mapping_with_inverted_axis() {
+    // ground truth: rawX = 3800 - x*14.5 (inverted), rawY = 300 + y*11.0
+    auto rawOfX = [](float x) { return 3800.0f - x * 14.5f; };
+    auto rawOfY = [](float y) { return 300.0f + y * 11.0f; };
+    TouchCalPoint pts[TOUCH_CAL_POINTS];
+    const float noise[TOUCH_CAL_POINTS] = {+9.0f, -7.0f, +5.0f, -11.0f};
+    for (int i = 0; i < TOUCH_CAL_POINTS; ++i) {
+        int tx, ty;
+        touchCalTarget(i, tx, ty);
+        pts[i] = {rawOfX((float)tx) + noise[i], rawOfY((float)ty) + noise[3 - i],
+                  (float)tx, (float)ty};
+    }
+    TouchCalFit f = touchCalFit(pts, TOUCH_CAL_POINTS);
+    TEST_ASSERT_TRUE(f.valid);
+    TEST_ASSERT_TRUE(f.sx < 0);  // inverted axis -> negative scale
+    // probe a few fresh screen positions through the ground truth and back through the fit
+    const int probe[3][2] = {{LCD_W / 2, LCD_H / 2}, {30, 250}, {LCD_W - 15, 60}};
+    for (auto& p : probe) {
+        int mx, my;
+        touchCalApply(f, rawOfX((float)p[0]), rawOfY((float)p[1]), mx, my);
+        TEST_ASSERT_INT_WITHIN(4, p[0], mx);
+        TEST_ASSERT_INT_WITHIN(4, p[1], my);
+    }
+}
+
+void test_touchcal_fit_rejects_clustered_taps() {
+    TouchCalPoint pts[TOUCH_CAL_POINTS];
+    for (int i = 0; i < TOUCH_CAL_POINTS; ++i) {
+        int tx, ty;
+        touchCalTarget(i, tx, ty);
+        pts[i] = {2000.0f + i, 2000.0f - i, (float)tx, (float)ty};  // raw barely moves = junk
+    }
+    TEST_ASSERT_FALSE(touchCalFit(pts, TOUCH_CAL_POINTS).valid);
+    TEST_ASSERT_FALSE(touchCalFit(pts, 1).valid);
+}
+
+void test_touchcal_screen_renders_all_states() {
+    for (int done : {-1, 0, 1}) {
+        LcdCanvas c;
+        renderTouchCalScreen(c, /*step=*/done < 0 ? 2 : 0, done);
+        TEST_ASSERT_TRUE(lcdPixelPresent(c, done == 1   ? LCD_OK
+                                            : done == 0 ? LCD_BAD
+                                                        : LCD_ACCENT));
+    }
+}
+
 void test_lcd_tap_nav_switches_screen() {
     LcdUiState st; st.screen = LcdScreen::Ride;
     LcdViews v;
@@ -2288,6 +2339,9 @@ int runUnityTests() {
     RUN_TEST(test_lcd_bmp_header_valid);
     RUN_TEST(test_lcd_render_all_screens_nonblank);
     RUN_TEST(test_lcd_banded_render_matches_full);
+    RUN_TEST(test_touchcal_fit_recovers_mapping_with_inverted_axis);
+    RUN_TEST(test_touchcal_fit_rejects_clustered_taps);
+    RUN_TEST(test_touchcal_screen_renders_all_states);
     RUN_TEST(test_lcd_tap_nav_switches_screen);
     RUN_TEST(test_lcd_tap_ride_title_toggles_details);
     RUN_TEST(test_lcd_tap_workout_controls_and_presets);
