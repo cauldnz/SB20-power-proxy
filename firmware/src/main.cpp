@@ -204,6 +204,103 @@ static int16_t g_lcdHist[160] = {0};       // power-history ring for the Ride sp
 static int g_lcdHistN = 0;
 static volatile int g_lcdInjX = -1, g_lcdInjY = -1;  // synthetic tap from the serial bench console
 
+#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
+// --- resistive touch calibration ritual (TouchCal.h) — CYD only; the S3 is capacitive -------
+// Old-school tap-the-crosshair: 4 corner targets -> per-axis least-squares fit -> NVS. Runs in
+// the LCD task INSTEAD of the normal UI while active. Auto-runs on first boot (no stored cal);
+// serial: CALTOUCH re-runs it, RAWTAP <rx> <ry> injects a synthetic raw press (headless twin
+// test of the whole ritual), CALINFO prints the active fit.
+struct CalRitual {
+    volatile bool active = false;
+    int idx = 0;                       // which crosshair
+    TouchCalPoint pts[TOUCH_CAL_POINTS] = {};
+    float accX = 0, accY = 0;          // raw accumulation for the current press
+    int nAcc = 0;
+    bool wasDown = false;
+    int done = -1;                     // -1 collecting · 1 saved · 0 failed (brief, then retry)
+    uint32_t doneAt = 0;
+    int testX = -1, testY = -1;        // verification-tap marker on the success screen
+    volatile int injLeft = 0;          // synthetic raw press: remaining pressed ticks
+    volatile uint16_t injRx = 0, injRy = 0;
+};
+static CalRitual g_tcal;
+
+static void touchCalSave(const TouchCalFit& f) {
+    Preferences p;
+    if (p.begin("sb20touch", false)) {
+        p.putFloat("sx", f.sx); p.putFloat("ox", f.ox);
+        p.putFloat("sy", f.sy); p.putFloat("oy", f.oy);
+        p.putBool("valid", f.valid);
+        p.end();
+    }
+}
+static TouchCalFit touchCalLoad() {
+    TouchCalFit f;
+    Preferences p;
+    if (p.begin("sb20touch", true)) {
+        f.sx = p.getFloat("sx", 0); f.ox = p.getFloat("ox", 0);
+        f.sy = p.getFloat("sy", 0); f.oy = p.getFloat("oy", 0);
+        f.valid = p.getBool("valid", false);
+        p.end();
+    }
+    return f;
+}
+
+// One 20 ms tick of the ritual: sample (real film or injected), accumulate while pressed,
+// record on release, fit + persist after the 4th point. Returns the screen to render.
+static void touchCalTick() {
+    uint16_t rx = 0, ry = 0, z = 0;
+    bool down;
+    if (g_tcal.injLeft > 0) { down = true; rx = g_tcal.injRx; ry = g_tcal.injRy; --g_tcal.injLeft; }
+    else down = lcd.readRaw(rx, ry, z);
+
+    if (g_tcal.done == 1) {                       // success close-out: taps show where they map
+        if (down && !g_tcal.wasDown) {
+            lcd.rawToScreen(rx, ry, g_tcal.testX, g_tcal.testY);
+            g_tcal.doneAt = millis();             // keep testing? keep the screen up
+        }
+        g_tcal.wasDown = down;
+        if (millis() - g_tcal.doneAt > 6000) { g_tcal.active = false; g_tcal.done = -1; }
+        return;
+    }
+    if (g_tcal.done == 0) {                       // failure flash, then restart the ritual
+        if (millis() - g_tcal.doneAt > 2000) { g_tcal.idx = 0; g_tcal.done = -1; }
+        return;
+    }
+    if (down) {
+        g_tcal.accX += rx; g_tcal.accY += ry; ++g_tcal.nAcc;
+    } else if (g_tcal.wasDown && g_tcal.nAcc >= 5) {  // a solid press just released -> record
+        int tx, ty;
+        touchCalTarget(g_tcal.idx, tx, ty);
+        g_tcal.pts[g_tcal.idx] = {g_tcal.accX / g_tcal.nAcc, g_tcal.accY / g_tcal.nAcc,
+                                  (float)tx, (float)ty};
+        Serial.printf("[tcal] point %d/%d raw=(%.0f,%.0f) target=(%d,%d)\n", g_tcal.idx + 1,
+                      TOUCH_CAL_POINTS, (double)g_tcal.pts[g_tcal.idx].rawX,
+                      (double)g_tcal.pts[g_tcal.idx].rawY, tx, ty);
+        g_tcal.accX = g_tcal.accY = 0; g_tcal.nAcc = 0;
+        if (++g_tcal.idx >= TOUCH_CAL_POINTS) {
+            TouchCalFit f = touchCalFit(g_tcal.pts, TOUCH_CAL_POINTS);
+            if (f.valid) {
+                lcd.setCal(f);
+                touchCalSave(f);
+                Serial.printf("[tcal] SAVED sx=%.4f ox=%.1f sy=%.4f oy=%.1f\n", (double)f.sx,
+                              (double)f.ox, (double)f.sy, (double)f.oy);
+                g_tcal.done = 1;
+            } else {
+                Serial.println("[tcal] fit REJECTED (taps too clustered) - retrying");
+                g_tcal.idx = 0;
+                g_tcal.done = 0;
+            }
+            g_tcal.doneAt = millis();
+            g_tcal.testX = g_tcal.testY = -1;
+        }
+    } else {
+        g_tcal.accX = g_tcal.accY = 0; g_tcal.nAcc = 0;  // too-short blip: discard
+    }
+    g_tcal.wasDown = down;
+}
+#endif  // LCD_DRIVER_CYD
+
 // Fill the view structs from live proxy/meter/workout/wifi state. Called under lock.
 static void buildLcdViews(LcdViews& v) {
     RideView& r = v.ride;
@@ -342,6 +439,23 @@ static void lcdTask(void*) {
     LcdViews views;
     uint32_t lastRender = 0;
     for (;;) {
+#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
+        // Touch-calibration ritual: replaces the normal UI while active.
+        if (g_tcal.active) {
+            touchCalTick();
+            const int rows = LCD_H / LCD_BANDS;
+            for (int b = 0; b < LCD_BANDS; ++b) {
+                g_lcdFrame().setBand(b * rows);
+                g_lcdFrame().clear();
+                renderTouchCalScreen(g_lcdFrame(), g_tcal.idx, g_tcal.done, g_tcal.testX,
+                                     g_tcal.testY);
+                lcd.blit(g_lcdFrame());
+            }
+            lastRender = 0;  // force a fresh UI paint when the ritual ends
+            vTaskDelay(pdMS_TO_TICKS(20));
+            continue;
+        }
+#endif
         // 1) touch (real digitiser OR a synthetic tap injected over serial)
         int tx = -1, ty = -1;
         if (g_lcdInjX >= 0) { tx = g_lcdInjX; ty = g_lcdInjY; g_lcdInjX = -1; }
@@ -447,6 +561,31 @@ static void lcdSerialConsole() {
                 g_lcdInjX = x; g_lcdInjY = y;
                 Serial.printf("[lcd] tap injected %d,%d\n", x, y);
             }
+#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
+        } else if (cmd == "CALTOUCH") {           // (re)run the touch-calibration ritual
+            g_tcal = CalRitual{};
+            g_tcal.active = true;
+            Serial.println("[tcal] ritual started");
+        } else if (cmd.rfind("RAWTAP ", 0) == 0) {  // synthetic raw press (headless cal test)
+            unsigned rx = 0, ry = 0;
+            if (sscanf(cmd.c_str() + 7, "%u %u", &rx, &ry) == 2) {
+                g_tcal.injRx = (uint16_t)rx; g_tcal.injRy = (uint16_t)ry;
+                g_tcal.injLeft = 8;               // ~8 pressed ticks then release
+                Serial.printf("[tcal] raw press injected %u,%u\n", rx, ry);
+            }
+        } else if (cmd == "CALINFO") {
+            const TouchCalFit& f = lcd.cal();
+            Serial.printf("{\"cal_valid\":%d,\"sx\":%.5f,\"ox\":%.1f,\"sy\":%.5f,\"oy\":%.1f,"
+                          "\"ritual\":%d,\"point\":%d}\n", f.valid, (double)f.sx, (double)f.ox,
+                          (double)f.sy, (double)f.oy, g_tcal.active, g_tcal.idx);
+        } else if (cmd == "CALCLEAR") {           // wipe the stored cal + restart the ritual
+            Preferences p;
+            if (p.begin("sb20touch", false)) { p.clear(); p.end(); }
+            lcd.setCal(TouchCalFit{});
+            g_tcal = CalRitual{};
+            g_tcal.active = true;
+            Serial.println("[tcal] cleared - ritual restarted");
+#endif
         } else if (cmd == "STATE") {
             lcdLock();
             Serial.printf("{\"screen\":%d,\"details\":%d,\"power\":%d,\"cad\":%d,"
@@ -750,6 +889,18 @@ void setup() {
 #if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
     Serial.printf("[lcd] CYD %dx%d up (%d band%s); touch(XPT2046)=%s\n", LCD_W, LCD_H, LCD_BANDS,
                   LCD_BANDS > 1 ? "s" : "", lcd.touchAlive() ? "alive" : "DEAD");
+    {   // stored touch calibration -> apply; none yet -> run the tap-the-crosshair ritual
+        TouchCalFit f = touchCalLoad();
+        if (f.valid) {
+            lcd.setCal(f);
+            Serial.printf("[tcal] loaded sx=%.4f ox=%.1f sy=%.4f oy=%.1f\n", (double)f.sx,
+                          (double)f.ox, (double)f.sy, (double)f.oy);
+        } else if (lcd.touchAlive()) {
+            Serial.println("[tcal] no stored calibration - entering the ritual (CALTOUCH re-runs)");
+            g_tcal = CalRitual{};
+            g_tcal.active = true;
+        }
+    }
 #else
     Serial.printf("[lcd] JD9853 %dx%d up; touch(AXS5106)=%s\n", LCD_W, LCD_H,
                   lcd.touchAlive() ? "alive" : "DEAD");

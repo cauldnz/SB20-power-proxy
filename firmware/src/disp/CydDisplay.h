@@ -18,6 +18,7 @@
 #include <SPI.h>
 
 #include "LcdCanvas.h"
+#include "TouchCal.h"
 
 #ifndef CYD_INVERT
 #define CYD_INVERT 1        // the 2-USB CYD wants INVON; set 0 if colors look negative
@@ -109,14 +110,30 @@ public:
 
     // Poll one touch point; true once per NEW press (edge-triggered, like the S3 seam).
     bool readTap(int& outX, int& outY) {
-        uint16_t z = tpRead_(0xB1);
-        bool down = z > 200 && z < 4000;         // pressure-gated
+        uint16_t rx, ry, z;
+        bool down = readRaw(rx, ry, z);
         bool newTap = down && !wasDown_;
         wasDown_ = down;
         if (!newTap) return false;
-        int rx = tpMedian3_(0xD1), ry = tpMedian3_(0x91);
-        tpRead_(0x90);                            // power down between frames
-        // Map raw -> portrait panel coords (community cal; X runs opposite the panel).
+        rawToScreen(rx, ry, outX, outY);
+        return true;
+    }
+
+    // One pressure-gated raw sample (median-of-3 when pressed). True while the film is pressed.
+    // Public so the calibration ritual (TouchCal.h + main.cpp) can collect raw points.
+    bool readRaw(uint16_t& rx, uint16_t& ry, uint16_t& z) {
+        z = tpRead_(0xB1);
+        if (z <= 200 || z >= 4000) { tpRead_(0x90); return false; }
+        rx = tpMedian3_(0xD1);
+        ry = tpMedian3_(0x91);
+        tpRead_(0x90);  // power down between frames
+        return true;
+    }
+
+    // Map a raw sample to panel coords: the NVS-loaded least-squares fit when present, else the
+    // compiled community defaults (CYD_TP_* — X runs opposite the panel on this film).
+    void rawToScreen(uint16_t rx, uint16_t ry, int& outX, int& outY) const {
+        if (cal_.valid) { touchCalApply(cal_, (float)rx, (float)ry, outX, outY); return; }
         int x = (int)((int32_t)(CYD_TP_XMAX - rx) * (LCD_W - 1) / (CYD_TP_XMAX - CYD_TP_XMIN));
         int y = (int)((int32_t)(ry - CYD_TP_YMIN) * (LCD_H - 1) / (CYD_TP_YMAX - CYD_TP_YMIN));
         if (x < 0) x = 0;
@@ -125,8 +142,10 @@ public:
         if (y >= LCD_H) y = LCD_H - 1;
         outX = x;
         outY = y;
-        return true;
     }
+
+    void setCal(const TouchCalFit& f) { cal_ = f; }
+    const TouchCalFit& cal() const { return cal_; }
 
     bool touchAlive() const { return touchAlive_; }
 
@@ -141,6 +160,7 @@ private:
     SPIClass spi_{HSPI};
     bool wasDown_ = false;
     bool touchAlive_ = false;
+    TouchCalFit cal_;  // invalid until loaded/fit -> the compiled defaults apply
 
     void cmd_(uint8_t c) {
         digitalWrite(PIN_DC, LOW);

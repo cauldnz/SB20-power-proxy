@@ -62,9 +62,17 @@ SD on VSPI (CS=5).
 `2f00c800…` frames. Tap-nav (Ride→Setup→More→Workout) + preset load (`wk_target:138`) verified over
 the serial console; workout survived a reflash (NVS). Screenshot: `design/render/cyd-ride.png`.
 
+## Touch calibration (the tap-the-crosshair ritual)
+Resistive films vary unit to unit, so the CYD build has an **old-school 4-point calibration screen**
+(`lib/proxy/TouchCal.h` — pure per-axis least-squares fit + the crosshair renderer, host-tested incl.
+an inverted axis): it **auto-runs on first boot** (no stored cal), saves the fit to NVS
+(`sb20touch`), and `CydDisplay::readTap` applies it (compiled `CYD_TP_*` defaults until then).
+Serial: **`CALTOUCH`** re-runs the ritual · **`CALCLEAR`** wipes + re-runs · **`CALINFO`** prints the
+active fit · **`RAWTAP <rx> <ry>`** injects a synthetic raw press — the whole ritual is
+**headlessly twin-testable** (verified 2026-07-03: 4 synthetic corner presses through a known
+mapping recovered sx=−0.06897/sy=0.09091 exactly, persisted across reboot, CALCLEAR resets).
+
 ## Open / next
-- **Real-finger touch calibration** — the XPT2046 mapping ships community constants; verify on the
-  physical film and tune `CYD_TP_*` if taps land off-target.
 - Colors on the physical panel (INVON assumed per CYD2USB folklore) — one glance + `INV 0/1` on the
   probe settles it if wrong.
 - The RGB LED could mirror StatusLed states (red=searching, green=meter linked, blue=portal).
