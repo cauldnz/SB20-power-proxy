@@ -2207,3 +2207,22 @@ The findings that matter most for us:
   parent's in PlatformIO); fixed, and the CYD live-bench chain re-proven: fake_meter (WinRT) →
   CYD central → LVGL Ride screen showing the ramp @88 rpm. WinRT fake_meter stops advertising after
   a central disconnects (board reflash) — restart the script to re-link.
+
+## 2026-07-04 — S3 LVGL stall ROOT-CAUSED: nested SPI transaction deadlock (not the memory pool).
+- The S3's LVGL task froze forever at its FIRST flush — boot log stops dead between "[lvgl] init done"
+  and the first heartbeat; no panic, no reboot, taps/dumps silently ignored. **Cause:**
+  `LcdDisplay::blitArea` (the LVGL seam) wrapped `setWindow_` inside its own `SPI.beginTransaction` —
+  but on the S3, `setWindow_` opens its OWN transaction, and the pioarduino/IDF5 core's SPI bus lock is
+  **non-recursive**: the nested acquire from the same task blocks forever. The proven canvas `blit()`
+  always windowed BEFORE its transaction — `blitArea` now does the same. The CYD never hit this (its
+  `setWindow_` writes raw cmd/data with no inner transaction). **Rule: on the IDF5 core, never call a
+  helper that owns a transaction from inside one — the deadlock is silent** (a task at prio 2 on core 1
+  just stops; loop()/console keep running, which is exactly why it looked "half-alive").
+- With that + the malloc-backed LVGL heap (yesterday's CYD fix), the **S3 LVGL UI is fully alive**:
+  heartbeats (65 KB free heap), nav/details/workout-preset taps all verified over serial — same UI,
+  same wiring as the CYD. The liveness heartbeat instrumentation is what split "init done" from
+  "first loop pass" and localised the freeze to the first render — keep it.
+- Second S3 CDC gotcha: the serial SCREEN dump returned only background — `setTxTimeoutMs(0)` (the
+  never-block-headless setting) silently DROPS the dump's bulk base64 when the tiny CDC buffer fills.
+  The dump path now sets a 200 ms TX timeout for its duration (a host is attached — it sent SCREEN)
+  and restores 0 after.

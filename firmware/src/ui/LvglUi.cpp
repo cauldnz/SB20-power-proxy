@@ -242,15 +242,15 @@ void buildRide() {
     R.srcDot = mkDot(tb, C_OK());
     lv_obj_align(R.srcDot, LV_ALIGN_LEFT_MID, 8, 0);
     R.srcName = mkLabel(tb, &lv_inter_16, C_FG());
-    lv_obj_set_width(R.srcName, g_hor / 2 - 36);
-    lv_label_set_long_mode(R.srcName, LV_LABEL_LONG_DOT);
+    lv_obj_set_size(R.srcName, g_hor / 2 - 36, 20);  // height-pinned: LONG_DOT only ellipsizes
+    lv_label_set_long_mode(R.srcName, LV_LABEL_LONG_DOT);  // when it can't grow (172px panels wrap)
     lv_obj_align(R.srcName, LV_ALIGN_LEFT_MID, 22, 0);
     lv_obj_t* arrow = mkLabel(tb, &lv_inter_16, C_ACCENT(), ">");
     lv_obj_align(arrow, LV_ALIGN_LEFT_MID, g_hor / 2 - 10, 0);
     R.outDot = mkDot(tb, C_OK());
     lv_obj_align(R.outDot, LV_ALIGN_LEFT_MID, g_hor / 2 + 6, 0);
     R.outName = mkLabel(tb, &lv_inter_16, C_FG());
-    lv_obj_set_width(R.outName, g_hor / 2 - 40);
+    lv_obj_set_size(R.outName, g_hor / 2 - 40, 20);
     lv_label_set_long_mode(R.outName, LV_LABEL_LONG_DOT);
     lv_obj_align(R.outName, LV_ALIGN_LEFT_MID, g_hor / 2 + 20, 0);
     R.chev = mkLabel(tb, &lv_inter_16, C_MUT(), "v");
@@ -787,11 +787,20 @@ void lvglUiCalShow(int step, int done, int testX, int testY) {
 }
 
 void lvglUiScreenDumpBegin() {
+#if defined(ARDUINO_USB_CDC_ON_BOOT) && ARDUINO_USB_CDC_ON_BOOT
+    // The S3's USB-CDC runs with TX-timeout 0 (never block when headless) — but that DROPS the
+    // dump's bulk base64 whenever the tiny CDC buffer is full. A host is attached here (it just
+    // sent SCREEN), so make writes blocking for the dump and restore after.
+    Serial.setTxTimeoutMs(200);
+#endif
     g_dumpActive = true;
     lv_obj_invalidate(lv_screen_active());  // force a full repaint through the tee
     lv_refr_now(nullptr);
     g_dumpActive = false;
     Serial.println("<DUMPDONE>");
+#if defined(ARDUINO_USB_CDC_ON_BOOT) && ARDUINO_USB_CDC_ON_BOOT
+    Serial.setTxTimeoutMs(0);
+#endif
 }
 bool lvglUiScreenDumpActive() { return g_dumpActive; }
 bool lvglUiRideDetails() { return g_rideDetails; }
