@@ -1,4 +1,4 @@
 .pio/
 wifi_secret.h
 ota_secret.h
-src/idf_component.yml
+src/idf_component.yml*
