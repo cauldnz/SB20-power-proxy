@@ -37,6 +37,8 @@ Status key: ✅ built & working · ⚙ partial / hardening · 🔒 built but blo
 | Dashboard + instruments: `/` `/ui` `/log` `/stats` `/status` `/diag` | ✅ | `WifiLink`, `WebApp.h`, `DiagReport.h`, `LogBuffer.h` |
 | **Ride-mode WiFi-off** + coex hardening (PerfMonitor, watchdog, OLED off hot loop) | ✅ | `PerfMonitor.h`,`PerfStats.h` · [perf-coex-plan](code/findings/perf-coex-plan.md) |
 | SoftAP per-device PIN (screen) / default passphrase (screenless) | ✅ | `SetupPin.h` |
+| **Hard-reset WiFi onboarding, all three head-units** — captive portal (WPA2 AP + PIN), QR join screen on the LCD boards (LVGL `LV_USE_QRCODE`), per-board mDNS hostnames (`sb20proxy` / `-cyd` / `-s3`) | ✅ owner-proven via QR | `WifiLink` portal + `ProvisionView`/LVGL · decisions.md 2026-07-04 |
+| **LCD device picker** — CPS/FTMS-only filtered list (`lcdPickerList`, host-tested), crank/meter/trainer labels, Rescan scan-window boost | ✅ | `SourceCandidate.h` · PR #214 |
 
 ### Meter-to-meter corrector — the second product mode (✅ M1–M5)
 | Capability | Status | Lives in |
@@ -60,6 +62,8 @@ Status key: ✅ built & working · ⚙ partial / hardening · 🔒 built but blo
 | Ride Director: dynamic plan engine, agent control API, %FTP/Coggan zones, phone UI | ✅ | `sb20proxy/ride/` · [ride-director](code/findings/ride-director.md) |
 | MCP workout server (compose + drive an erg workout as agent tools) + interval driver | ✅ | `sb20proxy/workout/`,`sb20proxy/mcp/`, `scripts/{mcp_workout_server,ftms_workout}.py` · [mcp-workout-server](code/findings/mcp-workout-server.md) |
 | Shifter-buttons-adjust-erg mapper | ✅ | `Shifter.h` · [shifter-erg-control](code/findings/shifter-erg-control.md) |
+| **On-device FTMS erg drive** — the head-unit workout engine erg-drives a trainer directly (no phone/PC): `trainerNameFilter` in RuntimeConfig, Setup-screen pick, serial `TRAINER <name>`, optimistic CP progression | ✅ twin-proven (CYD↔C3 sim) | `FtmsErgClient` + `BleMeterClient` scan hub + `main.cpp` §14 phase 4 · decisions.md 2026-07-05 |
+| FTMS trainer sim on a spare board (the erg bench oracle: logs controlled/started/target) | ✅ | `esp32c3-ftms-server` env → COM10 · `FtmsTrainerServer` |
 
 ### OTA & security (✅ lockdown · 🔒 signed-pull blocked on backend)
 | Capability | Status | Lives in |

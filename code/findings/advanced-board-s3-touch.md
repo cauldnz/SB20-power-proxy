@@ -197,3 +197,20 @@ tier proceeds. **Don't over-rotate on the dual-core/coex angle:** the C3's loop-
 soak-clean ([perf-results](perf-results.md)), so the S3 buys *margin*, not a rescue. Treat the S3 as **our
 instrument + a touch-UX testbed first, a product tier second** — and keep it strictly optional so it never
 pulls focus from the pre-beta path.
+
+## 8. LVGL-era status (2026-07-05)
+
+The S3 now runs the shared **LVGL v9 + Inter** UI (same code as the CYD; `esp32s3-pio*` envs).
+Two S3-specific rules learned on the way (full detail in `decisions.md` 2026-07-04/05):
+
+- **Never nest SPI transactions on the IDF5 core** — `setWindow_` owns its own transaction; calling
+  it inside another `beginTransaction` deadlocks the non-recursive bus lock SILENTLY (the LVGL task
+  froze at its first flush; no panic, console stayed alive).
+- **USB-CDC output rules:** anything printed before a host attaches is dropped (`setTxTimeoutMs(0)`),
+  and bulk dumps (serial `SCREEN`) need a temporary nonzero TX timeout or the CDC buffer eats them.
+
+Verified on hardware: full touch UI, QR onboarding (owner-run), meter twin chain (fake_meter via
+`/log`), 13/13 web-route sweep as `sb20proxy-s3.local`. **Open issue:** ArduinoOTA on the
+pioarduino core is DEAF to espota invitations (the C3 OTAs fine with the same tooling) — the S3
+needs a USB-data flash to get current; retest OTA on each new build. The board's USB port/cables
+have been flaky; a powered-only USB-C charger runs it fine (WiFi-only operation).
