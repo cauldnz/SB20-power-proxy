@@ -1,0 +1,3 @@
+.pio/
+vendor/softdevice/*
+!vendor/softdevice/README.md
