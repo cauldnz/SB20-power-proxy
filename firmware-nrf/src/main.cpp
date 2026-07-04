@@ -121,6 +121,10 @@ static bool notifyClients(BLECharacteristic& ch, const uint8_t* buf, uint16_t le
     bool ok = true;
     for (uint16_t h = 0; h < 8; ++h) {
         BLEConnection* conn = Bluefruit.Connection(h);
+        // Key on the CCCD ALONE. Role-guarding broke delivery entirely: Bluefruit's per-link
+        // role/handle bookkeeping is not trustworthy on this fork (the client's CCCD shows up
+        // on an entry labeled CENTRAL) - notifyEnabled() is the only reliable signal, and only
+        // a GATT client of our server can set it.
         if (conn && conn->connected() && ch.notifyEnabled(h)) {
             if (!ch.notify(h, buf, len)) ok = false;
         }
@@ -210,6 +214,15 @@ static void centralDisconnectCb(uint16_t /*connHandle*/, uint8_t reason) {
     g_srcName[0] = 0;
     Serial.printf("[bridge] source dropped (0x%02X); rescanning\n", reason);
     Bluefruit.Scanner.start(0);
+    if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
+}
+
+// Keep advertising while a peripheral slot remains free (head unit + web app concurrently);
+// the SoftDevice stops adv on each connect, so restart it until we're full.
+static void periphConnectCb(uint16_t /*connHandle*/) {
+    if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
+}
+static void periphDisconnectCb(uint16_t /*connHandle*/, uint8_t /*reason*/) {
     if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
 }
 
@@ -332,7 +345,13 @@ void setup() {
     g_imuOk = (imu.begin() == 0);
     Serial.printf("[bridge] IMU: %s\n", g_imuOk ? "OK" : "NOT FOUND");
 
-    Bluefruit.begin(/*peripheral*/ 1, /*central*/ 1);
+    // NOTE: no configPrphConn() here — with it, Bluefruit's connection bookkeeping corrupted
+    // (both links collapsed onto one tracked handle; the client's CCCD landed on the source
+    // link's records — bench, 2026-07-05). The maxgerhardt/Adafruit core's defaults already
+    // negotiate MTU 247 on the peripheral link; pumpDownload sizes frames per-client anyway.
+    // TWO peripheral links: a head unit (reading our CPS) and the web app / Garmin (the Bridge
+    // service) connect at the same time — and a stray desk client can't lock everyone out.
+    Bluefruit.begin(/*peripheral*/ 2, /*central*/ 1);
     Bluefruit.setTxPower(4);
     Bluefruit.setName(g_cfg.outName);
 
@@ -379,7 +398,7 @@ void setup() {
     }
     chRecCtl.setProperties(CHR_PROPS_WRITE | CHR_PROPS_NOTIFY);
     chRecCtl.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    chRecCtl.setMaxLen(4);
+    chRecCtl.setMaxLen(RECSTATE_LEN);  // the NOTIFY needs 12 (maxLen 4 truncated it - bench)
     chRecCtl.setWriteCallback(recCtlWriteCb);
     chRecCtl.begin();
     chRecData.setProperties(CHR_PROPS_NOTIFY);
@@ -391,6 +410,8 @@ void setup() {
     clientCps.begin();
     clientMeas.setNotifyCallback(measNotifyCb);
     clientMeas.begin();
+    Bluefruit.Periph.setConnectCallback(periphConnectCb);
+    Bluefruit.Periph.setDisconnectCallback(periphDisconnectCb);
     Bluefruit.Central.setConnectCallback(centralConnectCb);
     Bluefruit.Central.setDisconnectCallback(centralDisconnectCb);
     Bluefruit.Scanner.setRxCallback(scanCb);
@@ -422,11 +443,21 @@ static void pumpDownload() {
         if (!notifyClients(chRecData, hdr, sizeof(hdr))) return;  // buffers full: retry next loop
         g_dlHeaderSent = true;
     }
+    // Size frames to the smallest subscriber MTU (notify payload = MTU-3; 4-byte frame header;
+    // 12 bytes/sample) — a CIQ client at MTU 23 gets 1-sample frames, a DLE client gets 14.
+    uint16_t mtu = 247;
+    for (uint16_t h = 0; h < 8; ++h) {
+        BLEConnection* conn = Bluefruit.Connection(h);
+        if (conn && conn->connected() && chRecData.notifyEnabled(h)) {
+            mtu = min(mtu, conn->getMtu());
+        }
+    }
+    const size_t perFrame = max((size_t)1,
+        min((size_t)DATA_SAMPLES_PER_FRAME, (size_t)((mtu - 3 - DATA_FRAME_OVERHEAD) / SAMPLE_LEN)));
     // A few frames per loop pass; notify() returning false = TX buffers full, back off.
     for (int burst = 0; burst < 4 && g_dlNext < g_cap.count(); ++burst) {
-        const size_t n =
-            min((size_t)DATA_SAMPLES_PER_FRAME, (size_t)(g_cap.count() - g_dlNext));
-        uint8_t frame[4 + DATA_SAMPLES_PER_FRAME * SAMPLE_LEN];
+        const size_t n = min(perFrame, (size_t)(g_cap.count() - g_dlNext));
+        uint8_t frame[DATA_FRAME_OVERHEAD + DATA_SAMPLES_PER_FRAME * SAMPLE_LEN];
         const size_t len = packRecDataFrame(g_dlSeq, g_cap.sample(g_dlNext), n, frame);
         if (!notifyClients(chRecData, frame, len)) return;
         g_dlNext += n;
@@ -472,12 +503,12 @@ void loop() {
                       Bluefruit.Scanner.isRunning(), (unsigned long)g_scanReports,
                       (int)g_srcConnected, g_cfg.srcFilter, (int)g_lastSrc.power_w,
                       (int)g_lastOut.power_w);
-        for (uint16_t h = 0; h < BLE_MAX_CONNECTION; ++h) {
+        for (uint16_t h = 0; h < 20; ++h) {
             BLEConnection* conn = Bluefruit.Connection(h);
-            if (conn && conn->connected()) {
-                Serial.printf("[hb]   link h=%u role=%s statusSub=%d measSub=%d mtu=%u\n", h,
-                              conn->getRole() == BLE_GAP_ROLE_PERIPH ? "PERIPH" : "CENTRAL",
-                              (int)chStatus.notifyEnabled(h), (int)outMeas.notifyEnabled(h),
+            if (conn) {
+                Serial.printf("[hb]   link h=%u conn=%d role=%d statusSub=%d recSub=%d mtu=%u\n",
+                              h, (int)conn->connected(), (int)conn->getRole(),
+                              (int)chStatus.notifyEnabled(h), (int)chRecData.notifyEnabled(h),
                               conn->getMtu());
             }
         }

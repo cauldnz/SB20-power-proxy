@@ -127,12 +127,20 @@ inline size_t packRecState(RecState st, uint8_t rateHz, uint32_t samples, uint32
 
 // ---- RecData framing --------------------------------------------------------------------------
 // One IMU sample on the wire: 6 x i16 (ax ay az gx gy gz), 12 bytes.
+// Every frame is [ver, TYPE, ...] with an EXPLICIT type byte — v1 put the data frames' seq
+// low-byte where the type tag lives, so sequence 254 (0xFE) masqueraded as the trailer and
+// truncated the download at exactly frame 254 (bench, 2026-07-05). Types: 0xFF header ·
+// 0xFD data · 0xFE trailer.
 constexpr size_t SAMPLE_LEN = 12;
-constexpr size_t DATA_SAMPLES_PER_FRAME = 14;  // 4 hdr + 14*12 = 172 <= 180-byte payload budget
+constexpr uint8_t REC_FRAME_HEADER = 0xFF;
+constexpr uint8_t REC_FRAME_DATA = 0xFD;
+constexpr uint8_t REC_FRAME_TRAILER = 0xFE;
+constexpr size_t DATA_FRAME_OVERHEAD = 6;      // ver, type, seq u16, count u8, reserved
+constexpr size_t DATA_SAMPLES_PER_FRAME = 14;  // 6 + 14*12 = 174 <= 180-byte payload budget
 
 inline size_t packRecHeader(uint8_t rateHz, uint32_t samples, uint32_t startMs, uint8_t out[12]) {
     out[0] = PROTO_VER;
-    out[1] = 0xFF;
+    out[1] = REC_FRAME_HEADER;
     out[2] = rateHz;
     out[3] = 0;
     packU32(out + 4, samples);
@@ -140,17 +148,19 @@ inline size_t packRecHeader(uint8_t rateHz, uint32_t samples, uint32_t startMs, 
     return 12;
 }
 inline size_t packRecDataFrame(uint16_t seq, const int16_t* samples, size_t nSamples,
-                               uint8_t* out /* >= 4 + n*12 */) {
+                               uint8_t* out /* >= DATA_FRAME_OVERHEAD + n*12 */) {
     out[0] = PROTO_VER;
-    out[1] = (uint8_t)seq;
-    out[2] = (uint8_t)(seq >> 8);
-    out[3] = (uint8_t)nSamples;
-    for (size_t i = 0; i < nSamples * 6; ++i) packU16(out + 4 + i * 2, (uint16_t)samples[i]);
-    return 4 + nSamples * SAMPLE_LEN;
+    out[1] = REC_FRAME_DATA;
+    packU16(out + 2, seq);
+    out[4] = (uint8_t)nSamples;
+    out[5] = 0;
+    for (size_t i = 0; i < nSamples * 6; ++i)
+        packU16(out + DATA_FRAME_OVERHEAD + i * 2, (uint16_t)samples[i]);
+    return DATA_FRAME_OVERHEAD + nSamples * SAMPLE_LEN;
 }
 inline size_t packRecTrailer(uint32_t crc, uint8_t out[6]) {
     out[0] = PROTO_VER;
-    out[1] = 0xFE;
+    out[1] = REC_FRAME_TRAILER;
     packU32(out + 2, crc);
     return 6;
 }
