@@ -473,8 +473,78 @@ static void pumpDownload() {
     }
 }
 
+// Serial self-test: capture N samples via the PRODUCTION path (imu.readRaw* -> g_cap.add) and
+// print stats over USB CDC — proves the sensor->buffer chain without touching BLE (the desktop
+// BLE stack + shared airspace were fighting the bench, 2026-07-05). Trigger: send "IMUTEST\n".
+static void imuSelfTest() {
+    if (!g_imuOk) { Serial.println("[imutest] IMU NOT PRESENT"); return; }
+    const uint8_t rate = 52;
+    const uint16_t want = 260;  // ~5 s
+    g_cap.start(millis(), rate);
+    uint32_t nextUs = micros();
+    const uint32_t periodUs = 1000000UL / rate;
+    Serial.printf("[imutest] capturing %u samples @%uHz via the production path...\n", want, rate);
+    while (g_cap.count() < want) {
+        const uint32_t nowUs = micros();
+        if ((int32_t)(nowUs - nextUs) >= 0) {
+            nextUs += periodUs;
+            int16_t s[6] = {imu.readRawAccelX(), imu.readRawAccelY(), imu.readRawAccelZ(),
+                            imu.readRawGyroX(),  imu.readRawGyroY(),  imu.readRawGyroZ()};
+            if (!g_cap.add(s)) break;
+        }
+    }
+    // Analyse the captured buffer: gravity magnitude, per-axis mean+noise, distinct-sample count.
+    const uint32_t n = g_cap.count();
+    double sm = 0;     // sum of |a| in g
+    double axMean = 0, ayMean = 0, azMean = 0;
+    int16_t axMin = 32767, axMax = -32768;
+    uint32_t distinct = 0, dupes = 0;
+    const int16_t* prev = nullptr;
+    // two passes (n is small): means first
+    for (uint32_t i = 0; i < n; ++i) {
+        const int16_t* p = g_cap.sample(i);
+        axMean += p[0]; ayMean += p[1]; azMean += p[2];
+        const double g = sqrt((double)p[0]*p[0] + (double)p[1]*p[1] + (double)p[2]*p[2]) * 0.000488;
+        sm += g;
+        if (p[0] < axMin) axMin = p[0];
+        if (p[0] > axMax) axMax = p[0];
+        if (prev && p[0]==prev[0] && p[1]==prev[1] && p[2]==prev[2] &&
+            p[3]==prev[3] && p[4]==prev[4] && p[5]==prev[5]) dupes++;
+        prev = p;
+    }
+    axMean /= n; ayMean /= n; azMean /= n;
+    // noise: stdev of ax as a liveness proxy (a frozen read => 0)
+    double axVar = 0;
+    for (uint32_t i = 0; i < n; ++i) { double d = g_cap.sample(i)[0] - axMean; axVar += d*d; }
+    const double axSd = sqrt(axVar / n);
+    Serial.printf("[imutest] n=%lu  gravity|a| mean=%.3fg\n", (unsigned long)n, sm / n);
+    Serial.printf("[imutest] accel LSB means: ax=%.0f ay=%.0f az=%.0f  (=%.2f,%.2f,%.2f g)\n",
+                  axMean, ayMean, azMean, axMean*0.000488, ayMean*0.000488, azMean*0.000488);
+    Serial.printf("[imutest] ax noise stdev=%.1f LSB  range=[%d,%d]  consec-dupes=%lu/%lu\n",
+                  axSd, axMin, axMax, (unsigned long)dupes, (unsigned long)n);
+    const bool live = (n >= want - rate) && (sm/n > 0.9 && sm/n < 1.1) && axSd > 0.5 && dupes < n/2;
+    Serial.printf("[imutest] VERDICT: %s\n", live
+        ? "PASS - live sensor (real 1g gravity + real per-sample ADC noise + no frozen repeats)"
+        : "FAIL - check gravity/noise above");
+    g_cap.erase();
+}
+
 void loop() {
     const uint32_t now = millis();
+
+    // Serial self-test command (USB CDC): "IMUTEST" runs the IMU capture-path check.
+    static char cmd[16];
+    static uint8_t ci = 0;
+    while (Serial.available()) {
+        char ch = Serial.read();
+        if (ch == '\n' || ch == '\r') {
+            cmd[ci] = 0;
+            if (strcmp(cmd, "IMUTEST") == 0) imuSelfTest();
+            ci = 0;
+        } else if (ci < sizeof(cmd) - 1) {
+            cmd[ci++] = ch;
+        }
+    }
 
     // IMU capture pacing
     if (g_recState == RecState::Recording && g_imuOk) {
