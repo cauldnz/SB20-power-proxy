@@ -110,3 +110,21 @@ bridge's actual need). Tonight stays BLE + Connect IQ; the drop-zone watch stays
 [nRF52 ANT (SoftDevice) ](https://www.thisisant.com/developer/components/nrf52832) ·
 [NordicSnippets bare-metal radio](https://github.com/andenore/NordicSnippets) ·
 [ANT+ Bicycle Power profile D00001086](https://www.thisisant.com).
+
+## IMU recording — VERIFIED live-sampling (2026-07-05)
+
+Proven in two layers:
+1. **Record→download→CRC chain** (earlier): 766 samples @52 Hz captured while relaying, downloaded
+   over BLE byte-perfect (CRC32 match). The plumbing is sound.
+2. **Sensor→buffer liveness** (serial `IMUTEST` self-test, runs the PRODUCTION capture path
+   `imu.readRaw* → g_cap.add`, bypassing the flaky desktop BLE stack): 260 samples, **gravity |a|
+   = 1.013 g** (real gravity, correct ±16 g scale), axis means **(-0.03, 0.23, 0.99) g** — gravity
+   correctly resolved onto +Z with the board flat on the desk (physically right, not fabricated),
+   **ax noise 2.5 LSB** (real per-sample ADC noise; a frozen buffer reads 0), **0/260 consecutive
+   duplicate samples** (every read hits the ADC). Repeatable across runs. VERDICT: PASS.
+
+The one thing static analysis can't show is a *motion* spike — needs the board physically tapped
+(owner away at test time). Serial `IMUTEST` is a permanent diagnostic (send it over USB CDC at
+115200); the on-air path stays the production interface. NOTE: a dev reflash wipes the LittleFS
+config, so a freshly-flashed board has no source filter and will thrash trying to grab any CPS
+advertiser on air (harmless; set a filter via the web app / Config write to settle it).
