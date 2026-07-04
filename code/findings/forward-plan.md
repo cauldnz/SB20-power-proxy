@@ -505,16 +505,18 @@ From `phase-0-report.md` §5 — track, don't block on:
 
 ---
 
-## 9. "Do this next" — the concrete recommendation
+## 9. "Do this next" — the concrete recommendation (refreshed 2026-07-05)
 
-1. **At the desk, now:** build Phase 1A (§2) in the build order given. Start with the **page
-   encoder round-trip gate** — it's pure software, needs only the committed capture, and it's the
-   real-data-first foundation everything else stands on.
-2. **In parallel at the desk:** pre-build the Phase 2 `AssiomaAntSource` (it's just RX).
-3. **Next bike visit:** run the Lane 2 session (§3 / `NEXT-BIKE-SESSION.md`). If Phase 1A is done,
-   Phase 1B (the keystone pairing proof) rides along.
-4. **Decision point after the bike:** Session G Part C result decides whether Track C (ESP32/BLE)
-   opens. Phase 1B result greenlights Phase 2.
+*(The original §9 recommended the pre-pivot ANT+ path — long shipped/superseded; kept in git
+history. Current state: three head-unit tiers (C3-OLED / S3-Touch / CYD) share one core with
+web-UI parity, hard-reset QR onboarding, and an on-device FTMS erg drive, all twin-proven.)*
+
+1. **Next bike session:** erg-drive the REAL SB20 over FTMS from a head-unit (§14 phase 5 — the
+   sim-proven chain pointed at the bike), plus the CYD touch-cal finger check.
+2. **At the desk:** LVGL host-snapshot tests in CI (the LVGL-adoption follow-up); LCD picker
+   scrolling; S3 OTA-deafness retest once it's on the current build.
+3. **Repo hygiene:** make the `firmware` CI job a REQUIRED check (a red merge slipped through
+   2026-07-04).
 
 ---
 
@@ -704,6 +706,9 @@ blog-idea note): the assistant runs the session, the rider just pedals.
 Real-data-first: the FTMS erg path is already byte-validated (session 4; `G-sb20-ftms-erg-*.jsonl`).
 
 ## 14. On-device workout engine — structured workout over a route, deterministic execution (owner 2026-06-27)
+
+**Phase 4 (erg drive) ✅ SHIPPED 2026-07-05** — the workout engine erg-drives an FTMS trainer
+directly (PR #212–#214; twin-proven CYD↔C3-sim; decisions.md). Phase 5 = the real SB20 on-bike.
 
 > **Design captured:** [`on-device-workout-engine.md`](on-device-workout-engine.md). PLANNED — no code yet.
 

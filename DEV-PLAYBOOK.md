@@ -144,6 +144,20 @@ is CLAUDE.md → *Git & branch hygiene*; it works — follow it every time, incl
   and shipped (#158); #160 corrected it. The doc would have saved the whole detour — the owner had to ask
   "did you read it?" to surface it.)*
 
+
+- **Never edit the tree while a `pio` build runs** (incl. `git checkout`): the compiler reads files
+  mid-swap and the build fails weirdly — twice in one day (2026-07-04/05). Kill background builds
+  before editing; treat "build in flight" as a lock on the tree.
+- **Compile the CI link-guard env (`esp32c3-supermini`) locally before pushing firmware changes** —
+  it has no WiFi/LCD/OLED, so guards differ; PR #212 merged red because only the richer envs were
+  compiled locally (and the `firmware` job isn't a required check yet).
+- **The WinRT `fake_meter` stops advertising after any central disconnects and the process dies on
+  radio hiccups** (WLAN/BT combo card shares the antenna — joining a board's setup AP can kill it).
+  Just restart the script; treat it as disposable.
+- **espota/OTA debugging order:** confirm the board logs `[ota] ... enabled` via `/log`, then watch
+  `/log` while sending one invitation — "no new lines" = the UDP never reached the app (S3/pioarduino
+  is currently deaf to OTA invites; USB-flash it and retest on each new build).
+
 ## 6 · Hunt bugs adversarially in code you just shipped — before you build on it
 
 Green CI means *the tests you wrote* pass; it says nothing about the bugs you didn't think to test —
