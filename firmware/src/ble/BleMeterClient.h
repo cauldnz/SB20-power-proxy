@@ -82,6 +82,12 @@ public:
     // ftms envs never compile this .cpp, so the coupling stays app-only.
     static void setFtmsScanSink(class FtmsErgClient* sink);
 
+    // Picker rescan boost: keep the shared scan running for `ms` even though every client already
+    // has its target. Without this, Rescan on a fully-connected board cleared the candidate list
+    // and NOTHING refilled it (the scan had stopped) — an empty picker until reboot (owner, S3
+    // bench 2026-07-05). Kicks the scan if it isn't running.
+    static void pickerScanBoost(uint32_t ms);
+
     // called from NimBLE callbacks
     void onFound(const char* addr, uint8_t addrType, const char* name);
     void onMeasurement(const uint8_t* data, size_t len);  // decode power (+ cadence) and emit

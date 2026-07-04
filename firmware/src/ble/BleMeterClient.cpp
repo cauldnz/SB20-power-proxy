@@ -30,6 +30,16 @@ static std::vector<BleMeterClient*> g_clients;
 static FtmsErgClient* g_ftmsSink = nullptr;
 void BleMeterClient::setFtmsScanSink(FtmsErgClient* sink) { g_ftmsSink = sink; }
 
+// Picker rescan boost: a deadline during which the scan keeps running (and candidates keep
+// recording) even with every client satisfied — so Rescan can refill the picker list.
+static uint32_t g_pickerScanUntilMs = 0;
+
+void BleMeterClient::pickerScanBoost(uint32_t ms) {
+    g_pickerScanUntilMs = millis() + ms;
+    NimBLEScan* scan = NimBLEDevice::getScan();
+    if (!scan->isScanning()) scan->start(0, false);
+}
+
 // True when no registered client still needs to discover a meter (all connected or already targeted)
 // — the cue to stop the shared scan, exactly as the single-client path did on its one match.
 static bool noClientNeedsScan() {
@@ -37,6 +47,7 @@ static bool noClientNeedsScan() {
         if (c->wantsTarget()) return false;
     }
     if (g_ftmsSink && g_ftmsSink->wantsTarget()) return false;  // the erg client still hunts too
+    if (millis() < g_pickerScanUntilMs) return false;           // Rescan window still open
     return true;
 }
 

@@ -465,7 +465,10 @@ static void lcdExecute(const UiAction& a, const LcdViews& v) {
             break;
         case UiAction::SetupScan:
 #if !USE_MOCK_METER
-            meter.clearCandidates();  // the scan keeps running; this restarts the list fresh
+            meter.clearCandidates();
+            // Force a scan window: on a fully-connected board the shared scan has STOPPED, so
+            // clearing alone left the picker empty until reboot (owner, S3 bench 2026-07-05).
+            BleMeterClient::pickerScanBoost(15000);
 #endif
             break;
         case UiAction::SetBrightness: lcd.setBrightness((uint8_t)a.index); break;
@@ -476,7 +479,7 @@ static void lcdExecute(const UiAction& a, const LcdViews& v) {
             break;
 #endif
         case UiAction::SetupPick: {
-            const auto ds = dedupeAndSortSources(v.setup.devices);
+            const auto ds = lcdPickerList(v.setup.devices);  // MUST match the rendered list
             if (a.index >= 0 && a.index < (int)ds.size()) {
                 if (ds[a.index].isFtms) {  // an erg-able trainer -> the workout's erg target
                     g_lcdTrainerName = ds[a.index].name;
@@ -1000,7 +1003,10 @@ void setup() {
 #else
         []() { return meter.candidates(); },
         saveKeepTrainer,
-        []() { meter.clearCandidates(); });
+        []() {
+            meter.clearCandidates();
+            BleMeterClient::pickerScanBoost(15000);  // refill even when fully connected
+        });
 #endif
     // The tester /diag report's raw meter frames (the bytes we add a new meter from). Live only.
 #if USE_MOCK_METER
@@ -1061,7 +1067,10 @@ void setup() {
             c.refMeterAddress = ""; c.refMeterNameFilter = "";   // clear the stale calibration ref pins
             ConfigStore::save(c);
         },
-        []() { meter.clearCandidates(); });                      // scan: refresh the candidate list
+        []() {
+            meter.clearCandidates();
+            BleMeterClient::pickerScanBoost(15000);  // refill even when fully connected
+        });                      // scan: refresh the candidate list
 #endif
 
     // Workout screen (GET /workout): the live engine + presets driven over the web UI. Loading is
