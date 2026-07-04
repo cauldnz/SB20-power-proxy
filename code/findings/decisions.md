@@ -2265,6 +2265,33 @@ The findings that matter most for us:
   (hashlib.blake2b keyed, digest 8, over the STA MAC, mod 1e8 = 72745928 for 38:44:BE:45:E9:A4) and
   used as the WPA2 key. The PC's WLAN NIC does the whole flow headlessly; no phone needed.
 
+## 2026-07-05 (overnight) — nRF52840 Sense: the BLE bridge-with-correction is REAL (twin-proven), IMU capture + Web Bluetooth + CIQ surfaces built.
+- **The fourth board works.** Seeed XIAO nRF52840 Sense (COM18/COM20, `firmware-nrf/`,
+  worktree-landed): dual-role Bluefruit bridge reads a CPS meter, applies the SHARED pure
+  `Correction`/`Cps` codec (same headers as the ESP32 builds via `lib_extra_dirs`), rebroadcasts
+  as its own CPS meter. **Combined bench PASS**: fake_meter → Sense → PC reader with ×1.1
+  correction exact to the watt (200→220 · 185→204 · 205→226 …), 84 status notifies + 57 relayed
+  frames, AND a 766-sample 52 Hz IMU capture recorded during the relay, downloaded over BLE
+  byte-perfect (CRC32 match), gravity sanity 1.01 g.
+- **The Bridge GATT service** (`firmware-nrf/GATT.md`, PROTO_VER 1) is the no-WiFi control
+  surface: Status @2 Hz · Config (live-applied + LittleFS-persisted; dev reflashes wipe it) ·
+  RecCtl · RecData. Consumers: the **Web Bluetooth console**
+  (public repo `cauldnz/bike-bridge-web` → https://cauldnz.github.io/bike-bridge-web/ — HTTPS
+  because Web Bluetooth demands a secure origin; Chrome/Edge/Android, Bluefy on iOS) and the
+  **Connect IQ "Bridge Remote"** app (`firmware-nrf/ciq/`, Edge 540 + Epix 2; compiles once the
+  owner logs the Garmin SDK manager in — account-gated like ANT).
+- **Bluefruit landmines (each cost a flashed-and-asserted debug loop; details in commits):**
+  scan-rsp vs filterUuid catch-22 (names never match under a uuid filter) · the SoftDevice drops
+  advertising when the central link rises · parameterless `notify()` targets the wrong handle in
+  dual role · per-link role labels are NOT trustworthy — key client delivery on `notifyEnabled()`
+  alone · `configPrphConn()` corrupted connection bookkeeping (defaults already give MTU 247) ·
+  characteristic maxLen truncates NOTIFIES too, not just writes · REC framing needs explicit
+  type bytes (a seq low-byte of 0xFE masqueraded as the trailer at frame 254).
+- **ANT path researched + staged** (`code/findings/nrf52-sense.md`): S340 SoftDevice + ANT+ key
+  are thisisant.com-adopter downloads (owner action; gitignored `firmware-nrf/vendor/softdevice/`
+  drop zone). Integration recipe (board json + 0x31000 linker + S340-matched bootloader) mapped;
+  prove the SoftDevice swap on the recoverable dongle (COM13) BEFORE the Sense. Bridge config
+  already carries the srcIsAnt/outIsAnt routing bits — writes rejected until S340 is in.
 ## 2026-07-05 — §14 phase 4 SHIPPED: on-device FTMS erg drive, twin-proven (CYD -> C3 trainer sim).
 - **The head-unit now erg-drives an FTMS trainer from its own workout engine** — no phone/PC in the
   loop. Wiring: RuntimeConfig field 11 `trainerNameFilter` (host-tested roundtrip + backward-compat;

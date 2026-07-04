@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!-- Bridge Remote: a Connect IQ device app that talks to the nRF52840 Bike Bridge over BLE
+     (the Bridge GATT contract, ../GATT.md): live power/correction telemetry + start/stop of
+     the on-board IMU track recording. Targets the owner's Edge 540 + Epix Gen 2. -->
+<iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="3">
+  <iq:application id="a3b1c5d7-0000-4bd9-a4ae-1b4e2c633a1d"
+                  type="watch-app"
+                  name="@Strings.AppName"
+                  entry="BridgeApp"
+                  launcherIcon="@Drawables.LauncherIcon"
+                  minApiLevel="3.3.0">
+    <iq:products>
+      <iq:product id="edge540"/>
+      <iq:product id="epix2"/>
+    </iq:products>
+    <iq:permissions>
+      <iq:uses-permission id="BluetoothLowEnergy"/>
+    </iq:permissions>
+    <iq:languages>
+      <iq:language>eng</iq:language>
+    </iq:languages>
+  </iq:application>
+</iq:manifest>
