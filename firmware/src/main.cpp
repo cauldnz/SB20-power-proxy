@@ -1151,6 +1151,7 @@ void loop() {
     // dedups + rate-limits its control-point writes; we just keep desired power current. A
     // stopped/paused workout sets 0 W (the trainer drops resistance rather than holding stale).
     if (g_ergConfigured) {
+#if USE_WIFI || USE_LCD  // g_wk (the workout engine) only exists on these builds
         static uint32_t ergSyncMs = 0;
         const uint32_t nowMs = millis();
         if (nowMs - ergSyncMs >= 500) {
@@ -1161,6 +1162,7 @@ void loop() {
             lcdUnlock();
             ergTrainer.setDesiredPower(target > 0 ? target : 0);
         }
+#endif
         ergTrainer.loop();
     }
 #if !USE_MOCK_METER
