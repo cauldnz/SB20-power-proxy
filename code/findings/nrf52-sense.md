@@ -61,3 +61,52 @@ Sources: [SDAntplus](https://github.com/orrmany/SDAntplus) ·
 [ant-arduino](https://github.com/cujomalainey/ant-arduino) ·
 [S340+PlatformIO recipe](https://blogarak.wordpress.com/2020/03/29/platformio-ide-integration-for-the-nrf52840-feather-express-with-s340/) ·
 [Adafruit bootloader S340 issue](https://github.com/adafruit/Adafruit_nRF52_Bootloader/issues/73)
+
+## Can we do ANT+ WITHOUT the S340 SoftDevice? (clean-room research, 2026-07-05)
+
+**Question (owner):** while thisisant activation is pending (≤1 business day), can we skip the
+licensed S340 entirely and hand-roll ANT+ (concurrent with BLE) in clean-room firmware?
+
+**Answer: technically the radio can, legally the protocol docs allow it — but for THIS project
+it's the wrong tool, and it can't get us off the adopter hook anyway. Three findings:**
+
+1. **The radio hardware can generate ANT frames bare-metal — "the SoftDevice unlocks the radio"
+   is a myth.** The nRF52840 `RADIO` peripheral is a generic 1 Mbps GFSK transceiver; register-
+   level packet TX/RX with a configurable access address + CRC is routine (Nordic's own ESB /
+   Gazell and the NordicSnippets bare-metal examples all do exactly this). ANT's on-air framing
+   (1 Mbps GFSK, ANT+ device profiles on RF channel 57 = 2457 MHz) is within that capability. The
+   S340 provides the ANT **MAC/TDMA timing engine + message protocol + BLE coexistence
+   arbitration** — a *software stack*, not radio access.
+
+2. **The ANT+ network key is an ON-AIR gate, not a software check — so bare-metal doesn't dodge
+   the license.** thisisant is explicit: an ANT device "will not hear transmissions occurring on
+   other networks" — the network key materially segregates traffic on air. A perfect bare-metal
+   ANT stack therefore *cannot* talk to a real ANT+ power meter or Garmin head unit without the
+   **ANT+ managed network key**, which comes only through the (free) adopter agreement the owner
+   just applied for. Brute-forcing / sniffing the key to avoid the agreement would be a licensing
+   violation AND pointless (it arrives free in ≤1 day). Note: the **public network key** (a real
+   value — NOT all-zeros, which is invalid) allows private ANT experimentation, but by definition
+   can't interoperate with the ANT+ ecosystem — useless for a repeater whose whole job is talking
+   to real ANT+ gear. The protocol docs themselves (ANT Message Protocol & Usage; the ANT+
+   Bicycle Power device profile D00001086) are PUBLIC, no NDA — so clean-room *implementation* is
+   legal; only the key + the ANT+ trademark are gated.
+
+3. **Concurrent ANT+BLE is the genuinely hard part — and it's exactly what S340 sells.** The
+   bridge needs two radios live at once (ANT-in + BLE-out to the web app / head unit). Bare-metal,
+   that means writing a hard-real-time radio time-slice arbiter between two independent-timing
+   protocols — reimplementing the core value of the S340, with brick/timing risk, to replace
+   something we get free.
+
+**The one bare-metal option that IS worth keeping in the back pocket:** a **single-protocol** ANT
+mode — ANT-in → correct → ANT-out, NO concurrent BLE — becomes tractable precisely because it
+drops the arbitration. It can even use the *licensed* ANT+ key loaded as DATA (an 8-byte array in
+the gitignored key header, not the SoftDevice binary) — clean-room-legal once we're an adopter. A
+viable fallback ONLY if S340 proves problematic on the XIAO's UF2 bootloader.
+
+**Recommendation: wait for the S340** (free, ≤1 business day, gives concurrent ANT+BLE = the
+bridge's actual need). Tonight stays BLE + Connect IQ; the drop-zone watch stays armed. Sources:
+[Network Keys / Managed Network](https://www.thisisant.com/developer/resources/tech-bulletin/network-keys-and-the-ant-managed-network) ·
+[public key FAQ](https://www.thisisant.com/developer/resources/tech-faq/how-do-i-get-the-public-network-key) ·
+[nRF52 ANT (SoftDevice) ](https://www.thisisant.com/developer/components/nrf52832) ·
+[NordicSnippets bare-metal radio](https://github.com/andenore/NordicSnippets) ·
+[ANT+ Bicycle Power profile D00001086](https://www.thisisant.com).

@@ -43,11 +43,13 @@ class BridgeBle extends Ble.BleDelegate {
     }
 
     function onScanResults(scanResults) {
+        // Iterator.next() is typed as Object? — cast each result to ScanResult before use.
         for (var r = scanResults.next(); r != null; r = scanResults.next()) {
-            var name = r.getDeviceName();
+            var sr = r as Ble.ScanResult;
+            var name = sr.getDeviceName();
             if (name != null && name.find("SB20") != null) {
                 Ble.setScanState(Ble.SCAN_STATE_OFF);
-                Ble.pairDevice(r);
+                Ble.pairDevice(sr);
                 return;
             }
         }
