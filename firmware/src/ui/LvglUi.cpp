@@ -455,6 +455,8 @@ void buildSetup() {
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_flag(row, LV_OBJ_FLAG_HIDDEN);
         S.rowName[i] = mkLabel(row, &lv_inter_16, C_FG(), "");
+        lv_obj_set_size(S.rowName[i], g_hor - 20 - 108, 20);  // leave room for "trainer -61"
+        lv_label_set_long_mode(S.rowName[i], LV_LABEL_LONG_DOT);
         lv_obj_align(S.rowName[i], LV_ALIGN_LEFT_MID, 10, 0);
         S.rowMeta[i] = mkLabel(row, &lv_inter_12, C_MUT(), "");
         lv_obj_align(S.rowMeta[i], LV_ALIGN_RIGHT_MID, -10, 0);

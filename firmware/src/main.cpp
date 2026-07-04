@@ -985,24 +985,17 @@ void setup() {
     });
     // Source-setup UI (GET/POST /setup): pick the meter / surviving crank over WiFi, persist to NVS,
     // reboot to apply. Decoupled via hooks — the candidate list + rescan come from the live central;
-    // a mock build has no sources to offer.
-    // The /setup form doesn't carry the trainer field (LCD-only pick for now) — preserve the
-    // stored trainerNameFilter across web saves so a phone /setup save can't silently drop erg.
-    auto saveKeepTrainer = [](const RuntimeConfig& c) {
-        RuntimeConfig merged = c;
-        if (merged.trainerNameFilter.empty())
-            merged.trainerNameFilter = ConfigStore::load().trainerNameFilter;
-        ConfigStore::save(merged);
-    };
+    // a mock build has no sources to offer. (Trainer-field preservation for old form bodies lives
+    // in the /setup/save route itself — formHasField — so the save hook is a plain persist again.)
     wifi.setConfigUi(
         []() { return ConfigStore::load(); },
 #if USE_MOCK_METER
         []() { return std::vector<sb20proxy::SourceCandidate>{}; },
-        saveKeepTrainer,
+        [](const RuntimeConfig& c) { ConfigStore::save(c); },
         []() {});
 #else
         []() { return meter.candidates(); },
-        saveKeepTrainer,
+        [](const RuntimeConfig& c) { ConfigStore::save(c); },
         []() {
             meter.clearCandidates();
             BleMeterClient::pickerScanBoost(15000);  // refill even when fully connected

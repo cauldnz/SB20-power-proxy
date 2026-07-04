@@ -385,6 +385,11 @@ void WifiLink::addConfigRoutes_() {
         if (!csrfOk_()) return;
         const std::string body = formBody(server_);
         RuntimeConfig cfg = parseConfigForm(body);
+        // A body WITHOUT the trainer field (an old cached page, or a curl that predates it) must
+        // PRESERVE the stored trainer; present-but-empty is the explicit "erg off" clear.
+        if (!formHasField(body, "trainer") && configProvider_) {
+            cfg.trainerNameFilter = configProvider_().trainerNameFilter;
+        }
         const char* err = configValidationError(cfg);
         if (err) {
             const std::vector<SourceCandidate> srcs =

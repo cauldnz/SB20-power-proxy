@@ -36,6 +36,7 @@ inline RuntimeConfig parseConfigForm(const std::string& body) {
         else if (key == "single") single = (val == "1" || val == "on" || val.empty());
         else if (key == "spoof_name") c.spoofName = stripConfigDelims(val);
         else if (key == "spoof_serial") c.spoofSerial = stripConfigDelims(val);
+        else if (key == "trainer") c.trainerNameFilter = stripConfigDelims(val);
         if (amp == std::string::npos) break;
         pos = amp + 1;
     }
@@ -45,6 +46,24 @@ inline RuntimeConfig parseConfigForm(const std::string& body) {
     if (c.spoofName.empty()) c.spoofName = Config::SPOOF_NAME;
     if (c.spoofSerial.empty()) c.spoofSerial = Config::SPOOF_SERIAL;
     return c;
+}
+
+// Does the urlencoded form body carry `key` at all? Distinguishes "present but empty" (an explicit
+// CLEAR — e.g. wiping the trainer field) from "absent" (an old page / a curl without the field —
+// PRESERVE the stored value). The /setup/save route uses this so a save from a form that predates
+// a field can never silently wipe it. Pure + host-tested.
+inline bool formHasField(const std::string& body, const std::string& key) {
+    size_t pos = 0;
+    while (pos <= body.size()) {
+        size_t amp = body.find('&', pos);
+        size_t end = (amp == std::string::npos) ? body.size() : amp;
+        std::string pair = body.substr(pos, end - pos);
+        size_t eq = pair.find('=');
+        if (urlDecode(eq == std::string::npos ? pair : pair.substr(0, eq)) == key) return true;
+        if (amp == std::string::npos) break;
+        pos = amp + 1;
+    }
+    return false;
 }
 
 // Validate a submitted source config: at least one of (pinned address, name filter) must be set,
@@ -164,6 +183,36 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
          "autocapitalize='none' autocorrect='off' spellcheck='false' value='" +
          htmlEscape(cfg.spoofSerial) + "' placeholder='11821518'>"
          "</details>"
+         // --- Trainer (erg): which FTMS machine the workout engine drives ----------------------
+         "<details";
+    if (!cfg.trainerNameFilter.empty()) h += " open";
+    h += "><summary style='cursor:pointer;font-weight:600;margin:6px 0 10px'>Trainer / erg "
+         "(advanced)</summary>"
+         "<p class='hint'>Workouts erg-drive this trainer (matched by name). Leave blank to turn "
+         "erg off.</p>";
+    // FTMS candidates from the same scan become a tap-list that fills the field.
+    {
+        std::string trows;
+        for (const auto& d : ds) {
+            if (!d.isFtms || d.name.empty()) continue;
+            const bool sel = (!cfg.trainerNameFilter.empty() && d.name == cfg.trainerNameFilter);
+            trows += "<button type='button' class='dev";
+            if (sel) trows += " sel";
+            trows += "' data-tname='" + htmlEscape(d.name) + "' onclick='pickTrainer(this)'>"
+                     "<span class='nm'>" + htmlEscape(d.name) + "</span>"
+                     "<span class='badge' title='Fitness Machine Service'>trainer</span>"
+                     "<span class='sig' title='" + std::to_string(d.rssi) + " dBm'>";
+            const int bars = rssiBars(d.rssi);
+            for (int b = 1; b <= 4; ++b) trows += (b <= bars) ? "<i class='on'></i>" : "<i></i>";
+            trows += "</span></button>";
+        }
+        if (!trows.empty()) h += "<div class='devs'>" + trows + "</div>";
+    }
+    h += "<label for='trainer'>Trainer name</label>"
+         "<input type='text' id='trainer' name='trainer' autocomplete='off' autocapitalize='none' "
+         "autocorrect='off' spellcheck='false' value='" + htmlEscape(cfg.trainerNameFilter) +
+         "' placeholder='e.g. Stages Bike'>"
+         "</details>"
          "<button class='go' type='submit'>Save</button></form>"
          // Recovery: clear the saved source + identity back to the shipped defaults (for a tester who
          // mis-picks). Separate form; confirm before it reboots.
@@ -172,7 +221,13 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
          "<button class='reset' type='submit'>Reset to defaults</button></form>"
          "<script>function pick(b){"
          "document.getElementById('addr').value=b.getAttribute('data-addr');"
-         "var ds=document.querySelectorAll('.dev');for(var i=0;i<ds.length;i++)ds[i].classList.remove('sel');"
+         "var ds=document.querySelectorAll('.dev[data-addr]');"
+         "for(var i=0;i<ds.length;i++)ds[i].classList.remove('sel');"
+         "b.classList.add('sel');}"
+         "function pickTrainer(b){"
+         "document.getElementById('trainer').value=b.getAttribute('data-tname');"
+         "var ds=document.querySelectorAll('.dev[data-tname]');"
+         "for(var i=0;i<ds.length;i++)ds[i].classList.remove('sel');"
          "b.classList.add('sel');}</script>";
 
     h += renderLogToggleFooter(logState);
