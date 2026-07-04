@@ -71,6 +71,8 @@ struct RuntimeConfig {
     bool calibrating = false;            // transient: this boot is a live calibration session (both
                                          // meters pinned, feeding the wizard) — set by /calibrate/start,
                                          // cleared on save/cancel. The wizard reboots in/out of it.
+    std::string trainerNameFilter;       // FTMS trainer to erg-drive from the workout engine
+                                         // ("" = erg off). Name substring, like meterNameFilter.
 
     // The factory defaults, from compile-time Config (used when nothing is stored in NVS yet).
     static RuntimeConfig defaults() {
@@ -92,7 +94,7 @@ struct RuntimeConfig {
         return meterAddress + "|" + meterNameFilter + "|" + (singleSidedDouble ? "1" : "0") + "|" +
                spoofName + "|" + spoofSerial + "|" + (mode == ProxyMode::Corrector ? "1" : "0") +
                "|" + refMeterAddress + "|" + refMeterNameFilter + "|" + curveToString(curve) + "|" +
-               (calibrating ? "1" : "0");
+               (calibrating ? "1" : "0") + "|" + trainerNameFilter;
     }
 
     // Parse a stored line. Backward-compatible: an old line (no mode/ref/curve) keeps SPOOF + no
@@ -120,6 +122,7 @@ struct RuntimeConfig {
         if (f.size() >= 8) c.refMeterNameFilter = f[7];
         if (f.size() >= 9) c.curve = curveFromString(f[8]);
         if (f.size() >= 10) c.calibrating = (f[9] == "1");
+        if (f.size() >= 11) c.trainerNameFilter = f[10];
         return c;
     }
 };

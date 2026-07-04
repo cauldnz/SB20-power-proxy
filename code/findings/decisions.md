@@ -2264,3 +2264,27 @@ The findings that matter most for us:
   C3 via POST /forget → portal with its per-device 8-digit PIN — replicated in Python
   (hashlib.blake2b keyed, digest 8, over the STA MAC, mod 1e8 = 72745928 for 38:44:BE:45:E9:A4) and
   used as the WPA2 key. The PC's WLAN NIC does the whole flow headlessly; no phone needed.
+
+## 2026-07-05 — §14 phase 4 SHIPPED: on-device FTMS erg drive, twin-proven (CYD -> C3 trainer sim).
+- **The head-unit now erg-drives an FTMS trainer from its own workout engine** — no phone/PC in the
+  loop. Wiring: RuntimeConfig field 11 `trainerNameFilter` (host-tested roundtrip + backward-compat;
+  "" = erg off) -> `FtmsErgClient` fed by the SHARED NimBLE scan (a new FTMS sink on BleMeterClient's
+  hub — the erg client must NOT install its own scan callbacks, that deafens the meter clients; the
+  standalone envs keep the old self-owned-scan begin()). loop() refreshes desired power from the
+  live WkState every 500 ms; stopped/paused -> 0 W. Setup-screen tap on a "trainer" candidate picks
+  it (the isFtms badge NOW WORKS — the scan callback never actually set it before); serial
+  `TRAINER <name>` is the bench path; web /setup saves PRESERVE the stored trainer (the form doesn't
+  carry it yet — web trainer picker is the open follow-up, with S3-bench + real-SB20 erg runs).
+- **Twin proof** (CYD live-bench + spare C3 as `esp32c3-ftms-server`, all over the air, while the
+  CYD also read the fake meter and served WiFi): boot -> controlled=1 started=1 target=0W; workout
+  START -> sim receives the segment target (138 W); Skip -> 225 W; Stop -> 0 W.
+- **FINDING — CP response indications are effectively single-shot on the loaded CYD radio:** the
+  client received exactly ONE indication ever (RequestControl's, right after subscribe); every later
+  one was lost while the sim's indicate() kept succeeding — the old indication-driven state machine
+  wedged in a Start-resend loop. **Fix: optimistic progression on the ATT write-ACK**
+  (writeValue(response=true) success advances controlled_/started_/lastSent_); the indication stays
+  as the authoritative confirm when it arrives. Real head units behave the same (resend/refresh).
+  NOTE: F6's "on-air validation" drove the SERVER from Python (bleak) — the C++ client <-> C++
+  server pairing had never actually run on air until today; the erg line on the LVGL Workout screen
+  now shows all four states (no trainer set / connecting… / linked, no ctrl / ON xxW) so this is
+  visible on-panel.

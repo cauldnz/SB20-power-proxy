@@ -738,9 +738,10 @@ void lvglUiUpdate(const LcdViews& v) {
         snprintf(buf, sizeof(buf), "now %dW . %drpm", (int)v.ride.watts,
                  v.ride.cadence < 0 ? 0 : (int)v.ride.cadence);
         lv_label_set_text(W.now, buf);
-        if (w.ergConfigured)
-            snprintf(buf, sizeof(buf), "erg: %s", w.ergConnected ? "linked" : "connecting...");
-        else snprintf(buf, sizeof(buf), "erg: no trainer set");
+        if (!w.ergConfigured) snprintf(buf, sizeof(buf), "erg: no trainer set");
+        else if (!w.ergConnected) snprintf(buf, sizeof(buf), "erg: connecting...");
+        else if (!w.ergControlled) snprintf(buf, sizeof(buf), "erg: linked, no ctrl");
+        else snprintf(buf, sizeof(buf), "erg: ON %dW", (int)w.ergTarget);
         lv_label_set_text(W.ergLine, buf);
 
         int n = nSeg > 32 ? 32 : nSeg;

@@ -1,5 +1,6 @@
 #include "ble/FtmsTrainerServer.h"
 
+#include <Arduino.h>
 #include <NimBLEDevice.h>
 
 #include <vector>
@@ -47,7 +48,9 @@ class FtmsControlPointCallbacks : public NimBLECharacteristicCallbacks {
 
         std::vector<uint8_t> resp = encodeControlPointResponse(op, result);
         c->setValue(resp.data(), resp.size());
-        c->indicate();
+        const bool ok = c->indicate();
+        Serial.printf("[ftms-server] cp op=0x%02X result=0x%02X indicate=%s\n", op, result,
+                      ok ? "ok" : "FAILED");
     }
 
  private:

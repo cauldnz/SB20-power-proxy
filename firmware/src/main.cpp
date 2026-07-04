@@ -68,6 +68,29 @@ static BleCrankPeripheral crank;
 static ProxyCore proxy(meter, crank,
                        Correction{Config::CORRECTION_SCALE, Config::CORRECTION_OFFSET});
 
+// §14 phase 4: erg-drive an FTMS trainer from the workout engine. Configured at runtime
+// (cfg.trainerNameFilter, picked on the Setup screen); fed advertisers by the shared scan hub
+// (live builds — mock builds never install the hub's scan callbacks, so no trainer is found).
+#include "ble/FtmsErgClient.h"
+static FtmsErgClient ergTrainer;
+static bool g_ergConfigured = false;
+
+// Start the erg client when a trainer is configured. Skipped on calibration boots (two meter
+// centrals already share the radio there) and while the fresh-onboarding portal is up.
+static void ergBegin(const RuntimeConfig& cfg) {
+    if (cfg.trainerNameFilter.empty() || cfg.calibrating) return;
+#if USE_MOCK_METER
+    // No meter central on mock builds -> no shared scan hub; the erg client owns the scan.
+    ergTrainer.begin(cfg.trainerNameFilter.c_str());
+#else
+    BleMeterClient::setFtmsScanSink(&ergTrainer);
+    ergTrainer.beginShared(cfg.trainerNameFilter.c_str());
+#endif
+    g_ergConfigured = true;
+    Serial.printf("[erg] trainer configured: '%s' (workout targets will drive it)\n",
+                  cfg.trainerNameFilter.c_str());
+}
+
 #if USE_WIFI
 static WifiLink wifi;
 #include "WorkoutStore.h"            // NVS-backed workout JSON (the loaded structured workout)
@@ -202,6 +225,8 @@ static LcdCanvas& g_lcdFrame() {
     return frame;
 }
 static std::string g_lcdIdentity, g_lcdSource, g_lcdMeterAddr;  // captured from cfg at boot
+static std::string g_lcdTrainerName, g_lcdTrainerAddr;  // FTMS trainer pick (name persisted;
+                                                        // addr is session-local, for the badge)
 static bool g_lcdCorrector = false;
 static int16_t g_lcdHist[160] = {0};       // power-history ring for the Ride sparkline
 static int g_lcdHistN = 0;
@@ -352,7 +377,12 @@ static void buildLcdViews(LcdViews& v) {
     w.st = g_wk.state(millis());
     w.nowW = proxy.lastOutput().power_w;
     w.nowCad = proxy.lastOutput().cadence_rpm;
-    w.ergConfigured = false;  // trainer/erg wiring lands in the next PR (§14 phase 4)
+    w.ergConfigured = g_ergConfigured;
+    if (g_ergConfigured) {
+        w.ergConnected = ergTrainer.connected();
+        w.ergControlled = ergTrainer.controlled();
+        w.ergTarget = ergTrainer.lastSent();
+    }
 
     // Ride's live-workout strip mirrors the workout state
     r.wkRunning = w.running;
@@ -366,6 +396,7 @@ static void buildLcdViews(LcdViews& v) {
     s.devices = meter.candidates();
 #endif
     s.meterAddr = g_lcdMeterAddr;
+    s.trainerAddr = g_lcdTrainerAddr;  // session pick (the [erg] badge); the NAME is what persists
 
     // More / Settings summary
     MoreView& m = v.more;
@@ -447,17 +478,23 @@ static void lcdExecute(const UiAction& a, const LcdViews& v) {
         case UiAction::SetupPick: {
             const auto ds = dedupeAndSortSources(v.setup.devices);
             if (a.index >= 0 && a.index < (int)ds.size()) {
-                g_lcdMeterAddr = ds[a.index].address;
-                g_lcdSource = ds[a.index].name.empty() ? ds[a.index].address : ds[a.index].name;
+                if (ds[a.index].isFtms) {  // an erg-able trainer -> the workout's erg target
+                    g_lcdTrainerName = ds[a.index].name;
+                    g_lcdTrainerAddr = ds[a.index].address;
+                } else {
+                    g_lcdMeterAddr = ds[a.index].address;
+                    g_lcdSource = ds[a.index].name.empty() ? ds[a.index].address : ds[a.index].name;
+                }
             }
             break;
         }
         case UiAction::SetupSave:
-            if (!g_lcdMeterAddr.empty()) {
+            if (!g_lcdMeterAddr.empty() || !g_lcdTrainerName.empty()) {
                 RuntimeConfig c = ConfigStore::load();
-                c.meterAddress = g_lcdMeterAddr;
+                if (!g_lcdMeterAddr.empty()) c.meterAddress = g_lcdMeterAddr;
+                if (!g_lcdTrainerName.empty()) c.trainerNameFilter = g_lcdTrainerName;
                 ConfigStore::save(c);
-                Serial.println("[lcd] source saved; rebooting to apply");
+                Serial.println("[lcd] setup saved; rebooting to apply");
                 delay(300);
                 esp_restart();
             }
@@ -687,6 +724,13 @@ static void lcdSerialConsole() {
                 g_lcdInjX = x; g_lcdInjY = y;
                 Serial.printf("[lcd] tap injected %d,%d\n", x, y);
             }
+        } else if (cmd.rfind("TRAINER", 0) == 0) {  // TRAINER <name> -> set the erg target + reboot
+            RuntimeConfig c = ConfigStore::load();   // ("TRAINER" alone clears it)
+            c.trainerNameFilter = cmd.size() > 8 ? cmd.substr(8) : std::string();
+            ConfigStore::save(c);
+            Serial.printf("[erg] trainer filter = '%s'; rebooting\n", c.trainerNameFilter.c_str());
+            delay(300);
+            esp_restart();
 #if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
         } else if (cmd == "CALTOUCH") {           // (re)run the touch-calibration ritual
             g_tcal = CalRitual{};
@@ -918,6 +962,7 @@ void setup() {
 #if !USE_MOCK_METER
         if (g_calibrating) refMeter.begin();  // 2nd central joins the shared scan
 #endif
+        ergBegin(cfg);  // FTMS erg drive, when a trainer is configured (§14 phase 4)
     } else {
         Serial.println("[ble] held off while the setup portal is up (starts after provisioning)");
     }
@@ -926,6 +971,7 @@ void setup() {
 #if !USE_MOCK_METER
     if (g_calibrating) refMeter.begin();
 #endif
+    ergBegin(cfg);
 #endif
 #if USE_WIFI
 
@@ -937,15 +983,23 @@ void setup() {
     // Source-setup UI (GET/POST /setup): pick the meter / surviving crank over WiFi, persist to NVS,
     // reboot to apply. Decoupled via hooks — the candidate list + rescan come from the live central;
     // a mock build has no sources to offer.
+    // The /setup form doesn't carry the trainer field (LCD-only pick for now) — preserve the
+    // stored trainerNameFilter across web saves so a phone /setup save can't silently drop erg.
+    auto saveKeepTrainer = [](const RuntimeConfig& c) {
+        RuntimeConfig merged = c;
+        if (merged.trainerNameFilter.empty())
+            merged.trainerNameFilter = ConfigStore::load().trainerNameFilter;
+        ConfigStore::save(merged);
+    };
     wifi.setConfigUi(
         []() { return ConfigStore::load(); },
 #if USE_MOCK_METER
         []() { return std::vector<sb20proxy::SourceCandidate>{}; },
-        [](const RuntimeConfig& c) { ConfigStore::save(c); },
+        saveKeepTrainer,
         []() {});
 #else
         []() { return meter.candidates(); },
-        [](const RuntimeConfig& c) { ConfigStore::save(c); },
+        saveKeepTrainer,
         []() { meter.clearCandidates(); });
 #endif
     // The tester /diag report's raw meter frames (the bytes we add a new meter from). Live only.
@@ -1051,6 +1105,7 @@ void setup() {
     g_lcdIdentity = cfg.spoofName;
     g_lcdCorrector = (cfg.mode == ProxyMode::Corrector);
     g_lcdMeterAddr = cfg.meterAddress;
+    g_lcdTrainerName = cfg.trainerNameFilter;  // (addr fills in when the scan sees it)
     g_lcdSource = cfg.meterAddress.empty() ? cfg.meterNameFilter : cfg.meterAddress;
     g_lcdUi.brightness = 100;
     bootStage("pre-lcd");
@@ -1091,6 +1146,23 @@ void loop() {
 #endif
     perf.sample(esp_timer_get_time());  // record this loop's period (Phase A)
     proxy.loop();
+
+    // §14 phase 4: feed the workout engine's live target into the FTMS erg client. The client
+    // dedups + rate-limits its control-point writes; we just keep desired power current. A
+    // stopped/paused workout sets 0 W (the trainer drops resistance rather than holding stale).
+    if (g_ergConfigured) {
+        static uint32_t ergSyncMs = 0;
+        const uint32_t nowMs = millis();
+        if (nowMs - ergSyncMs >= 500) {
+            ergSyncMs = nowMs;
+            lcdLock();
+            const bool running = g_wk.running && !g_wk.paused;
+            const int16_t target = running ? g_wk.state(nowMs).targetW : -1;
+            lcdUnlock();
+            ergTrainer.setDesiredPower(target > 0 ? target : 0);
+        }
+        ergTrainer.loop();
+    }
 #if !USE_MOCK_METER
     if (g_calibrating) {
         refMeter.loop();  // service the 2nd central during a calibration session
