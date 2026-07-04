@@ -838,6 +838,23 @@ void test_runtime_config_calibrating_roundtrip() {
     TEST_ASSERT_FALSE(old.calibrating);
 }
 
+void test_lcd_picker_list_filters_noise() {
+    // A busy desk: two irrelevant BLE gadgets, a crank, a CPS meter, an FTMS trainer.
+    std::vector<SourceCandidate> in = {
+        {"11:11", "Petkit_W4X", -96, false, false, false},       // pet feeder: not shown
+        {"22:22", "", -50, false, false, false},                  // nameless phone: not shown
+        {"33:33", "Stages 62145", -93, true, true, false},        // crank
+        {"44:44", "FakeMeter", -60, true, false, false},          // meter
+        {"55:55", "SB20-FTMS-Server", -70, false, false, true},   // trainer
+    };
+    const auto out = lcdPickerList(in);
+    TEST_ASSERT_EQUAL_INT(3, (int)out.size());                    // noise dropped
+    TEST_ASSERT_EQUAL_STRING("FakeMeter", out[0].name.c_str());   // sorted strongest-first
+    TEST_ASSERT_EQUAL_STRING("SB20-FTMS-Server", out[1].name.c_str());
+    TEST_ASSERT_TRUE(out[1].isFtms);
+    TEST_ASSERT_EQUAL_STRING("Stages 62145", out[2].name.c_str());
+}
+
 void test_runtime_config_trainer_roundtrip() {
     RuntimeConfig c = RuntimeConfig::defaults();
     c.trainerNameFilter = "SB20-FTMS-Server";
@@ -2412,6 +2429,7 @@ int runUnityTests() {
     RUN_TEST(test_calibration_page_fitted_shows_curve_and_name);
     RUN_TEST(test_runtime_config_calibrating_roundtrip);
     RUN_TEST(test_runtime_config_trainer_roundtrip);
+    RUN_TEST(test_lcd_picker_list_filters_noise);
     RUN_TEST(test_correction_to_curve_passthrough_and_linear);
     RUN_TEST(test_proxycore_tap_sees_raw_source_reading);
     return UNITY_END();

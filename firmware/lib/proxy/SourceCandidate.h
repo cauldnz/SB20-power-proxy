@@ -73,4 +73,18 @@ inline std::vector<SourceCandidate> dedupeAndSortSources(const std::vector<Sourc
     return out;
 }
 
+// The LCD picker's list: only devices we can actually USE — power meters/cranks (CPS) and
+// erg-able trainers (FTMS) — deduped and sorted. A busy desk advertises dozens of irrelevant
+// BLE gadgets; on a 6-row panel they drown the real ones (owner, 2026-07-05). The RENDERER and
+// the TAP HANDLER must both use exactly this list, or row indexes pick the wrong device (the
+// LVGL renderer used the raw list while the tap handler sorted — a real mis-pick bug). The web
+// /setup page keeps showing everything (it has room + it's the debugging surface).
+inline std::vector<SourceCandidate> lcdPickerList(const std::vector<SourceCandidate>& in) {
+    std::vector<SourceCandidate> relevant;
+    for (const auto& d : in) {
+        if (d.isCps || d.isFtms || d.isStagesCrank) relevant.push_back(d);
+    }
+    return dedupeAndSortSources(relevant);
+}
+
 }  // namespace sb20proxy

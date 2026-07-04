@@ -778,19 +778,23 @@ void lvglUiUpdate(const LcdViews& v) {
         lv_label_set_text(W.clock, "");
     }
 
-    // Setup
-    if (v.setup.devices.empty()) lv_obj_remove_flag(S.empty, LV_OBJ_FLAG_HIDDEN);
+    // Setup — RENDER THE SAME LIST THE TAP HANDLER RESOLVES (lcdPickerList): only usable
+    // devices (meters/cranks/trainers), deduped + sorted. Rendering the raw list while the
+    // handler sorted meant row taps could pick a DIFFERENT device than displayed.
+    const auto pick = lcdPickerList(v.setup.devices);
+    if (pick.empty()) lv_obj_remove_flag(S.empty, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(S.empty, LV_OBJ_FLAG_HIDDEN);
     for (int i = 0; i < 6; ++i) {
-        if (i < (int)v.setup.devices.size()) {
-            const auto& dev = v.setup.devices[i];
+        if (i < (int)pick.size()) {
+            const auto& dev = pick[i];
             lv_obj_remove_flag(S.rows[i], LV_OBJ_FLAG_HIDDEN);
             lv_label_set_text(S.rowName[i],
                               dev.name.empty() ? dev.address.c_str() : dev.name.c_str());
             const bool selM = !v.setup.meterAddr.empty() && dev.address == v.setup.meterAddr;
             const bool selT = !v.setup.trainerAddr.empty() && dev.address == v.setup.trainerAddr;
-            snprintf(buf, sizeof(buf), "%d%s%s%s", dev.rssi, dev.isFtms ? " trn" : "",
-                     selM ? " [meter]" : "", selT ? " [erg]" : "");
+            const char* kind = dev.isFtms ? "trainer" : (dev.isStagesCrank ? "crank" : "meter");
+            snprintf(buf, sizeof(buf), "%s %d%s%s", kind, dev.rssi, selM ? " *" : "",
+                     selT ? " *" : "");
             lv_label_set_text(S.rowMeta[i], buf);
         } else {
             lv_obj_add_flag(S.rows[i], LV_OBJ_FLAG_HIDDEN);

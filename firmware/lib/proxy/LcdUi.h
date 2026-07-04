@@ -434,7 +434,7 @@ inline void lcdRenderSetup(LcdCanvas& c, const SetupView& v) {
     c.text(PAD, 34, "tap a row to select", 1, LCD_MUT);
     c.text(PAD, 46, "meter=power trn=erg", 1, LCD_MUT);
 
-    const auto ds = dedupeAndSortSources(v.devices);
+    const auto ds = lcdPickerList(v.devices);  // meters/cranks/trainers only; matches the tap path
     int shown = 0;
     for (size_t i = 0; i < ds.size() && shown < SETUP_MAX_ROWS; ++i, ++shown) {
         const auto& d = ds[i];
