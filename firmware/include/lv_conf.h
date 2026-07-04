@@ -40,6 +40,9 @@
 #define LV_USE_THEME_DEFAULT 0
 #define LV_USE_THEME_SIMPLE 0
 
+/* WiFi-onboarding QR (the join-the-setup-AP code on the provisioning screen) */
+#define LV_USE_QRCODE 1
+
 /* lv_font_conv emits compressed glyph bitmaps by default — without this they silently don't draw */
 #define LV_USE_FONT_COMPRESSED 1
 

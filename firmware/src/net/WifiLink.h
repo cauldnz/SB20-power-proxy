@@ -108,11 +108,19 @@ public:
 
     bool isUp() const { return healthy_; }
     bool inPortal() const { return portal_; }
+    // True when the portal is a JOIN-FAILURE fallback (stored creds stopped working) rather than
+    // first-time onboarding — the caller should still start BLE so a ride isn't bricked by a
+    // missing home network; only the fresh-onboarding portal holds BLE off (classic-ESP32 coex).
+    bool portalAfterJoinFail() const { return portalJoinFail_; }
     // The setup AP's WPA2 password while the portal is up (a per-device PIN on OLED builds, else the
     // default) — surfaced so the OLED can display it. Empty until the portal starts.
     const std::string& setupPin() const { return setupPin_; }
+    // The setup AP's SSID (constant) — surfaced so the LCD onboarding screen can render the
+    // join-this-network QR without duplicating the name.
+    static const char* apSsid();
 
 private:
+    void sendHtml_(const std::string& body);  // drain-aware page send (short-write safe)
     void startStationServer_();  // status/setup/calibrate/forget routes + opt-in auth OTA (WiFi joined)
     void addConfigRoutes_();     // GET /setup picker + POST /setup/save + GET /setup/scan
     void addCalibrationRoutes_();  // GET /calibrate + POST start/finish/save/cancel + GET scan
@@ -150,6 +158,7 @@ private:
     std::vector<ScannedNet> networks_;  // APs scanned for the portal picker (RSSI + secured)
     bool healthy_ = false;
     bool portal_ = false;
+    bool portalJoinFail_ = false;  // portal is the join-failed fallback, not fresh onboarding
     bool radioOff_ = false;  // ride mode: WiFi powered down (BLE-only); handle() then no-ops
     bool logEnabled_ = true;  // serve GET /log? (persisted in NVS via WifiCreds)
     bool otaEnabled_ = false;  // authenticated ArduinoOTA started? (only when OTA_PASSWORD is set)

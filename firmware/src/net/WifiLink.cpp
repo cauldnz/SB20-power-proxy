@@ -15,6 +15,10 @@
 #include <esp_ota_ops.h>
 #include <esp_system.h>
 #include <esp_timer.h>
+#if __has_include(<esp_coexist.h>)
+#include <esp_coexist.h>  // coex preference (classic-ESP32 BLE starves multi-KB HTTP otherwise)
+#define HAVE_ESP_COEX 1
+#endif
 
 #include "Config.h"            // SETUP_PIN_SECRET (the setup-AP PIN derivation key)
 #include "HttpSecurity.h"      // pure same-origin (CSRF) check for state-changing routes (host-tested)
@@ -108,6 +112,15 @@ void WifiLink::begin(const char* hostname, StatusProvider provider,
     display_ = display ? display : &s_defaultDisplay;
     logEnabled_ = WifiCreds::logEnabled(/*dflt=*/true);  // persisted; on by default
 
+#ifdef HAVE_ESP_COEX
+    // Radio-share preference: favour WiFi over BLE. On the classic ESP32 (CYD) the default
+    // balance starves multi-packet TCP while BLE runs — small JSON replies get through, multi-KB
+    // pages time out (2026-07-04). Our BLE traffic is 1 Hz meter/crank notifications, which
+    // tolerate the reduced airtime; the web UI does not. (setSleep(false) is NOT an option:
+    // the classic core hard-aborts when modem sleep is disabled with BT enabled.)
+    esp_coex_preference_set(ESP_COEX_PREFER_WIFI);
+#endif
+
     // Credentials: NVS (portal-provisioned) wins; wifi_secret.h, if present, seeds boot one.
     WifiCredentials creds;
     bool have = WifiCreds::load(creds);
@@ -138,10 +151,12 @@ void WifiLink::begin(const char* hostname, StatusProvider provider,
     }
 
     if (WiFi.status() != WL_CONNECTED) {
-        // Stored creds don't work (moved router, wrong password) — fall back to the portal so
-        // the user can re-provision without a USB reflash.
+        // Stored creds don't work (moved router, wrong password, or just out of range) — fall
+        // back to the portal so the user can re-provision without a USB reflash. Marked as a
+        // join-fail portal: main still starts BLE so a ride away from home WiFi isn't bricked.
         logf("[wifi] join failed; falling back to setup portal");
         disarmBootGuard();
+        portalJoinFail_ = true;
         startPortal_();
         return;
     }
@@ -173,6 +188,30 @@ void WifiLink::addLogRoutes_() {
         WifiCreds::setLogEnabled(false);
         server_->send(200, "text/plain", "log disabled\n");
     });
+}
+
+// Drain-aware HTML page send. Arduino's WebServer::send() writes the body with WiFiClient::write
+// and IGNORES short writes — under lwIP memory pressure (the no-PSRAM CYD idles ~30 KB free with
+// WiFi+BLE+LVGL up) multi-KB pages get silently TRUNCATED mid-stream (2026-07-04). This streams
+// the body in small slices and, on a short write, waits for the TCP buffers to drain instead of
+// dropping the tail. JSON/plain replies are small enough for plain send().
+void WifiLink::sendHtml_(const std::string& body) {
+    server_->setContentLength(body.size());
+    server_->send(200, "text/html", "");  // status + headers only; body streamed below
+    WiFiClient c = server_->client();
+    size_t off = 0;
+    uint32_t lastProgress = millis();
+    while (off < body.size() && c.connected()) {
+        const size_t want = body.size() - off > 1024 ? 1024 : body.size() - off;
+        const size_t n = c.write(reinterpret_cast<const uint8_t*>(body.data()) + off, want);
+        if (n > 0) {
+            off += n;
+            lastProgress = millis();
+        } else {
+            if (millis() - lastProgress > 5000) break;  // client gone / stuck: give up
+            delay(5);  // lwIP send buffers full — let the WiFi task drain them
+        }
+    }
 }
 
 // CSRF guard for state-changing routes (2026-06-24 security review, Vuln 2). The on-device web server
@@ -228,11 +267,11 @@ void WifiLink::startStationServer_() {
     server_ = new WebServer(80);
     collectCsrfHeaders_();  // so csrfOk_() can read Origin/Referer on the mutating POST routes
     // GET / -> the dashboard (what a tester sees opening the board's IP); /ui is kept as an alias.
-    auto serveDash = [this]() { server_->send(200, "text/html", appPageHtml().c_str()); };
+    auto serveDash = [this]() { sendHtml_(appPageHtml()); };
     server_->on("/", HTTP_GET, serveDash);
     server_->on("/ui", HTTP_GET, serveDash);
     // GET /more -> the Settings / "More" tab (status summary + nav hub; fills from /status client-side).
-    server_->on("/more", HTTP_GET, [this]() { server_->send(200, "text/html", settingsPageHtml().c_str()); });
+    server_->on("/more", HTTP_GET, [this]() { sendHtml_(settingsPageHtml()); });
     // GET /status -> the status JSON the dashboard polls (was GET /; tools that curled / should
     // use /status now). Kept compact + unchanged in shape.
     server_->on("/status", HTTP_GET, [this]() {
@@ -267,11 +306,11 @@ void WifiLink::startStationServer_() {
 // then power the radio down; handle() then no-ops so nothing touches the dead network.
 void WifiLink::addRideModeRoute_() {
     server_->on("/wifi/off", HTTP_GET, [this]() {
-        server_->send(200, "text/html", rideModeConfirmHtml());
+        sendHtml_(rideModeConfirmHtml());
     });
     server_->on("/wifi/off", HTTP_POST, [this]() {
         if (!csrfOk_()) return;
-        server_->send(200, "text/html", rideModeDoneHtml());
+        sendHtml_(rideModeDoneHtml());
         delay(400);            // let the reply flush before the radio drops
         if (otaEnabled_) ArduinoOTA.end();
         WiFi.disconnect(true, false);
@@ -287,7 +326,7 @@ void WifiLink::addRideModeRoute_() {
 // through the same load hook as a pasted workout.
 void WifiLink::addWorkoutRoutes_() {
     server_->on("/workout", HTTP_GET, [this]() {
-        server_->send(200, "text/html", workoutPageHtml().c_str());
+        sendHtml_(workoutPageHtml());
     });
     server_->on("/workout/state", HTTP_GET, [this]() {
         const std::string j = workoutState_ ? workoutState_() : std::string("{\"loaded\":false}");
@@ -335,8 +374,7 @@ void WifiLink::addConfigRoutes_() {
                          " \xE2\x9C\x93";  // checkmark
             else status = "Searching for your source\xE2\x80\xA6";  // ellipsis
         }
-        server_->send(200, "text/html",
-                      renderConfigPage(cfg, srcs, std::string(), false, -1, status).c_str());
+        sendHtml_(renderConfigPage(cfg, srcs, std::string(), false, -1, status));
     });
     server_->on("/setup/scan", HTTP_GET, [this]() {  // clear + let the central refill, back to /setup
         if (configScan_) configScan_();
@@ -351,11 +389,11 @@ void WifiLink::addConfigRoutes_() {
         if (err) {
             const std::vector<SourceCandidate> srcs =
                 sourcesProvider_ ? sourcesProvider_() : std::vector<SourceCandidate>{};
-            server_->send(200, "text/html", renderConfigPage(cfg, srcs, err).c_str());
+            sendHtml_(renderConfigPage(cfg, srcs, err));
             return;
         }
         if (configSave_) configSave_(cfg);  // persist to NVS
-        server_->send(200, "text/html", renderConfigSavedPage(cfg).c_str());
+        sendHtml_(renderConfigSavedPage(cfg));
         delay(400);
         esp_restart();  // reboot to apply the new source (mirrors /update)
     });
@@ -384,7 +422,7 @@ void WifiLink::addConfigRoutes_() {
     // GET /report -> the tester-facing "review & send" page. Consent-first: it fetches /diag, shows it
     // for review, and offers Download / Copy / Email — nothing leaves the device until the tester acts.
     server_->on("/report", HTTP_GET, [this]() {
-        server_->send(200, "text/html", diagReportPageHtml());
+        sendHtml_(diagReportPageHtml());
     });
 }
 
@@ -396,7 +434,7 @@ void WifiLink::addCalibrationRoutes_() {
     auto render = [this](const std::string& message) {
         CalWizardView v = calView_ ? calView_() : CalWizardView{};
         if (!message.empty()) v.message = message;
-        server_->send(200, "text/html", renderCalibrationPage(v).c_str());
+        sendHtml_(renderCalibrationPage(v));
     };
     server_->on("/calibrate", HTTP_GET, [this, render]() { render(""); });
     server_->on("/calibrate/scan", HTTP_GET, [this]() {
@@ -488,6 +526,8 @@ bool WifiLink::collectScan_() {
     return false;  // idle or failed (-2): nothing in flight
 }
 
+const char* WifiLink::apSsid() { return WIFI_AP_SSID; }
+
 void WifiLink::startPortal_() {
     portal_ = true;
     // Waiting for the user to enter creds is a stable state, not a failed flash — make sure
@@ -505,14 +545,20 @@ void WifiLink::startPortal_() {
 #else
     setupPin_ = Config::SETUP_AP_DEFAULT_PASSWORD;
 #endif
-    WiFi.softAP(WIFI_AP_SSID, setupPin_.c_str());
-    IPAddress apIP = WiFi.softAPIP();
-
-    // Best-effort initial scan so the first page already offers a picker. Synchronous (~2-4 s)
-    // is fine here — the web server and captive DNS aren't up yet, so nothing is stalled. The
-    // Rescan button later uses an async scan so it never blocks the portal.
+    // Best-effort initial scan so the first page already offers a picker — run it BEFORE the AP
+    // comes up: on the classic (Arduino 2.x) ESP32 core a synchronous STA scan right after
+    // softAP() can wedge the AP's DHCP server (client associates but self-assigns 169.254.x.x —
+    // CYD, 2026-07-04). Synchronous (~2-4 s) is fine here — nothing else is up yet. The Rescan
+    // button later uses an async scan so it never blocks the portal.
     populateFromScan_(WiFi.scanNetworks());
     WiFi.scanDelete();
+
+    // Explicit AP netif config: with the implicit defaults the classic core's DHCP server
+    // sometimes never starts at all. softAPConfig forces the DHCPS up on 192.168.4.1/24.
+    WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1),
+                      IPAddress(255, 255, 255, 0));
+    WiFi.softAP(WIFI_AP_SSID, setupPin_.c_str());
+    IPAddress apIP = WiFi.softAPIP();
 
     // Wildcard DNS: every lookup resolves to us, which triggers the OS captive-portal popup.
     dns_ = new DNSServer();
@@ -533,7 +579,7 @@ void WifiLink::startPortal_() {
         bool scanning = collectScan_();
         std::string body =
             renderProvisioningPage(networks_, message, logEnabled_ ? 1 : 0, scanning);
-        server_->send(200, "text/html", body.c_str());
+        sendHtml_(body);
     };
 
     server_->on("/", HTTP_GET, [renderRoot]() { renderRoot(std::string()); });
@@ -563,7 +609,7 @@ void WifiLink::startPortal_() {
         }
         WifiCreds::save(c);
         std::string ok = renderSavedPage(c.ssid);
-        server_->send(200, "text/html", ok.c_str());
+        sendHtml_(ok);
         delay(500);
         esp_restart();
     });
