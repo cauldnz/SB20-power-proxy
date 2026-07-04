@@ -247,6 +247,19 @@ void BleMeterClient::loop() {
         wantRescan_ = false;
         ensureScanning();  // a meter dropped; resume the shared scan to re-find it
     }
+    // Self-heal the shared scan. The initial start in begin() can FAIL SILENTLY — on the
+    // single-core C3 the erg-era boot order starts BLE right after the whole WiFi stack comes
+    // up, and a failed first start left the board "searching" forever with a dead scan and an
+    // empty picker (zero adverts logged in 10 min on a saturated desk, 2026-07-05). If anyone
+    // still hunts and the scan isn't running, kick it — rate-limited, idempotent.
+    {
+        static uint32_t s_lastScanKickMs = 0;
+        const uint32_t now = millis();
+        if (now - s_lastScanKickMs >= 3000) {
+            s_lastScanKickMs = now;
+            if (!noClientNeedsScan()) ensureScanning();
+        }
+    }
     // Staleness watchdog: a connected meter that stops notifying is gone — drop the link and
     // rescan. We reset state HERE rather than waiting on the onDisconnect callback, because an
     // abruptly-vanished peer (a killed host process) can leave the controller link up with the
