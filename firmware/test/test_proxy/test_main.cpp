@@ -998,6 +998,35 @@ void test_render_config_page_marks_selected_and_badges() {
     TEST_ASSERT_TRUE(h.find("action='/setup/save'") != std::string::npos);  // the save contract is intact
 }
 
+void test_config_form_trainer_field_and_presence() {
+    // present + set
+    RuntimeConfig a = parseConfigForm("addr=&name=ASSIOMA&trainer=SB20-FTMS-Server");
+    TEST_ASSERT_EQUAL_STRING("SB20-FTMS-Server", a.trainerNameFilter.c_str());
+    // present but EMPTY = explicit clear
+    RuntimeConfig b = parseConfigForm("addr=&name=ASSIOMA&trainer=");
+    TEST_ASSERT_TRUE(b.trainerNameFilter.empty());
+    TEST_ASSERT_TRUE(formHasField("addr=&name=ASSIOMA&trainer=", "trainer"));
+    // ABSENT = the route preserves the stored value (formHasField says so)
+    TEST_ASSERT_FALSE(formHasField("addr=&name=ASSIOMA", "trainer"));
+    TEST_ASSERT_FALSE(formHasField("nottrainer=x&trainerish=y", "trainer"));
+}
+
+void test_render_config_page_trainer_section() {
+    RuntimeConfig cfg = RuntimeConfig::defaults();
+    cfg.trainerNameFilter = "SB20-FTMS-Server";
+    std::vector<SourceCandidate> ds = {
+        {"aa:bb:cc:dd:ee:02", "ASSIOMA17039L", -45, true, false, false},
+        {"cc:dd:ee:ff:00:11", "SB20-FTMS-Server", -61, false, false, true},
+    };
+    std::string h = renderConfigPage(cfg, ds);
+    TEST_ASSERT_TRUE(h.find("name='trainer'") != std::string::npos);        // the field exists
+    TEST_ASSERT_TRUE(h.find("value='SB20-FTMS-Server'") != std::string::npos);  // prefilled
+    TEST_ASSERT_TRUE(h.find("data-tname='SB20-FTMS-Server'") != std::string::npos);  // tap row
+    TEST_ASSERT_TRUE(h.find(">trainer</span>") != std::string::npos);       // the badge
+    // the meter (non-FTMS) never appears as a trainer row
+    TEST_ASSERT_TRUE(h.find("data-tname='ASSIOMA17039L'") == std::string::npos);
+}
+
 void test_render_config_page_escapes_name() {
     std::vector<SourceCandidate> ds = {{"aa:bb:cc:dd:ee:02", "<script>x", -45, true, false}};
     std::string h = renderConfigPage(RuntimeConfig::defaults(), ds);
@@ -2322,6 +2351,8 @@ int runUnityTests() {
     RUN_TEST(test_dedupe_and_sort_sources);
     RUN_TEST(test_render_config_page_marks_selected_and_badges);
     RUN_TEST(test_render_config_page_escapes_name);
+    RUN_TEST(test_config_form_trainer_field_and_presence);
+    RUN_TEST(test_render_config_page_trainer_section);
     RUN_TEST(test_render_config_page_shows_spoof_identity);
     RUN_TEST(test_render_config_page_status_banner);
     RUN_TEST(test_proxy_set_correction_applies_single_sided_double);
