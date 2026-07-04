@@ -25,12 +25,18 @@ static constexpr uint32_t kMeterStaleMs = 6000;
 // calibrator runs two (a DUT + a reference) concurrently. Clients are static-lifetime (never removed).
 static std::vector<BleMeterClient*> g_clients;
 
+// The FTMS erg client (at most one), fed 0x1826 advertisers from the same shared scan (§14 phase 4).
+#include "ble/FtmsErgClient.h"
+static FtmsErgClient* g_ftmsSink = nullptr;
+void BleMeterClient::setFtmsScanSink(FtmsErgClient* sink) { g_ftmsSink = sink; }
+
 // True when no registered client still needs to discover a meter (all connected or already targeted)
 // — the cue to stop the shared scan, exactly as the single-client path did on its one match.
 static bool noClientNeedsScan() {
     for (auto* c : g_clients) {
         if (c->wantsTarget()) return false;
     }
+    if (g_ftmsSink && g_ftmsSink->wantsTarget()) return false;  // the erg client still hunts too
     return true;
 }
 
@@ -61,11 +67,16 @@ class MeterScanCallbacks : public NimBLEScanCallbacks {
         const std::string name = d->getName();
         const std::string addr = d->getAddress().toString();
         const bool cps = d->isAdvertisingService(NimBLEUUID(UUID_CPS));
+        const bool ftms = d->isAdvertisingService(NimBLEUUID((uint16_t)0x1826));  // erg-able trainer
         const int rssi = d->getRSSI();
         // Record every advertiser for the web picker on each client (the scan runs continuously until
         // a match connects, so the list fills during setup). Done before the match check so the page
         // can offer sources even when none is configured yet.
-        for (auto* c : g_clients) c->recordCandidate(addr.c_str(), name.c_str(), rssi, cps);
+        for (auto* c : g_clients) c->recordCandidate(addr.c_str(), name.c_str(), rssi, cps, ftms);
+        // Feed FTMS advertisers to the erg client (it never touches the scan callbacks itself).
+        if (ftms && g_ftmsSink && g_ftmsSink->wantsTarget()) {
+            g_ftmsSink->onFtmsAdvert(addr.c_str(), d->getAddress().getType(), name.c_str());
+        }
         // Assign the advertiser to the FIRST client that wants it and isn't being claimed elsewhere.
         // isTarget (pure, host-tested isTargetMeter) picks per RUNTIME config: a PINNED address wins;
         // else a nameless peripheral matches by CPS UUID and a NAMED device must contain the name
@@ -96,7 +107,8 @@ bool BleMeterClient::isTarget(const std::string& name, bool cps, const std::stri
                          Config::MATCH_ANY_CPS);
 }
 
-void BleMeterClient::recordCandidate(const char* addr, const char* name, int rssi, bool cps) {
+void BleMeterClient::recordCandidate(const char* addr, const char* name, int rssi, bool cps,
+                                     bool ftms) {
     const std::string n = name ? name : "";
     if (n == matchSpoofName_) return;  // never offer our own spoof as a source
     SourceCandidate c;
@@ -104,6 +116,7 @@ void BleMeterClient::recordCandidate(const char* addr, const char* name, int rss
     c.name = n;
     c.rssi = rssi;
     c.isCps = cps;
+    c.isFtms = ftms;  // was never set before phase 4 — the picker's "trainer" badge relied on it
     c.isStagesCrank = (n.rfind("Stages ", 0) == 0);  // a native crank (incl. the surviving-crank case)
     addCandidate(candidates_, c, 16);  // pure, host-tested dedup + cap
 }

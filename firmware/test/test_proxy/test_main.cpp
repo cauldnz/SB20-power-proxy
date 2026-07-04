@@ -838,6 +838,17 @@ void test_runtime_config_calibrating_roundtrip() {
     TEST_ASSERT_FALSE(old.calibrating);
 }
 
+void test_runtime_config_trainer_roundtrip() {
+    RuntimeConfig c = RuntimeConfig::defaults();
+    c.trainerNameFilter = "SB20-FTMS-Server";
+    RuntimeConfig back = RuntimeConfig::fromLine(c.toLine());
+    TEST_ASSERT_EQUAL_STRING("SB20-FTMS-Server", back.trainerNameFilter.c_str());
+    // a 10-field line (pre-trainer) parses with no trainer = erg off (backward compatible)
+    RuntimeConfig old = RuntimeConfig::fromLine("a|ASSIOMA|0|Stages 62144|11821518|0|||"
+                                                "|0");
+    TEST_ASSERT_TRUE(old.trainerNameFilter.empty());
+}
+
 void test_correction_to_curve_passthrough_and_linear() {
     Correction curveC;
     curveC.curve.add(100, 0.95f);
@@ -2400,6 +2411,7 @@ int runUnityTests() {
     RUN_TEST(test_calibration_page_collecting_shows_coverage_and_gates_finish);
     RUN_TEST(test_calibration_page_fitted_shows_curve_and_name);
     RUN_TEST(test_runtime_config_calibrating_roundtrip);
+    RUN_TEST(test_runtime_config_trainer_roundtrip);
     RUN_TEST(test_correction_to_curve_passthrough_and_linear);
     RUN_TEST(test_proxycore_tap_sees_raw_source_reading);
     return UNITY_END();

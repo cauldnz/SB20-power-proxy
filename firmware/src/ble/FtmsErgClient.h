@@ -18,8 +18,16 @@ class FtmsErgClient {
  public:
     // Scan for an FTMS machine (by advertised 0x1826, name `targetName` if non-empty) and
     // connect. Call loop() regularly to (re)connect and converge to the desired power.
+    // STANDALONE ONLY (the esp32c3-ftms-ergclient env): installs its own scan callbacks, which
+    // would deafen the meter clients in the app builds — there, use beginShared() instead.
     void begin(const char* targetName);
     void loop();
+
+    // App-build entry (§14 phase 4): the ONE NimBLE scan belongs to BleMeterClient's hub; main
+    // registers this client via BleMeterClient::setFtmsScanSink and the hub feeds onFtmsAdvert.
+    void beginShared(const char* targetName);
+    bool wantsTarget() const { return begun_ && !connected_ && !haveTarget_; }
+    void onFtmsAdvert(const char* addr, uint8_t addrType, const char* name);  // from the hub
 
     void setDesiredPower(int16_t watts) { desired_ = watts; }
     bool connected() const { return connected_; }
@@ -49,6 +57,9 @@ class FtmsErgClient {
     bool haveSent_ = false;
     FtmsPowerRange range_{0, 1000, 1};
     uint32_t lastStepMs_ = 0;
+    bool begun_ = false;          // beginShared() called (the hub may feed us)
+    char want_[32] = {0};         // trainer-name substring filter (shared-scan mode)
+    uint32_t lastScanKickMs_ = 0; // rate-limit the rescue rescan after a disconnect
 };
 
 }  // namespace sb20proxy

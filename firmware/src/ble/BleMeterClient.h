@@ -68,13 +68,19 @@ public:
     // Discovered-source list for the web picker: the scan callback records every advertiser it sees
     // (skipping our own spoof) into a bounded, deduped list; the /setup page reads it. clear() before
     // a fresh discovery pass. The dedup/cap logic is the pure addCandidate (SourceCandidate.h).
-    void recordCandidate(const char* addr, const char* name, int rssi, bool cps);
+    void recordCandidate(const char* addr, const char* name, int rssi, bool cps, bool ftms);
     std::vector<SourceCandidate> candidates() const { return candidates_; }
     void clearCandidates() { candidates_.clear(); }
 
     // The most recent RAW source-meter CPS frames (hex, oldest→newest) for the /diag report — what
     // we need to add a new meter's codec offline. Bounded ring filled in onMeasurement().
     std::vector<std::string> recentFrames() const { return recentFrames_; }
+
+    // Shared-scan FTMS routing (§14 phase 4): the erg client registers here so the ONE NimBLE scan
+    // also feeds it FTMS (0x1826) advertisers — it must NOT install its own scan callbacks, which
+    // would deafen the meter clients. Registered from main (which links both sides); the standalone
+    // ftms envs never compile this .cpp, so the coupling stays app-only.
+    static void setFtmsScanSink(class FtmsErgClient* sink);
 
     // called from NimBLE callbacks
     void onFound(const char* addr, uint8_t addrType, const char* name);
