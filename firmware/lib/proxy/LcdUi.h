@@ -105,12 +105,22 @@ struct MoreView {
     uint8_t brightness = 100;
 };
 
+// WiFi onboarding (the captive setup portal): when active, the LCD boards replace the normal UI
+// with a join-this-AP screen (QR + SSID/PIN); the C3's OLED shows the same facts as text.
+struct ProvisionView {
+    bool portal = false;
+    std::string apSsid;   // "SB20-Setup"
+    std::string pin;      // the AP's WPA2 password (per-device PIN on OLED builds)
+    std::string url;      // where the portal lives ("http://192.168.4.1/")
+};
+
 struct LcdViews {
     RideView ride;
     WorkoutView wk;
     SetupView setup;
     MoreView more;
     CalWizardView cal;
+    ProvisionView prov;
 };
 
 // ---------- shared layout ----------------------------------------------------------------

@@ -334,6 +334,13 @@ static void buildLcdViews(LcdViews& v) {
 #if USE_WIFI
     r.wifiRssi = WiFi.RSSI();
     v.more.ip = wifi.isUp() ? std::string(WiFi.localIP().toString().c_str()) : std::string("no wifi");
+    // Captive portal up -> the LCD shows the QR onboarding screen instead of the normal UI
+    v.prov.portal = wifi.inPortal();
+    if (v.prov.portal) {
+        v.prov.apSsid = WifiLink::apSsid();
+        v.prov.pin = wifi.setupPin();
+        v.prov.url = "http://192.168.4.1/";
+    }
 #endif
 
     // Workout (from the shared runtime)
@@ -839,10 +846,7 @@ void setup() {
     }
 #endif
 
-    proxy.begin();  // crank advertises; source begins (scan, or nothing for mock)
-#if !USE_MOCK_METER
-    if (g_calibrating) refMeter.begin();  // 2nd central joins the shared scan, pinned to the reference
-#endif
+    // NOTE: proxy.begin() (BLE up) happens AFTER wifi.begin() below — see the portal gate there.
 
     Serial.printf("[sb20proxy] %s as '%s'; source=%s%s%s\n",
                   cfg.mode == ProxyMode::Corrector ? "corrector" : "spoofing", cfg.spoofName.c_str(),
@@ -857,7 +861,18 @@ void setup() {
     bootStage("pre-wifi");
     // Join WiFi + bring up OTA and the status HTTP server. The provider renders live state
     // from the ProxyCore each request (curl http://<ip>/ — the reliable window into the C3).
-    wifi.begin("sb20proxy",
+    // Hostname is per-BOARD so all three head-units can sit on one LAN at once (three boards
+    // named sb20proxy collide on mDNS/DHCP): C3 keeps the canonical name; CYD/S3 get suffixes.
+#ifndef SB20_HOSTNAME
+#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
+#define SB20_HOSTNAME "sb20proxy-cyd"
+#elif defined(CONFIG_IDF_TARGET_ESP32S3)
+#define SB20_HOSTNAME "sb20proxy-s3"
+#else
+#define SB20_HOSTNAME "sb20proxy"
+#endif
+#endif
+    wifi.begin(SB20_HOSTNAME,
                [identity = cfg.spoofName,
                 corrector = (cfg.mode == ProxyMode::Corrector)]() {
         ProxyStatus s;
@@ -888,6 +903,31 @@ void setup() {
         Serial.printf("[sb20proxy] WiFi connected; status at http://%s/\n",
                       WiFi.localIP().toString().c_str());
     }
+#endif
+
+    // BLE comes up AFTER (and only outside) the setup portal: on the classic-ESP32 CYD, ANY BLE
+    // activity starves the SoftAP's data path — association + DHCP squeak through, but ARP/TCP
+    // never flow, so the portal page can't load (2026-07-04; the S3/C3 cores tolerate it).
+    // Onboarding always ends in an esp_restart (/save and /forget both reboot), so holding BLE
+    // off here costs nothing: the next boot joins the home WiFi and starts BLE normally.
+#if USE_WIFI
+    if (!wifi.inPortal() || wifi.portalAfterJoinFail()) {
+        // Normal boot — or the join-failed recovery portal, where BLE must still run so a ride
+        // away from the home network isn't bricked (the portal is just a background affordance).
+        proxy.begin();  // crank advertises; source begins (scan, or nothing for mock)
+#if !USE_MOCK_METER
+        if (g_calibrating) refMeter.begin();  // 2nd central joins the shared scan
+#endif
+    } else {
+        Serial.println("[ble] held off while the setup portal is up (starts after provisioning)");
+    }
+#else
+    proxy.begin();  // no WiFi in this build: BLE starts immediately
+#if !USE_MOCK_METER
+    if (g_calibrating) refMeter.begin();
+#endif
+#endif
+#if USE_WIFI
 
     // Phase A/B: wire GET /stats + /stats/reset, and arm the loop-stall watchdog.
     wifi.setPerf(perfStatsJson, []() {
@@ -1035,8 +1075,10 @@ void setup() {
     Serial.printf("[lcd] JD9853 %dx%d up; touch(AXS5106)=%s\n", LCD_W, LCD_H,
                   lcd.touchAlive() ? "alive" : "DEAD");
 #endif
-    // Render on core 1 so the SPI blit never competes with BLE/loop on core 0.
-    xTaskCreatePinnedToCore(lcdTask, "lcd", 12288, nullptr, 2, nullptr, 1);
+    // Render on core 1 so the SPI blit never competes with BLE on core 0. Priority 1 = SAME as
+    // the Arduino loop task: at prio 2 the render loop preempted loop()'s WebServer sends
+    // mid-response and multi-KB pages stalled on the classic core (CYD, 2026-07-04).
+    xTaskCreatePinnedToCore(lcdTask, "lcd", 12288, nullptr, 1, nullptr, 1);
 #endif
     bootStage("setup-done");
 }

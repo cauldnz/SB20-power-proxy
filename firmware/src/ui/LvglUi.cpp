@@ -540,6 +540,63 @@ void buildCalibrate() {
     mkNav(s, 4);
 }
 
+// --- WiFi-onboarding (captive portal) screen -------------------------------------
+// Shown INSTEAD of the normal UI while the setup portal is up: a phone-scannable QR that
+// joins the board's setup AP (WIFI:T:WPA;...), plus the SSID/PIN as text for manual entry.
+struct { lv_obj_t *scr, *qr, *ssid, *pin, *url; } PV{};
+bool g_provShown = false;
+
+void buildProvision() {
+    PV.scr = mkScreen();
+    lv_obj_t* h = mkLabel(PV.scr, &lv_inter_sb_20, C_FG(), "Wi-Fi setup");
+    lv_obj_align(h, LV_ALIGN_TOP_MID, 0, 10);
+    lv_obj_t* sub = mkLabel(PV.scr, &lv_inter_12, C_MUT(), "scan with your phone camera");
+    lv_obj_align(sub, LV_ALIGN_TOP_MID, 0, 38);
+    // QR on a white card: scanners want dark-on-light with a quiet border
+    const int qsz = (g_hor - 60) < 150 ? (g_hor - 60) : 150;
+    lv_obj_t* card = lv_obj_create(PV.scr);
+    lv_obj_remove_style_all(card);
+    lv_obj_set_style_bg_color(card, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(card, 8, 0);
+    lv_obj_set_size(card, qsz + 20, qsz + 20);
+    lv_obj_align(card, LV_ALIGN_TOP_MID, 0, 58);
+    PV.qr = lv_qrcode_create(card);
+    lv_qrcode_set_size(PV.qr, qsz);
+    lv_qrcode_set_dark_color(PV.qr, lv_color_black());
+    lv_qrcode_set_light_color(PV.qr, lv_color_white());
+    lv_obj_center(PV.qr);
+    PV.ssid = mkLabel(PV.scr, &lv_inter_16, C_FG(), "");
+    lv_obj_align(PV.ssid, LV_ALIGN_TOP_MID, 0, 58 + qsz + 30);
+    PV.pin = mkLabel(PV.scr, &lv_inter_16, C_FG(), "");
+    lv_obj_align(PV.pin, LV_ALIGN_TOP_MID, 0, 58 + qsz + 52);
+    PV.url = mkLabel(PV.scr, &lv_inter_12, C_MUT(), "");
+    lv_obj_align(PV.url, LV_ALIGN_BOTTOM_MID, 0, -8);
+}
+
+void provisionSync(const ProvisionView& v) {
+    if (v.portal) {
+        if (!g_provShown) {
+            char qrtxt[112];
+            snprintf(qrtxt, sizeof(qrtxt), "WIFI:T:WPA;S:%s;P:%s;;", v.apSsid.c_str(),
+                     v.pin.c_str());
+            lv_qrcode_update(PV.qr, qrtxt, (uint32_t)strlen(qrtxt));
+            char buf[64];
+            snprintf(buf, sizeof(buf), "Wi-Fi: %s", v.apSsid.c_str());
+            lv_label_set_text(PV.ssid, buf);
+            snprintf(buf, sizeof(buf), "Password: %s", v.pin.c_str());
+            lv_label_set_text(PV.pin, buf);
+            snprintf(buf, sizeof(buf), "then open %s", v.url.c_str());
+            lv_label_set_text(PV.url, buf);
+            lv_screen_load(PV.scr);
+            g_provShown = true;
+        }
+    } else if (g_provShown) {
+        g_provShown = false;
+        navTo(g_cur);  // provisioned (or portal gone): back to the regular UI
+    }
+}
+
 // --- touch-cal ritual screen ---------------------------------------------------
 void buildTouchCal() {
     g_calScr = mkScreen();
@@ -586,8 +643,13 @@ void lvglUiInit(const LvglDriverHooks& hooks, int hor, int ver) {
     lv_init();
     lv_tick_set_cb([]() -> uint32_t { return millis(); });
     lv_display_t* d = lv_display_create(hor, ver);
-    static uint8_t* buf = nullptr;   // partial render buffer: ~1/8 frame (DRAM on the CYD)
-    const size_t bufSz = (size_t)hor * (ver / 8) * 2;
+    // Partial render buffer: 1/8 frame with PSRAM headroom, 1/16 without — on the no-PSRAM CYD
+    // every KB of internal DRAM matters (lwIP needs ~11 KB of TCP buffers per HTTP socket; at
+    // ~27 KB free the web pages stalled, 2026-07-04). Smaller buffer = more flush chunks, which
+    // the eye doesn't notice at our 5 Hz data cadence.
+    static uint8_t* buf = nullptr;
+    const int frac = psramFound() ? 8 : 16;
+    const size_t bufSz = (size_t)hor * (ver / frac) * 2;
     if (!buf) buf = (uint8_t*)heap_caps_malloc(bufSz, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
     if (!buf) buf = (uint8_t*)malloc(bufSz);
     lv_display_set_buffers(d, buf, nullptr, (uint32_t)bufSz, LV_DISPLAY_RENDER_MODE_PARTIAL);
@@ -602,6 +664,7 @@ void lvglUiInit(const LvglDriverHooks& hooks, int hor, int ver) {
     buildMore();
     buildCalibrate();
     buildTouchCal();
+    buildProvision();
     navTo(LcdScreen::Ride);
 }
 
@@ -621,6 +684,7 @@ void lvglUiUpdate(const LcdViews& v) {
     char buf[64];
     g_wkPaused = v.wk.paused;
     g_brightness = v.more.brightness;
+    provisionSync(v.prov);  // captive portal up -> the QR onboarding screen owns the panel
 
     // Ride
     lv_label_set_text(R.srcName, v.ride.srcName.empty() ? "searching" : v.ride.srcName.c_str());

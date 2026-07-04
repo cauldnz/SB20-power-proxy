@@ -2226,3 +2226,41 @@ The findings that matter most for us:
   never-block-headless setting) silently DROPS the dump's bulk base64 when the tiny CDC buffer fills.
   The dump path now sets a 200 ms TX timeout for its duration (a host is attached — it sent SCREEN)
   and restores 0 after.
+
+## 2026-07-04 (later) — Three-board web UI + WiFi onboarding: QR screens, per-board hostnames, and four classic-ESP32 landmines.
+- **Goal (owner):** all three head-units run the SAME complete web interface, and a user can onboard
+  any board onto home WiFi after a hard reset. Both now verified END-TO-END on real hardware, driven
+  headlessly from the PC's WLAN NIC (netsh join + portal POST — scratchpad `portal_onboard.py`).
+- **Per-board mDNS hostnames** (three "sb20proxy" boards collide on one LAN): C3 keeps
+  `sb20proxy.local`; the CYD is `sb20proxy-cyd.local`, the S3 `sb20proxy-s3.local` (SB20_HOSTNAME
+  default per board in main.cpp; override with -DSB20_HOSTNAME).
+- **QR onboarding screen (LCD boards):** while the captive portal is up, the CYD/S3 replace the UI
+  with an LVGL screen: a WIFI:T:WPA;S:SB20-Setup;P:<pin>;; QR (LV_USE_QRCODE; machine-verified
+  decodable from the on-device screenshot — design/render/{cyd,s3}-wifi-onboarding-qr.png), plus the
+  SSID/PIN as text and the portal URL. Driven by ProvisionView in LcdViews from wifi.inPortal() —
+  same polling pattern as the C3's OLED portal text. Route sweep: 13/13 on C3 + S3; CYD serves all
+  routes but multi-KB pages are flaky at its measured RSSI −76 (see landmine 4).
+- **Landmine 1 — classic-core SoftAP DHCP never leases** with the implicit defaults: the client
+  associates then self-assigns 169.254.x.x, so the portal is unreachable. Fix: scan BEFORE the AP
+  comes up + explicit `WiFi.softAPConfig(192.168.4.1/24)` (forces the DHCPS). Hit on BOTH classic-
+  core boards (CYD + C3); the S3/IDF5 core was fine without it.
+- **Landmine 2 — ANY BLE activity starves the classic core's SoftAP data path**: association + DHCP
+  squeak through, ARP/TCP never flow. Fresh-onboarding portals now hold BLE off entirely
+  (proxy.begin() moved after wifi.begin(); onboarding always ends in an esp_restart so it costs
+  nothing). The JOIN-FAILED fallback portal still starts BLE (`portalAfterJoinFail()`) so a ride
+  away from home WiFi is never bricked.
+- **Landmine 3 — `WiFi.setSleep(false)` ABORTS the classic core when BT is enabled**
+  ("Should enable WiFi modem sleep when both WiFi and Bluetooth are enabled" → boot loop). The legal
+  lever is `esp_coex_preference_set(ESP_COEX_PREFER_WIFI)` (our BLE is 1 Hz notifications — it can
+  spare the airtime). Plus: Arduino WebServer::send IGNORES short writes under lwIP memory pressure
+  → silently truncated pages; all HTML routes now stream via a drain-aware `sendHtml_` (1 KB slices,
+  wait-for-drain). Also freed DRAM on the no-PSRAM CYD: LVGL draw buffer 1/8→1/16 frame when
+  !psramFound(), LCD task priority 2→1 (it was preempting loop()'s WebServer sends).
+- **Landmine 4 — the CYD's PCB antenna is weak** (board-side RSSI −76 where the PC sees the same AP
+  at 90%): with BLE coex that RF margin makes sustained multi-KB TCP flaky at desk distance. Not a
+  firmware bug — expect better closer to the router; the IPEX-pad antenna mod is the hardware fix if
+  it matters. Small-payload routes (status/state/log JSON) are reliable even at −76.
+- **Onboarding proven per board:** S3 (default AP pass) and CYD (post-fixes) portal→NVS→station;
+  C3 via POST /forget → portal with its per-device 8-digit PIN — replicated in Python
+  (hashlib.blake2b keyed, digest 8, over the STA MAC, mod 1e8 = 72745928 for 38:44:BE:45:E9:A4) and
+  used as the WPA2 key. The PC's WLAN NIC does the whole flow headlessly; no phone needed.
