@@ -27,6 +27,7 @@
 #include "DiagReport.h"        // pure tester /diag report (config + status + raw meter frames)
 #include "WebApp.h"            // static streaming dashboard served at GET /ui (renders in the phone)
 #include "WorkoutPresets.h"    // built-in workouts (presetJson) for the /workout/preset route
+#include "WebJson.h"           // /scan + /config JSON for the shared SPA's HTTP transport
 #include "net/DebugLog.h"      // recent-log ring served at GET /log (serial is flaky on the C3)
 #include "net/WifiCreds.h"     // NVS-backed credential storage
 
@@ -415,6 +416,17 @@ void WifiLink::addConfigRoutes_() {
                       "restarting. Open <a href='/'>the dashboard</a> in a moment to set up again.</p>");
         delay(400);
         esp_restart();
+    });
+    // GET /scan + /config -> JSON for the shared web SPA's HTTP transport (web/HTTP-API.md). The
+    // ESP32 serves the same index.html the nRF build does; over HTTP it polls these instead of GATT.
+    server_->on("/scan", HTTP_GET, [this]() {
+        const std::vector<SourceCandidate> srcs =
+            sourcesProvider_ ? sourcesProvider_() : std::vector<SourceCandidate>{};
+        server_->send(200, "application/json", renderScanJson(srcs).c_str());
+    });
+    server_->on("/config", HTTP_GET, [this]() {
+        const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        server_->send(200, "application/json", renderConfigJson(cfg).c_str());
     });
     // GET /diag -> the plain-text tester report (config + status + raw meter frames). A tester saves
     // it and sends it when their meter isn't recognised, so we add support offline (real-data-first).
