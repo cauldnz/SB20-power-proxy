@@ -100,6 +100,15 @@ struct Config {
     // passphrase (>= 8 chars, WPA2 minimum) that the user can type. Shared across screenless boards —
     // weaker than the per-device PIN, but usable without a screen. Override per deployment.
     static constexpr const char* SETUP_AP_DEFAULT_PASSWORD = "sb20setup";
+
+    // The setup-AP (captive portal) network: 172.29.4.0/24. Home routers essentially never
+    // default to 172.16/12, and this /24 also dodges Docker's usual 172.17-.20 bridge pools and
+    // AWS's 172.31 default VPC — the collision case is a tester's laptop (Ethernet + our AP) or
+    // a phone VPN sharing the portal's subnet, which silently breaks routing to the portal
+    // (owner call, 2026-07-05; the old 192.168.4.1 is the universal ESP default = worst case).
+    static constexpr uint8_t SETUP_AP_IP[4] = {172, 29, 4, 1};
+    static constexpr const char* SETUP_PORTAL_HOST = "172.29.4.1";
+    static constexpr const char* SETUP_PORTAL_URL = "http://172.29.4.1/";
 };
 
 }  // namespace sb20proxy

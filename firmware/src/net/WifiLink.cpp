@@ -59,7 +59,7 @@ using namespace sb20proxy;
 #define WIFI_AP_SSID "SB20-Setup"  // the open SoftAP raised for provisioning
 #endif
 
-static const char* kPortalUrl = "http://192.168.4.1/";
+static const char* kPortalUrl = Config::SETUP_PORTAL_URL;
 
 // Recover the POST body for our form routes. The ESP32 WebServer fills arg("plain") with the RAW
 // body ONLY when the content type is NOT application/x-www-form-urlencoded — but a real <form> POST
@@ -559,9 +559,10 @@ void WifiLink::startPortal_() {
     WiFi.scanDelete();
 
     // Explicit AP netif config: with the implicit defaults the classic core's DHCP server
-    // sometimes never starts at all. softAPConfig forces the DHCPS up on 192.168.4.1/24.
-    WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1),
-                      IPAddress(255, 255, 255, 0));
+    // sometimes never starts at all. softAPConfig forces the DHCPS up on the portal /24.
+    const IPAddress apAddr(Config::SETUP_AP_IP[0], Config::SETUP_AP_IP[1],
+                           Config::SETUP_AP_IP[2], Config::SETUP_AP_IP[3]);
+    WiFi.softAPConfig(apAddr, apAddr, IPAddress(255, 255, 255, 0));
     WiFi.softAP(WIFI_AP_SSID, setupPin_.c_str());
     IPAddress apIP = WiFi.softAPIP();
 

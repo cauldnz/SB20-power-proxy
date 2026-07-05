@@ -2,6 +2,8 @@
 #include <array>
 #include <string>
 
+#include "Config.h"
+
 namespace sb20proxy {
 
 // What the OLED is currently showing — derived from the WiFi state in main.cpp.
@@ -25,8 +27,8 @@ inline std::array<std::string, 4> formatOledLines(OledMode mode, const std::stri
             // When the AP is WPA2-protected the rider needs the SSID + PIN to join (the captive portal
             // then auto-pops, so the IP falls off the bottom). Open AP -> the old "join + URL" layout.
             if (!setupPin.empty())
-                return {"SB20 SETUP", "SB20-Setup", "PIN " + setupPin, "192.168.4.1"};
-            return {"SB20 SETUP", "join wifi:", "SB20-Setup", "192.168.4.1"};
+                return {"SB20 SETUP", "SB20-Setup", "PIN " + setupPin, Config::SETUP_PORTAL_HOST};
+            return {"SB20 SETUP", "join wifi:", "SB20-Setup", Config::SETUP_PORTAL_HOST};
         case OledMode::Connecting:
             return {"SB20 PROXY", "connecting", std::string(), std::string()};
         case OledMode::Connected: {
