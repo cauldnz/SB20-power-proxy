@@ -15,6 +15,15 @@
 #include "LSM6DS3.h"
 #include "Wire.h"
 
+// The Adafruit nRF core's Arduino.h defines abs/round/min/max as MACROS, which break the
+// std::round / std::min<> inside the shared pure headers (CalibrationFit et al). Undo them
+// before those includes — the pure code wants the real std functions, not the Arduino macros.
+#undef abs
+#undef round
+#undef min
+#undef max
+#undef constrain
+#include "CalibrationSession.h"  // pure on-device DUT->reference calibration (shared with ESP32)
 #include "Correction.h"    // pure (shared with the ESP32 builds via lib_extra_dirs)
 #include "Cps.h"           // pure CPS codec — the same bytes as the ESP32 + Python twins
 #include "IPowerSource.h"  // PowerReading
@@ -110,6 +119,19 @@ static BLEClientService clientCps(UUID16_SVC_CYCLING_POWER);
 static BLEClientCharacteristic clientMeas(UUID16_CHR_CYCLING_POWER_MEASUREMENT);
 static BLEClientCharacteristic clientSrcCp(UUID16_CHR_CYCLING_POWER_CONTROL_POINT);  // for zero-fwd
 
+// Second central: the REFERENCE meter, read alongside the source (DUT) during calibration only.
+// Separate BLEClientService/Characteristic instances so each binds to its own connection handle
+// (Bluefruit's discover() is per-connection); the notify callback tells them apart by char ptr.
+static BLEClientService refCps(UUID16_SVC_CYCLING_POWER);
+static BLEClientCharacteristic refMeas(UUID16_CHR_CYCLING_POWER_MEASUREMENT);
+
+// ---- on-device calibration (pure CalibrationSession, shared with the ESP32) ------------------
+static CalibrationSession g_cal;
+static volatile bool g_calibrating = false;       // a calibration session is collecting
+static char g_refFilter[20] = {0};                // reference meter name filter (calibration)
+static uint16_t g_refConnHandle = BLE_CONN_HANDLE_INVALID;
+static volatile bool g_refConnected = false;
+
 static volatile bool g_srcConnected = false;
 static uint16_t g_srcConnHandle = BLE_CONN_HANDLE_INVALID;  // the CENTRAL link (not the web app's)
 static char g_srcName[20] = {0};
@@ -137,6 +159,7 @@ static const uint8_t kUuidConfig[16] = BRIDGE_UUID(0x0002);
 static const uint8_t kUuidRecCtl[16] = BRIDGE_UUID(0x0003);
 static const uint8_t kUuidRecData[16] = BRIDGE_UUID(0x0004);
 static const uint8_t kUuidCurve[16] = BRIDGE_UUID(0x0005);
+static const uint8_t kUuidCal[16] = BRIDGE_UUID(0x0006);
 
 static BLEService bridgeSvc(kUuidBridgeSvc);
 static BLECharacteristic chStatus(kUuidStatus);
@@ -144,6 +167,7 @@ static BLECharacteristic chConfig(kUuidConfig);
 static BLECharacteristic chRecCtl(kUuidRecCtl);
 static BLECharacteristic chRecData(kUuidRecData);
 static BLECharacteristic chCurve(kUuidCurve);   // correction-curve write/read (P1)
+static BLECharacteristic chCal(kUuidCal);       // calibration control + state (P2)
 
 // ================= IMU capture =================================================================
 static LSM6DS3 imu(I2C_MODE, 0x6A);
@@ -188,13 +212,23 @@ static void scanCb(ble_gap_evt_adv_report_t* report) {
     // and let CPS service discovery be the validator (a non-CPS name match just disconnects
     // and rescans); with no filter, take any 0x1818 advertiser (the desk fake meter).
     bool take = false;
+    uint8_t nameBuf[28] = {0};
+    const bool haveName =
+        Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME, nameBuf,
+                                            sizeof(nameBuf) - 1) ||
+        Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_SHORT_LOCAL_NAME, nameBuf,
+                                            sizeof(nameBuf) - 1);
+    // During calibration, also grab the REFERENCE meter (2nd central) when it isn't yet connected.
+    if (g_calibrating && !g_refConnected && g_refFilter[0] && haveName &&
+        strstr((const char*)nameBuf, g_refFilter) != nullptr &&
+        strstr((const char*)nameBuf, g_cfg.srcFilter) == nullptr) {
+        Serial.printf("[cal] reference match '%s' - connecting\n", nameBuf);
+        Bluefruit.Central.connect(report);
+        return;
+    }
+    if (g_srcConnected) { Bluefruit.Scanner.resume(); return; }  // source already up; keep scanning for ref
     if (g_cfg.srcFilter[0] != '\0') {
-        uint8_t nameBuf[28] = {0};
-        if (Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME,
-                                                nameBuf, sizeof(nameBuf) - 1) ||
-            Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_SHORT_LOCAL_NAME,
-                                                nameBuf, sizeof(nameBuf) - 1)) {
-            Serial.printf("[scan] name '%s'\n", nameBuf);
+        if (haveName) {
             take = strstr((const char*)nameBuf, g_cfg.srcFilter) != nullptr;
             if (take) Serial.printf("[bridge] source match '%s' - connecting\n", nameBuf);
         }
@@ -221,6 +255,10 @@ static void measNotifyCb(BLEClientCharacteristic* /*chr*/, uint8_t* data, uint16
     g_lastSrc = r;
     g_lastSrcMs = r.t_ms;
 
+    // Calibration: the SOURCE we repeat IS the DUT (the meter to correct). Feed its raw reading
+    // to the session; the reference stream arrives via refMeasNotifyCb.
+    if (g_calibrating) g_cal.onDut((float)r.power_w, r.t_ms);
+
     PowerReading out = g_corr.apply(r);  // curve wins over scale/offset when populated
     g_lastOut = out;
 
@@ -234,7 +272,34 @@ static void measNotifyCb(BLEClientCharacteristic* /*chr*/, uint8_t* data, uint16
     notifyClients(outMeas, frame.data(), frame.size());
 }
 
+// Reference-meter notify (calibration only): feed the session's reference stream.
+static void refMeasNotifyCb(BLEClientCharacteristic* /*chr*/, uint8_t* data, uint16_t len) {
+    if (!g_calibrating) return;
+    const int16_t p = decodeCpsPower(data, len);
+    g_cal.onRef((float)p, millis());
+}
+
 static void centralConnectCb(uint16_t connHandle) {
+    // Which meter is this? During calibration the REFERENCE (its name matches g_refFilter) uses
+    // the 2nd central + its own client instances; everything else is the source/DUT.
+    char peer[24] = {0};
+    BLEConnection* conn = Bluefruit.Connection(connHandle);
+    if (conn) conn->getPeerName(peer, sizeof(peer) - 1);
+    const bool isRef = g_calibrating && g_refFilter[0] && strstr(peer, g_refFilter) != nullptr &&
+                       connHandle != g_srcConnHandle;
+    if (isRef) {
+        if (!refCps.discover(connHandle) || !refMeas.discover()) {
+            Bluefruit.disconnect(connHandle);
+            return;
+        }
+        refMeas.enableNotify();
+        g_refConnHandle = connHandle;
+        g_refConnected = true;
+        Serial.printf("[cal] reference connected: '%s'\n", peer);
+        if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
+        return;
+    }
+
     if (!clientCps.discover(connHandle)) {
         Bluefruit.disconnect(connHandle);
         return;
@@ -247,8 +312,7 @@ static void centralConnectCb(uint16_t connHandle) {
     clientSrcCp.discover();  // the source's Cycling Power Control Point (0x2A66), for zero-forward
                              // — optional; not every meter exposes it (Assioma does)
     // Remember who we latched onto (for the status surface / web app).
-    BLEConnection* conn = Bluefruit.Connection(connHandle);
-    if (conn) conn->getPeerName(g_srcName, sizeof(g_srcName) - 1);
+    strncpy(g_srcName, peer, sizeof(g_srcName) - 1);
     g_srcConnHandle = connHandle;
     g_srcConnected = true;
     Serial.printf("[bridge] source connected: '%s'\n", g_srcName);
@@ -258,11 +322,17 @@ static void centralConnectCb(uint16_t connHandle) {
     if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
 }
 
-static void centralDisconnectCb(uint16_t /*connHandle*/, uint8_t reason) {
-    g_srcConnected = false;
-    g_srcConnHandle = BLE_CONN_HANDLE_INVALID;
-    g_srcName[0] = 0;
-    Serial.printf("[bridge] source dropped (0x%02X); rescanning\n", reason);
+static void centralDisconnectCb(uint16_t connHandle, uint8_t reason) {
+    if (connHandle == g_refConnHandle) {  // the reference meter dropped
+        g_refConnected = false;
+        g_refConnHandle = BLE_CONN_HANDLE_INVALID;
+        Serial.printf("[cal] reference dropped (0x%02X)\n", reason);
+    } else {
+        g_srcConnected = false;
+        g_srcConnHandle = BLE_CONN_HANDLE_INVALID;
+        g_srcName[0] = 0;
+        Serial.printf("[bridge] source dropped (0x%02X); rescanning\n", reason);
+    }
     Bluefruit.Scanner.start(0);
     if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
 }
@@ -336,6 +406,18 @@ static void configWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t
     (void)wasSingle;
 }
 
+// Publish the active curve to the Curve characteristic for read-back.
+static void publishCurve() {
+    uint8_t buf[2 + CURVE_MAX_POINTS * 4];
+    CurvePoint pts[CURVE_MAX_POINTS];
+    const uint8_t n = (uint8_t)g_corr.curve.points.size();
+    for (uint8_t i = 0; i < n && i < CURVE_MAX_POINTS; ++i) {
+        pts[i].powerW = (uint16_t)g_corr.curve.points[i].power_w;
+        pts[i].factorMilli = (uint16_t)(g_corr.curve.points[i].factor * 1000.0f + 0.5f);
+    }
+    chCurve.write(buf, packCurve(pts, n, buf));
+}
+
 // Curve write: replace the correction curve (empty clears it -> back to scale/offset). Persisted.
 static void curveWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t* data,
                          uint16_t len) {
@@ -348,11 +430,86 @@ static void curveWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t*
     g_corr.curve = CorrectionCurve{};
     for (int i = 0; i < n; ++i) g_corr.curve.add(pts[i].powerW, pts[i].factorMilli / 1000.0f);
     curveSave();
-    // read-back
-    uint8_t buf[2 + CURVE_MAX_POINTS * 4];
-    chCurve.write(buf, packCurve(pts, (uint8_t)n, buf));
+    publishCurve();
     Serial.printf("[bridge] correction curve set (%d points; curve %s scale/offset)\n", n,
                   n > 0 ? "overrides" : "cleared, using");
+}
+
+// ---- calibration control + state -------------------------------------------------------------
+static void notifyCalState() {
+    CalWireState st = g_cal.fitted()      ? CalWireState::Fitted
+                      : g_cal.collecting() ? CalWireState::Collecting
+                                           : CalWireState::Idle;
+    std::vector<int> cov = g_cal.coverage();
+    int cov6[6] = {0};
+    for (size_t i = 0; i < cov.size() && i < 6; ++i) cov6[i] = cov[i];
+    uint8_t buf[CALSTATE_LEN];
+    packCalState(st, (uint16_t)g_cal.pairCount(), (uint16_t)g_cal.minPairs(),
+                 (int16_t)(g_cal.residualW() * 10.0f), cov6, g_cal.enoughToFit(), buf);
+    notifyClients(chCal, buf, sizeof(buf));
+}
+
+// Apply a fitted Correction (curve or linear) as the live correction + persist it.
+static void applyFit(const Correction& fit) {
+    g_corr.curve = fit.curve;
+    if (fit.curve.empty()) {  // linear fit -> store as scale/offset
+        g_cfg.scaleMilli = (uint16_t)(fit.scale * 1000.0f + 0.5f);
+        g_cfg.offsetDeciW = (int16_t)(fit.offset * 10.0f);
+        applyCorrectionFromCfg();
+        cfgSave();
+    }
+    curveSave();
+    publishCurve();
+}
+
+static void calWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t* data,
+                       uint16_t len) {
+    if (len < 2 || data[0] != PROTO_VER) return;
+    switch ((CalCmd)data[1]) {
+        case CalCmd::Start: {
+            // [ver,1, refFilter[19]] — the reference meter to read alongside the source (DUT).
+            memset(g_refFilter, 0, sizeof(g_refFilter));
+            if (len > 2) {
+                size_t k = len - 2;
+                if (k > sizeof(g_refFilter) - 1) k = sizeof(g_refFilter) - 1;
+                memcpy(g_refFilter, data + 2, k);
+            }
+            g_cal.start();
+            g_calibrating = true;
+            if (!Bluefruit.Scanner.isRunning()) Bluefruit.Scanner.start(0);  // find the reference
+            Serial.printf("[cal] started; DUT=source, reference='%s'\n", g_refFilter);
+            break;
+        }
+        case CalCmd::Cancel:
+            g_cal.cancel();
+            g_calibrating = false;
+            if (g_refConnected && g_refConnHandle != BLE_CONN_HANDLE_INVALID)
+                Bluefruit.disconnect(g_refConnHandle);
+            Serial.println("[cal] cancelled");
+            break;
+        case CalCmd::Save:
+            // Finish (fit) if still collecting, then apply the fitted correction live + persist.
+            if (g_cal.collecting()) g_cal.finish();
+            if (g_cal.fitted()) {
+                applyFit(g_cal.fit());
+                Serial.printf("[cal] SAVED; residual %.1f W; %u pairs -> correction applied\n",
+                              (double)g_cal.residualW(), (unsigned)g_cal.pairCount());
+            } else {
+                Serial.println("[cal] save rejected (not enough pairs to fit)");
+            }
+            g_calibrating = false;
+            if (g_refConnected && g_refConnHandle != BLE_CONN_HANDLE_INVALID)
+                Bluefruit.disconnect(g_refConnHandle);
+            break;
+        case CalCmd::Discard:
+            g_cal.cancel();
+            g_calibrating = false;
+            if (g_refConnected && g_refConnHandle != BLE_CONN_HANDLE_INVALID)
+                Bluefruit.disconnect(g_refConnHandle);
+            Serial.println("[cal] fit discarded");
+            break;
+    }
+    notifyCalState();
 }
 
 static void recCtlWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t* data,
@@ -432,9 +589,9 @@ void setup() {
     // (both links collapsed onto one tracked handle; the client's CCCD landed on the source
     // link's records — bench, 2026-07-05). The maxgerhardt/Adafruit core's defaults already
     // negotiate MTU 247 on the peripheral link; pumpDownload sizes frames per-client anyway.
-    // TWO peripheral links: a head unit (reading our CPS) and the web app / Garmin (the Bridge
-    // service) connect at the same time — and a stray desk client can't lock everyone out.
-    Bluefruit.begin(/*peripheral*/ 2, /*central*/ 1);
+    // TWO peripheral links (head unit + web app/Garmin concurrently) and TWO central links (the
+    // source/DUT + the reference meter during calibration). 4 links total; the S140 default is 20.
+    Bluefruit.begin(/*peripheral*/ 2, /*central*/ 2);
     Bluefruit.setTxPower(4);
     Bluefruit.setName(g_cfg.outName);
 
@@ -493,22 +650,21 @@ void setup() {
     chCurve.setMaxLen(2 + CURVE_MAX_POINTS * 4);
     chCurve.setWriteCallback(curveWriteCb);
     chCurve.begin();
-    {   // publish the loaded curve for read-back
-        uint8_t buf[2 + CURVE_MAX_POINTS * 4];
-        CurvePoint pts[CURVE_MAX_POINTS];
-        const uint8_t n = (uint8_t)g_corr.curve.points.size();
-        for (uint8_t i = 0; i < n && i < CURVE_MAX_POINTS; ++i) {
-            pts[i].powerW = (uint16_t)g_corr.curve.points[i].power_w;
-            pts[i].factorMilli = (uint16_t)(g_corr.curve.points[i].factor * 1000.0f + 0.5f);
-        }
-        chCurve.write(buf, packCurve(pts, n, buf));
-    }
+    publishCurve();  // read-back reflects the loaded curve
+    chCal.setProperties(CHR_PROPS_WRITE | CHR_PROPS_NOTIFY);
+    chCal.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    chCal.setMaxLen(2 + 19);  // write: [ver, cmd, refFilter...]
+    chCal.setWriteCallback(calWriteCb);
+    chCal.begin();
 
-    // --- source: central scanning for a CPS meter ---
+    // --- source: central scanning for a CPS meter (+ the reference during calibration) ---
     clientCps.begin();
     clientMeas.setNotifyCallback(measNotifyCb);
     clientMeas.begin();
     clientSrcCp.begin();  // the source's control point (zero-forward target)
+    refCps.begin();
+    refMeas.setNotifyCallback(refMeasNotifyCb);
+    refMeas.begin();
     Bluefruit.Periph.setConnectCallback(periphConnectCb);
     Bluefruit.Periph.setDisconnectCallback(periphDisconnectCb);
     Bluefruit.Central.setConnectCallback(centralConnectCb);
@@ -651,6 +807,33 @@ void loop() {
             }
             else if (strcmp(cmd, "LINEAR") == 0) { g_corr.curve = CorrectionCurve{}; curveSave(); Serial.println("[test] curve cleared -> scale/offset"); }
             else if (strcmp(cmd, "ZERO") == 0) { g_pendSourceZero = true; Serial.println("[test] source zero-forward queued"); }
+            else if (strcmp(cmd, "CALTEST") == 0) {
+                // Prove the fit math on-device: feed synthetic pairs where the DUT reads 10% LOW
+                // (dut = ref*0.9) across a power sweep; the fit should produce a curve that brings
+                // the DUT up ~1.111x. Uses the exact pure CalibrationSession.
+                CalibrationSession t(20);
+                t.start();
+                uint32_t tm = 1000;
+                for (int rep = 0; rep < 8; ++rep)
+                    for (int refW = 100; refW <= 300; refW += 50) {
+                        t.onRef((float)refW, tm);
+                        t.onDut(refW * 0.9f, tm);  // DUT reads 10% low
+                        tm += 100;
+                    }
+                bool ok = t.finish();
+                Serial.printf("[caltest] pairs=%u fit=%s residual=%.2fW\n", (unsigned)t.pairCount(),
+                              ok ? "OK" : "FAIL", (double)t.residualW());
+                const Correction& f = t.fit();
+                if (!f.curve.empty()) {
+                    for (auto& pt : f.curve.points)
+                        Serial.printf("[caltest]   %.0fW -> x%.3f\n", (double)pt.power_w, (double)pt.factor);
+                    // apply to a 200W reading: should recover ~200 (dut 180 -> corrected ~200)
+                    PowerReading r; r.power_w = 180;
+                    Serial.printf("[caltest] apply: dut 180W -> %dW (expect ~200)\n", f.apply(r).power_w);
+                } else {
+                    Serial.printf("[caltest] linear fit: scale=%.3f offset=%.1f\n", (double)f.scale, (double)f.offset);
+                }
+            }
             else if (strcmp(cmd, "SHOW") == 0)
                 Serial.printf("[test] scale=%.3f offset=%.1f single2x=%d curve=%upts src=%dW->out=%dW\n",
                     (double)g_corr.scale, (double)g_corr.offset, g_cfg.singleSided,
@@ -694,14 +877,23 @@ void loop() {
         }
     }
 
-    // RGB status LED (glanceable on the track): recording=red · source linked=green · else blue.
+    // Calibration state notify @1 Hz while collecting (pair count + coverage climb for the wizard).
+    static uint32_t calAt = 0;
+    if (g_calibrating && now - calAt >= 1000) {
+        calAt = now;
+        notifyCalState();
+    }
+
+    // RGB status LED (glanceable on the track): calibrating=magenta · recording=red · source
+    // linked=green · else blue-pulse (searching).
     static uint32_t ledAt = 0;
-    static bool bluePulse = false;
+    static bool pulse = false;
     if (now - ledAt >= 500) {
         ledAt = now;
-        if (g_recState == RecState::Recording) setLed(true, false, false);
+        if (g_calibrating) { pulse = !pulse; setLed(pulse, false, pulse); }  // magenta pulse
+        else if (g_recState == RecState::Recording) setLed(true, false, false);
         else if (g_srcConnected) setLed(false, true, false);
-        else { bluePulse = !bluePulse; setLed(false, false, bluePulse); }  // searching: pulse blue
+        else { pulse = !pulse; setLed(false, false, pulse); }
     }
 
     // Liveness heartbeat (5 s): scanner state — the scan path failed silently once already

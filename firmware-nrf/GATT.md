@@ -21,6 +21,7 @@ All multi-byte fields are **little-endian**. First byte of every payload is a fo
 | RecCtl | `…-0003-…` | write, notify | recording start/stop/erase/download + state |
 | RecData | `…-0004-…` | notify | chunked IMU download stream |
 | Curve | `…-0005-…` | read, write | piecewise power→factor correction curve (wins over scale/offset) |
+| Calibrate | `…-0006-…` | write, notify | on-device DUT→reference calibration control + state |
 
 Full UUIDs: replace `XXXX` in `53423230-XXXX-4bd9-a4ae-1b4e2c633a1d`.
 
@@ -75,12 +76,28 @@ sampleCount u32, capacity u32]` — emitted on every state change and @1 Hz whil
 
 ## RecData (download stream)
 
-After `download`: a header frame then data frames, 180-byte max payloads (fits DLE MTU 185):
+After `download`: a header frame then data frames, sized to the smallest subscriber MTU. Every
+frame carries an **explicit type byte** at offset 1 (a seq low-byte of 0xFE once masqueraded as
+the trailer and truncated downloads — hence the tag):
 
 - Header: `[ver, 0xFF, rateHz, reserved, sampleCount u32, startMs u32]`
-- Data: `[ver, seq u16lo, seq u16hi, samples…]` — each sample 12 bytes:
+- Data: `[ver, 0xFD, seq u16, count u8, reserved, samples…]` — each sample 12 bytes:
   `ax ay az gx gy gz` as i16 (accel LSB = 0.488 mg @±16 g; gyro LSB = 70 mdps @±2000 dps),
-  i.e. 14 samples per frame. Ends with `[ver, 0xFE, crc32 u32]`.
+  up to 14 samples/frame at MTU 247.
+- Trailer: `[ver, 0xFE, crc32 u32]` (CRC32 over the concatenated sample bytes).
+
+## Calibrate (write control + notify, P2)
+
+On-device calibration: reads the source (DUT) + a reference meter at once, fits a power→factor
+correction curve (the pure `CalibrationSession`, shared with the ESP32), and on save writes it to
+the Curve characteristic. Needs the reference meter within BLE range during collection (2nd central).
+
+Write `[ver, cmd, ...]`: `1` start `[ver,1, refFilter[≤19]]` · `2` cancel · `3` save (fit if needed,
+apply the curve) · `4` discard.
+
+Notify (16 bytes): `[ver, state(0 idle·1 collecting·2 fitted), reserved, pairCount u16, minPairs u16,
+residual ×10 W i16, coverage u8[6], enoughToFit u8]` — emitted @1 Hz while collecting so the wizard
+shows pairs + per-bin coverage climbing.
 
 ## Memory budget (why recording is bounded)
 
