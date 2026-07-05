@@ -2345,3 +2345,25 @@ The findings that matter most for us:
 - **GATED (unchanged constraint):** the live erg-drive against a real trainer needs a free FTMS
   trainer — the only one on air (`SB20-FTMS-Server`) is the concurrent session's; per CLAUDE.md I don't
   hijack it. Encoders + runtime are proven; only the on-air control loop remains for the owner's rig.
+
+## 2026-07-05 (overnight) — away-work wrap: scan self-heal, web trainer picker proven on-air, CYD soak clean, S3 OTA cured.
+- **BLE scan self-heal (PR #220)** — found by the C3's on-air erg lap: after the erg-era boot
+  reorder, the single-core C3's first scan->start() failed SILENTLY and nothing retried — the board
+  "searched" forever with a dead scan and an empty picker while its own crank advertised at −28
+  (PC-side bleak scan as ground truth). loop() now kicks ensureScanning every 3 s whenever anyone
+  still hunts. On the fixed build: 16 sources visible within 12 s of boot.
+- **Web trainer picker (PR #219) proven end-to-end on the C3-OLED, hands-free**: trainer set via
+  the new /setup section → erg client controlled the sim → web-loaded 4x8 → START → sim received
+  138 W → stop → trainer CLEARED via the same page (present-but-empty contract) → fresh boot
+  confirmed erg-off with identity 'Stages 62145' preserved throughout. The C3 erg bench pass is
+  done; all three head-unit tiers have now individually erg-driven the sim.
+- **CYD heap soak: NO LEAK.** 3.5 h under full load (LVGL + BLE central/peripheral + WiFi station):
+  heap floor per 30-min window 26.5/26.8/26.7/28.2/27.0/28.0/27.4 KB — flat. The no-PSRAM CYD's
+  malloc-backed LVGL configuration is beta-grade stable.
+- **S3 OTA deafness CURED on the current build**: espota invitation answered, auth passed, full
+  image pushed, exit 0 (the trailing espota "Unexpected response '32'" warning is cosmetic). The S3
+  is now OTA-updatable on a power-only USB-C charger — no data cable needed for normal updates.
+- **FOOTGUN — `flash_s3.py` wipes NVS**: it writes the merged `firmware.factory.bin` at 0x0, which
+  covers the NVS region — every USB factory flash erases WiFi creds/config (this explained every
+  "WiFi not configured" portal after a reflash, including tonight's). Prefer OTA for updates; keep
+  the factory flash for true bring-up. Fixing the flasher to skip/preserve NVS is an open follow-up.
