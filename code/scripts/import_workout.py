@@ -49,7 +49,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.post:
         url = args.post.rstrip("/") + "/workout/load"
-        req = urllib.request.Request(url, data=body.encode("utf-8"), method="POST")
+        # Content-Type MUST NOT be application/x-www-form-urlencoded: the ESP32 WebServer only
+        # stashes the RAW body in arg("plain") for other content types (else it parses the JSON as
+        # form fields → arg("plain") empty → parseWorkout gets garbage → 400 "bad workout"). urllib
+        # defaults data= to form-urlencoded, so set it explicitly. (Verified on-device 2026-07-05.)
+        req = urllib.request.Request(
+            url, data=body.encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json"},
+        )
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 (user-supplied device URL)
                 print(f"POST {url} -> {resp.status} {resp.read().decode(errors='replace').strip()}",
