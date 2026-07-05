@@ -85,6 +85,28 @@ Status key: ✅ built & working · ⚙ partial / hardening · 🔒 built but blo
 | Rebuildable SQLite index over captures | ✅ | `analysis/pcap_sqlite.py`,`jsonl_sqlite.py`, `scripts/13_build_sqlite.py` · [sqlite-analysis-layer](code/findings/sqlite-analysis-layer.md) |
 | Dev toolchain + capture-rig gate; Infisical secrets | ✅ | [`tools/`](tools/README.md) (`provision-dev-env.ps1`,`doctor.ps1`,`secrets-*.ps1`) · [shared-services-adoption](code/findings/shared-services-adoption.md) |
 
+### nRF52840 Sense bridge — the second firmware, the BLE(/ANT) track (`firmware-nrf/`)
+A XIAO nRF52840 Sense variant: dual-role BLE bridge with correction, no WiFi (so its data surface is a
+custom GATT service + a Web Bluetooth app). Reuses the pure ESP32 core via `lib_extra_dirs`. Full story:
+[nrf52-sense](code/findings/nrf52-sense.md); the GATT contract: [`firmware-nrf/GATT.md`](firmware-nrf/GATT.md).
+| Capability | Status | Lives in |
+|---|---|---|
+| BLE↔BLE bridge + correction · curve · single-sided ×2 · zero-forward · RGB status LED | ✅ | `firmware-nrf/src/main.cpp`, `lib/bridge/` · PRs #215/#221 |
+| On-device calibration · BLE OTA (buttonless DFU) · scan-based source picker | ✅ | `CalibrationSession.h` (shared), `BLEDfu`, `SourceCandidate.h` (shared) · PRs #222/#223 |
+| FTMS erg + structured workouts + **shifter bias** (3rd central drives a trainer) | ✅ bench (serial `WKTEST`); live erg gated | `main.cpp` erg loop, `WorkoutRuntime.h` (shared), Workout char `0x0008` · PR #224 |
+| BLE-controlled IMU track recording (LSM6DS3, bounded ring, CRC download) | ✅ live-sampling proven | `lib/bridge/ImuCapture.h`, RecCtl/RecData chars |
+| Pure wire-format core host-tested in CI (Proto.h + ImuCapture.h golden vectors) | ✅ | `firmware-nrf/test/test_bridge/` (`pio test -e native`) · PR #225 |
+| Garmin **Connect IQ** app — in-ride controller (record · erg start/pause · shifter ±) | ✅ builds edge540+epix2; on-device pending | [`firmware-nrf/ciq/`](firmware-nrf/ciq/README.md) · PR #227 |
+| ANT+BLE mix (receive ANT / send BLE, &c.) | ⏳ needs licensed S340 SoftDevice | seam ready; drop-zone armed · [nrf52-sense](code/findings/nrf52-sense.md) |
+
+### Shared web UI — one SPA + one palette across all frontends (`web/`, `design/tokens.json`)
+Convergence work so the ESP32 web UI, the nRF Web Bluetooth app, and the LVGL device UI don't drift.
+| Capability | Status | Lives in |
+|---|---|---|
+| One self-contained SPA behind a `Transport` seam — `BleTransport` (Web Bluetooth) + `HttpTransport` (ESP32 JSON) auto-selected by host | ✅ BLE live · HTTP contract-ready | [`web/`](web/README.md) (`index.html`, [`HTTP-API.md`](web/HTTP-API.md)) · PRs #229/#230 |
+| Single-source design tokens → generated into the web CSS, ESP32 `WebUi.h`, LVGL RGB565; CI-guarded | ✅ one edit re-themes all | `design/tokens.json`,`design/gen_tokens.py`, `code/tests/test_tokens_sync.py` · PR #229 |
+| ESP32 embeds + serves the same SPA over HTTP/JSON (then the two web UIs are one file) | ⏳ deferred (U4, after the ESP32 erg session merges) | `HttpTransport` contract in [`web/HTTP-API.md`](web/HTTP-API.md) |
+
 ---
 
 ## B. Where every doc lives (the doc-area map)
