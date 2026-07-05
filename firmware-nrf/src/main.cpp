@@ -29,6 +29,7 @@
 #include "IPowerSource.h"  // PowerReading
 #include "ImuCapture.h"    // pure capture buffer (lib/bridge)
 #include "Proto.h"         // pure Bridge-GATT pack/unpack (lib/bridge)
+#include "SourceCandidate.h"  // pure scanned-device list + dedup (shared with ESP32) (P3)
 
 using namespace sb20proxy;
 using namespace nrfbridge;
@@ -146,6 +147,7 @@ static BLECharacteristic outFeature(UUID16_CHR_CYCLING_POWER_FEATURE);
 static BLECharacteristic outSensorLoc(UUID16_CHR_SENSOR_LOCATION);
 static BLECharacteristic outCp(UUID16_CHR_CYCLING_POWER_CONTROL_POINT);
 static BLEDis bledis;
+static BLEDfu bledfu;   // BLE OTA (Adafruit buttonless DFU) — flash over Bluetooth, no USB (P3)
 static uint16_t g_crankLenHalfMm = 345;  // 172.5 mm
 
 // ================= the Bridge service (GATT.md) ================================================
@@ -160,6 +162,7 @@ static const uint8_t kUuidRecCtl[16] = BRIDGE_UUID(0x0003);
 static const uint8_t kUuidRecData[16] = BRIDGE_UUID(0x0004);
 static const uint8_t kUuidCurve[16] = BRIDGE_UUID(0x0005);
 static const uint8_t kUuidCal[16] = BRIDGE_UUID(0x0006);
+static const uint8_t kUuidScan[16] = BRIDGE_UUID(0x0007);
 
 static BLEService bridgeSvc(kUuidBridgeSvc);
 static BLECharacteristic chStatus(kUuidStatus);
@@ -168,6 +171,12 @@ static BLECharacteristic chRecCtl(kUuidRecCtl);
 static BLECharacteristic chRecData(kUuidRecData);
 static BLECharacteristic chCurve(kUuidCurve);   // correction-curve write/read (P1)
 static BLECharacteristic chCal(kUuidCal);       // calibration control + state (P2)
+static BLECharacteristic chScan(kUuidScan);     // scanned-source list for the web picker (P3)
+
+// Discovered nearby CPS/FTMS devices (the web source picker). The scan callback records every
+// advertiser; the list is deduped/capped by the pure addCandidate.
+static std::vector<SourceCandidate> g_candidates;
+static volatile bool g_candDirty = false;
 
 // ================= IMU capture =================================================================
 static LSM6DS3 imu(I2C_MODE, 0x6A);
@@ -218,6 +227,26 @@ static void scanCb(ble_gap_evt_adv_report_t* report) {
                                             sizeof(nameBuf) - 1) ||
         Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_SHORT_LOCAL_NAME, nameBuf,
                                             sizeof(nameBuf) - 1);
+
+    // Record every named advertiser into the picker list (P3): the pure addCandidate dedups by
+    // address + keeps the strongest RSSI. checkReportForService tells us CPS/FTMS from the UUIDs.
+    if (haveName) {
+        SourceCandidate c;
+        char addr[20];
+        snprintf(addr, sizeof(addr), "%02x:%02x:%02x:%02x:%02x:%02x", report->peer_addr.addr[5],
+                 report->peer_addr.addr[4], report->peer_addr.addr[3], report->peer_addr.addr[2],
+                 report->peer_addr.addr[1], report->peer_addr.addr[0]);
+        c.address = addr;
+        c.name = (const char*)nameBuf;
+        c.rssi = report->rssi;
+        c.isCps = Bluefruit.Scanner.checkReportForService(report, clientCps);
+        c.isFtms = Bluefruit.Scanner.checkReportForUuid(report, UUID16_SVC_FITNESS_MACHINE);
+        c.isStagesCrank = (c.name.rfind("Stages ", 0) == 0);
+        if (c.isCps || c.isFtms) {  // only meters/trainers matter to the picker
+            addCandidate(g_candidates, c, SCAN_MAX);
+            g_candDirty = true;
+        }
+    }
     // During calibration, also grab the REFERENCE meter (2nd central) when it isn't yet connected.
     if (g_calibrating && !g_refConnected && g_refFilter[0] && haveName &&
         strstr((const char*)nameBuf, g_refFilter) != nullptr &&
@@ -404,6 +433,25 @@ static void configWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t
                   (double)g_corr.scale, (double)g_corr.offset, g_cfg.singleSided, g_cfg.srcFilter,
                   g_cfg.outName);
     (void)wasSingle;
+}
+
+// Publish the scanned-source list to the ScanList characteristic (read-back + notify).
+static void publishScanList() {
+    std::vector<SourceCandidate> sorted = dedupeAndSortSources(g_candidates);
+    ScanEntry e[SCAN_MAX];
+    uint8_t n = 0;
+    for (const auto& c : sorted) {
+        if (n >= SCAN_MAX) break;
+        strncpy(e[n].name, c.name.c_str(), SCAN_NAME);
+        e[n].name[SCAN_NAME] = 0;
+        e[n].rssi = (int8_t)c.rssi;
+        e[n].flags = (uint8_t)((c.isCps ? 1 : 0) | (c.isFtms ? 2 : 0) | (c.isStagesCrank ? 4 : 0));
+        ++n;
+    }
+    uint8_t buf[2 + SCAN_MAX * SCAN_SLOT];
+    size_t len = packScanList(e, n, buf);
+    chScan.write(buf, len);
+    notifyClients(chScan, buf, len);
 }
 
 // Publish the active curve to the Curve characteristic for read-back.
@@ -599,6 +647,8 @@ void setup() {
     bledis.setManufacturer("SB20 Proxy");
     bledis.setModel("nRF Bridge");
     bledis.begin();
+    bledfu.begin();  // buttonless DFU: a DFU write reboots into the bootloader's BLE-OTA mode so
+                     // `adafruit-nrfutil dfu ble` can push new firmware — no USB reflash needed
     outCps.begin();
     outMeas.setProperties(CHR_PROPS_NOTIFY);
     outMeas.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
@@ -656,6 +706,10 @@ void setup() {
     chCal.setMaxLen(2 + 19);  // write: [ver, cmd, refFilter...]
     chCal.setWriteCallback(calWriteCb);
     chCal.begin();
+    chScan.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
+    chScan.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+    chScan.setMaxLen(2 + SCAN_MAX * SCAN_SLOT);
+    chScan.begin();
 
     // --- source: central scanning for a CPS meter (+ the reference during calibration) ---
     clientCps.begin();
@@ -838,6 +892,14 @@ void loop() {
                 Serial.printf("[test] scale=%.3f offset=%.1f single2x=%d curve=%upts src=%dW->out=%dW\n",
                     (double)g_corr.scale, (double)g_corr.offset, g_cfg.singleSided,
                     (unsigned)g_corr.curve.points.size(), (int)g_lastSrc.power_w, (int)g_lastOut.power_w);
+            else if (strcmp(cmd, "SCANLIST") == 0) {
+                std::vector<SourceCandidate> s = dedupeAndSortSources(g_candidates);
+                Serial.printf("[scanlist] %u nearby meters/trainers:\n", (unsigned)s.size());
+                for (auto& c : s)
+                    Serial.printf("[scanlist]   %-20s %ddBm %s%s%s\n", c.name.c_str(), c.rssi,
+                                  c.isCps ? "CPS " : "", c.isFtms ? "FTMS " : "",
+                                  c.isStagesCrank ? "StagesCrank" : "");
+            }
             ci = 0;
         } else if (ci < sizeof(cmd) - 1) {
             cmd[ci++] = ch;
@@ -875,6 +937,14 @@ void loop() {
         } else {
             Serial.println("[bridge] zero requested but source has no control point");
         }
+    }
+
+    // Publish the scanned-source list to the picker, throttled to 2 s when new devices appeared.
+    static uint32_t scanPubAt = 0;
+    if (g_candDirty && now - scanPubAt >= 2000) {
+        scanPubAt = now;
+        g_candDirty = false;
+        publishScanList();
     }
 
     // Calibration state notify @1 Hz while collecting (pair count + coverage climb for the wizard).

@@ -183,6 +183,30 @@ inline size_t packCalState(CalWireState st, uint16_t pairCount, uint16_t minPair
     return CALSTATE_LEN;
 }
 
+// ---- ScanList (read + notify) ----------------------------------------------------------------
+// Discovered nearby power meters / trainers for the web picker (P3). Fixed 21-byte slots so the
+// whole list fits one MTU-247 notify:  [ver, count, {name[19], rssi i8, flags u8}...]
+//   flags: b0 isCps · b1 isFtms · b2 isStagesCrank
+constexpr size_t SCAN_MAX = 8;
+constexpr size_t SCAN_SLOT = 21;
+constexpr size_t SCAN_NAME = 19;
+
+struct ScanEntry { char name[SCAN_NAME + 1]; int8_t rssi; uint8_t flags; };
+
+inline size_t packScanList(const ScanEntry* entries, uint8_t n, uint8_t* out /* >= 2+21*n */) {
+    if (n > SCAN_MAX) n = SCAN_MAX;
+    out[0] = PROTO_VER;
+    out[1] = n;
+    for (uint8_t i = 0; i < n; ++i) {
+        uint8_t* s = out + 2 + i * SCAN_SLOT;
+        memset(s, 0, SCAN_NAME);
+        memcpy(s, entries[i].name, strnlen(entries[i].name, SCAN_NAME));
+        s[SCAN_NAME] = (uint8_t)entries[i].rssi;
+        s[SCAN_NAME + 1] = entries[i].flags;
+    }
+    return 2 + (size_t)n * SCAN_SLOT;
+}
+
 // ---- RecData framing --------------------------------------------------------------------------
 // One IMU sample on the wire: 6 x i16 (ax ay az gx gy gz), 12 bytes.
 // Every frame is [ver, TYPE, ...] with an EXPLICIT type byte — v1 put the data frames' seq
