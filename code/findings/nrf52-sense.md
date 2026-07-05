@@ -142,7 +142,19 @@ The owner asked which ESP32 features to port; picked all four batches. Status:
   picker** (pure `SourceCandidate`, exposed via the ScanList characteristic). Picker proven on the
   bench: 4 on-air devices discovered + correctly classified (CPS / FTMS-trainer / Stages-crank),
   strongest-first. Web app shows a tap-to-select list.
-- **P4** (next): FTMS erg + workouts + shifter.
+- **P4**: **FTMS erg + structured workouts + shifter bias.** A **3rd Bluefruit central** links to
+  an FTMS trainer (`0x1826`) and drives its target power via the control point (`0x2AD9`:
+  RequestControl→Start→SetTargetPower) from the pure `WorkoutRuntime` (shared with the ESP32). The
+  **shifter** feature — the XIAO has no user button — is a signed **target bias** (±W, clamped ±200)
+  the web app / Garmin drive via the Workout characteristic (`0x0008`, cmd 8); a physical BLE shifter
+  would drive the same cmd as a 4th central via the pure `Shifter` decode. Bench-verified over serial
+  (`WKTEST`): erg encoders byte-correct (RequestControl `00`, Start `07`, SetTargetPower(250) `05 FA
+  00`), a preset parses + runs (`4×8 Threshold` → 9 segments, 3180 s, first target 138 W), and the
+  bias folds into the target (+10,+10,−30 = −10 W → effective 128 W). Web app has a Workout & erg
+  card (trainer picker from the ScanList FTMS entries, preset selector, start/pause/stop, live target
+  + elapsed, ±10 W shifter buttons). **Live erg-drive against a real trainer is gated** — the only
+  FTMS trainer on air (`SB20-FTMS-Server`) belongs to the concurrent session; the encoders + workout
+  runtime are proven, only the on-air control loop against a free trainer remains.
 
 **nRF bench-verification pattern:** the desktop Windows GATT cache goes stale on every reflash
 (it caches per device-address and auto-reconnects), so on-board behaviour is verified over the

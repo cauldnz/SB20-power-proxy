@@ -2315,3 +2315,33 @@ The findings that matter most for us:
   server pairing had never actually run on air until today; the erg line on the LVGL Workout screen
   now shows all four states (no trainer set / connecting… / linked, no ctrl / ON xxW) so this is
   visible on-panel.
+
+## 2026-07-05 — nRF Sense P4: FTMS erg + structured workouts + shifter bias (bench-verified)
+
+- **Ported the ESP32's erg loop to the XIAO Sense** as a 3rd Bluefruit central onto an FTMS trainer
+  (`0x1826`), driving target power via the control point (`0x2AD9`) from the pure `WorkoutRuntime`
+  (shared, unchanged). `Bluefruit.begin(2, 3)` (2 periph: head-unit + web app · 3 central: source/DUT
+  + calibration-reference + trainer). Optimistic write-ACK progression (same lesson as the ESP32 F6
+  entry above — never gate on the indicate()).
+- **Shifter = a target BIAS, not a physical button** (the XIAO has none). New Workout characteristic
+  cmd 8 `BiasStep [ver,8, delta i8]` nudges the erg target ±W (clamped ±200) on top of the workout
+  prescription; the web app / Garmin drive it. A physical BLE shifter (Zwift Click / SRAM) would drive
+  the same cmd as a 4th central via the pure `Shifter` decode — deferred (no shifter hardware, and the
+  bias delivers the feature's intent).
+- **New GATT: Workout `…-0008-…`** (write control + 18-byte notify state). Write cmds: 1 setTrainer ·
+  2 loadPreset · 3 start · 4 pause · 5 resume · 6 stop · 7 unload · 8 biasStep. State notify:
+  `[ver, flags, targetW i16, segIdx u8, nSeg u8, segRemainS u16, ergSentW i16, elapsedS u16, biasW i16,
+  reserved u16]`; `flags` b0 loaded·b1 running·b2 paused·b3 ergConnected·b4 ergControlled. **`targetW`
+  already includes `biasW`** (what the erg holds); `biasW` broken out for display. Documented in
+  `firmware-nrf/GATT.md` + mirrored in the web app.
+- **Bench-verified over serial (`WKTEST`), the reliable path:** erg encoders byte-correct
+  (RequestControl `00`, Start `07`, SetTargetPower(250) `05 FA 00`); preset parse+run (`4×8 Threshold`
+  → 9 segments, 3180 s, first target 138 W); bias folds in (+10,+10,−30 = −10 W → effective 128 W).
+  Build: RAM 48.3%, Flash 23.3%.
+- **Web app:** added a Workout & erg card (trainer picker sourced from the ScanList FTMS entries,
+  preset selector whose labels mirror `WorkoutPresets.h`, start/pause/stop, live target + elapsed, and
+  ±10 W shifter buttons). Pushed to `cauldnz/bike-bridge-web` (GitHub Pages). Preset dropdown populated
+  on load = JS parsed/ran (headless-Chrome render smoke test).
+- **GATED (unchanged constraint):** the live erg-drive against a real trainer needs a free FTMS
+  trainer — the only one on air (`SB20-FTMS-Server`) is the concurrent session's; per CLAUDE.md I don't
+  hijack it. Encoders + runtime are proven; only the on-air control loop remains for the owner's rig.

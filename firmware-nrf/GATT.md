@@ -23,6 +23,7 @@ All multi-byte fields are **little-endian**. First byte of every payload is a fo
 | Curve | `…-0005-…` | read, write | piecewise power→factor correction curve (wins over scale/offset) |
 | Calibrate | `…-0006-…` | write, notify | on-device DUT→reference calibration control + state |
 | ScanList | `…-0007-…` | read, notify | nearby meters/trainers for the source picker |
+| Workout | `…-0008-…` | write, notify | FTMS erg: pick a trainer, load a preset, run it + shifter bias |
 
 Full UUIDs: replace `XXXX` in `53423230-XXXX-4bd9-a4ae-1b4e2c633a1d`.
 
@@ -105,6 +106,27 @@ shows pairs + per-bin coverage climbing.
 Nearby power meters / trainers the bridge has seen, for the web source picker. Read or subscribe;
 pushed @≤2 Hz when new devices appear. `[ver, count, {name[19], rssi i8, flags u8}...]` — 21-byte
 slots, up to 8 (strongest-first). flags: `b0` isCps · `b1` isFtms (trainer) · `b2` isStagesCrank.
+
+## Workout + erg (write control + notify state, P4)
+
+The bridge can be a **third central** onto an **FTMS trainer** (Fitness Machine `0x1826`) and drive
+its **target power** from a structured workout — the ESP32's erg loop, ported. It runs the pure
+`WorkoutRuntime` (shared with the ESP32) and speaks the FTMS Control Point (`0x2AD9`:
+RequestControl→Start→SetTargetPower). Pick the trainer from a ScanList FTMS entry.
+
+Write `[ver, cmd, ...]`: `1` set trainer `[ver,1, trainerFilter[≤19]]` (empty drops it) · `2` load
+preset `[ver,2, presetIndex u8]` · `3` start · `4` pause · `5` resume · `6` stop · `7` unload ·
+`8` **bias step** `[ver,8, delta i8]` — the **shifter** feature: nudges the erg target ±delta W
+(clamped ±200), on top of the workout prescription. A physical BLE shifter (Zwift Click / SRAM) would
+drive cmd `8` as a 4th central via the pure `Shifter` decode; the web app + Garmin drive it too, since
+the XIAO has no user button.
+
+Notify (18 bytes): `[ver, flags, targetW i16, segIndex u8, nSeg u8, segRemainS u16, ergSentW i16,
+elapsedS u16, biasW i16, reserved u16]` — emitted on every command and @1 Hz while a workout is loaded.
+`flags`: `b0` loaded · `b1` running · `b2` paused · `b3` ergConnected (trainer linked) · `b4`
+ergControlled (trainer granted control). **`targetW` already includes `biasW`** (what the erg is asked
+to hold); `biasW` is broken out so the UI can show the shifter offset. `ergSentW` is the last value
+actually written to the trainer's control point.
 
 ## BLE OTA (firmware update over Bluetooth, P3)
 
