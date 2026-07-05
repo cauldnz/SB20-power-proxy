@@ -2561,3 +2561,51 @@ Control → Start → Set Target Power) can drive the real bike directly.**
   air**; only the **`--erg` write round-trip** (does the bike's resistance actually track a Set Target
   Power we send) remains uncaptured — qdomyos did NOT answer it (it never used E4; see the ride entry),
   so it stays the §14-phase-5 / recovery-capture gate.
+
+## 2026-07-06 (desk analysis) — the ride pcap + qdomyos clean-room: the control channel was NOT captured, but the strategic answer is clear (our FTMS approach targets the right surface; qz's does not).
+Mined `QDZ-sniff-qdomyos-sb20-20260706-0742.pcap` (22,036 frames) with tshark, and read the qdomyos-zwift
+`stagesbike` driver clean-room (GPL — read to understand, **never copy**). Two threads, one conclusion.
+
+**Advert inventory (who was on air, and what they advertise):**
+- `E4:AA:5A:D6:0E:D4` **"Stages Bike 0105"** → **FTMS 0x1826 + CSC 0x1816** — the real bike (the task-1
+  GATT device). **13,509 ADV_INDs, advertised continuously all ride ⇒ NEVER connected.**
+- `e3:25:39:38:92:71` **"Stages 4963"** → **CPS 0x1818** — a Stages crank (R, a power meter, not a control surface).
+- `e8:cf:d8:d9:3a:20` **"Stages 62144"** → CPS 0x1818 — the L crank. Assiomas (17039L/22428R + the
+  daughter's 26807R/29064L) → CPS 0x1818 + battery 0x180f.
+- `de:f2:ed:c4:f3:fd` **"SB20 Bridge" = OUR OWN nRF52840 bridge board** (`firmware-nrf` sets
+  `outName="SB20 Bridge"`) — advertised only 7× at the very start, then went silent (= connected).
+- **The devices that got connected at capture start were ALL OURS:** the nRF "SB20 Bridge", the S3's
+  spoofed crank (`a4:cb:8f:da:e9:cd` = S3 base+1) and the C3's spoofed crank (`38:44:be:45:e9:a6` =
+  C3 base+2). The desk was saturated with our own boards — a **polluted capture environment**. Only
+  2 CONNECT_INDs were on air and **both CRC-bad**, so no ATT/GATT was recoverable regardless.
+
+**qdomyos `stagesbike` driver (clean-room facts — src/devices/stagesbike/stagesbike.cpp, master):**
+- Reads power/cadence from **Cycling Power Measurement (CPS 0x1818)**.
+- On discovering **FTMS 0x1826** it does NOT control through it — it stores `ftms_bike=<name>` and toasts
+  *"FTMS bike found, restart the app to apply"* (i.e. it defers control to a separate FTMS driver).
+- **Every resistance/inclination/power control write goes to an ELITE proprietary service**
+  `347b0001-7635-408b-8918-8ff3949ce592` (write chars `347b0010` / `347b0018`), via setBrakeLevel /
+  setSimulationMode / setTargetPower. Comment in-source: *"this bike doesn't have the concept of
+  resistance"* → it converts resistance to inclination/sim. **It never writes the FTMS Control Point
+  `0x2AD9`.**
+- **The SB20 does NOT expose the Elite 347b service** (task-1 GATT of E4: FTMS + CSC + Stages `0xbe5f`/
+  `0xbeaf` + Nordic DFU only). ⇒ qdomyos's `stagesbike` driver **structurally cannot drive the SB20's
+  resistance** — which is exactly the unresolved **pinned bug #1649 "Stages SB20 Resistance control not
+  working"** (open since 2023; power/rpm read fine, resistance never moves).
+
+**Conclusion + strategic takeaway (the value of this ride, despite the miss):**
+- The pcap did **not** capture a working control channel: the real SB20 FTMS was never connected, the
+  connections seen were our own spoof boards, and qz's iOS host used rotating RPAs (`75:eb:46:xx`) we
+  couldn't follow. So the *"how does a controller drive the SB20"* question is **still open on the wire**.
+- **BUT** task-1 (the SB20's FTMS is fully erg-capable: Power-Target + writable Control Point `0x2AD9` +
+  0–4000 W) **plus** this clean-room result gives a strong answer by other means: **our `FtmsErgClient`
+  writes the standard FTMS Control Point — the SB20's REAL control surface — whereas qdomyos writes to a
+  nonexistent Elite service.** So §14-phase-5 targets the correct, spec-compliant path and has a *good*
+  prior to succeed **where qdomyos is documented-broken**. (What we still must prove on the bike: that
+  the SB20 actually *moves resistance* in response to a Set Target Power we send — the `--erg` round-trip.)
+- **ANT+ inventory** (`QDZ-ant-20260706-0742.jsonl`, discovery-only) as expected: Stages `#62144`, power
+  meters `#17039`/`#29064` (one = daughter's stray Assioma, much lower power — not an anomaly), unknown
+  type-35 `#7092`, FE-C `#105` = the bike. No control data (iOS qz is BLE-only; ANT never carries its control).
+- **Recovery capture design change:** the environment must be **de-polluted** — power down ALL our spoof
+  boards (C3/CYD/S3 cranks) and the nRF "SB20 Bridge" so the only devices on air are the real SB20 + the
+  qz host; then follow the exact device qz connects to (read its name off the qz UI). See the run-sheet.
