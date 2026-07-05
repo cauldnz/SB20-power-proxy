@@ -28,6 +28,7 @@
 #include "WebApp.h"            // static streaming dashboard served at GET /ui (renders in the phone)
 #include "WorkoutPresets.h"    // built-in workouts (presetJson) for the /workout/preset route
 #include "WebJson.h"           // /scan + /config JSON for the shared SPA's HTTP transport
+#include "WebSpa.h"            // the shared SPA (web/index.html) embedded, served at GET /app
 #include "net/DebugLog.h"      // recent-log ring served at GET /log (serial is flaky on the C3)
 #include "net/WifiCreds.h"     // NVS-backed credential storage
 
@@ -278,6 +279,26 @@ void WifiLink::startStationServer_() {
     server_->on("/status", HTTP_GET, [this]() {
         std::string j = provider_ ? renderStatusJson(provider_()) : std::string("{}");
         server_->send(200, "application/json", j.c_str());
+    });
+    // GET /app -> the shared web SPA: the SAME index.html the nRF serves from GitHub Pages, embedded
+    // via WebSpa.h. Streamed straight from flash in 1 KB chunks (no ~34 KB heap copy — the C3's heap
+    // is tight beside BLE). Served same-origin so the page's HttpTransport can reach this board's JSON
+    // API over http (a GitHub-Pages copy can't: https->http is a mixed-content block).
+    server_->on("/app", HTTP_GET, [this]() {
+        const char* html = webSpaHtml();
+        const size_t len = strlen(html);
+        server_->setContentLength(len);
+        server_->send(200, "text/html", "");  // headers only; body streamed below
+        WiFiClient c = server_->client();
+        size_t off = 0;
+        uint32_t last = millis();
+        while (off < len && c.connected()) {
+            const size_t want = (len - off > 1024) ? 1024 : (len - off);
+            const size_t n = c.write(reinterpret_cast<const uint8_t*>(html) + off, want);
+            if (n > 0) { off += n; last = millis(); }
+            else if (millis() - last > 2000) break;  // client stalled — give up
+            else delay(1);
+        }
     });
     // Perf observability (Phase A): loop timing, heap/frag, stack, idle, reboot evidence.
     server_->on("/stats", HTTP_GET, [this]() {
