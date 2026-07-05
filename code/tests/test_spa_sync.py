@@ -21,10 +21,11 @@ def test_generator_exists() -> None:
 
 
 def test_untrusted_names_are_escaped() -> None:
-    """Guard the DOM-XSS fix (2026-07-05): a BLE-advertised device name is attacker-controlled and
-    the SPA serves same-origin with the board's HTTP API, so any `innerHTML` interpolation of `d.name`
-    or a log message MUST go through `esc()`. This catches a future edit that pipes an untrusted value
-    into innerHTML raw. (Deliberately narrow: it only checks the two known untrusted sinks.)"""
+    """Guard the DOM-XSS fix (2026-07-05): a BLE-advertised device name is attacker-controlled
+    and the SPA serves same-origin with the board's HTTP API, so any `innerHTML` interpolation
+    of `d.name` or a log message MUST go through `esc()`. This catches a future edit that pipes
+    an untrusted value into innerHTML raw. (Deliberately narrow: it only checks the two known
+    untrusted sinks.)"""
     html = SPA.read_text(encoding="utf-8")
     assert re.search(r"const esc\s*=", html), "the esc() HTML-escaper is gone from the SPA"
     # every innerHTML line that interpolates d.name / a log message must wrap it in esc(...)
@@ -33,7 +34,8 @@ def test_untrusted_names_are_escaped() -> None:
             continue
         for token in ("${d.name}", "${m}", "${d.rssi}"):
             assert token not in ln, (
-                f"unescaped untrusted value {token} in an innerHTML sink — wrap it in esc():\n  {ln.strip()}"
+                f"unescaped untrusted value {token} in an innerHTML sink — "
+                f"wrap it in esc():\n  {ln.strip()}"
             )
 
 
