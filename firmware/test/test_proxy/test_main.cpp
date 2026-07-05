@@ -38,6 +38,7 @@
 #include "TouchCal.h"
 #include "WorkoutEngine.h"
 #include "WorkoutPresets.h"
+#include "WebJson.h"
 #include "WorkoutRuntime.h"
 
 using namespace sb20proxy;
@@ -1161,6 +1162,36 @@ void test_status_json_has_firmware_version() {
     ProxyStatus s;  // version defaults to Config::FIRMWARE_VERSION
     const std::string expect = std::string("\"version\":\"") + Config::FIRMWARE_VERSION + "\"";
     TEST_ASSERT_TRUE(renderStatusJson(s).find(expect) != std::string::npos);
+}
+
+// --- WebJson: /scan + /config for the shared SPA's HTTP transport (web/HTTP-API.md) ---
+void test_scan_json_shape_and_flags() {
+    std::vector<SourceCandidate> srcs;
+    SourceCandidate a; a.name = "ASSIOMA"; a.rssi = -55; a.isCps = true; srcs.push_back(a);
+    SourceCandidate b; b.name = "SB20-FTMS"; b.rssi = -70; b.isFtms = true; srcs.push_back(b);
+    const std::string j = renderScanJson(srcs);
+    TEST_ASSERT_TRUE(j.find("\"devices\":[") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"name\":\"ASSIOMA\",\"rssi\":-55,\"cps\":true,\"ftms\":false,\"crank\":false") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"name\":\"SB20-FTMS\",\"rssi\":-70,\"cps\":false,\"ftms\":true,\"crank\":false") != std::string::npos);
+}
+
+void test_scan_json_empty() {
+    TEST_ASSERT_EQUAL_STRING("{\"devices\":[]}", renderScanJson({}).c_str());
+}
+
+void test_config_json_maps_fields() {
+    RuntimeConfig c = RuntimeConfig::defaults();
+    c.singleSidedDouble = true;
+    c.meterNameFilter = "ASSIOMA";
+    c.spoofName = "Stages 62144";
+    const std::string j = renderConfigJson(c);
+    TEST_ASSERT_TRUE(j.find("\"single_sided\":true") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"src_filter\":\"ASSIOMA\"") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"out_name\":\"Stages 62144\"") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"scale\":1.0") != std::string::npos);       // baseline (curve is the real model)
+    TEST_ASSERT_TRUE(j.find("\"has_curve\":false") != std::string::npos);
+    c.curve.add(200.0f, 1.1f);
+    TEST_ASSERT_TRUE(renderConfigJson(c).find("\"has_curve\":true") != std::string::npos);
 }
 
 void test_diag_report_has_firmware_version() {
@@ -2365,6 +2396,9 @@ int runUnityTests() {
     RUN_TEST(test_status_json_source_state);
     RUN_TEST(test_status_json_unknown_cadence);
     RUN_TEST(test_status_json_has_firmware_version);
+    RUN_TEST(test_scan_json_shape_and_flags);
+    RUN_TEST(test_scan_json_empty);
+    RUN_TEST(test_config_json_maps_fields);
     RUN_TEST(test_diag_report_has_firmware_version);
     RUN_TEST(test_firmware_version_feeds_ota_decision);
     RUN_TEST(test_form_parse_basic);
