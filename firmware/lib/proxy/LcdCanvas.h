@@ -47,6 +47,7 @@ constexpr uint16_t lcdMix(uint8_t fr, uint8_t fg, uint8_t fb,
     return lcdRgb(lcdMixCh(fr, br, num, den), lcdMixCh(fg, bg, num, den), lcdMixCh(fb, bb, num, den));
 }
 
+// TOKENS-GEN:START — generated from design/tokens.json (run design/gen_tokens.py); do not edit by hand
 constexpr uint16_t LCD_BG     = lcdRgb(0x0f, 0x13, 0x20);  // --bg
 constexpr uint16_t LCD_CARD   = lcdRgb(0x1a, 0x20, 0x30);  // --card
 constexpr uint16_t LCD_FG     = lcdRgb(0xe8, 0xec, 0xf4);  // --fg
@@ -56,7 +57,8 @@ constexpr uint16_t LCD_ACCENT = lcdRgb(0x3b, 0x82, 0xf6);  // --accent
 constexpr uint16_t LCD_BAD    = lcdRgb(0xef, 0x44, 0x44);  // --bad
 constexpr uint16_t LCD_LINE   = lcdRgb(0x1c, 0x23, 0x34);  // --line
 constexpr uint16_t LCD_CHIP   = lcdRgb(0x2a, 0x31, 0x42);  // --chip2
-constexpr uint16_t LCD_TITLE  = lcdRgb(0x15, 0x1d, 0x2e);  // title bar #151d2e
+constexpr uint16_t LCD_TITLE  = lcdRgb(0x15, 0x1d, 0x2e);  // --title
+// TOKENS-GEN:END
 constexpr uint16_t LCD_WHITE  = lcdRgb(0xff, 0xff, 0xff);
 // the design's static tints, pre-blended over their usual backgrounds
 constexpr uint16_t LCD_OK_TINT     = lcdMix(0x22, 0xc5, 0x5e, 0x0f, 0x13, 0x20, 45, 100);  // done bars
