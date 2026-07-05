@@ -364,7 +364,7 @@ static void buildLcdViews(LcdViews& v) {
     if (v.prov.portal) {
         v.prov.apSsid = WifiLink::apSsid();
         v.prov.pin = wifi.setupPin();
-        v.prov.url = "http://192.168.4.1/";
+        v.prov.url = Config::SETUP_PORTAL_URL;
     }
 #endif
 
@@ -944,8 +944,8 @@ void setup() {
         return s;
     });
     if (wifi.inPortal()) {
-        Serial.println("[sb20proxy] WiFi not configured; setup portal up on AP 'SB20-Setup' "
-                       "-> http://192.168.4.1/");
+        Serial.printf("[sb20proxy] WiFi not configured; setup portal up on AP 'SB20-Setup' -> %s\n",
+                      Config::SETUP_PORTAL_URL);
     } else {
         Serial.printf("[sb20proxy] WiFi connected; status at http://%s/\n",
                       WiFi.localIP().toString().c_str());

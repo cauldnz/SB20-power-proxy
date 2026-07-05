@@ -1386,7 +1386,7 @@ void test_oled_portal_lines() {
     auto l = formatOledLines(OledMode::Portal, std::string(), 0, 0);
     TEST_ASSERT_EQUAL_STRING("SB20 SETUP", l[0].c_str());
     TEST_ASSERT_EQUAL_STRING("SB20-Setup", l[2].c_str());
-    TEST_ASSERT_EQUAL_STRING("192.168.4.1", l[3].c_str());
+    TEST_ASSERT_EQUAL_STRING(Config::SETUP_PORTAL_HOST, l[3].c_str());
 }
 
 void test_oled_connected_lines() {

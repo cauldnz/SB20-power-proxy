@@ -111,7 +111,7 @@ struct ProvisionView {
     bool portal = false;
     std::string apSsid;   // "SB20-Setup"
     std::string pin;      // the AP's WPA2 password (per-device PIN on OLED builds)
-    std::string url;      // where the portal lives ("http://192.168.4.1/")
+    std::string url;      // where the portal lives (Config::SETUP_PORTAL_URL)
 };
 
 struct LcdViews {
