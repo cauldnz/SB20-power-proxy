@@ -54,8 +54,15 @@ licensed via a free thisisant.com adopter account and **not redistributable** �
 - Radio seam: `IRadioSource` / `IRadioSink` so the bridge composes any of BLE-in/ANT-in ×
   BLE-out/ANT-out once S340 lands. BLE-in → BLE-out ships first (Bluefruit central + peripheral).
 - No WiFi ⇒ the control/telemetry surface is a **custom GATT service** (contract in
-  `firmware-nrf/GATT.md`) consumed by the Web Bluetooth app (public Pages repo — HTTPS is
-  mandatory for Web Bluetooth) and the Garmin Connect IQ app (Edge 540 / Epix Gen 2).
+  `firmware-nrf/GATT.md`) consumed by the **shared web SPA** ([`web/`](../../web/README.md)) and the
+  Garmin Connect IQ app (Edge 540 / Epix Gen 2).
+- **The web UI is shared with the ESP32** (2026-07-05): `web/index.html` is ONE self-contained SPA
+  behind a `Transport` seam — `BleTransport` (Web Bluetooth, served from GitHub Pages for the nRF)
+  and `HttpTransport` (the ESP32 serves the *same file* at `GET /app` + a JSON API). A UI change
+  lands on both; the palette is generated from `design/tokens.json` (also the LVGL RGB565). See the
+  "Shared web UI" section of `PROJECT-MAP.md`. **Calibration profiles are portable** across the nRF
+  (Curve GATT char), the ESP32 (`/curve`), and the desk tooling — same `CorrectionCurve`, one profile
+  JSON (`decisions.md` 2026-07-05).
 
 Sources: [SDAntplus](https://github.com/orrmany/SDAntplus) ·
 [ant-arduino](https://github.com/cujomalainey/ant-arduino) ·
