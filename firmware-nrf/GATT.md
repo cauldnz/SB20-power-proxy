@@ -76,12 +76,15 @@ sampleCount u32, capacity u32]` — emitted on every state change and @1 Hz whil
 
 ## RecData (download stream)
 
-After `download`: a header frame then data frames, 180-byte max payloads (fits DLE MTU 185):
+After `download`: a header frame then data frames, sized to the smallest subscriber MTU. Every
+frame carries an **explicit type byte** at offset 1 (a seq low-byte of 0xFE once masqueraded as
+the trailer and truncated downloads — hence the tag):
 
 - Header: `[ver, 0xFF, rateHz, reserved, sampleCount u32, startMs u32]`
-- Data: `[ver, seq u16lo, seq u16hi, samples…]` — each sample 12 bytes:
+- Data: `[ver, 0xFD, seq u16, count u8, reserved, samples…]` — each sample 12 bytes:
   `ax ay az gx gy gz` as i16 (accel LSB = 0.488 mg @±16 g; gyro LSB = 70 mdps @±2000 dps),
-  i.e. 14 samples per frame. Ends with `[ver, 0xFE, crc32 u32]`.
+  up to 14 samples/frame at MTU 247.
+- Trailer: `[ver, 0xFE, crc32 u32]` (CRC32 over the concatenated sample bytes).
 
 ## Calibrate (write control + notify, P2)
 
