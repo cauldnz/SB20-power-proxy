@@ -508,13 +508,18 @@ From `phase-0-report.md` §5 — track, don't block on:
 ## 9. "Do this next" — the concrete recommendation (refreshed 2026-07-05)
 
 *(The original §9 recommended the pre-pivot ANT+ path — long shipped/superseded; kept in git
-history. Current state: three head-unit tiers (C3-OLED / S3-Touch / CYD) share one core with
-web-UI parity, hard-reset QR onboarding, and an on-device FTMS erg drive, all twin-proven.)*
+history. Current state: three head-unit tiers (C3-OLED / S3-Touch / CYD) share one core; the web UI
+is now ONE shared SPA (`web/index.html`, served from GitHub Pages over Web Bluetooth AND from each
+ESP32 at `/app` over HTTP — PRs #229–#237); hard-reset QR onboarding on `172.29.4.1`; on-device FTMS
+erg drive, all twin-proven. S3 OTA-deafness cured; CYD 3.5 h heap soak clean.)*
 
-1. **Next bike session:** erg-drive the REAL SB20 over FTMS from a head-unit (§14 phase 5 — the
-   sim-proven chain pointed at the bike), plus the CYD touch-cal finger check.
+1. **Next bike session — [`sessions/session-10`](../../sessions/session-10-spin-bike-ui-tryout.md)
+   (2-day):** Day 1 = erg-drive the REAL SB20 over FTMS from a head-unit (§14 phase 5 — the
+   sim-proven chain pointed at the bike). Day 2 = tester UX across all three boards (QR onboarding,
+   filtered picker, the shared `/app` SPA). Deciding output: erg shippable? onboarding tester-proof?
+   which touch board for pre-beta?
 2. **At the desk:** LVGL host-snapshot tests in CI (the LVGL-adoption follow-up); LCD picker
-   scrolling; S3 OTA-deafness retest once it's on the current build.
+   scrolling; `flash_s3.py` NVS-preserve fix (factory image at 0x0 wipes creds).
 3. **Repo hygiene:** make the `firmware` CI job a REQUIRED check (a red merge slipped through
    2026-07-04).
 

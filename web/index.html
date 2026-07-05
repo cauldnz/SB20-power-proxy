@@ -191,6 +191,10 @@
 const VER = 1;
 const PRESETS = ["4×8 Threshold", "Sweet Spot 3×12", "VO2 5×3", "Endurance 45"];
 const $ = id => document.getElementById(id);
+// Escape text bound for innerHTML. BLE-advertised device names are attacker-controlled (a nearby
+// device can advertise any name); interpolating one raw into innerHTML is DOM XSS, and since the
+// ESP32 serves this SPA same-origin at /app, that script would reach the board's own HTTP API.
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 // ================= BleTransport (Web Bluetooth) =================
 const SVC = "53423230-0000-4bd9-a4ae-1b4e2c633a1d";
@@ -428,7 +432,7 @@ async function pickTransport() {
 
 // ================= view =================
 let T = null;
-const log = m => { const d = $("log"); d.innerHTML = `<div>${new Date().toLocaleTimeString()} ${m}</div>` + d.innerHTML; };
+const log = m => { const d = $("log"); d.innerHTML = `<div>${new Date().toLocaleTimeString()} ${esc(m)}</div>` + d.innerHTML; };
 PRESETS.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = p; $("wkPreset").appendChild(o); });
 
 function setConnected(on) {
@@ -456,7 +460,7 @@ function renderScan(list) {
     const kind = d.isFtms ? "trainer" : d.isCrank ? "crank" : "meter";
     const mk = target => {
       const r = document.createElement("button"); r.className = "net";
-      r.innerHTML = `<span class="nm">${d.name}</span><span class="lk">${kind}</span><span class="sig" title="${d.rssi} dBm">${d.rssi}</span>`;
+      r.innerHTML = `<span class="nm">${esc(d.name)}</span><span class="lk">${kind}</span><span class="sig" title="${esc(d.rssi)} dBm">${esc(d.rssi)}</span>`;
       r.onclick = () => { $(target).value = d.name; }; return r;
     };
     el.appendChild(mk("cfgSrc"));

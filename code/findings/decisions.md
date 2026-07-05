@@ -2467,3 +2467,21 @@ literally the same file.
   (version-parse / newest-select / CLI-dialect / argv-assembly; 11 tests). Deprecation note: esptool 5.3.x
   warns that invoking `esptool.py` by path is deprecated (use `esptool`) — harmless now; the `python -m
   esptool` fallback is already the future-proof path.
+
+## 2026-07-05 (later) — code review of the shared-SPA arc (#229–#237): DOM-XSS fixed; plan reconciled.
+- **Reviewed the whole UI-convergence arc** (one shared `web/index.html` served both from GitHub
+  Pages over Web Bluetooth and from each ESP32 at `/app` over HTTP; single-source design tokens;
+  portable calibration profiles). Architecture is sound: SPA carries the JSON<->compact-string
+  conversion so the ESP32 needs no JSON parser; same-origin `/app` dodges the https->http
+  mixed-content block; `/app` reuses the drain-aware 1 KB streaming (no heap copy beside BLE);
+  host-tested serializers + token/SPA sync guards in CI.
+- **Finding + fix (DOM XSS):** `web/index.html` interpolated an UNTRUSTED BLE-advertised device name
+  straight into `innerHTML` (the scan-row render + the log line). A nearby device advertising a name
+  like `<img src=x onerror=...>` (fits a 31-byte adv packet) would execute script in the SPA's
+  origin — and because the ESP32 serves the SPA SAME-ORIGIN at `/app`, that script reaches the
+  board's own HTTP API (POST /curve, /workout, read /config). Fixed with an `esc()` HTML-escaper
+  applied at both sinks; `WebSpa.h` regenerated from the fixed source (the sync test guards it).
+  The server-rendered ConfigPage.h had always escaped (htmlEscape) — only the new SPA regressed it.
+- **Plan reconciled to actual:** forward-plan §9 + the session ledger now point at
+  `sessions/session-10` rewritten as the 2-day on-bike plan (Day 1 real-SB20 erg drive = §14 phase 5;
+  Day 2 tester UX — QR onboarding / filtered picker / shared `/app` SPA across all three boards).
