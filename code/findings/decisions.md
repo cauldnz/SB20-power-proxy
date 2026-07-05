@@ -2452,3 +2452,18 @@ literally the same file.
   (a versioned @src dir alongside is 5.3.0). Worked around by flashing with the system python's esptool
   5.3.1 directly (esptool 5.x CLI = hyphens: write-flash, --before default-reset, --flash-mode). Fixing
   flash_c3.py to prefer the newest esptool is an open follow-up.
+- **RESOLVED (2026-07-05) — flash_c3.py now auto-selects the newest esptool + speaks the 5.x CLI.**
+  `_esptool()` was rewritten: it parses `__version__` from every `tool-esptoolpy*/esptool/__init__.py`
+  and picks the **highest version >= 4.11** (so the 5.3.0 `@src-…` dir wins over the bundled 4.5.1),
+  falling back to the system `python -m esptool` if none qualifies. A new `_cli_dialect()` emits esptool
+  5.x's hyphenated flags (`write-flash`, `--flash-mode/-freq/-size`, `--before default-reset`,
+  `--after hard-reset`) vs 4.x underscores, keyed on the major version. **Second gotcha found + fixed while
+  verifying:** esptool 5.x renders a Unicode block-glyph progress bar that raises `UnicodeEncodeError` mid-
+  write on a legacy-codepage (cp1252) Windows console/pipe — the flash subprocess now runs with
+  `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8` (`_child_env()`) so its own progress output encodes cleanly.
+  Verified on **COM9** (C3-OLED, MAC 38:44:be:45:e9:a4): full `write-flash -z` of `esp32c3-oled-live-ota`,
+  **"Hash of data verified" on all 4 regions, exit 0 on attempt 1, no "No serial data received"**; board
+  rebooted and re-advertised as "Stages 6214x". Hermetic coverage: `code/tests/test_flash_c3.py`
+  (version-parse / newest-select / CLI-dialect / argv-assembly; 11 tests). Deprecation note: esptool 5.3.x
+  warns that invoking `esptool.py` by path is deprecated (use `esptool`) — harmless now; the `python -m
+  esptool` fallback is already the future-proof path.
