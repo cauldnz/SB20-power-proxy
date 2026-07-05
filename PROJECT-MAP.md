@@ -103,9 +103,11 @@ custom GATT service + a Web Bluetooth app). Reuses the pure ESP32 core via `lib_
 Convergence work so the ESP32 web UI, the nRF Web Bluetooth app, and the LVGL device UI don't drift.
 | Capability | Status | Lives in |
 |---|---|---|
-| One self-contained SPA behind a `Transport` seam — `BleTransport` (Web Bluetooth) + `HttpTransport` (ESP32 JSON) auto-selected by host | ✅ BLE live · HTTP contract-ready | [`web/`](web/README.md) (`index.html`, [`HTTP-API.md`](web/HTTP-API.md)) · PRs #229/#230 |
+| One self-contained SPA behind a `Transport` seam — `BleTransport` (Web Bluetooth) + `HttpTransport` (ESP32 JSON) auto-selected by host | ✅ both live | [`web/`](web/README.md) (`index.html`, [`HTTP-API.md`](web/HTTP-API.md)) · PRs #229/#230 |
 | Single-source design tokens → generated into the web CSS, ESP32 `WebUi.h`, LVGL RGB565; CI-guarded | ✅ one edit re-themes all | `design/tokens.json`,`design/gen_tokens.py`, `code/tests/test_tokens_sync.py` · PR #229 |
-| ESP32 embeds + serves the same SPA over HTTP/JSON (then the two web UIs are one file) | ⏳ deferred (U4, after the ESP32 erg session merges) | `HttpTransport` contract in [`web/HTTP-API.md`](web/HTTP-API.md) |
+| ESP32 embeds + serves the same SPA at `GET /app` (the two web UIs are one file) | ✅ hardware-verified (C3 .165) | `web/gen_spa_header.py`→`WebSpa.h`, `WifiLink` `/app`, `code/tests/test_spa_sync.py` · PR #234 |
+| Portable calibration profiles — export/import a curve across the nRF, ESP32, and desk tooling | ✅ | ESP32 `/curve` (`WebJson.h`), nRF Curve GATT char, SPA profile card · PR #233 |
+| Same on-device calibration approach both builds (shared `CalibrationSession`→`CorrectionCurve`) | ✅ | `firmware/lib/proxy/CalibrationFit.h` (shared) · [nrf52-sense](code/findings/nrf52-sense.md) |
 
 ---
 
