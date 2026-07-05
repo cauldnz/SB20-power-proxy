@@ -54,6 +54,7 @@ constexpr size_t CFG_NAME_LEN = 19;
 struct ConfigPacket {
     bool srcIsAnt = false;
     bool outIsAnt = false;
+    bool singleSided = false;  // double a single-sided (R-only) source before correcting
     uint16_t scaleMilli = 1000;
     int16_t offsetDeciW = 0;
     char srcFilter[CFG_NAME_LEN + 1] = {0};  // NUL-terminated in the struct, NUL-padded on the wire
@@ -63,7 +64,7 @@ constexpr size_t CONFIG_LEN = 44;
 
 inline size_t packConfig(const ConfigPacket& c, uint8_t out[CONFIG_LEN]) {
     out[0] = PROTO_VER;
-    out[1] = (uint8_t)((c.srcIsAnt ? 1 : 0) | (c.outIsAnt ? 2 : 0));
+    out[1] = (uint8_t)((c.srcIsAnt ? 1 : 0) | (c.outIsAnt ? 2 : 0) | (c.singleSided ? 4 : 0));
     packU16(out + 2, c.scaleMilli);
     packU16(out + 4, (uint16_t)c.offsetDeciW);
     memset(out + 6, 0, CFG_NAME_LEN);
@@ -79,6 +80,7 @@ inline bool unpackConfig(const uint8_t* p, size_t len, ConfigPacket& c) {
     ConfigPacket n;
     n.srcIsAnt = (p[1] & 1) != 0;
     n.outIsAnt = (p[1] & 2) != 0;
+    n.singleSided = (p[1] & 4) != 0;
     n.scaleMilli = unpackU16(p + 2);
     n.offsetDeciW = (int16_t)unpackU16(p + 4);
     memcpy(n.srcFilter, p + 6, CFG_NAME_LEN);
@@ -90,6 +92,36 @@ inline bool unpackConfig(const uint8_t* p, size_t len, ConfigPacket& c) {
     if (n.offsetDeciW < -1000 || n.offsetDeciW > 1000) return false;
     c = n;
     return true;
+}
+
+// ---- Correction curve (write/read, variable) ------------------------------------------------
+// A piecewise power->factor curve wins over scale/offset when present (Correction.h). Wire form:
+//   [ver, nPoints, {power u16 W, factor u16 milli}...]  -> 2 + 4*nPoints bytes.
+// An empty curve (nPoints 0) clears it, reverting to the linear scale/offset.
+constexpr size_t CURVE_MAX_POINTS = 8;
+struct CurvePoint { uint16_t powerW; uint16_t factorMilli; };
+
+inline size_t packCurve(const CurvePoint* pts, uint8_t n, uint8_t* out /* >= 2+4n */) {
+    out[0] = PROTO_VER;
+    out[1] = n;
+    for (uint8_t i = 0; i < n; ++i) {
+        packU16(out + 2 + i * 4, pts[i].powerW);
+        packU16(out + 4 + i * 4, pts[i].factorMilli);
+    }
+    return 2 + (size_t)n * 4;
+}
+// Parse a Curve write into up to CURVE_MAX_POINTS points. Returns the count (0..MAX), or -1 on
+// a malformed payload (bad version/length/factor range).
+inline int unpackCurve(const uint8_t* p, size_t len, CurvePoint out[CURVE_MAX_POINTS]) {
+    if (len < 2 || p[0] != PROTO_VER) return -1;
+    const uint8_t n = p[1];
+    if (n > CURVE_MAX_POINTS || len < (size_t)(2 + n * 4)) return -1;
+    for (uint8_t i = 0; i < n; ++i) {
+        out[i].powerW = unpackU16(p + 2 + i * 4);
+        out[i].factorMilli = unpackU16(p + 4 + i * 4);
+        if (out[i].factorMilli < 250 || out[i].factorMilli > 4000) return -1;  // 0.25..4.0x
+    }
+    return n;
 }
 
 // ---- RecCtl ----------------------------------------------------------------------------------
