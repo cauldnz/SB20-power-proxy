@@ -2415,3 +2415,40 @@ ESP32 last (don't collide with the active ftms-erg-phase4 session).
   the same WifiLink/WebApp files).
 - Also filled a gap: PROJECT-MAP had NO nRF-track section — added one (the whole firmware-nrf bridge +
   the shared web UI) so future planning finds it.
+
+## 2026-07-05 — UI convergence COMPLETE: the ESP32 serves the shared SPA (hardware-verified)
+
+The other session parked its bench + released the repo, and the owner cleared board testing — so U4
+(the ESP32 side, previously deferred) landed and is hardware-proven. The ESP32 and nRF web UIs are now
+literally the same file.
+
+- **ESP32 JSON API for the SPA (PR #232, #233):** GET /scan + /config (WebJson.h serializers over the
+  existing sourcesProvider_/configProvider_ hooks). Then GET/POST /curve (#233) — export/import a
+  correction curve; POST takes the compact "power:factor,.." form (curveFromString, no on-device JSON
+  parser), a new curveSet_ hook persists + applies it live via proxy.setCorrection.
+- **Portable calibration profiles (PR #233):** the owner's ask — "same calibration approach + a profile
+  recorded on one device loadable on the other." The approach was ALREADY shared (both fit the pure
+  CorrectionCurve via CalibrationSession). Added the transfer: the SPA's Calibration-profile card
+  Export/Imports the desk tooling's CalibrationProfile JSON (breakpoints [[power,factor]], 1dp/4dp —
+  identical across the nRF Curve GATT char, the ESP32 /curve, and 09_fit_calibration.py). getCurve/
+  setCurve on BOTH transports; the SPA does the JSON↔native conversion so devices speak only their
+  native curve form.
+- **The ESP32 serves the SPA (PR #234):** web/gen_spa_header.py embeds web/index.html as WebSpa.h
+  (CI-guarded by test_spa_sync.py); GET /app streams the 34 KB SPA from flash in 1 KB chunks (no heap
+  copy — RAM stayed 15.4%, Flash 60.3%). Same-origin http is REQUIRED: a GitHub-Pages copy can't fetch
+  http://<board> (https→http mixed-content block), so the ESP32 must host the page for its HttpTransport
+  to reach it — which is exactly what makes the cross-device profile import work.
+- **HARDWARE-VERIFIED** on a real C3 (COM9 → 192.168.1.165, esp32c3-wifi mock+wifi): /app served the
+  full 34,419-byte SPA; opened in a browser it auto-selected HttpTransport (connect card hidden, live
+  140 W / 85 rpm / uptime from /status; config from /config); POST /curve round-tripped a 3-point profile
+  ({"has_curve":true,...}) confirmed by GET /curve + /config has_curve:true. `pickTransport()` picks HTTP
+  when served from a device (http, non-github origin) and BLE on GitHub Pages — the deployed nRF app is
+  unchanged.
+- **GOTCHA — POST /curve needs Content-Type text/plain** (what the SPA's fetch sends). A urlencoded curl
+  --data body is mangled by the WebServer form parser (parsed as a keyless field) → empty curve. Use
+  --data-binary with -H "Content-Type: text/plain" for curl testing.
+- **REGRESSION — flash_c3.py now flashes with esptool 4.5.1** (the C3 USB-JTAG "No serial data received"
+  bug): its _esptool() prefers the bare ~/.platformio/packages/tool-esptoolpy dir, which is now 4.5.1
+  (a versioned @src dir alongside is 5.3.0). Worked around by flashing with the system python's esptool
+  5.3.1 directly (esptool 5.x CLI = hyphens: write-flash, --before default-reset, --flash-mode). Fixing
+  flash_c3.py to prefer the newest esptool is an open follow-up.
