@@ -157,6 +157,32 @@ inline size_t packRecState(RecState st, uint8_t rateHz, uint32_t samples, uint32
     return RECSTATE_LEN;
 }
 
+// ---- Calibrate (write control + notify state) -----------------------------------------------
+// On-device DUT->reference calibration. Write: [ver, cmd, ...]:
+//   1 start [ver,1, refFilter[19]]  · 2 cancel · 3 save (curve->correction) · 4 discard-fit
+// Notify (state, 16 bytes): [ver, state(0 idle·1 collecting·2 fitted), reserved,
+//   pairCount u16, minPairs u16, residualDeciW i16, coverage u8[6], enoughToFit u8]
+enum class CalCmd : uint8_t { Start = 1, Cancel = 2, Save = 3, Discard = 4 };
+enum class CalWireState : uint8_t { Idle = 0, Collecting = 1, Fitted = 2 };
+constexpr size_t CALSTATE_LEN = 16;
+
+inline size_t packCalState(CalWireState st, uint16_t pairCount, uint16_t minPairs,
+                           int16_t residualDeciW, const int* coverage6, bool enough,
+                           uint8_t out[CALSTATE_LEN]) {
+    out[0] = PROTO_VER;
+    out[1] = (uint8_t)st;
+    out[2] = 0;
+    packU16(out + 3, pairCount);
+    packU16(out + 5, minPairs);
+    packU16(out + 7, (uint16_t)residualDeciW);
+    for (int i = 0; i < 6; ++i) {
+        int c = coverage6 ? coverage6[i] : 0;
+        out[9 + i] = (uint8_t)(c > 255 ? 255 : c);
+    }
+    out[15] = enough ? 1 : 0;
+    return CALSTATE_LEN;
+}
+
 // ---- RecData framing --------------------------------------------------------------------------
 // One IMU sample on the wire: 6 x i16 (ax ay az gx gy gz), 12 bytes.
 // Every frame is [ver, TYPE, ...] with an EXPLICIT type byte — v1 put the data frames' seq
