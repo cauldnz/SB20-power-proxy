@@ -428,6 +428,20 @@ void WifiLink::addConfigRoutes_() {
         const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
         server_->send(200, "application/json", renderConfigJson(cfg).c_str());
     });
+    // GET/POST /curve: export/import a portable correction curve (a calibration profile fitted on the
+    // OTHER device, or the desk tooling). GET returns the breakpoints; POST loads a curve LIVE (no
+    // reboot) from the compact "power:factor,..." form (empty body clears it). The SPA does the
+    // portable-profile JSON <-> compact-string conversion, so the ESP32 needs no JSON parser.
+    server_->on("/curve", HTTP_GET, [this]() {
+        const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        server_->send(200, "application/json", renderCurveJson(cfg.curve).c_str());
+    });
+    server_->on("/curve", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        const CorrectionCurve curve = curveFromString(formBody(server_));
+        if (curveSet_) curveSet_(curve);
+        server_->send(200, "application/json", renderCurveJson(curve).c_str());
+    });
     // GET /diag -> the plain-text tester report (config + status + raw meter frames). A tester saves
     // it and sends it when their meter isn't recognised, so we add support offline (real-data-first).
     server_->on("/diag", HTTP_GET, [this]() {

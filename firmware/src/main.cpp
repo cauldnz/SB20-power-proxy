@@ -1001,6 +1001,23 @@ void setup() {
             BleMeterClient::pickerScanBoost(15000);  // refill even when fully connected
         });
 #endif
+    // POST /curve: import a portable calibration profile LIVE (the shared SPA's cross-device curve
+    // load). Persist to NVS, and apply to the running proxy now — in CORRECTOR mode the curve is the
+    // correction; in SPOOF mode it's stored for when the device is switched to corrector (SPOOF's own
+    // linear scale / single-sided ×2 stays live so the crank spoof isn't disturbed mid-ride).
+    wifi.setCurveHandler([](const CorrectionCurve& curve) {
+        RuntimeConfig c = ConfigStore::load();
+        c.curve = curve;
+        ConfigStore::save(c);
+        Correction corr;
+        if (c.mode == ProxyMode::Corrector) {
+            corr.curve = curve;
+        } else {
+            corr.scale = Config::CORRECTION_SCALE * (c.singleSidedDouble ? 2.0f : 1.0f);
+            corr.offset = Config::CORRECTION_OFFSET;
+        }
+        proxy.setCorrection(corr);
+    });
     // The tester /diag report's raw meter frames (the bytes we add a new meter from). Live only.
 #if USE_MOCK_METER
     wifi.setDiagFrames([]() { return std::vector<std::string>{}; });
