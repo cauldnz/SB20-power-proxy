@@ -1194,6 +1194,23 @@ void test_config_json_maps_fields() {
     TEST_ASSERT_TRUE(renderConfigJson(c).find("\"has_curve\":true") != std::string::npos);
 }
 
+void test_curve_json_export_and_roundtrip() {
+    CorrectionCurve empty;
+    TEST_ASSERT_EQUAL_STRING("{\"has_curve\":false,\"curve\":[]}", renderCurveJson(empty).c_str());
+    CorrectionCurve curve;
+    curve.add(100.0f, 1.05f);
+    curve.add(200.0f, 0.98f);
+    const std::string j = renderCurveJson(curve);
+    TEST_ASSERT_TRUE(j.find("\"has_curve\":true") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("[100.0,1.0500]") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("[200.0,0.9800]") != std::string::npos);
+    // the SPA imports via the compact "p:f,.." form -> curveFromString must round-trip the same points
+    const CorrectionCurve back = curveFromString(curveToString(curve));
+    TEST_ASSERT_EQUAL_UINT(2, back.points.size());
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, back.points[0].power_w);
+    TEST_ASSERT_EQUAL_FLOAT(0.98f, back.points[1].factor);
+}
+
 void test_diag_report_has_firmware_version() {
     RuntimeConfig cfg = RuntimeConfig::defaults();
     ProxyStatus st;  // version defaults to Config::FIRMWARE_VERSION
@@ -2399,6 +2416,7 @@ int runUnityTests() {
     RUN_TEST(test_scan_json_shape_and_flags);
     RUN_TEST(test_scan_json_empty);
     RUN_TEST(test_config_json_maps_fields);
+    RUN_TEST(test_curve_json_export_and_roundtrip);
     RUN_TEST(test_diag_report_has_firmware_version);
     RUN_TEST(test_firmware_version_feeds_ota_decision);
     RUN_TEST(test_form_parse_basic);

@@ -36,6 +36,24 @@ Garmin/web erg line + shifter bias render; default 0/false until then).
 ```
 ### `POST /config`  (body: the same JSON) → persist + apply; return the new `/config`.
 
+### `GET /curve` → the correction curve as portable breakpoints
+```json
+{ "has_curve":true, "curve":[ [100.0,1.0500], [200.0,0.9800], [300.0,1.0200] ] }
+```
+### `POST /curve`  → load a curve LIVE (no reboot). Body is the compact `"power:factor,..."` form
+(`"100.0:1.0500,200.0:0.9800"`; empty body clears it). The SPA does the portable-profile-JSON ↔
+compact-string conversion, so the ESP32 needs no JSON parser (it reuses `curveFromString`). This is
+the **cross-device profile import**: a curve fitted on the nRF (read off its Curve GATT characteristic)
+or the desk tooling loads here, and vice versa.
+
+**Portable profile format** (what Export writes / Import reads — the desk tooling's `CalibrationProfile`):
+```json
+{ "kind":"grid", "target":"", "ref":"", "breakpoints":[[100.0,1.05],[200.0,0.98]],
+  "scale":1.0, "offset":0.0, "meta":{ "source":"bike-bridge-web", "device":"ble|http", "exported":"…" } }
+```
+`breakpoints` are `[power_w, factor]` (1 dp power, 4 dp factor) — the same across the nRF Curve
+characteristic, the ESP32 `/curve`, and `code/scripts/09_fit_calibration.py`.
+
 ### `GET /scan` → **Scan** list
 ```json
 { "devices":[ {"name":"SB20-FTMS-Server","rssi":-55,"cps":false,"ftms":true,"crank":false} ] }

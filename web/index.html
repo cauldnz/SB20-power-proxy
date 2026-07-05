@@ -110,6 +110,17 @@
     </div>
   </div>
 
+  <div class="card" id="profileCard">
+    <h2>Calibration profile (portable)</h2>
+    <div class="note" style="margin-bottom:8px">The fitted correction curve. Export it to a file, then import it on your <b>other</b> device — the profile is portable across the nRF and ESP32 builds (and the desk tools).</div>
+    <div class="kv"><span class="k">Current curve</span><span id="curveInfo">–</span></div>
+    <div class="row" style="margin-top:10px">
+      <button class="ghost" id="btnCurveExport" disabled>Export profile</button>
+      <button class="ghost" id="btnCurveImport" disabled>Import profile…</button>
+      <input id="curveFile" type="file" accept=".json,application/json" style="display:none">
+    </div>
+  </div>
+
   <div class="card">
     <h2>Workout &amp; erg (drive a trainer)</h2>
     <div class="note" style="margin-bottom:8px">Connects to an FTMS trainer as a third link and holds the workout's target power (erg). Pick a trainer, load a preset, press Start.</div>
@@ -212,6 +223,7 @@ class BleTransport {
       try { await get(key); await sub(this.ch[key], v => this[evt](parse(v))); }
       catch (e) { this.ch[key] = null; this.onLog(`${key} not available (older firmware)`); }
     }
+    try { await get("curv"); } catch (e) { this.ch.curv = null; }  // read/write, no notify
     if (this.ch.scan) { try { this.onScan(parseScan(await this.ch.scan.readValue())); } catch (e) {} }
     this.onConn(true, this.dev.name || "");
     this.onLog(`connected to ${this.dev.name}`);
@@ -225,6 +237,26 @@ class BleTransport {
   }
   async getConfig() { return parseConfig(await this.ch.cfg.readValue()); }
   async setConfig(c) { await this.ch.cfg.writeValueWithResponse(packConfig(c)); return parseConfig(await this.ch.cfg.readValue()); }
+  // Curve char (0x0005): [ver, nPoints, {power u16, factor u16 milli}...] — a portable profile.
+  async getCurve() {
+    if (!this.ch.curv) return { hasCurve: false, breakpoints: [] };
+    const d = await this.ch.curv.readValue();
+    if (d.byteLength < 2 || d.getUint8(0) !== VER) return { hasCurve: false, breakpoints: [] };
+    const n = d.getUint8(1), bp = [];
+    for (let i = 0; i < n; i++) bp.push([d.getUint16(2 + i * 4, true), d.getUint16(4 + i * 4, true) / 1000]);
+    return { hasCurve: n > 0, breakpoints: bp };
+  }
+  async setCurve(bp) {
+    if (!this.ch.curv) throw new Error("this device has no curve characteristic");
+    const pts = bp.slice(0, 8);  // GATT cap is 8 points
+    const b = new Uint8Array(2 + pts.length * 4), v = new DataView(b.buffer);
+    b[0] = VER; b[1] = pts.length;
+    pts.forEach(([p, f], i) => {
+      v.setUint16(2 + i * 4, Math.max(0, Math.min(65535, Math.round(p))), true);
+      v.setUint16(4 + i * 4, Math.max(250, Math.min(4000, Math.round(f * 1000))), true);  // 0.25–4.0×
+    });
+    await this.ch.curv.writeValueWithResponse(b);
+  }
   async scan() {}  // the bridge scans autonomously; ScanList pushes updates
   calStart(ref) { return this._wstr("cal", 1, ref); }
   calCancel() { return this._w("cal", [VER, 2]); }
@@ -363,6 +395,10 @@ class HttpTransport {
     await this._post("/config", JSON.stringify({ scale: c.scale, offset: c.offset, single_sided: c.singleSided, src_filter: c.srcFilter, out_name: c.outName }));
     return this.getConfig();
   }
+  // /curve: GET returns breakpoints; POST takes the compact "power:factor,.." form (the ESP32 parses
+  // it with curveFromString — no JSON parser on-device). Same portable profile as the BLE Curve char.
+  async getCurve() { try { const j = await this._get("/curve"); return { hasCurve: !!j.has_curve, breakpoints: j.curve || [] }; } catch (e) { return { hasCurve: false, breakpoints: [] }; } }
+  setCurve(bp) { return this._post("/curve", bp.map(([p, f]) => `${(+p).toFixed(1)}:${(+f).toFixed(4)}`).join(",")); }
   scan() { return this._post("/setup/scan"); }
   calStart(ref) { return this._post("/calibrate/start", "ref=" + encodeURIComponent(ref)); }
   calCancel() { return this._post("/calibrate/cancel"); }
@@ -397,7 +433,7 @@ PRESETS.forEach((p, i) => { const o = document.createElement("option"); o.value 
 
 function setConnected(on) {
   $("connDot").classList.toggle("on", on);
-  ["btnApply","btnRec","btnStop","btnDownload","btnErase","btnCalStart","btnWkSetTrainer","btnWkLoad","btnWkStart"].forEach(id => $(id).disabled = !on);
+  ["btnApply","btnRec","btnStop","btnDownload","btnErase","btnCalStart","btnWkSetTrainer","btnWkLoad","btnWkStart","btnCurveExport","btnCurveImport"].forEach(id => $(id).disabled = !on);
   if (!on) ["btnWkPause","btnWkStop","btnBiasDown","btnBiasUp"].forEach(id => $(id).disabled = true);
   $("btnDisconnect").disabled = !on; $("btnConnect").disabled = on;
   if (!on) $("devName").textContent = "";
@@ -482,7 +518,7 @@ function wire(t) {
   T = t;
   t.onStatus = renderStatus; t.onScan = renderScan; t.onCal = renderCal; t.onWk = renderWk;
   t.onRec = renderRec; t.onRecDone = onRecDone; t.onLog = log;
-  t.onConn = (on, name) => { setConnected(on); if (on) { $("devName").textContent = name; loadConfig(); } log(on ? "connected" : "disconnected"); };
+  t.onConn = (on, name) => { setConnected(on); if (on) { $("devName").textContent = name; loadConfig(); refreshCurve(); } log(on ? "connected" : "disconnected"); };
   if (!t.caps.recording) $("recCard").style.display = "none";
   if (t.kind === "ble" && !navigator.bluetooth) $("unsupported").style.display = "block";
 }
@@ -493,6 +529,33 @@ async function loadConfig() {
     $("cfgSingle").checked = !!c.singleSided; $("cfgSrc").value = c.srcFilter; $("cfgOut").value = c.outName;
   } catch (e) {}
 }
+// ---- Calibration profile (portable curve; format = the desk-tooling CalibrationProfile) ----
+async function refreshCurve() {
+  try { const c = await T.getCurve(); $("curveInfo").textContent = c.hasCurve ? `${c.breakpoints.length} points` : "none (linear)"; }
+  catch (e) { $("curveInfo").textContent = "–"; }
+}
+function profileBreakpoints(p) {  // accept our export or a Python CalibrationProfile (grid)
+  const bp = Array.isArray(p.breakpoints) ? p.breakpoints : Array.isArray(p.curve) ? p.curve : [];
+  return bp.map(([power, factor]) => [+power, +factor]).filter(([p2, f]) => isFinite(p2) && isFinite(f));
+}
+$("btnCurveExport").onclick = async () => {
+  const cur = await T.getCurve();
+  const profile = { kind: cur.hasCurve ? "grid" : "scale_offset", target: "", ref: "",
+    breakpoints: cur.breakpoints, scale: 1.0, offset: 0.0,
+    meta: { source: "bike-bridge-web", device: T.kind, exported: new Date().toISOString() } };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(profile, null, 2)], { type: "application/json" }));
+  const a = document.createElement("a"); a.href = url; a.download = `calibration-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+  URL.revokeObjectURL(url); log(`exported ${cur.breakpoints.length}-point profile`);
+};
+$("btnCurveImport").onclick = () => $("curveFile").click();
+$("curveFile").onchange = async e => {
+  const file = e.target.files[0]; if (!file) return;
+  try {
+    const bp = profileBreakpoints(JSON.parse(await file.text()));
+    await T.setCurve(bp); log(`imported ${bp.length}-point profile`); refreshCurve();
+  } catch (err) { log(`import failed: ${err.message}`); }
+  e.target.value = "";
+};
 $("btnConnect").onclick = async () => { try { await T.connect(); } catch (e) { log(`connect failed: ${e.message}`); } };
 $("btnDisconnect").onclick = () => T.disconnect();
 $("btnApply").onclick = async () => {

@@ -1,11 +1,14 @@
 #pragma once
 // Pure JSON serializers for the shared web SPA's HTTP transport (web/HTTP-API.md). The ESP32 serves
 // the SAME index.html the nRF build does; its `HttpTransport` reads these endpoints instead of GATT.
-// /status + /workout/state already have serializers (Status.h / WorkoutEngine.h); these add the two
-// the SPA also needs — /scan (source picker) and /config (correction + identity display). Host-tested.
+// /status + /workout/state already have serializers (Status.h / WorkoutEngine.h); these add the ones
+// the SPA also needs — /scan (source picker), /config (identity display), /curve (calibration profile
+// export). Host-tested.
+#include <cstdio>
 #include <string>
 #include <vector>
 
+#include "Correction.h"
 #include "RuntimeConfig.h"
 #include "SourceCandidate.h"
 #include "Status.h"  // jsonEscape
@@ -38,6 +41,22 @@ inline std::string renderConfigJson(const RuntimeConfig& c) {
     j += ",\"out_name\":\"" + jsonEscape(c.spoofName) + "\"";
     j += ",\"has_curve\":" + std::string(c.curve.points.empty() ? "false" : "true");
     j += "}";
+    return j;
+}
+
+// GET /curve -> the device's correction curve as portable breakpoints, so the SPA can wrap it in a
+// calibration profile the OTHER device (or the desk tooling) can load. Breakpoints are [power_w,
+// factor] at the same precision as curveToString / the Python profile (1 dp power, 4 dp factor).
+inline std::string renderCurveJson(const CorrectionCurve& curve) {
+    std::string j = "{\"has_curve\":" + std::string(curve.points.empty() ? "false" : "true");
+    j += ",\"curve\":[";
+    char buf[48];
+    for (size_t i = 0; i < curve.points.size(); ++i) {
+        if (i) j += ",";
+        std::snprintf(buf, sizeof(buf), "[%.1f,%.4f]", curve.points[i].power_w, curve.points[i].factor);
+        j += buf;
+    }
+    j += "]}";
     return j;
 }
 

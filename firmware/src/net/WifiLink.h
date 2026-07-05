@@ -102,6 +102,11 @@ public:
         workoutControl_ = control;
     }
 
+    // POST /curve: load a portable correction curve live (import a calibration profile). The hook
+    // persists it + applies it to the running proxy (no reboot) — the shared web SPA's import path.
+    using CurveSetHook = std::function<void(const CorrectionCurve&)>;
+    void setCurveHandler(CurveSetHook set) { curveSet_ = set; }
+
     // Call from loop(): services HTTP + OTA (station) or the captive DNS + portal (setup), and
     // promotes to healthy (which cancels the boot-guard and validates the running OTA image).
     void handle();
@@ -142,6 +147,7 @@ private:
     ConfigProvider configProvider_;
     SourcesProvider sourcesProvider_;
     ConfigSaveHook configSave_;
+    CurveSetHook curveSet_;
     ScanHook configScan_;
     DiagFramesProvider diagFrames_;
     CalViewProvider calView_;
