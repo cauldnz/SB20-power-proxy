@@ -169,3 +169,9 @@ followed device's adverts must stop** — ours never did, and checking at 07:45 
 
 **Recovery (small, anytime):** read the connected-device name off qdomyos's UI → arm the sniffer on that
 address → reopen qdomyos → capture the connection setup + a resistance nudge. ~5 min of rider time.
+
+**Post-ride clarification (owner):** the qdomyos host is an **iOS device** → its control path is
+**BLE-only** (it can never emit ANT+ — the ANT capture only ever sees the bike/meters), and iOS uses
+**rotating private addresses** (consistent with the `75:eb:46:xx` initiator seen twice under different
+addresses). So the recovery sniff must follow the **bike-side peripheral** qdomyos names in its UI —
+never the phone, whose MAC won't stay put.
