@@ -2485,3 +2485,36 @@ literally the same file.
 - **Plan reconciled to actual:** forward-plan §9 + the session ledger now point at
   `sessions/session-10` rewritten as the 2-day on-bike plan (Day 1 real-SB20 erg drive = §14 phase 5;
   Day 2 tester UX — QR onboarding / filtered picker / shared `/app` SPA across all three boards).
+
+## 2026-07-06 — Passive capture of a qdomyos Peloton ride: FTMS dump ✅; the sniff followed the wrong device (qdomyos does NOT use the bike's FTMS connection)
+- **Setting:** owner rode a real qdomyos-zwift Peloton-mode workout on the SB20 (~07:44–08:09); we ran
+  the passive run-sheet `sessions/CAPTURE-qdomyos-sb20-passive.md` (nRF sniffer + ANT+ stick, strictly
+  read-only). Rider confirms **qdomyos auto-drove the bike's resistance** (Peloton follow) all ride.
+- **✅ Pre-ride uncontended FTMS GATT dump** of the bike (`E4:AA:5A:D6:0E:D4`, advertises unnamed;
+  = the `Stages Bike 0105` FTMS device of capture G): `QDZ-sb20-ftms-gatt-20260706-0739.jsonl`
+  (149 events, clean connect, reads + subscriptions only). Desk analysis pending.
+- **❌ The 30-min sniff followed `E4:AA:5A:D6:0E:D4` — and that device was never connected.**
+  `QDZ-sniff-qdomyos-sb20-20260706-0742.pcap` (22,036 frames, t=0→1780 s): E4 advertised
+  **continuously** (13,509 ADV_INDs, no gap) ⇒ **qdomyos never connects to the bike's FTMS surface,
+  yet still drives resistance** — the Peloton-mode control channel is on some other link. Devices that
+  went silent (= got connected) at capture start: `a4:cb:8f:da:e9:cd` (a "Stages 62144" address),
+  `de:f2:ed:c4:f3:fd` (**"SB20 Bridge"** — newly seen name), and `38:44:be:45:e9:a6` (our C3 spoof
+  "Stages 62145"). Only 2 CONNECT_INDs on air, **both CRC-bad**; the t≈355 s one was initiated by
+  `75:eb:46:aa:6e:7f` (likely the qdomyos host's rotating address), target byte-corrupt. So the pcap is
+  a **negative result + advert timelines**, not the control protocol.
+- **ANT+:** `16_scan_ant.py` is a *discovery* scanner (IDs only, no stream): saw Stages `#62144`,
+  power meters `#17039`/`#29064` (one is the daughter's stray Assiomas — she rode alongside, much lower
+  power), unknown type-35 `#7092`, and FE-C `#105` (the bike — consistent with QUICK-multi).
+- **Env drift found + fixed (bike machine):** a Wireshark upgrade **wiped the staged extcap** from
+  `%APPDATA%\Wireshark\extcap` — `sniff_ble.py` now needs
+  `--extcap-dir C:\repos\nrf52840-mdk-usb-dongle\tools\ble_sniffer\extcap` (the makerdiary checkout).
+  And the venv lacked ANT+ deps: `pip install openant libusb` + prepend
+  `...\site-packages\libusb\_platform\windows\x86_64` to PATH (pyusb "No backend available" otherwise).
+- **Lesson (promoted to nrf-sniffer.md + the run-sheet):** "sniff the SB20" is ambiguous — the SB20 is
+  ≥3 BLE personalities (the E4 FTMS bike, crank addresses, "SB20 Bridge"). A follow-mode sniff must
+  target **the device the controller actually connects to**, and the live sanity check is cheap: within
+  ~a minute of the app connecting, the followed device's adverts must STOP. Ours never did; checking at
+  07:45 would have saved the window.
+- **Recovery plan (small, anytime):** read the connected-device name off the qdomyos UI → arm
+  `sniff_ble.py` on that address → reopen qdomyos → catch the connection setup + a resistance nudge.
+  ~5 min of rider time.

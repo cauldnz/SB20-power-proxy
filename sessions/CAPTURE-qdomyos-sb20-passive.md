@@ -1,5 +1,12 @@
 # 📡 Passive capture — a qdomyos-zwift Peloton ride on the SB20
 
+**Status: ✅ DONE (2026-07-06)** — ran during a real ~25-min ride. **Outcome:** FTMS GATT dump ✅ captured
+clean; ANT+ inventory ✅; the ⭐ §2 sniff is a **negative result** — it followed `E4:AA:5A:D6:0E:D4` (the
+bike's FTMS address) and that device was **never connected**: qdomyos drove resistance over some *other*
+link (candidates: "SB20 Bridge" `de:f2:ed:c4:f3:fd`, a crank address, or the C3 spoof — all went silent at
+capture start). Full findings + the recovery plan: `code/findings/decisions.md` § 2026-07-06. Actual
+timeline at the bottom of this doc.
+
 **Opportunistic passive-monitoring run** (NOT a numbered ledger session — doesn't block session 10).
 For a **second Claude on the bike laptop** to execute while the owner rides. The owner is doing a
 qdomyos-zwift **Peloton-mode** ride on the real **Stages SB20**; two USB radios are plugged in (an
@@ -122,3 +129,43 @@ python code/scripts/16_scan_ant.py --duration 600 `
   Supported Power/Resistance Range** (the clamp our erg client should respect).
 - Whether the SB20 exposes anything on **ANT+**.
 - Bonus: the SB20's proprietary/Stages control surface if qdomyos uses it instead of standard FTMS.
+
+---
+
+## Actual (2026-07-06) — what happened
+
+**Pre-flight (§0), ~07:35–07:43.** Both radios ✅ after two env fixes (a Wireshark upgrade had wiped the
+staged extcap from `%APPDATA%\Wireshark\extcap` → pass
+`--extcap-dir C:\repos\nrf52840-mdk-usb-dongle\tools\ble_sniffer\extcap`; the venv lacked
+`openant`/`pyusb`/libusb → `pip install openant libusb` + the libusb x86_64 DLL dir on PATH). First scan:
+bike asleep. Rider woke it → `e4:aa:5a:d6:0e:d4` advertising (unnamed — `--name SB20` would have matched
+**"SB20 Bridge"** instead; used `--address`). New names on air: **"SB20 Bridge"** `de:f2:ed:c4:f3:fd`,
+"Stages 4963" `e3:25:39:38:92:71`, a third "Stages 62144" address.
+
+**§1 FTMS dump 07:39 ✅** → `QDZ-sb20-ftms-gatt-20260706-0739.jsonl` (149 events, clean).
+
+**§2 sniff 07:42–08:12 (stopped early; 3300 s window armed)** → `QDZ-sniff-qdomyos-sb20-20260706-0742.pcap`,
+22,036 frames. Deliberately started **before** qdomyos connected (per `nrf-sniffer.md` — the run-sheet's
+"start it right after qdomyos connects" above is **wrong**; a follow must witness the CONNECT_IND).
+
+**§3 ANT+ 07:42–08:12** → `QDZ-ant-20260706-0742.jsonl`. Note: `16_scan_ant.py` is a **discovery scanner**
+(device IDs only, no data stream) — a future run wanting ANT payloads should use the capture scripts
+(`01`/`07`) instead.
+
+**Ride timeline (rider annotations):** 07:44:03 pairing qdomyos · qdomyos **auto-drove resistance**
+(Peloton follow) throughout · a stray pair of Assiomas on air (daughter riding alongside; much lower
+power — one of ANT+ `#17039`/`#29064`) · 08:09:15 ride stopped · 08:11:40 workout ended + app quit.
+
+**Verdict on §2 (tshark):** `E4` advertised continuously all ride (13,509 ADV_INDs, t=0→1780 s) ⇒
+**qdomyos never connected to the bike's FTMS surface yet still drove resistance** — the control channel
+is on another link. Devices that went silent (= connected) at capture start: `a4:cb:8f:da:e9:cd`
+("Stages 62144"), `de:f2:ed:c4:f3:fd` ("SB20 Bridge"), `38:44:be:45:e9:a6` (our C3 spoof). Only two
+CONNECT_INDs, **both CRC-bad** (the t≈355 s one initiated by `75:eb:46:aa:6e:7f`, likely the qdomyos
+host). So: no ATT/GATT captured; the pcap's value is the advert timelines + the negative result.
+
+**Lesson:** "sniff the SB20" is ambiguous — the SB20 presents ≥3 BLE personalities. Target the device the
+controller *actually connects to*, and sanity-check live: **within ~1 min of the app connecting, the
+followed device's adverts must stop** — ours never did, and checking at 07:45 would have saved the window.
+
+**Recovery (small, anytime):** read the connected-device name off qdomyos's UI → arm the sniffer on that
+address → reopen qdomyos → capture the connection setup + a resistance nudge. ~5 min of rider time.

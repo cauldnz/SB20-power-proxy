@@ -25,6 +25,14 @@ just these four steps — the rest of this doc is the *why* + the one-time flash
        --output code/findings/captures/SNIFF-sb20-app-$(date +%Y%m%d-%H%M).pcap
    ```
    (`--duration` secs; auto-detects the COM port. It's time-bounded + shuts the dongle down cleanly.)
+
+   **⚠️ Follow the RIGHT device — and verify it live.** The SB20 presents **several BLE personalities**
+   (the bike's FTMS at `E4:AA:5A:D6:0E:D4`, crank addresses "Stages 62144", an **"SB20 Bridge"**), and a
+   controller app may connect to a different one than you expect — a 2026-07-06 qdomyos ride drove the
+   bike's resistance **without ever connecting to `E4:AA:5A`**, so a 30-min follow of that address caught
+   zero GATT. The cheap live check: **within ~1 min of the app connecting, the followed device's adverts
+   must STOP** (a connected peripheral goes quiet). If `sniff_ble.py` keeps logging steady packet counts
+   from adverts alone, you're following the wrong device — re-target *now*, not after the ride.
 4. **Analyze.** Open the `.pcap` in Wireshark, or run it through the tshark→SQLite indexer
    (`sb20proxy.analysis.pcap_sqlite`) — **never hand-parse Nordic BLE pcaps**. Commit the `.pcap` to
    `findings/captures/` as the canonical record + note it in the session / `decisions.md`.
@@ -51,7 +59,7 @@ Error" in Device Manager is just the missing nRF-Connect driver — irrelevant o
 | Piece | State |
 |---|---|
 | **Wireshark** | ✅ 4.6.6 (`winget install WiresharkFoundation.Wireshark`) |
-| **nRF Sniffer extcap plugin** (v4.1.1) | ✅ staged in `%APPDATA%\Wireshark\extcap` (`nrf_sniffer_ble.py` + `.bat` + `SnifferAPI/`) |
+| **nRF Sniffer extcap plugin** (v4.1.1) | ⚠️ was staged in `%APPDATA%\Wireshark\extcap` — **a Wireshark upgrade wiped it (found 2026-07-06)**. Durable copy: the makerdiary checkout — pass `--extcap-dir C:\repos\nrf52840-mdk-usb-dongle\tools\ble_sniffer\extcap` to `sniff_ble.py` (or re-stage into `%APPDATA%`, which survives until the next upgrade) |
 | **Python deps** (`pyserial>=3.5`, `psutil`) | ✅ installed in the `py -3` interpreter the plugin uses |
 | **`nrfutil`** + `nrf5sdk-tools` (DFU flasher) | ✅ `winget install NordicSemiconductor.nrfutil` then `nrfutil install nrf5sdk-tools` (gives legacy `pkg` + `dfu`) |
 | **Sniffer firmware** (matched v4.1.1) | ✅ **flashed** — converted from the v4.1.1 `.uf2` to `C:\repos\nrf_sniffer_ble_v4.1.1.hex` → DFU package `C:\repos\sniffer_dfu.zip` |
