@@ -22,6 +22,7 @@ All multi-byte fields are **little-endian**. First byte of every payload is a fo
 | RecData | `…-0004-…` | notify | chunked IMU download stream |
 | Curve | `…-0005-…` | read, write | piecewise power→factor correction curve (wins over scale/offset) |
 | Calibrate | `…-0006-…` | write, notify | on-device DUT→reference calibration control + state |
+| ScanList | `…-0007-…` | read, notify | nearby meters/trainers for the source picker |
 
 Full UUIDs: replace `XXXX` in `53423230-XXXX-4bd9-a4ae-1b4e2c633a1d`.
 
@@ -98,6 +99,25 @@ apply the curve) · `4` discard.
 Notify (16 bytes): `[ver, state(0 idle·1 collecting·2 fitted), reserved, pairCount u16, minPairs u16,
 residual ×10 W i16, coverage u8[6], enoughToFit u8]` — emitted @1 Hz while collecting so the wizard
 shows pairs + per-bin coverage climbing.
+
+## ScanList (read + notify, P3)
+
+Nearby power meters / trainers the bridge has seen, for the web source picker. Read or subscribe;
+pushed @≤2 Hz when new devices appear. `[ver, count, {name[19], rssi i8, flags u8}...]` — 21-byte
+slots, up to 8 (strongest-first). flags: `b0` isCps · `b1` isFtms (trainer) · `b2` isStagesCrank.
+
+## BLE OTA (firmware update over Bluetooth, P3)
+
+The board runs the Adafruit **buttonless DFU** service (`BLEDfu`), so firmware updates over BLE —
+no USB reflash. To update:
+
+1. Build the DFU package from the compiled firmware:
+   `adafruit-nrfutil dfu genpkg --dev-type 0x0052 --application .pio/build/xiao-sense/firmware.hex app.zip`
+2. Push it over BLE (needs a BLE-capable link — an nRF52 dongle in the PC, or on-device nRF tooling):
+   `adafruit-nrfutil dfu ble -f -pkg app.zip -a <bridge-addr> --name "SB20 Bridge"`
+
+The bridge reboots into the bootloader's OTA mode on the DFU trigger and back into the app when
+done. USB DFU (`pio -t upload`) still works as the fallback.
 
 ## Memory budget (why recording is bounded)
 

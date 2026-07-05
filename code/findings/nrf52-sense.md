@@ -128,3 +128,25 @@ The one thing static analysis can't show is a *motion* spike — needs the board
 115200); the on-air path stays the production interface. NOTE: a dev reflash wipes the LittleFS
 config, so a freshly-flashed board has no source filter and will thrash trying to grab any CPS
 advertiser on air (harmless; set a filter via the web app / Config write to settle it).
+
+## ESP32 capability ports (P1–P4, 2026-07-05)
+
+The owner asked which ESP32 features to port; picked all four batches. Status:
+- **P1** (#221): correction curve · single-sided ×2 · zero-offset forwarding · RGB status LED.
+  All verified on real relayed data (fake_meter → bridge).
+- **P2** (#222): **on-device calibration** — the pure `CalibrationSession` (shared) fits a
+  power→factor curve from a paired reference-meter ride (2nd Bluefruit central). Fit math proven
+  on-device (serial `CALTEST`: DUT 10% low → ×1.111 curve, residual 0.00 W). Two-meter LIVE test
+  gated on the owner's real XCadey+Assioma (not the concurrent session's boards).
+- **P3**: **BLE OTA** (Adafruit `BLEDfu` — update over Bluetooth, no USB) + **scan-based source
+  picker** (pure `SourceCandidate`, exposed via the ScanList characteristic). Picker proven on the
+  bench: 4 on-air devices discovered + correctly classified (CPS / FTMS-trainer / Stages-crank),
+  strongest-first. Web app shows a tap-to-select list.
+- **P4** (next): FTMS erg + workouts + shifter.
+
+**nRF bench-verification pattern:** the desktop Windows GATT cache goes stale on every reflash
+(it caches per device-address and auto-reconnects), so on-board behaviour is verified over the
+USB serial console (`IMUTEST`, `CALTEST`, `SCANLIST`, `SHOW`, `SINGLE1/0`, `CURVE`, `ZERO`) rather
+than fighting the cache — the reliable path for this board. Also: the Adafruit `Arduino.h` defines
+`abs/round/min/max` as macros that break `std::` inside the shared pure headers; `#undef` them
+before those includes.
