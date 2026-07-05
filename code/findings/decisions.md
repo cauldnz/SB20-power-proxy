@@ -2518,3 +2518,46 @@ literally the same file.
 - **Recovery plan (small, anytime):** read the connected-device name off the qdomyos UI → arm
   `sniff_ble.py` on that address → reopen qdomyos → catch the connection setup + a resistance nudge.
   ~5 min of rider time.
+
+## 2026-07-06 (desk analysis) — SB20 FTMS surface DECODED from the pre-ride GATT dump: fully erg-capable, real bytes.
+Analysed `QDZ-sb20-ftms-gatt-20260706-0739.jsonl` (149 events, clean passive connect to the bike's FTMS
+device `E4:AA:5A:D6:0E:D4`). This is the **real-capture validation** of the spec-built FTMS codec — the
+bike's control surface, with exact bytes. **Headline: the SB20's own FTMS declares power-target (erg)
+support + a writable Control Point + a 0–4000 W range — i.e. our on-device `FtmsErgClient` (Request
+Control → Start → Set Target Power) can drive the real bike directly.**
+
+- **Device (DIS):** mfr **"Stages Cycling"**, model **"SB20"**, serial **"H0512210105"**, fw **1.1**,
+  hw **0.0**, sw **1.12.4+3792**. Advertises **unnamed** (name filter `--name SB20` would NOT match it —
+  use the address; this is why the ride's sniff followed the right FTMS device but the run-sheet's name
+  advice was wrong).
+- **GATT services on E4:** GAP, GATT, DIS, **Fitness Machine 0x1826** (7 chars), **CSC 0x1816** (Cycling
+  Speed & Cadence — NOT CPS 0x1818), two unknown Stages services **0xbe5f / 0xbeaf** (2 chars each,
+  proprietary), and **Nordic DFU 0xfe59** (buttonless). The FTMS chars: Indoor Bike Data `0x2AD2`
+  (notify), Fitness Machine Status `0x2ADA` (notify), **Control Point `0x2AD9` (write + indicate)** ✓,
+  Feature `0x2ACC` (read), Supported Power Range `0x2AD8`, Supported Resistance Level Range `0x2AD6`,
+  Supported Inclination Range `0x2AD5`. (No Training Status `0x2AD3` on this device, unlike the
+  spec-built table — the codec must not assume it.)
+- **Feature `0x2ACC` = `8a4000000e200000`** (two u32 LE):
+  - Machine Features `0x0000408a` → **Cadence** (b1), **Inclination** (b3), **Resistance Level** (b7),
+    **Power Measurement** (b14).
+  - Target Setting Features `0x0000200e` → **Inclination Target** (b1), **Resistance Target** (b2),
+    **POWER TARGET / erg** (b3), **Indoor Bike Simulation** (b13). ⇒ both erg (Set Target Power) AND
+    sim (Set Indoor Bike Simulation) AND direct resistance are advertised-supported.
+- **Supported Power Range `0x2AD8` = `0000a00f0100`** → **0…4000 W, 1 W increment** (s16 min, s16 max,
+  u16 inc). This is the clamp `FtmsPowerRange` should read on the real bike (the sim uses 0…1000).
+- **Supported Resistance Level Range `0x2AD6` = `0000ff000100`** → 0…255, step 1.
+- **Supported Inclination Range `0x2AD5` = `18fce8030100`** → −100.0…+100.0 %, 0.1 % step (wide placeholder).
+- **Indoor Bike Data `0x2AD2` is MULTI-FRAME** (the bike emits three distinct notification shapes, not one
+  combined frame — our reader must dispatch on flags per-frame, not assume a fixed layout):
+  - flags `0x00c5` (b0 no-speed, b2 cadence, b6 inst-power, b7 avg-power), 8 B: `c500 <cad u16 ×0.5>
+    <power s16> <avgpower s16>` — e.g. `c5005a00bd000000` → 45 rpm, 189 W (avg-power field present but 0).
+  - flags `0x0000` (b0 clear ⇒ inst-speed present), 4 B: `0000 <speed u16 ×0.01 km/h>`.
+  - flags `0x0011` (b0 no-speed, b4 total-distance), distance updates.
+  - Ride values observed: power 0–391 W, cadence 0–66 rpm (easy warm-up window). Validates the **bit0
+    inversion** (speed present when More-Data=0) already documented in ftms-protocol.md.
+- **Consistency:** matches ftms-protocol.md's spec-built claims — Target-Setting **bit3 = Power Target**
+  is set, Machine bit1 cadence + bit14 power-measurement set, Power Range is s16/s16/u16. The spec codec
+  was right; this pins it to real bytes. `ftms-protocol.md` updated: passive surface now **validated on
+  air**; only the **`--erg` write round-trip** (does the bike's resistance actually track a Set Target
+  Power we send) remains uncaptured — qdomyos did NOT answer it (it never used E4; see the ride entry),
+  so it stays the §14-phase-5 / recovery-capture gate.
