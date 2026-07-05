@@ -156,9 +156,19 @@ The owner asked which ESP32 features to port; picked all four batches. Status:
   FTMS trainer on air (`SB20-FTMS-Server`) belongs to the concurrent session; the encoders + workout
   runtime are proven, only the on-air control loop against a free trainer remains.
 
-**nRF bench-verification pattern:** the desktop Windows GATT cache goes stale on every reflash
-(it caches per device-address and auto-reconnects), so on-board behaviour is verified over the
-USB serial console (`IMUTEST`, `CALTEST`, `SCANLIST`, `SHOW`, `SINGLE1/0`, `CURVE`, `ZERO`) rather
-than fighting the cache — the reliable path for this board. Also: the Adafruit `Arduino.h` defines
-`abs/round/min/max` as macros that break `std::` inside the shared pure headers; `#undef` them
-before those includes.
+**nRF verification pattern (two layers):**
+1. **Pure wire-format core → CI.** `firmware-nrf/lib/bridge/` (`Proto.h` + `ImuCapture.h`) is
+   board-free, so it has a host Unity suite (`pio test -e native` from `firmware-nrf/`, run in CI
+   alongside the ESP32 native tests). 21 golden-vector tests pin every GATT layout documented in
+   `firmware-nrf/GATT.md` — Status/Config/Curve/RecCtl/RecState/CalState/**WkState**/ScanList + the
+   RecData framing (incl. the seq-254-vs-0xFE-trailer regression) + `ImuCapture` fill/auto-stop/crc.
+   These are the byte-for-byte authority the web app (JS) and Connect IQ (Monkey C) mirror, so the
+   vectors catch drift in the firmware **or** either mirror.
+2. **On-board glue → serial bench.** The desktop Windows GATT cache goes stale on every reflash (it
+   caches per device-address and auto-reconnects), so on-board behaviour (radio wiring, live erg,
+   calibration collection) is verified over the USB serial console (`IMUTEST`, `CALTEST`, `SCANLIST`,
+   `WKTEST`, `SHOW`, `SINGLE1/0`, `CURVE`, `ZERO`) rather than fighting the cache — the reliable path
+   for this board.
+
+Also: the Adafruit `Arduino.h` defines `abs/round/min/max` as macros that break `std::` inside the
+shared pure headers; `#undef` them before those includes.

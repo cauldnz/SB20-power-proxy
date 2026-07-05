@@ -82,3 +82,11 @@ jobs:
       # code is compiled by CI — a break in it would only surface at the bench (2026-06-24).
       - name: Compile WiFi/OTA firmware (net + web + OTA code)
         run: pio run -e esp32c3-wifi
+
+      # Host-side Unity tests for the nRF52840 Sense bridge's pure wire-format core
+      # (firmware-nrf/lib/bridge: Proto.h + ImuCapture.h) — the byte-for-byte authority the Web
+      # Bluetooth app and Connect IQ app mirror. The native env is board-free, so it runs here
+      # (the on-board glue stays bench-verified over serial; see findings/nrf52-sense.md).
+      - name: Test nRF bridge wire-format core (native)
+        working-directory: firmware-nrf
+        run: pio test -e native
