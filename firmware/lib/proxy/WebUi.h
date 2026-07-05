@@ -13,8 +13,9 @@ namespace sb20proxy {
 // that use it are host-tested, so this is covered transitively.
 inline const char* webuiCss() {
     return
-        ":root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--accent:#3b82f6;"
-        "--bad:#ef4444;--line:#1c2334;--chip2:#2a3142}"
+        // TOKENS-GEN:START — generated from design/tokens.json (run design/gen_tokens.py); do not edit by hand
+        ":root{--bg:#0f1320;--card:#1a2030;--fg:#e8ecf4;--mut:#8b93a7;--ok:#22c55e;--accent:#3b82f6;--bad:#ef4444;--line:#1c2334;--chip2:#2a3142;--title:#151d2e;}"
+        // TOKENS-GEN:END
         "*{box-sizing:border-box}"
         "body{margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);"
         "color:var(--fg);overflow-x:hidden}"
