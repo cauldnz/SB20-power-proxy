@@ -2383,3 +2383,35 @@ The findings that matter most for us:
 - **Builds clean** for edge540 + epix2 (CIQ SDK 9.2). On-device validation pending on the owner's
   Edge 540 / Epix 2 (morning). The portable Temurin JDK 21 (SDK bundles no JRE) lives in the session
   scratchpad; `build.sh` needs a JDK 17+ on PATH.
+
+## 2026-07-05 — UI convergence: shared web SPA (one file, two transports) + single-source design tokens
+
+Owner ask: "re-use the UI as much as possible between the versions... ESP32 HTML UI and nRF HTML UI
+almost completely common so we reduce overhead when we make changes." Recon found the visual language
+was already shared but PHYSICALLY duplicated 4× (WebUi.h, the nRF app, LcdCanvas.h RGB565, the mockups),
+and the ESP32 web UI is already ~half an SPA (static shells + 1 Hz JSON polling of /status,/workout/state
+— not heavy server-render). Owner chose: go straight to the shared SPA; sequence nRF+tokens first,
+ESP32 last (don't collide with the active ftms-erg-phase4 session).
+
+- **Design tokens single source (PR #229):** `design/tokens.json` → `design/gen_tokens.py` writes the
+  palette between `TOKENS-GEN` markers into web/index.html (:root), WebUi.h (:root string), LcdCanvas.h
+  (RGB565). `code/tests/test_tokens_sync.py` (`--check`) is CI-guarded so the copies can't drift. A
+  palette change is now ONE edit (proven: flipping --accent updated all three). Reconciled the nRF app's
+  outlier --line/--title to the design-system values.
+- **`web/` = the canonical SPA home (PR #229):** one self-contained index.html served to two hosts —
+  GitHub Pages (nRF, Web Bluetooth) and, later, the ESP32 (embedded over HTTP). `web/deploy.sh` pushes to
+  `cauldnz/bike-bridge-web`.
+- **Transport seam (PR #230):** the SPA's view renders from normalized objects and never touches GATT or
+  fetch. `BleTransport` (Web Bluetooth, the current nRF path moved behind the interface byte-for-byte) +
+  `HttpTransport` (fetch to the ESP32 JSON API, written to `web/HTTP-API.md`, lights up when the ESP32
+  serves the file). `pickTransport()` auto-selects (device origin → HTTP; Pages/file → BLE), so the
+  deployed nRF app is unchanged. Per-transport `caps` hide host-absent features (ESP32 has no IMU → the
+  recording card hides). Verified: node --check clean, token --check green, headless render identical
+  (presets populate = boot ran), BLE parsers reviewed field-by-field vs the bench-proven original.
+  Deployed to Pages (bike-bridge-web cb8a373).
+- **DEFERRED (U4):** the ESP32 side — add the `web/HTTP-API.md` JSON endpoints (GET/POST /config, GET
+  /scan, /calibrate/state, /workout/bias), embed web/index.html as a served route. Then the ESP32 and nRF
+  web UIs are literally the same file. Held until the concurrent ftms-erg-phase4 session merges (it edits
+  the same WifiLink/WebApp files).
+- Also filled a gap: PROJECT-MAP had NO nRF-track section — added one (the whole firmware-nrf bridge +
+  the shared web UI) so future planning finds it.
