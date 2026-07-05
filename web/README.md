@@ -13,20 +13,21 @@ ESP32 serves the page inline with no asset routes. One file → identical bytes 
 
 ## How one file serves two transports
 
-The target architecture: all device I/O goes through a `Transport` interface — `connect`, `onStatus`,
-`getConfig`/`setConfig`, `scan`/`onScanList`, the calibration + workout + recording ops — with two
-implementations:
+All device I/O goes through a `Transport` interface — `connect`, `onStatus`, `getConfig`/`setConfig`,
+`scan`/`onScan`, the calibration + workout + recording ops — with two implementations, both
+translating to/from the **same normalized objects** the view renders:
 
 - **`BleTransport`** — Web Bluetooth GATT (mirrors `firmware-nrf/GATT.md`, PROTO_VER 1).
-- **`HttpTransport`** — `fetch()` to the ESP32's JSON API.
+- **`HttpTransport`** — `fetch()` to the ESP32's JSON API (contract: [`HTTP-API.md`](HTTP-API.md)).
 
-A factory auto-selects: served from a device origin (its `/status` probe answers) → HTTP; a static
-site with `navigator.bluetooth` → BLE. The view layer never calls GATT or `fetch` directly, so a UI
-change lands on both hosts at once.
+`pickTransport()` auto-selects: served from a device origin (its `/status` probe answers) → HTTP;
+GitHub Pages / `file:` → BLE. The view never calls GATT or `fetch` directly, so a UI change lands on
+both hosts at once. Per-transport `caps` hide features a host lacks (e.g. the ESP32 has no IMU, so the
+Track-recording card is hidden there).
 
-**Status:** the Web Bluetooth path is what ships today (the nRF build). The `Transport`-interface
-refactor + `HttpTransport` (and the ESP32 embedding this file + serving a matching JSON API) land in
-follow-ups — see the "UI unification" tasks.
+**Status:** the `Transport` seam + `BleTransport` are live (what the nRF build ships). `HttpTransport`
+is written to the `HTTP-API.md` contract and auto-selects when served from a device, but is unverified
+until the ESP32 side (its JSON endpoints + embedding this file) lands — the deferred U4 task.
 
 ## Design tokens
 
