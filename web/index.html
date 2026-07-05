@@ -139,7 +139,7 @@
     <div class="kv" style="margin-top:8px"><span class="k">Trainer link</span><span id="wkLink">–</span></div>
   </div>
 
-  <div class="card">
+  <div class="card" id="recCard">
     <h2>Track recording (IMU)</h2>
     <div class="row">
       <select id="recRate" style="width:auto">
@@ -167,339 +167,363 @@
 
 <script>
 "use strict";
-// ---- The Bridge GATT contract (mirror of firmware GATT.md / Proto.h; PROTO_VER 1) ----------
-const SVC     = "53423230-0000-4bd9-a4ae-1b4e2c633a1d";
-const CH_STAT = "53423230-0001-4bd9-a4ae-1b4e2c633a1d";
-const CH_CFG  = "53423230-0002-4bd9-a4ae-1b4e2c633a1d";
-const CH_RCTL = "53423230-0003-4bd9-a4ae-1b4e2c633a1d";
-const CH_RDAT = "53423230-0004-4bd9-a4ae-1b4e2c633a1d";
-const CH_CURV = "53423230-0005-4bd9-a4ae-1b4e2c633a1d";
-const CH_CAL  = "53423230-0006-4bd9-a4ae-1b4e2c633a1d";
-const CH_SCAN = "53423230-0007-4bd9-a4ae-1b4e2c633a1d";
-const CH_WK   = "53423230-0008-4bd9-a4ae-1b4e2c633a1d";
-const SVC_CPS = 0x1818;
+// The shared Bike Bridge SPA. Device I/O goes through a Transport; two implementations —
+// BleTransport (Web Bluetooth, GitHub Pages host) and HttpTransport (fetch, ESP32 host) — both
+// translate to/from the SAME normalized objects the view renders, so a UI change lands on both:
+//   Status {srcConnected,recording,srcW,outW,cad,bal,scale,offset,recN,uptime}
+//   Config {scale,offset,singleSided,srcFilter,outName}
+//   Scan   [{name,rssi,isCps,isFtms,isCrank}]
+//   Cal    {state(0/1/2),pairs,minPairs,resid,coverage[6],enough}
+//   Wk     {loaded,running,paused,ergConnected,ergControlled,target,segIndex,nSeg,segRemain,elapsed,bias}
+//   Rec    {state(0/1/2),rate,n,capacity}
+// The view sets t.on{Status,Scan,Cal,Wk,Rec,RecDone,Conn,Log}; it never calls GATT/fetch directly.
 const VER = 1;
-// Preset labels mirror firmware WorkoutPresets.h (index-addressed, no GATT enumeration).
 const PRESETS = ["4×8 Threshold", "Sweet Spot 3×12", "VO2 5×3", "Endurance 45"];
-
 const $ = id => document.getElementById(id);
+
+// ================= BleTransport (Web Bluetooth) =================
+const SVC = "53423230-0000-4bd9-a4ae-1b4e2c633a1d";
+const CH = { stat:"0001", cfg:"0002", rctl:"0003", rdat:"0004", curv:"0005", cal:"0006", scan:"0007", wk:"0008" };
+const uuid = s => `53423230-${s}-4bd9-a4ae-1b4e2c633a1d`;
+const dec = b => new TextDecoder().decode(b).replace(/\0+$/, "");
+
+class BleTransport {
+  constructor() {
+    this.kind = "ble"; this.autoConnect = false;
+    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:true };
+    this.dev = null; this.ch = {}; this.dl = null;
+    this.onStatus = this.onScan = this.onCal = this.onWk = this.onRec = this.onRecDone =
+      this.onConn = this.onLog = () => {};
+  }
+  async connect() {
+    this.dev = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: "SB20" }], optionalServices: [SVC, 0x1818],
+    });
+    this.dev.addEventListener("gattserverdisconnected", () => this.onConn(false, ""));
+    const server = await this.dev.gatt.connect();
+    const svc = await server.getPrimaryService(SVC);
+    const get = async key => (this.ch[key] = await svc.getCharacteristic(uuid(CH[key])));
+    const sub = (c, fn) => { c.addEventListener("characteristicvaluechanged", e => fn(e.target.value)); return c.startNotifications(); };
+    await get("stat"); await get("rctl"); await get("cfg"); await get("rdat");
+    await sub(this.ch.stat, v => this.onStatus(parseStatus(v)));
+    await sub(this.ch.rctl, v => this.onRec(parseRec(v)));
+    await sub(this.ch.rdat, v => this._recData(v));
+    for (const [key, evt, parse] of [["cal","onCal",parseCal], ["scan","onScan",parseScan], ["wk","onWk",parseWk]]) {
+      try { await get(key); await sub(this.ch[key], v => this[evt](parse(v))); }
+      catch (e) { this.ch[key] = null; this.onLog(`${key} not available (older firmware)`); }
+    }
+    if (this.ch.scan) { try { this.onScan(parseScan(await this.ch.scan.readValue())); } catch (e) {} }
+    this.onConn(true, this.dev.name || "");
+    this.onLog(`connected to ${this.dev.name}`);
+  }
+  disconnect() { this.dev?.gatt?.disconnect(); }
+  _w(key, bytes) { return this.ch[key]?.writeValueWithResponse(new Uint8Array(bytes)); }
+  _wstr(key, cmd, str) {
+    const s = new TextEncoder().encode(str.slice(0, 19));
+    const b = new Uint8Array(2 + s.length); b[0] = VER; b[1] = cmd; b.set(s, 2);
+    return this.ch[key]?.writeValueWithResponse(b);
+  }
+  async getConfig() { return parseConfig(await this.ch.cfg.readValue()); }
+  async setConfig(c) { await this.ch.cfg.writeValueWithResponse(packConfig(c)); return parseConfig(await this.ch.cfg.readValue()); }
+  async scan() {}  // the bridge scans autonomously; ScanList pushes updates
+  calStart(ref) { return this._wstr("cal", 1, ref); }
+  calCancel() { return this._w("cal", [VER, 2]); }
+  calSave() { return this._w("cal", [VER, 3]); }
+  wkSetTrainer(n) { return this._wstr("wk", 1, n); }
+  wkLoad(i) { return this._w("wk", [VER, 2, i]); }
+  wkStart() { return this._w("wk", [VER, 3]); }
+  wkPause() { return this._w("wk", [VER, 4]); }
+  wkResume() { return this._w("wk", [VER, 5]); }
+  wkStop() { return this._w("wk", [VER, 6]); }
+  wkBias(d) { return this._w("wk", [VER, 8, d < 0 ? 256 + d : d]); }
+  recSetRate(hz) { return this._w("rctl", [VER, 4, hz]); }
+  recStart() { return this._w("rctl", [VER, 1]); }
+  recStop() { return this._w("rctl", [VER, 0]); }
+  recErase() { return this._w("rctl", [VER, 2]); }
+  recDownload() { this.dl = { frames: new Map(), total: 0, rate: 52 }; return this._w("rctl", [VER, 3]); }
+  _recData(d) {
+    if (!this.dl) return;
+    const t = d.getUint8(1);
+    if (t === 0xFF && d.byteLength >= 12) {
+      this.dl.rate = d.getUint8(2); this.dl.total = d.getUint32(4, true); this.dl.frames = new Map();
+      this.onLog(`download: ${this.dl.total} samples @${this.dl.rate}Hz`);
+    } else if (t === 0xFD) {
+      const seq = d.getUint16(2, true), n = d.getUint8(4);
+      this.dl.frames.set(seq, new Uint8Array(new Uint8Array(d.buffer, d.byteOffset + 6, n * 12)));
+    } else if (t === 0xFE && d.byteLength >= 6) {
+      this.onRecDone(assembleImu(this.dl, d.getUint32(2, true))); this.dl = null;
+    }
+  }
+}
+// --- BLE byte <-> normalized parsers/packers ---
+function parseStatus(d) {
+  const f = d.getUint8(1);
+  return { srcConnected: !!(f & 1), recording: !!(f & 4), srcW: d.getInt16(2, true), outW: d.getInt16(4, true),
+    cad: d.getInt16(6, true), bal: d.getInt8(8), scale: d.getUint16(10, true) / 1000, offset: d.getInt16(12, true) / 10,
+    recN: d.getUint32(14, true), uptime: d.getUint16(18, true) };
+}
+function parseConfig(d) {
+  return { scale: d.getUint16(2, true) / 1000, offset: d.getInt16(4, true) / 10, singleSided: !!(d.getUint8(1) & 4),
+    srcFilter: dec(new Uint8Array(d.buffer, d.byteOffset + 6, 19)), outName: dec(new Uint8Array(d.buffer, d.byteOffset + 25, 19)) };
+}
+function packConfig(c) {
+  const b = new Uint8Array(44), v = new DataView(b.buffer);
+  b[0] = VER; b[1] = c.singleSided ? 4 : 0;
+  v.setUint16(2, Math.round((c.scale || 1) * 1000), true);
+  v.setInt16(4, Math.round((c.offset || 0) * 10), true);
+  new TextEncoder().encodeInto((c.srcFilter || "").slice(0, 19), b.subarray(6, 25));
+  new TextEncoder().encodeInto((c.outName || "").slice(0, 19), b.subarray(25, 44));
+  return b;
+}
+function parseScan(d) {
+  const n = d.getUint8(1), out = [];
+  for (let i = 0; i < n; i++) {
+    const o = 2 + i * 21, f = d.getUint8(o + 20);
+    out.push({ name: dec(new Uint8Array(d.buffer, d.byteOffset + o, 19)), rssi: d.getInt8(o + 19),
+      isCps: !!(f & 1), isFtms: !!(f & 2), isCrank: !!(f & 4) });
+  }
+  return out;
+}
+function parseCal(d) {
+  const cov = []; for (let i = 0; i < 6; i++) cov.push(d.getUint8(9 + i));
+  return { state: d.getUint8(1), pairs: d.getUint16(3, true), minPairs: d.getUint16(5, true),
+    resid: d.getInt16(7, true) / 10, coverage: cov, enough: !!d.getUint8(15) };
+}
+function parseWk(d) {
+  const f = d.getUint8(1);
+  return { loaded: !!(f & 1), running: !!(f & 2), paused: !!(f & 4), ergConnected: !!(f & 8), ergControlled: !!(f & 16),
+    target: d.getInt16(2, true), segIndex: d.getUint8(4), nSeg: d.getUint8(5), segRemain: d.getUint16(6, true),
+    elapsed: d.getUint16(10, true), bias: d.getInt16(12, true) };
+}
+function parseRec(d) { return { state: d.getUint8(1), rate: d.getUint8(2), n: d.getUint32(4, true), capacity: d.getUint32(8, true) }; }
+
+// IMU download assembly (BLE-only) -> {csv, mags, n, ok, rate}
+function crc32(bytes) {
+  let c, crc = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) { c = (crc ^ bytes[i]) & 0xFF; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xEDB88320 & (-(c & 1))); crc = (crc >>> 8) ^ c; }
+  return (~crc) >>> 0;
+}
+function assembleImu(dl, devCrc) {
+  const seqs = [...dl.frames.keys()].sort((a, b) => a - b);
+  let len = 0; seqs.forEach(s => len += dl.frames.get(s).length);
+  const blob = new Uint8Array(len); let o = 0; seqs.forEach(s => { blob.set(dl.frames.get(s), o); o += dl.frames.get(s).length; });
+  const ok = crc32(blob) === devCrc, n = len / 12, v = new DataView(blob.buffer);
+  let csv = "t_s,ax_g,ay_g,az_g,gx_dps,gy_dps,gz_dps\n"; const mags = [];
+  for (let i = 0; i < n; i++) {
+    const s = [];
+    for (let a = 0; a < 6; a++) { const rv = v.getInt16(i * 12 + a * 2, true); s.push(a < 3 ? (rv * 0.000488).toFixed(4) : (rv * 0.070).toFixed(2)); }
+    if (i % Math.max(1, Math.floor(n / 520)) === 0) mags.push(Math.hypot(+s[0], +s[1], +s[2]));
+    csv += `${(i / dl.rate).toFixed(4)},${s.join(",")}\n`;
+  }
+  return { csv, mags, n, ok, rate: dl.rate };
+}
+
+// ================= HttpTransport (ESP32 fetch/JSON) =================
+// Contract: web/HTTP-API.md. Live data by 1 Hz poll of /status + /workout/state (the ESP32 already
+// serves these); config/scan/calibration use JSON endpoints added ESP32-side (U4). No IMU on the
+// ESP32, so recording is off. Auto-selected when served from the device; unverified until U4 lands.
+class HttpTransport {
+  constructor() {
+    this.kind = "http"; this.autoConnect = true;
+    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:false };
+    this.cfg = { scale: 1, offset: 0 }; this.timer = null;
+    this.onStatus = this.onScan = this.onCal = this.onWk = this.onRec = this.onRecDone =
+      this.onConn = this.onLog = () => {};
+  }
+  async _get(p) { const r = await fetch(p, { cache: "no-store" }); if (!r.ok) throw new Error(`${p} ${r.status}`); return r.json(); }
+  _post(p, body) { return fetch(p, { method: "POST", body: body || "" }); }
+  async connect() {
+    try { this.cfg = await this.getConfig(); } catch (e) {}
+    this.onConn(true, location.hostname);
+    const tick = async () => {
+      try {
+        const s = await this._get("/status");
+        this.onStatus({ srcConnected: s.source === "connected", recording: false,
+          srcW: s.src_power_w ?? -1, outW: s.power_w ?? -1, cad: s.src_cadence_rpm ?? -1, bal: s.src_balance_pct ?? -1,
+          scale: this.cfg.scale, offset: this.cfg.offset, recN: 0, uptime: Math.round((s.ms || 0) / 1000) });
+      } catch (e) {}
+      try {
+        const w = await this._get("/workout/state");
+        this.onWk({ loaded: !!w.loaded, running: !!w.running, paused: !!w.paused, ergConnected: !!w.erg_connected, ergControlled: !!w.erg_controlled,
+          target: w.seg_target_w ?? 0, segIndex: w.seg_index ?? 0, nSeg: w.seg_count ?? 0, segRemain: w.seg_remaining_s ?? 0,
+          elapsed: w.total_elapsed_s ?? 0, bias: w.bias_w ?? 0 });
+      } catch (e) {}
+      try { const sc = await this._get("/scan"); this.onScan((sc.devices || []).map(d => ({ name: d.name, rssi: d.rssi, isCps: !!d.cps, isFtms: !!d.ftms, isCrank: !!d.crank }))); } catch (e) {}
+      try { const c = await this._get("/calibrate/state"); this.onCal({ state: c.state, pairs: c.pairs, minPairs: c.min_pairs, resid: c.residual_w, coverage: c.coverage || [0,0,0,0,0,0], enough: !!c.enough }); } catch (e) {}
+    };
+    tick(); this.timer = setInterval(tick, 1000);
+  }
+  disconnect() { if (this.timer) clearInterval(this.timer); this.onConn(false, ""); }
+  async getConfig() {
+    const j = await this._get("/config");
+    this.cfg = { scale: j.scale, offset: j.offset, singleSided: !!j.single_sided, srcFilter: j.src_filter || "", outName: j.out_name || "" };
+    return this.cfg;
+  }
+  async setConfig(c) {
+    await this._post("/config", JSON.stringify({ scale: c.scale, offset: c.offset, single_sided: c.singleSided, src_filter: c.srcFilter, out_name: c.outName }));
+    return this.getConfig();
+  }
+  scan() { return this._post("/setup/scan"); }
+  calStart(ref) { return this._post("/calibrate/start", "ref=" + encodeURIComponent(ref)); }
+  calCancel() { return this._post("/calibrate/cancel"); }
+  calSave() { return this._post("/calibrate/save"); }
+  wkSetTrainer(n) { return this._post("/workout/trainer", "name=" + encodeURIComponent(n)); }
+  wkLoad(i) { return this._post("/workout/preset?key=" + ["4x8", "ss3x12", "vo25x3", "endur45"][i]); }
+  wkStart() { return this._post("/workout/start"); }
+  wkPause() { return this._post("/workout/pause"); }
+  wkResume() { return this._post("/workout/resume"); }
+  wkStop() { return this._post("/workout/stop"); }
+  wkBias(d) { return this._post("/workout/bias?d=" + d); }
+  recSetRate() {} recStart() {} recStop() {} recErase() {} recDownload() {}  // no IMU on the ESP32
+}
+
+// ================= transport factory =================
+async function pickTransport() {
+  // Served from a device (its /status answers with our JSON) -> HTTP. GitHub Pages / file -> BLE.
+  const fromDevice = location.protocol.startsWith("http") && !/github\.io$/i.test(location.hostname);
+  if (fromDevice) {
+    try {
+      const r = await fetch("/status", { cache: "no-store", signal: AbortSignal.timeout(1500) });
+      if (r.ok) { const j = await r.json(); if (j && ("power_w" in j || "fw" in j)) return new HttpTransport(); }
+    } catch (e) {}
+  }
+  return new BleTransport();
+}
+
+// ================= view =================
+let T = null;
 const log = m => { const d = $("log"); d.innerHTML = `<div>${new Date().toLocaleTimeString()} ${m}</div>` + d.innerHTML; };
-
-if (!navigator.bluetooth) $("unsupported").style.display = "block";
-
-let device = null, server = null, chCfg = null, chRctl = null, chCal = null, chWk = null;
-let dl = null;  // in-flight download state
-
-// Populate the preset dropdown once (labels mirror the firmware).
 PRESETS.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = p; $("wkPreset").appendChild(o); });
 
 function setConnected(on) {
   $("connDot").classList.toggle("on", on);
-  ["btnApply","btnRec","btnStop","btnDownload","btnErase","btnCalStart"].forEach(id => $(id).disabled = !on);
-  // Workout: Set-trainer/Load/Start available on connect; Pause/Stop/bias are state-driven (onWkState).
-  ["btnWkSetTrainer","btnWkLoad","btnWkStart"].forEach(id => $(id).disabled = !on);
+  ["btnApply","btnRec","btnStop","btnDownload","btnErase","btnCalStart","btnWkSetTrainer","btnWkLoad","btnWkStart"].forEach(id => $(id).disabled = !on);
   if (!on) ["btnWkPause","btnWkStop","btnBiasDown","btnBiasUp"].forEach(id => $(id).disabled = true);
-  $("btnDisconnect").disabled = !on;
-  $("btnConnect").disabled = on;
-  if (!on) { $("devName").textContent = ""; }
+  $("btnDisconnect").disabled = !on; $("btnConnect").disabled = on;
+  if (!on) $("devName").textContent = "";
 }
-
-// ---- ScanList: nearby meters/trainers (21-byte slots) ----
-function onScanList(ev) {
-  const d = ev.target.value;
-  if (d.byteLength < 2 || d.getUint8(0) !== VER) return;
-  const n = d.getUint8(1), el = $("scanList"), tel = $("trainerList");
-  el.innerHTML = ""; tel.innerHTML = "";
-  if (!n) { el.innerHTML = '<span class="note">no meters seen yet…</span>'; }
-  let nTrainers = 0;
-  for (let i = 0; i < n; i++) {
-    const o = 2 + i * 21;
-    const name = new TextDecoder().decode(new Uint8Array(d.buffer, d.byteOffset + o, 19)).replace(/\0+$/, "");
-    const rssi = d.getInt8(o + 19), flags = d.getUint8(o + 20);
-    const isTrainer = (flags & 2) !== 0;
-    const kind = isTrainer ? "trainer" : (flags & 4) ? "crank" : "meter";
-    const mkRow = target => {
-      const row = document.createElement("button");
-      row.className = "net";
-      row.innerHTML = `<span class="nm">${name}</span><span class="lk">${kind}</span><span class="sig" title="${rssi} dBm">${rssi}</span>`;
-      row.onclick = () => { $(target).value = name; };
-      return row;
+function renderStatus(s) {
+  $("srcW").textContent = s.srcW >= 0 ? s.srcW : "–";
+  $("outW").textContent = s.outW >= 0 ? s.outW : "–";
+  $("cad").textContent = s.cad >= 0 ? s.cad : "–";
+  $("bal").textContent = s.bal >= 0 ? s.bal : "–";
+  $("corr").textContent = `×${s.scale.toFixed(3)} ${s.offset >= 0 ? "+" : ""}${s.offset.toFixed(1)}`;
+  $("srcLink").textContent = s.srcConnected ? "connected" : "searching…";
+  $("uptime").textContent = `${Math.floor(s.uptime / 60)}m ${s.uptime % 60}s`;
+  $("recCount").textContent = s.recN;
+  if (s.recording) $("recState").textContent = "recording";
+}
+function renderScan(list) {
+  const el = $("scanList"), tel = $("trainerList"); el.innerHTML = ""; tel.innerHTML = ""; let nt = 0;
+  if (!list.length) el.innerHTML = '<span class="note">no meters seen yet…</span>';
+  for (const d of list) {
+    const kind = d.isFtms ? "trainer" : d.isCrank ? "crank" : "meter";
+    const mk = target => {
+      const r = document.createElement("button"); r.className = "net";
+      r.innerHTML = `<span class="nm">${d.name}</span><span class="lk">${kind}</span><span class="sig" title="${d.rssi} dBm">${d.rssi}</span>`;
+      r.onclick = () => { $(target).value = d.name; }; return r;
     };
-    el.appendChild(mkRow("cfgSrc"));                       // any device is a candidate source
-    if (isTrainer) { tel.appendChild(mkRow("wkTrainer")); nTrainers++; }  // trainers also list for erg
+    el.appendChild(mk("cfgSrc"));
+    if (d.isFtms) { tel.appendChild(mk("wkTrainer")); nt++; }
   }
-  if (!nTrainers) tel.innerHTML = '<span class="note">no trainers seen yet…</span>';
+  if (!nt) tel.innerHTML = '<span class="note">no trainers seen yet…</span>';
 }
-
-// ---- Calibration state (16 bytes) ----
-function onCalState(ev) {
-  const d = ev.target.value;
-  if (d.byteLength < 16 || d.getUint8(0) !== VER) return;
-  const st = d.getUint8(1);                       // 0 idle · 1 collecting · 2 fitted
-  const pairs = d.getUint16(3, true), minP = d.getUint16(5, true);
-  const resid = d.getInt16(7, true) / 10, enough = d.getUint8(15);
-  $("calState").textContent = ["idle","collecting","fitted"][st] || st;
-  $("calPairs").textContent = `${pairs} / ${minP}`;
-  $("calResid").textContent = st === 2 ? `±${resid.toFixed(1)} W` : "–";
-  const collecting = st === 1, fitted = st === 2;
-  $("btnCalStop").disabled = !collecting && !fitted;
-  $("btnCalSave").disabled = !(enough || fitted);
-  $("btnCalStart").disabled = collecting || fitted;
-  // coverage bars (6 power bins)
+function renderCal(c) {
+  $("calState").textContent = ["idle","collecting","fitted"][c.state] || c.state;
+  $("calPairs").textContent = `${c.pairs} / ${c.minPairs}`;
+  $("calResid").textContent = c.state === 2 ? `±${c.resid.toFixed(1)} W` : "–";
+  $("btnCalStop").disabled = c.state === 0;
+  $("btnCalSave").disabled = !(c.enough || c.state === 2);
+  $("btnCalStart").disabled = c.state !== 0;
   const cov = $("calCoverage"); cov.innerHTML = "";
-  for (let i = 0; i < 6; i++) {
-    const n = d.getUint8(9 + i);
+  c.coverage.forEach(n => {
     const bar = document.createElement("div");
-    bar.style.cssText = `flex:1;background:${n>=5?'var(--ok)':'var(--accent)'};border-radius:3px;height:${Math.min(100,n*12)}%;min-height:3px;opacity:${n?1:.25}`;
-    bar.title = `${n} pairs`;
-    cov.appendChild(bar);
-  }
-}
-
-// ---- Workout + erg state (18 bytes) ----
-function onWkState(ev) {
-  const d = ev.target.value;
-  if (d.byteLength < 18 || d.getUint8(0) !== VER) return;
-  const flags = d.getUint8(1);
-  const target = d.getInt16(2, true), segIdx = d.getUint8(4), nSeg = d.getUint8(5);
-  const segRemain = d.getUint16(6, true), elapsed = d.getUint16(10, true);
-  const bias = d.getInt16(12, true);
-  const loaded = !!(flags & 1), running = !!(flags & 2), paused = !!(flags & 4);
-  const ergConn = !!(flags & 8), ergCtl = !!(flags & 16);
-  const mmss = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
-  $("wkTarget").innerHTML = running ? `${target}<small> W target</small>` : `–<small> W target</small>`;
-  $("wkSeg").textContent = loaded
-    ? (running ? `segment ${segIdx+1}/${nSeg} · ${mmss(segRemain)} left` : `loaded · ${nSeg} segments`)
-    : "no workout";
-  $("wkElapsed").textContent = running ? mmss(elapsed) : "–";
-  $("wkBias").textContent = `${bias>=0?"+":""}${bias}`;
-  $("wkLink").textContent = ergConn ? (ergCtl ? "controlling" : "connected") : "searching…";
-  // state-driven buttons
-  $("btnWkStart").disabled = !loaded || running;
-  $("btnWkPause").disabled = !running;
-  $("btnWkPause").textContent = paused ? "Resume" : "Pause";
-  $("btnWkStop").disabled = !loaded;
-  $("btnBiasDown").disabled = $("btnBiasUp").disabled = !running || paused;
-}
-
-// ---- Status (20 bytes) ----
-function onStatus(ev) {
-  const d = ev.target.value;
-  if (d.byteLength < 20 || d.getUint8(0) !== VER) return;
-  const flags = d.getUint8(1);
-  const srcW = d.getInt16(2, true), outW = d.getInt16(4, true);
-  const cad = d.getInt16(6, true), bal = d.getInt8(8);
-  const scale = d.getUint16(10, true) / 1000, off = d.getInt16(12, true) / 10;
-  const recN = d.getUint32(14, true), up = d.getUint16(18, true);
-  $("srcW").textContent = srcW >= 0 ? srcW : "–";
-  $("outW").textContent = outW >= 0 ? outW : "–";
-  $("cad").textContent = cad >= 0 ? cad : "–";
-  $("bal").textContent = bal >= 0 ? bal : "–";
-  $("corr").textContent = `×${scale.toFixed(3)} ${off >= 0 ? "+" : ""}${off.toFixed(1)}`;
-  $("srcLink").textContent = (flags & 1) ? "connected" : "searching…";
-  $("uptime").textContent = `${Math.floor(up/60)}m ${up%60}s`;
-  $("recCount").textContent = recN;
-  if (flags & 4) { $("recState").textContent = "recording"; }
-}
-
-// ---- RecCtl state (12 bytes) ----
-let recCapacity = 8192;
-function onRecState(ev) {
-  const d = ev.target.value;
-  if (d.byteLength < 12 || d.getUint8(0) !== VER) return;
-  const st = d.getUint8(1), rate = d.getUint8(2);
-  const n = d.getUint32(4, true); recCapacity = d.getUint32(8, true) || recCapacity;
-  $("recState").textContent = ["idle","recording","downloading"][st] || st;
-  $("recCount").textContent = n;
-  $("recProg").value = n / recCapacity;
-  log(`rec: ${["idle","recording","downloading"][st]} n=${n} rate=${rate}Hz`);
-}
-
-// ---- RecData download ----
-function onRecData(ev) {
-  if (!dl) return;
-  const d = ev.target.value;
-  const t = d.getUint8(1);
-  if (t === 0xFF && d.byteLength >= 12) {
-    dl.rate = d.getUint8(2);
-    dl.total = d.getUint32(4, true);
-    dl.frames = new Map();
-    log(`download: ${dl.total} samples @${dl.rate}Hz`);
-  } else if (t === 0xFD) {
-    const seq = d.getUint16(2, true), n = d.getUint8(4);
-    const bytes = new Uint8Array(d.buffer, d.byteOffset + 6, n * 12);
-    dl.frames.set(seq, new Uint8Array(bytes));  // copy
-  } else if (t === 0xFE && d.byteLength >= 6) {
-    finishDownload(d.getUint32(2, true));
-  }
-}
-
-function crc32(bytes) {
-  let c, crc = 0xFFFFFFFF;
-  for (let i = 0; i < bytes.length; i++) {
-    c = (crc ^ bytes[i]) & 0xFF;
-    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xEDB88320 & (-(c & 1)));
-    crc = (crc >>> 8) ^ c;
-  }
-  return (~crc) >>> 0;
-}
-
-function finishDownload(devCrc) {
-  const seqs = [...dl.frames.keys()].sort((a, b) => a - b);
-  let len = 0; seqs.forEach(s => len += dl.frames.get(s).length);
-  const blob = new Uint8Array(len);
-  let o = 0; seqs.forEach(s => { blob.set(dl.frames.get(s), o); o += dl.frames.get(s).length; });
-  const ours = crc32(blob);
-  const n = len / 12;
-  log(`download done: ${n} samples, CRC ${ours === devCrc ? "OK" : "MISMATCH"}`);
-  // CSV: t, ax..gz in physical units (±16 g: 0.488 mg/LSB · ±2000 dps: 70 mdps/LSB)
-  const v = new DataView(blob.buffer);
-  let csv = "t_s,ax_g,ay_g,az_g,gx_dps,gy_dps,gz_dps\n";
-  const mags = [];
-  for (let i = 0; i < n; i++) {
-    const t = (i / dl.rate).toFixed(4);
-    const s = [];
-    for (let a = 0; a < 6; a++) {
-      const rawv = v.getInt16(i * 12 + a * 2, true);
-      s.push(a < 3 ? (rawv * 0.000488).toFixed(4) : (rawv * 0.070).toFixed(2));
-    }
-    if (i % Math.max(1, Math.floor(n / 520)) === 0)
-      mags.push(Math.hypot(+s[0], +s[1], +s[2]));
-    csv += `${t},${s.join(",")}\n`;
-  }
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-  const a = document.createElement("a");
-  a.href = url; a.download = `imu-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-  drawPreview(mags);
-  dl = null;
-}
-
-function drawPreview(mags) {
-  const cv = $("preview"), ctx = cv.getContext("2d");
-  ctx.clearRect(0, 0, cv.width, cv.height);
-  if (!mags.length) return;
-  const max = Math.max(2, ...mags);
-  ctx.strokeStyle = "#3b82f6"; ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  mags.forEach((m, i) => {
-    const x = i / (mags.length - 1) * cv.width;
-    const y = cv.height - (m / max) * (cv.height - 6) - 3;
-    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    bar.style.cssText = `flex:1;background:${n >= 5 ? "var(--ok)" : "var(--accent)"};border-radius:3px;height:${Math.min(100, n * 12)}%;min-height:3px;opacity:${n ? 1 : .25}`;
+    bar.title = `${n} pairs`; cov.appendChild(bar);
   });
+}
+function renderWk(w) {
+  const mmss = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  $("wkTarget").innerHTML = w.running ? `${w.target}<small> W target</small>` : `–<small> W target</small>`;
+  $("wkSeg").textContent = w.loaded ? (w.running ? `segment ${w.segIndex + 1}/${w.nSeg} · ${mmss(w.segRemain)} left` : `loaded · ${w.nSeg} segments`) : "no workout";
+  $("wkElapsed").textContent = w.running ? mmss(w.elapsed) : "–";
+  $("wkBias").textContent = `${w.bias >= 0 ? "+" : ""}${w.bias}`;
+  $("wkLink").textContent = w.ergConnected ? (w.ergControlled ? "controlling" : "connected") : "searching…";
+  $("btnWkStart").disabled = !w.loaded || w.running;
+  $("btnWkPause").disabled = !w.running;
+  $("btnWkPause").textContent = w.paused ? "Resume" : "Pause";
+  $("btnWkStop").disabled = !w.loaded;
+  $("btnBiasDown").disabled = $("btnBiasUp").disabled = !w.running || w.paused;
+}
+let recCapacity = 8192;
+function renderRec(r) {
+  recCapacity = r.capacity || recCapacity;
+  $("recState").textContent = ["idle","recording","downloading"][r.state] || r.state;
+  $("recCount").textContent = r.n;
+  $("recProg").value = r.n / recCapacity;
+  log(`rec: ${["idle","recording","downloading"][r.state]} n=${r.n} rate=${r.rate}Hz`);
+}
+function onRecDone(res) {
+  log(`download done: ${res.n} samples, CRC ${res.ok ? "OK" : "MISMATCH"}`);
+  const url = URL.createObjectURL(new Blob([res.csv], { type: "text/csv" }));
+  const a = document.createElement("a"); a.href = url; a.download = `imu-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`; a.click();
+  URL.revokeObjectURL(url); drawPreview(res.mags);
+}
+function drawPreview(mags) {
+  const cv = $("preview"), ctx = cv.getContext("2d"); ctx.clearRect(0, 0, cv.width, cv.height);
+  if (!mags.length) return; const max = Math.max(2, ...mags);
+  ctx.strokeStyle = "#3b82f6"; ctx.lineWidth = 1.5; ctx.beginPath();
+  mags.forEach((m, i) => { const x = i / (mags.length - 1) * cv.width, y = cv.height - (m / max) * (cv.height - 6) - 3; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
   ctx.stroke();
 }
 
-// ---- Config ----
-function packConfig() {
-  const b = new Uint8Array(44);
-  const v = new DataView(b.buffer);
-  b[0] = VER; b[1] = ($("cfgSingle").checked ? 4 : 0);  // b2 single-sided (ANT bits arrive with S340)
-  v.setUint16(2, Math.round(parseFloat($("cfgScale").value || "1") * 1000), true);
-  v.setInt16(4, Math.round(parseFloat($("cfgOffset").value || "0") * 10), true);
-  new TextEncoder().encodeInto($("cfgSrc").value.slice(0, 19), b.subarray(6, 25));
-  new TextEncoder().encodeInto($("cfgOut").value.slice(0, 19), b.subarray(25, 44));
-  return b;
+// wire a transport's events + the buttons; the view is transport-agnostic below here
+function wire(t) {
+  T = t;
+  t.onStatus = renderStatus; t.onScan = renderScan; t.onCal = renderCal; t.onWk = renderWk;
+  t.onRec = renderRec; t.onRecDone = onRecDone; t.onLog = log;
+  t.onConn = (on, name) => { setConnected(on); if (on) { $("devName").textContent = name; loadConfig(); } log(on ? "connected" : "disconnected"); };
+  if (!t.caps.recording) $("recCard").style.display = "none";
+  if (t.kind === "ble" && !navigator.bluetooth) $("unsupported").style.display = "block";
 }
-function loadConfigView(d) {
-  if (d.byteLength < 44 || d.getUint8(0) !== VER) return;
-  $("cfgScale").value = (d.getUint16(2, true) / 1000).toFixed(3);
-  $("cfgOffset").value = (d.getInt16(4, true) / 10).toFixed(1);
-  $("cfgSingle").checked = (d.getUint8(1) & 4) !== 0;
-  const dec = b => new TextDecoder().decode(b).replace(/\0+$/, "");
-  $("cfgSrc").value = dec(new Uint8Array(d.buffer, d.byteOffset + 6, 19));
-  $("cfgOut").value = dec(new Uint8Array(d.buffer, d.byteOffset + 25, 19));
-}
-
-// ---- wiring ----
-$("btnConnect").onclick = async () => {
+async function loadConfig() {
   try {
-    device = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: "SB20" }],
-      optionalServices: [SVC, SVC_CPS],
-    });
-    device.addEventListener("gattserverdisconnected", () => { setConnected(false); log("disconnected"); });
-    server = await device.gatt.connect();
-    const svc = await server.getPrimaryService(SVC);
-    const chStat = await svc.getCharacteristic(CH_STAT);
-    chCfg = await svc.getCharacteristic(CH_CFG);
-    chRctl = await svc.getCharacteristic(CH_RCTL);
-    const chRdat = await svc.getCharacteristic(CH_RDAT);
-    chStat.addEventListener("characteristicvaluechanged", onStatus);
-    chRctl.addEventListener("characteristicvaluechanged", onRecState);
-    chRdat.addEventListener("characteristicvaluechanged", onRecData);
-    await chStat.startNotifications();
-    await chRctl.startNotifications();
-    await chRdat.startNotifications();
-    try {  // Calibrate is a newer characteristic — tolerate older firmware without it
-      chCal = await svc.getCharacteristic(CH_CAL);
-      chCal.addEventListener("characteristicvaluechanged", onCalState);
-      await chCal.startNotifications();
-    } catch (e) { chCal = null; log("calibration not available (older firmware)"); }
-    try {  // ScanList (source picker) — also newer firmware
-      const chScan = await svc.getCharacteristic(CH_SCAN);
-      chScan.addEventListener("characteristicvaluechanged", onScanList);
-      await chScan.startNotifications();
-      onScanList({ target: { value: await chScan.readValue() } });  // seed with current list
-    } catch (e) { $("scanList").innerHTML = ""; }
-    try {  // Workout + erg — P4 firmware
-      chWk = await svc.getCharacteristic(CH_WK);
-      chWk.addEventListener("characteristicvaluechanged", onWkState);
-      await chWk.startNotifications();
-    } catch (e) { chWk = null; log("workout/erg not available (older firmware)"); }
-    loadConfigView(await chCfg.readValue());
-    $("devName").textContent = device.name || "";
-    setConnected(true);
-    log(`connected to ${device.name}`);
-  } catch (e) { log(`connect failed: ${e.message}`); }
-};
-$("btnDisconnect").onclick = () => device?.gatt?.disconnect();
+    const c = await T.getConfig();
+    $("cfgScale").value = c.scale.toFixed(3); $("cfgOffset").value = c.offset.toFixed(1);
+    $("cfgSingle").checked = !!c.singleSided; $("cfgSrc").value = c.srcFilter; $("cfgOut").value = c.outName;
+  } catch (e) {}
+}
+$("btnConnect").onclick = async () => { try { await T.connect(); } catch (e) { log(`connect failed: ${e.message}`); } };
+$("btnDisconnect").onclick = () => T.disconnect();
 $("btnApply").onclick = async () => {
   try {
-    await chCfg.writeValueWithResponse(packConfig());
-    loadConfigView(await chCfg.readValue());  // read back what stuck
-    log("config applied");
+    const c = await T.setConfig({ scale: parseFloat($("cfgScale").value || "1"), offset: parseFloat($("cfgOffset").value || "0"),
+      singleSided: $("cfgSingle").checked, srcFilter: $("cfgSrc").value, outName: $("cfgOut").value });
+    $("cfgScale").value = c.scale.toFixed(3); $("cfgOffset").value = c.offset.toFixed(1); $("cfgSingle").checked = !!c.singleSided;
+    $("cfgSrc").value = c.srcFilter; $("cfgOut").value = c.outName; log("config applied");
   } catch (e) { log(`config failed: ${e.message}`); }
 };
-$("btnRec").onclick = async () => {
-  await chRctl.writeValueWithResponse(new Uint8Array([VER, 4, +$("recRate").value]));
-  await chRctl.writeValueWithResponse(new Uint8Array([VER, 1]));
-};
-$("btnStop").onclick = () => chRctl.writeValueWithResponse(new Uint8Array([VER, 0]));
-$("btnErase").onclick = () => chRctl.writeValueWithResponse(new Uint8Array([VER, 2]));
-$("btnDownload").onclick = async () => {
-  dl = { frames: new Map(), total: 0, rate: 52 };
-  await chRctl.writeValueWithResponse(new Uint8Array([VER, 3]));
-};
-// ---- Calibration wizard ----
-$("btnCalStart").onclick = async () => {
-  const ref = $("calRef").value.slice(0, 19);
-  const b = new Uint8Array(2 + ref.length);
-  b[0] = VER; b[1] = 1;  // start
-  new TextEncoder().encodeInto(ref, b.subarray(2));
-  await chCal.writeValueWithResponse(b);
-  log(`calibration started (reference '${ref}')`);
-};
-$("btnCalStop").onclick = () => chCal.writeValueWithResponse(new Uint8Array([VER, 2]));   // cancel
-$("btnCalSave").onclick = async () => {
-  await chCal.writeValueWithResponse(new Uint8Array([VER, 3]));   // save fit -> correction curve
-  log("calibration saved — correction curve applied");
-};
-// ---- Workout + erg ----  (WkCmd: 1 setTrainer · 2 load · 3 start · 4 pause · 5 resume · 6 stop · 8 bias)
-const wkWrite = bytes => chWk?.writeValueWithResponse(new Uint8Array(bytes));
-$("btnWkSetTrainer").onclick = async () => {
-  const name = $("wkTrainer").value.slice(0, 19);
-  const b = new Uint8Array(2 + name.length); b[0] = VER; b[1] = 1;
-  new TextEncoder().encodeInto(name, b.subarray(2));
-  await wkWrite(b); log(name ? `trainer set to '${name}'` : "trainer cleared");
-};
-$("btnWkLoad").onclick = async () => { await wkWrite([VER, 2, +$("wkPreset").value]); log(`loaded '${PRESETS[+$("wkPreset").value]}'`); };
-$("btnWkStart").onclick = () => wkWrite([VER, 3]);
-$("btnWkPause").onclick = () => wkWrite([VER, $("btnWkPause").textContent === "Resume" ? 5 : 4]);
-$("btnWkStop").onclick  = () => wkWrite([VER, 6]);
-$("btnBiasDown").onclick = () => wkWrite([VER, 8, 0xF6]);  // -10 as i8 (256-10)
-$("btnBiasUp").onclick   = () => wkWrite([VER, 8, 10]);    // +10
+$("btnRec").onclick = async () => { await T.recSetRate(+$("recRate").value); await T.recStart(); };
+$("btnStop").onclick = () => T.recStop();
+$("btnErase").onclick = () => T.recErase();
+$("btnDownload").onclick = () => T.recDownload();
+$("btnCalStart").onclick = () => { const ref = $("calRef").value.slice(0, 19); T.calStart(ref); log(`calibration started (reference '${ref}')`); };
+$("btnCalStop").onclick = () => T.calCancel();
+$("btnCalSave").onclick = () => { T.calSave(); log("calibration saved — correction curve applied"); };
+$("btnWkSetTrainer").onclick = () => { const n = $("wkTrainer").value.slice(0, 19); T.wkSetTrainer(n); log(n ? `trainer set to '${n}'` : "trainer cleared"); };
+$("btnWkLoad").onclick = () => { const i = +$("wkPreset").value; T.wkLoad(i); log(`loaded '${PRESETS[i]}'`); };
+$("btnWkStart").onclick = () => T.wkStart();
+$("btnWkPause").onclick = () => ($("btnWkPause").textContent === "Resume" ? T.wkResume() : T.wkPause());
+$("btnWkStop").onclick = () => T.wkStop();
+$("btnBiasDown").onclick = () => T.wkBias(-10);
+$("btnBiasUp").onclick = () => T.wkBias(10);
+
+// ================= boot =================
+(async () => {
+  const t = await pickTransport();
+  wire(t);
+  if (t.autoConnect) { $("connectCard").style.display = "none"; try { await t.connect(); } catch (e) { log(`connect failed: ${e.message}`); } }
+})();
 </script>
 </body>
 </html>
