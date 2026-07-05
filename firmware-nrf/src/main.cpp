@@ -33,6 +33,48 @@ static Correction g_corr;
 static void applyCorrectionFromCfg() {
     g_corr.scale = g_cfg.scaleMilli / 1000.0f;
     g_corr.offset = g_cfg.offsetDeciW / 10.0f;
+    // NB: g_corr.curve (if populated by a Curve write / calibration) WINS over scale+offset in
+    // Correction::apply — so a fitted curve keeps applying regardless of the scalar fields.
+}
+
+// ---- correction curve (persisted separately from the scalar config) --------------------------
+static const char* kCurvePath = "/curve.bin";
+static void curveSave() {
+    InternalFS.remove(kCurvePath);
+    if (g_corr.curve.empty()) return;
+    File f(InternalFS);
+    if (f.open(kCurvePath, FILE_O_WRITE)) {
+        const uint8_t n = (uint8_t)g_corr.curve.points.size();
+        uint8_t buf[2 + CURVE_MAX_POINTS * 4];
+        CurvePoint pts[CURVE_MAX_POINTS];
+        for (uint8_t i = 0; i < n && i < CURVE_MAX_POINTS; ++i) {
+            pts[i].powerW = (uint16_t)g_corr.curve.points[i].power_w;
+            pts[i].factorMilli = (uint16_t)(g_corr.curve.points[i].factor * 1000.0f + 0.5f);
+        }
+        f.write(buf, packCurve(pts, n, buf));
+        f.close();
+    }
+}
+static void curveLoad() {
+    File f(InternalFS);
+    if (!f.open(kCurvePath, FILE_O_READ)) return;
+    uint8_t buf[2 + CURVE_MAX_POINTS * 4];
+    int rd = f.read(buf, sizeof(buf));
+    f.close();
+    CurvePoint pts[CURVE_MAX_POINTS];
+    int n = (rd >= 2) ? unpackCurve(buf, rd, pts) : -1;
+    if (n > 0) {
+        g_corr.curve = CorrectionCurve{};
+        for (int i = 0; i < n; ++i) g_corr.curve.add(pts[i].powerW, pts[i].factorMilli / 1000.0f);
+        Serial.printf("[bridge] correction curve loaded (%d points)\n", n);
+    }
+}
+
+// ---- RGB status LED (active-low; pins from the probe). Track use: glanceable link state. ------
+static void setLed(bool r, bool g, bool b) {
+    digitalWrite(LED_RED, r ? LOW : HIGH);
+    digitalWrite(LED_GREEN, g ? LOW : HIGH);
+    digitalWrite(LED_BLUE, b ? LOW : HIGH);
 }
 
 static void cfgLoad() {
@@ -66,6 +108,7 @@ static void cfgSave() {
 // ================= source side: BLE central reading a CPS meter ===============================
 static BLEClientService clientCps(UUID16_SVC_CYCLING_POWER);
 static BLEClientCharacteristic clientMeas(UUID16_CHR_CYCLING_POWER_MEASUREMENT);
+static BLEClientCharacteristic clientSrcCp(UUID16_CHR_CYCLING_POWER_CONTROL_POINT);  // for zero-fwd
 
 static volatile bool g_srcConnected = false;
 static uint16_t g_srcConnHandle = BLE_CONN_HANDLE_INVALID;  // the CENTRAL link (not the web app's)
@@ -93,12 +136,14 @@ static const uint8_t kUuidStatus[16] = BRIDGE_UUID(0x0001);
 static const uint8_t kUuidConfig[16] = BRIDGE_UUID(0x0002);
 static const uint8_t kUuidRecCtl[16] = BRIDGE_UUID(0x0003);
 static const uint8_t kUuidRecData[16] = BRIDGE_UUID(0x0004);
+static const uint8_t kUuidCurve[16] = BRIDGE_UUID(0x0005);
 
 static BLEService bridgeSvc(kUuidBridgeSvc);
 static BLECharacteristic chStatus(kUuidStatus);
 static BLECharacteristic chConfig(kUuidConfig);
 static BLECharacteristic chRecCtl(kUuidRecCtl);
 static BLECharacteristic chRecData(kUuidRecData);
+static BLECharacteristic chCurve(kUuidCurve);   // correction-curve write/read (P1)
 
 // ================= IMU capture =================================================================
 static LSM6DS3 imu(I2C_MODE, 0x6A);
@@ -170,10 +215,13 @@ static void measNotifyCb(BLEClientCharacteristic* /*chr*/, uint8_t* data, uint16
     const CpsBalance bal = decodeCpsBalance(data, len);
     r.balance_half_pct = bal.present ? bal.halfPct : -1;
     r.t_ms = millis();
+    // single-sided x2: a left/right-only crank reports half of total; double it BEFORE the
+    // correction so the correction scale/curve operates on total power (ESP32 semantics).
+    if (g_cfg.singleSided) r.power_w = (int16_t)(r.power_w * 2);
     g_lastSrc = r;
     g_lastSrcMs = r.t_ms;
 
-    PowerReading out = g_corr.apply(r);
+    PowerReading out = g_corr.apply(r);  // curve wins over scale/offset when populated
     g_lastOut = out;
 
     std::vector<uint8_t> frame;
@@ -196,6 +244,8 @@ static void centralConnectCb(uint16_t connHandle) {
         return;
     }
     clientMeas.enableNotify();
+    clientSrcCp.discover();  // the source's Cycling Power Control Point (0x2A66), for zero-forward
+                             // — optional; not every meter exposes it (Assioma does)
     // Remember who we latched onto (for the status surface / web app).
     BLEConnection* conn = Bluefruit.Connection(connHandle);
     if (conn) conn->getPeerName(g_srcName, sizeof(g_srcName) - 1);
@@ -227,12 +277,16 @@ static void periphDisconnectCb(uint16_t /*connHandle*/, uint8_t /*reason*/) {
 }
 
 // ================= output CP (zero-reset etc.) =================================================
+static volatile bool g_pendSourceZero = false;  // a head unit asked us to zero -> forward to source
+
 static void cpWriteCb(uint16_t connHandle, BLECharacteristic* /*chr*/, uint8_t* data,
                       uint16_t len) {
-    // The pure handler answers offset-comp / crank-length ops; we can't forward a real zero to
-    // the source yet (v1) but reply correctly so head units don't drop the link.
+    // The pure handler answers offset-comp / crank-length ops; when the head unit asks for a
+    // zero-reset (0x0C/0x10) we ALSO forward a real zero to the source meter — flagged here,
+    // written from loop() (never a re-entrant central op inside this callback).
     CpResult res = handleControlPoint(data, len, g_crankLenHalfMm, /*calOffset=*/0);
     if (res.crankLengthChanged) g_crankLenHalfMm = res.crankLengthHalfMm;
+    if (res.requestSourceZero) g_pendSourceZero = true;
     if (!res.response.empty()) outCp.indicate(connHandle, res.response.data(), res.response.size());
 }
 
@@ -254,6 +308,7 @@ static void configWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t
         Serial.println("[bridge] config write REJECTED (ANT routing needs the S340 SoftDevice)");
         return;
     }
+    const bool wasSingle = g_cfg.singleSided;
     const bool nameChanged = strncmp(c.outName, g_cfg.outName, CFG_NAME_LEN) != 0;
     const bool filterChanged = strncmp(c.srcFilter, g_cfg.srcFilter, CFG_NAME_LEN) != 0;
     g_cfg = c;
@@ -275,8 +330,29 @@ static void configWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t
             Bluefruit.Scanner.start(0);
         }
     }
-    Serial.printf("[bridge] config applied: scale=%.3f offset=%.1f src='%s' out='%s'\n",
-                  (double)g_corr.scale, (double)g_corr.offset, g_cfg.srcFilter, g_cfg.outName);
+    Serial.printf("[bridge] config applied: scale=%.3f offset=%.1f single2x=%d src='%s' out='%s'\n",
+                  (double)g_corr.scale, (double)g_corr.offset, g_cfg.singleSided, g_cfg.srcFilter,
+                  g_cfg.outName);
+    (void)wasSingle;
+}
+
+// Curve write: replace the correction curve (empty clears it -> back to scale/offset). Persisted.
+static void curveWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t* data,
+                         uint16_t len) {
+    CurvePoint pts[CURVE_MAX_POINTS];
+    int n = unpackCurve(data, len, pts);
+    if (n < 0) {
+        Serial.println("[bridge] curve write REJECTED (bad payload)");
+        return;
+    }
+    g_corr.curve = CorrectionCurve{};
+    for (int i = 0; i < n; ++i) g_corr.curve.add(pts[i].powerW, pts[i].factorMilli / 1000.0f);
+    curveSave();
+    // read-back
+    uint8_t buf[2 + CURVE_MAX_POINTS * 4];
+    chCurve.write(buf, packCurve(pts, (uint8_t)n, buf));
+    Serial.printf("[bridge] correction curve set (%d points; curve %s scale/offset)\n", n,
+                  n > 0 ? "overrides" : "cleared, using");
 }
 
 static void recCtlWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t* data,
@@ -331,6 +407,13 @@ void setup() {
 
     InternalFS.begin();
     cfgLoad();
+    curveLoad();
+
+    // RGB status LED (active-low)
+    pinMode(LED_RED, OUTPUT);
+    pinMode(LED_GREEN, OUTPUT);
+    pinMode(LED_BLUE, OUTPUT);
+    setLed(false, false, false);
 
     // IMU (power-gated on the Sense)
 #ifdef PIN_LSM6DS3TR_C_POWER
@@ -405,11 +488,27 @@ void setup() {
     chRecData.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
     chRecData.setMaxLen(180);
     chRecData.begin();
+    chCurve.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
+    chCurve.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    chCurve.setMaxLen(2 + CURVE_MAX_POINTS * 4);
+    chCurve.setWriteCallback(curveWriteCb);
+    chCurve.begin();
+    {   // publish the loaded curve for read-back
+        uint8_t buf[2 + CURVE_MAX_POINTS * 4];
+        CurvePoint pts[CURVE_MAX_POINTS];
+        const uint8_t n = (uint8_t)g_corr.curve.points.size();
+        for (uint8_t i = 0; i < n && i < CURVE_MAX_POINTS; ++i) {
+            pts[i].powerW = (uint16_t)g_corr.curve.points[i].power_w;
+            pts[i].factorMilli = (uint16_t)(g_corr.curve.points[i].factor * 1000.0f + 0.5f);
+        }
+        chCurve.write(buf, packCurve(pts, n, buf));
+    }
 
     // --- source: central scanning for a CPS meter ---
     clientCps.begin();
     clientMeas.setNotifyCallback(measNotifyCb);
     clientMeas.begin();
+    clientSrcCp.begin();  // the source's control point (zero-forward target)
     Bluefruit.Periph.setConnectCallback(periphConnectCb);
     Bluefruit.Periph.setDisconnectCallback(periphDisconnectCb);
     Bluefruit.Central.setConnectCallback(centralConnectCb);
@@ -532,7 +631,10 @@ static void imuSelfTest() {
 void loop() {
     const uint32_t now = millis();
 
-    // Serial self-test command (USB CDC): "IMUTEST" runs the IMU capture-path check.
+    // Serial self-test commands (USB CDC) — desk diagnostics, bench-verify the correction logic
+    // without a BLE client (the desktop Windows GATT cache fights repeated reflashes):
+    //   IMUTEST · SINGLE1/SINGLE0 (single-sided x2) · CURVE (200W->1.25 test curve) · LINEAR
+    //   (clear curve) · ZERO (trigger source zero-forward) · SHOW (print correction state).
     static char cmd[16];
     static uint8_t ci = 0;
     while (Serial.available()) {
@@ -540,6 +642,19 @@ void loop() {
         if (ch == '\n' || ch == '\r') {
             cmd[ci] = 0;
             if (strcmp(cmd, "IMUTEST") == 0) imuSelfTest();
+            else if (strcmp(cmd, "SINGLE1") == 0) { g_cfg.singleSided = true; cfgSave(); Serial.println("[test] single-sided x2 ON"); }
+            else if (strcmp(cmd, "SINGLE0") == 0) { g_cfg.singleSided = false; cfgSave(); Serial.println("[test] single-sided OFF"); }
+            else if (strcmp(cmd, "CURVE") == 0) {
+                g_corr.curve = CorrectionCurve{};
+                g_corr.curve.add(100, 1.0f); g_corr.curve.add(200, 1.25f); g_corr.curve.add(300, 1.25f);
+                curveSave(); Serial.println("[test] curve set: 100W:1.00 200W:1.25 300W:1.25");
+            }
+            else if (strcmp(cmd, "LINEAR") == 0) { g_corr.curve = CorrectionCurve{}; curveSave(); Serial.println("[test] curve cleared -> scale/offset"); }
+            else if (strcmp(cmd, "ZERO") == 0) { g_pendSourceZero = true; Serial.println("[test] source zero-forward queued"); }
+            else if (strcmp(cmd, "SHOW") == 0)
+                Serial.printf("[test] scale=%.3f offset=%.1f single2x=%d curve=%upts src=%dW->out=%dW\n",
+                    (double)g_corr.scale, (double)g_corr.offset, g_cfg.singleSided,
+                    (unsigned)g_corr.curve.points.size(), (int)g_lastSrc.power_w, (int)g_lastOut.power_w);
             ci = 0;
         } else if (ci < sizeof(cmd) - 1) {
             cmd[ci++] = ch;
@@ -563,6 +678,30 @@ void loop() {
         }
     } else if (g_recState == RecState::Downloading) {
         pumpDownload();
+    }
+
+    // Zero-offset forwarding: a head unit hit "calibrate" -> write CP 0x0C to the source meter's
+    // control point (from loop context, never inside the CP callback). Fire-and-forget, like the
+    // ESP32 seam; the meter's zero result comes back async (we already replied to the head unit).
+    if (g_pendSourceZero) {
+        g_pendSourceZero = false;
+        if (g_srcConnected && clientSrcCp.discovered()) {
+            const uint8_t z[1] = {CP_OP_START_OFFSET_COMP};  // 0x0C
+            clientSrcCp.write(z, sizeof(z));
+            Serial.println("[bridge] forwarded zero-offset (0x0C) to the source meter");
+        } else {
+            Serial.println("[bridge] zero requested but source has no control point");
+        }
+    }
+
+    // RGB status LED (glanceable on the track): recording=red · source linked=green · else blue.
+    static uint32_t ledAt = 0;
+    static bool bluePulse = false;
+    if (now - ledAt >= 500) {
+        ledAt = now;
+        if (g_recState == RecState::Recording) setLed(true, false, false);
+        else if (g_srcConnected) setLed(false, true, false);
+        else { bluePulse = !bluePulse; setLed(false, false, bluePulse); }  // searching: pulse blue
     }
 
     // Liveness heartbeat (5 s): scanner state — the scan path failed silently once already

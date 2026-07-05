@@ -17,9 +17,10 @@ All multi-byte fields are **little-endian**. First byte of every payload is a fo
 | Characteristic | UUID (`5342323e-XXXX-…`) | Props | Purpose |
 |---|---|---|---|
 | Status | `…-0001-…` | notify, read | live telemetry @2 Hz |
-| Config | `…-0002-…` | read, write | correction + identity + radio routing |
+| Config | `…-0002-…` | read, write | correction (scale/offset) + single-sided + identity + radio routing |
 | RecCtl | `…-0003-…` | write, notify | recording start/stop/erase/download + state |
 | RecData | `…-0004-…` | notify | chunked IMU download stream |
+| Curve | `…-0005-…` | read, write | piecewise power→factor correction curve (wins over scale/offset) |
 
 Full UUIDs: replace `XXXX` in `53423230-XXXX-4bd9-a4ae-1b4e2c633a1d`.
 
@@ -44,14 +45,25 @@ Full UUIDs: replace `XXXX` in `53423230-XXXX-4bd9-a4ae-1b4e2c633a1d`.
 | off | type | field |
 |---|---|---|
 | 0 | u8 | proto version (1) |
-| 1 | u8 | routing: b0 srcIsAnt · b1 outIsAnt (BLE when clear; ANT bits reject-write until S340 present) |
+| 1 | u8 | flags: b0 srcIsAnt · b1 outIsAnt (ANT bits reject-write until S340 present) · **b2 single-sided ×2** |
 | 2 | u16 | correction scale ×1000 |
 | 4 | i16 | correction offset ×10 (W) |
 | 6 | u8[19] | source name filter (NUL-padded; empty = any CPS) |
 | 25 | u8[19] | broadcast identity name (NUL-padded) |
 
 Writes persist to internal flash (LittleFS) and apply live (no reboot — the nRF re-configures the
-radio roles in place; a rejected write notifies the old value back via Status).
+radio roles in place; a rejected write notifies the old value back via Status). **single-sided ×2**
+doubles the source power *before* correction (an R-only crank reports half of total).
+
+## Curve (read/write, variable)
+
+A piecewise power→factor correction curve. When present it **overrides** the Config scale/offset
+(Correction.h: the curve wins). Written by the calibration wizard, or manually.
+
+Payload: `[ver, nPoints, {power u16 W, factor u16 milli}...]` — 2 + 4·nPoints bytes, max 8 points.
+Factors are ×1000 (1250 = 1.25×), clamped 0.25–4.0. An **empty** write (`[ver, 0]`) clears the
+curve, reverting to scale/offset. Persisted to LittleFS (`/curve.bin`). Read returns the active
+curve in the same format.
 
 ## RecCtl
 
