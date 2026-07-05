@@ -28,6 +28,14 @@ capture; produce a new analysis). Conclusions drawn from these live in
 | `G-crank62144-ble-zero-20260615-070353.jsonl` | Stages L crank 62144 | BLE zero-reset — offset 0, no bonding needed. |
 | `G-assioma17039-ble-zero-20260615-070458.jsonl` | Assioma L 17039 | BLE zero-reset — offset −1, no bonding needed. |
 
+## Passive qdomyos Peloton ride (2026-07-06, `sessions/CAPTURE-qdomyos-sb20-passive.md`)
+
+| File | Device | What it is |
+|---|---|---|
+| `QDZ-sb20-ftms-gatt-20260706-0739.jsonl` | the bike (`E4:AA:5A:D6:0E:D4`) | Pre-ride **uncontended FTMS GATT dump** (149 events; reads + subscriptions, no writes). |
+| `QDZ-sniff-qdomyos-sb20-20260706-0742.pcap` | (nRF sniffer, followed `E4:AA:5A`) | 30-min ride sniff — **negative result**: E4 advertised all ride ⇒ qdomyos drives resistance WITHOUT connecting to the bike's FTMS surface. Advert timelines + the "SB20 Bridge"/spoof/crank went-silent evidence. See decisions 2026-07-06. |
+| `QDZ-ant-20260706-0742.jsonl` | (ANT+ discovery scan) | Device inventory during the ride: Stages `#62144`, `#17039`/`#29064` power (one = stray Assiomas, daughter's bike, much lower power), type-35 `#7092`, FE-C `#105` (the bike). |
+
 ## Other
 
 | File | What it is |
