@@ -26,10 +26,13 @@
 #include "CalibrationSession.h"  // pure on-device DUT->reference calibration (shared with ESP32)
 #include "Correction.h"    // pure (shared with the ESP32 builds via lib_extra_dirs)
 #include "Cps.h"           // pure CPS codec — the same bytes as the ESP32 + Python twins
+#include "Ftms.h"          // pure FTMS codec (erg control point) — shared with ESP32 (P4)
 #include "IPowerSource.h"  // PowerReading
 #include "ImuCapture.h"    // pure capture buffer (lib/bridge)
 #include "Proto.h"         // pure Bridge-GATT pack/unpack (lib/bridge)
 #include "SourceCandidate.h"  // pure scanned-device list + dedup (shared with ESP32) (P3)
+#include "WorkoutPresets.h"  // built-in workouts (presetJson) — pure (P4)
+#include "WorkoutRuntime.h"  // pure structured-workout clock (shared with ESP32) (P4)
 
 using namespace sb20proxy;
 using namespace nrfbridge;
@@ -39,6 +42,8 @@ using namespace Adafruit_LittleFS_Namespace;
 static const char* kCfgPath = "/bridge.cfg";
 static ConfigPacket g_cfg;  // defaults: scale 1.0, offset 0, any-CPS source, name below
 static Correction g_corr;
+static char g_trainerFilter[20] = {0};  // FTMS trainer name filter ("" = erg off) — declared here
+                                        // (before trainerSave/Load); the erg state is below.
 
 static void applyCorrectionFromCfg() {
     g_corr.scale = g_cfg.scaleMilli / 1000.0f;
@@ -78,6 +83,22 @@ static void curveLoad() {
         for (int i = 0; i < n; ++i) g_corr.curve.add(pts[i].powerW, pts[i].factorMilli / 1000.0f);
         Serial.printf("[bridge] correction curve loaded (%d points)\n", n);
     }
+}
+
+// ---- trainer name (erg) persistence, separate from the scalar config -------------------------
+static const char* kTrainerPath = "/trainer.txt";
+static void trainerSave() {
+    InternalFS.remove(kTrainerPath);
+    if (!g_trainerFilter[0]) return;
+    File f(InternalFS);
+    if (f.open(kTrainerPath, FILE_O_WRITE)) { f.write((uint8_t*)g_trainerFilter, strlen(g_trainerFilter)); f.close(); }
+}
+static void trainerLoad() {
+    File f(InternalFS);
+    if (!f.open(kTrainerPath, FILE_O_READ)) return;
+    int n = f.read((uint8_t*)g_trainerFilter, sizeof(g_trainerFilter) - 1);
+    f.close();
+    if (n > 0) { g_trainerFilter[n] = 0; Serial.printf("[erg] trainer configured: '%s'\n", g_trainerFilter); }
 }
 
 // ---- RGB status LED (active-low; pins from the probe). Track use: glanceable link state. ------
@@ -126,6 +147,21 @@ static BLEClientCharacteristic clientSrcCp(UUID16_CHR_CYCLING_POWER_CONTROL_POIN
 static BLEClientService refCps(UUID16_SVC_CYCLING_POWER);
 static BLEClientCharacteristic refMeas(UUID16_CHR_CYCLING_POWER_MEASUREMENT);
 
+// ---- FTMS erg: a 3rd central drives a trainer's target power (P4) ----------------------------
+static BLEClientService ergSvc(UUID16_SVC_FITNESS_MACHINE);
+static BLEClientCharacteristic ergCp(UUID16_CHR_FITNESS_MACHINE_CONTROL_POINT);  // 0x2AD9 write+ind
+static BLEClientCharacteristic ergRange(0x2AD8);  // Supported Power Range (read)
+static uint16_t g_ergConnHandle = BLE_CONN_HANDLE_INVALID;
+static volatile bool g_ergConnected = false, g_ergControlled = false, g_ergStarted = false;
+static int16_t g_ergDesired = 0, g_ergLastSent = 0;
+static bool g_ergHaveSent = false;
+static FtmsPowerRange g_ergRange;  // set to a sane 0..1000 fallback in setup(); the trainer's
+                                   // real range overwrites it on connect
+
+// ---- structured workout (pure WorkoutRuntime, shared with the ESP32) --------------------------
+static WorkoutRuntime g_wk;
+static int16_t g_ergBias = 0;  // the "shifter" nudge: added to the workout target (± W), clamped below
+
 // ---- on-device calibration (pure CalibrationSession, shared with the ESP32) ------------------
 static CalibrationSession g_cal;
 static volatile bool g_calibrating = false;       // a calibration session is collecting
@@ -163,6 +199,7 @@ static const uint8_t kUuidRecData[16] = BRIDGE_UUID(0x0004);
 static const uint8_t kUuidCurve[16] = BRIDGE_UUID(0x0005);
 static const uint8_t kUuidCal[16] = BRIDGE_UUID(0x0006);
 static const uint8_t kUuidScan[16] = BRIDGE_UUID(0x0007);
+static const uint8_t kUuidWk[16] = BRIDGE_UUID(0x0008);
 
 static BLEService bridgeSvc(kUuidBridgeSvc);
 static BLECharacteristic chStatus(kUuidStatus);
@@ -172,6 +209,7 @@ static BLECharacteristic chRecData(kUuidRecData);
 static BLECharacteristic chCurve(kUuidCurve);   // correction-curve write/read (P1)
 static BLECharacteristic chCal(kUuidCal);       // calibration control + state (P2)
 static BLECharacteristic chScan(kUuidScan);     // scanned-source list for the web picker (P3)
+static BLECharacteristic chWk(kUuidWk);         // workout + erg control + state (P4)
 
 // Discovered nearby CPS/FTMS devices (the web source picker). The scan callback records every
 // advertiser; the list is deduped/capped by the pure addCandidate.
@@ -247,6 +285,13 @@ static void scanCb(ble_gap_evt_adv_report_t* report) {
             g_candDirty = true;
         }
     }
+    // Grab the erg TRAINER (its own central) when configured + not yet connected.
+    if (g_trainerFilter[0] && !g_ergConnected && haveName &&
+        strstr((const char*)nameBuf, g_trainerFilter) != nullptr) {
+        Serial.printf("[erg] trainer match '%s' - connecting\n", nameBuf);
+        Bluefruit.Central.connect(report);
+        return;
+    }
     // During calibration, also grab the REFERENCE meter (2nd central) when it isn't yet connected.
     if (g_calibrating && !g_refConnected && g_refFilter[0] && haveName &&
         strstr((const char*)nameBuf, g_refFilter) != nullptr &&
@@ -308,12 +353,70 @@ static void refMeasNotifyCb(BLEClientCharacteristic* /*chr*/, uint8_t* data, uin
     g_cal.onRef((float)p, millis());
 }
 
+// ---- FTMS erg control (P4): mirror of the ESP32 FtmsErgClient state machine over Bluefruit ----
+static void ergCpIndicateCb(BLEClientCharacteristic* /*chr*/, uint8_t* data, uint16_t len) {
+    FtmsCpMessage m = decodeControlPoint(data, len);
+    if (!m.isResponse || m.result != FTMS_CP_SUCCESS) return;
+    if (m.requestOpcode == FTMS_CP_REQUEST_CONTROL) g_ergControlled = true;
+    else if (m.requestOpcode == FTMS_CP_START_RESUME) g_ergStarted = true;
+    else if (m.requestOpcode == FTMS_CP_SET_TARGET_POWER) { g_ergLastSent = g_ergDesired; g_ergHaveSent = true; }
+}
+
+static void ergSetupOnConn(uint16_t connHandle) {
+    if (!ergSvc.discover(connHandle) || !ergCp.discover()) {
+        Bluefruit.disconnect(connHandle);
+        return;
+    }
+    if (ergRange.discover()) {  // clamp to the machine's limits when it exposes the range
+        uint8_t rv[6];
+        uint16_t n = ergRange.read(rv, sizeof(rv));
+        if (n >= 6) g_ergRange = decodeSupportedPowerRange(rv, n);
+    }
+    ergCp.setIndicateCallback(ergCpIndicateCb);
+    ergCp.enableIndicate();
+    g_ergConnHandle = connHandle;
+    g_ergConnected = true;
+    g_ergControlled = g_ergStarted = g_ergHaveSent = false;
+    Serial.printf("[erg] trainer connected; range %d..%d W\n", (int)g_ergRange.minimum,
+                  (int)g_ergRange.maximum);
+}
+
+// One control-point step toward the desired target (RequestControl -> Start -> SetTargetPower),
+// optimistic on the write-ACK (the ESP32 found CP indications get dropped on a loaded radio).
+static void ergStep() {
+    if (!g_ergConnected) return;
+    std::vector<uint8_t> cmd;
+    enum { kCtl, kStart, kTgt } op = kCtl;
+    int16_t want = 0;
+    if (!g_ergControlled) { cmd = encodeRequestControl(); op = kCtl; }
+    else if (!g_ergStarted) { cmd = encodeStart(); op = kStart; }
+    else {
+        want = g_ergRange.clamp(g_ergDesired);
+        if (!g_ergHaveSent || want != g_ergLastSent) { cmd = encodeSetTargetPower(want); op = kTgt; }
+    }
+    if (cmd.empty()) return;
+    if (ergCp.write(cmd.data(), cmd.size()) > 0) {
+        if (op == kCtl) g_ergControlled = true;
+        else if (op == kStart) g_ergStarted = true;
+        else { g_ergLastSent = want; g_ergHaveSent = true; }
+    }
+}
+
 static void centralConnectCb(uint16_t connHandle) {
     // Which meter is this? During calibration the REFERENCE (its name matches g_refFilter) uses
     // the 2nd central + its own client instances; everything else is the source/DUT.
     char peer[24] = {0};
     BLEConnection* conn = Bluefruit.Connection(connHandle);
     if (conn) conn->getPeerName(peer, sizeof(peer) - 1);
+    // Trainer (erg): its name matches g_trainerFilter and it isn't the source/ref we already hold.
+    const bool isTrainer = g_trainerFilter[0] && strstr(peer, g_trainerFilter) != nullptr &&
+                           !g_ergConnected && connHandle != g_srcConnHandle;
+    if (isTrainer) {
+        Serial.printf("[erg] trainer '%s' connected\n", peer);
+        ergSetupOnConn(connHandle);
+        if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
+        return;
+    }
     const bool isRef = g_calibrating && g_refFilter[0] && strstr(peer, g_refFilter) != nullptr &&
                        connHandle != g_srcConnHandle;
     if (isRef) {
@@ -352,7 +455,11 @@ static void centralConnectCb(uint16_t connHandle) {
 }
 
 static void centralDisconnectCb(uint16_t connHandle, uint8_t reason) {
-    if (connHandle == g_refConnHandle) {  // the reference meter dropped
+    if (connHandle == g_ergConnHandle) {  // the trainer dropped
+        g_ergConnected = g_ergControlled = g_ergStarted = false;
+        g_ergConnHandle = BLE_CONN_HANDLE_INVALID;
+        Serial.printf("[erg] trainer dropped (0x%02X)\n", reason);
+    } else if (connHandle == g_refConnHandle) {  // the reference meter dropped
         g_refConnected = false;
         g_refConnHandle = BLE_CONN_HANDLE_INVALID;
         Serial.printf("[cal] reference dropped (0x%02X)\n", reason);
@@ -603,6 +710,70 @@ static void recCtlWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t
     notifyRecState();
 }
 
+// ---- workout + erg control (P4) --------------------------------------------------------------
+static void notifyWkState() {
+    const uint32_t now = millis();
+    const bool loaded = !g_wk.workout.segments.empty();
+    WkState s = g_wk.state(now);
+    uint8_t flags = (loaded ? 1 : 0) | (g_wk.running ? 2 : 0) | (g_wk.paused ? 4 : 0) |
+                    (g_ergConnected ? 8 : 0) | (g_ergControlled ? 16 : 0);
+    // targetW is what the erg is asked to hold = workout prescription + shifter bias (clamped ≥0)
+    int effTarget = s.targetW;
+    if (loaded && g_wk.running && !g_wk.paused && s.targetW > 0) {
+        effTarget = s.targetW + g_ergBias;
+        if (effTarget < 0) effTarget = 0;
+    }
+    uint8_t buf[WKSTATE_LEN];
+    packWkState(flags, (int16_t)effTarget, (uint8_t)s.segIndex,
+                (uint8_t)g_wk.workout.segments.size(),
+                (uint16_t)(s.segRemainingS > 0 ? s.segRemainingS : 0), g_ergLastSent,
+                (uint16_t)(s.totalElapsedS > 0 ? s.totalElapsedS : 0), g_ergBias, buf);
+    notifyClients(chWk, buf, sizeof(buf));
+}
+
+static void wkWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t* data, uint16_t len) {
+    if (len < 2 || data[0] != PROTO_VER) return;
+    const uint32_t now = millis();
+    switch ((WkCmd)data[1]) {
+        case WkCmd::SetTrainer: {
+            memset(g_trainerFilter, 0, sizeof(g_trainerFilter));
+            size_t k = (len > 2) ? len - 2 : 0;
+            if (k > sizeof(g_trainerFilter) - 1) k = sizeof(g_trainerFilter) - 1;
+            memcpy(g_trainerFilter, data + 2, k);
+            trainerSave();
+            Serial.printf("[erg] trainer set to '%s'\n", g_trainerFilter);
+            if (!g_trainerFilter[0] && g_ergConnected && g_ergConnHandle != BLE_CONN_HANDLE_INVALID)
+                Bluefruit.disconnect(g_ergConnHandle);  // cleared -> drop the trainer
+            else if (g_trainerFilter[0] && !Bluefruit.Scanner.isRunning())
+                Bluefruit.Scanner.start(0);
+            break;
+        }
+        case WkCmd::LoadPreset: {
+            const auto& presets = workoutPresets();
+            uint8_t idx = (len > 2) ? data[2] : 0;
+            if (idx < presets.size()) {
+                Workout w = parseWorkout(presets[idx].json);
+                if (!w.segments.empty()) { g_wk.load(w); Serial.printf("[wk] loaded '%s'\n", presets[idx].label); }
+            }
+            break;
+        }
+        case WkCmd::Start:  g_wk.start(now); g_ergBias = 0; break;
+        case WkCmd::Pause:  g_wk.pause(now); break;
+        case WkCmd::Resume: g_wk.resume(now); break;
+        case WkCmd::Stop:   g_wk.stop(); g_ergDesired = 0; g_ergBias = 0; break;
+        case WkCmd::Unload: g_wk.unload(); g_ergDesired = 0; g_ergBias = 0; break;
+        case WkCmd::BiasStep: {  // the shifter nudge: signed i8 delta W, target-relative
+            int8_t delta = (len > 2) ? (int8_t)data[2] : 0;
+            int b = g_ergBias + delta;
+            if (b < -200) b = -200; else if (b > 200) b = 200;  // keep the nudge sane
+            g_ergBias = (int16_t)b;
+            Serial.printf("[wk] bias %+d -> %+d W\n", delta, g_ergBias);
+            break;
+        }
+    }
+    notifyWkState();
+}
+
 // ================= setup ======================================================================
 void setup() {
     Serial.begin(115200);
@@ -610,9 +781,11 @@ void setup() {
     while (!Serial && millis() - t0 < 3000) delay(10);
     Serial.println("[bridge] XIAO nRF52840 Sense CPS bridge starting");
 
+    g_ergRange.minimum = 0; g_ergRange.maximum = 1000; g_ergRange.increment = 1;  // erg fallback
     InternalFS.begin();
     cfgLoad();
     curveLoad();
+    trainerLoad();
 
     // RGB status LED (active-low)
     pinMode(LED_RED, OUTPUT);
@@ -637,9 +810,9 @@ void setup() {
     // (both links collapsed onto one tracked handle; the client's CCCD landed on the source
     // link's records — bench, 2026-07-05). The maxgerhardt/Adafruit core's defaults already
     // negotiate MTU 247 on the peripheral link; pumpDownload sizes frames per-client anyway.
-    // TWO peripheral links (head unit + web app/Garmin concurrently) and TWO central links (the
-    // source/DUT + the reference meter during calibration). 4 links total; the S140 default is 20.
-    Bluefruit.begin(/*peripheral*/ 2, /*central*/ 2);
+    // TWO peripheral links (head unit + web app/Garmin) and THREE central links (source/DUT +
+    // reference meter during calibration + the FTMS trainer for erg). 5 links total; S140 default 20.
+    Bluefruit.begin(/*peripheral*/ 2, /*central*/ 3);
     Bluefruit.setTxPower(4);
     Bluefruit.setName(g_cfg.outName);
 
@@ -710,6 +883,11 @@ void setup() {
     chScan.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
     chScan.setMaxLen(2 + SCAN_MAX * SCAN_SLOT);
     chScan.begin();
+    chWk.setProperties(CHR_PROPS_WRITE | CHR_PROPS_NOTIFY);
+    chWk.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    chWk.setMaxLen(2 + 19);  // write: [ver, cmd, arg...]
+    chWk.setWriteCallback(wkWriteCb);
+    chWk.begin();
 
     // --- source: central scanning for a CPS meter (+ the reference during calibration) ---
     clientCps.begin();
@@ -719,6 +897,10 @@ void setup() {
     refCps.begin();
     refMeas.setNotifyCallback(refMeasNotifyCb);
     refMeas.begin();
+    // --- erg: a 3rd central to an FTMS trainer (workout drives its target power) ---
+    ergSvc.begin();
+    ergCp.begin();
+    ergRange.begin();
     Bluefruit.Periph.setConnectCallback(periphConnectCb);
     Bluefruit.Periph.setDisconnectCallback(periphDisconnectCb);
     Bluefruit.Central.setConnectCallback(centralConnectCb);
@@ -892,6 +1074,29 @@ void loop() {
                 Serial.printf("[test] scale=%.3f offset=%.1f single2x=%d curve=%upts src=%dW->out=%dW\n",
                     (double)g_corr.scale, (double)g_corr.offset, g_cfg.singleSided,
                     (unsigned)g_corr.curve.points.size(), (int)g_lastSrc.power_w, (int)g_lastOut.power_w);
+            else if (strcmp(cmd, "WKTEST") == 0) {
+                // Verify the FTMS erg encoders + a workout parse, no trainer needed.
+                auto rc = encodeRequestControl(); auto st = encodeStart(); auto tp = encodeSetTargetPower(250);
+                Serial.printf("[wktest] RequestControl=%02X Start=%02X SetTarget(250)=%02X %02X %02X\n",
+                              rc[0], st[0], tp[0], tp[1], tp[2]);
+                const auto& presets = workoutPresets();
+                if (!presets.empty()) {
+                    Workout w = parseWorkout(presets[0].json);
+                    Serial.printf("[wktest] preset[0] '%s': %u segments, total %lds, first target %dW\n",
+                                  presets[0].label, (unsigned)w.segments.size(), w.totalS(),
+                                  workoutStateAt(w, 0).targetW);
+                    g_wk.load(w); g_wk.start(millis()); g_ergBias = 0;
+                    int base = g_wk.state(millis()).targetW;
+                    Serial.printf("[wktest] loaded+started; now target=%dW erg=%s\n",
+                                  base, g_ergConnected ? "connected" : "no trainer");
+                    // shifter bias: +10 twice then -30 -> +20, -10 net -> effective target base-10
+                    auto step = [](int8_t d) { int b = g_ergBias + d; if (b<-200) b=-200; else if (b>200) b=200; g_ergBias=(int16_t)b; };
+                    step(+10); step(+10); step(-30);
+                    Serial.printf("[wktest] bias after +10,+10,-30 = %+dW -> effective target %dW\n",
+                                  g_ergBias, base + g_ergBias);
+                    g_ergBias = 0;
+                }
+            }
             else if (strcmp(cmd, "SCANLIST") == 0) {
                 std::vector<SourceCandidate> s = dedupeAndSortSources(g_candidates);
                 Serial.printf("[scanlist] %u nearby meters/trainers:\n", (unsigned)s.size());
@@ -937,6 +1142,25 @@ void loop() {
         } else {
             Serial.println("[bridge] zero requested but source has no control point");
         }
+    }
+
+    // ERG DRIVE (P4): a running workout's target power drives the trainer. Feed the desired
+    // target, then step the control-point machine (rate-limited); notify workout state @1 Hz.
+    if (g_ergConnected) {
+        static uint32_t ergAt = 0;
+        if (now - ergAt >= 400) {
+            ergAt = now;
+            const bool active = g_wk.running && !g_wk.paused;
+            const int t = active ? g_wk.state(now).targetW : -1;
+            int want = (t > 0) ? t + g_ergBias : 0;  // no workout / paused -> release resistance
+            g_ergDesired = (int16_t)(want < 0 ? 0 : want);  // shifter bias folds into the target
+            ergStep();
+        }
+    }
+    static uint32_t wkAt = 0;
+    if (!g_wk.workout.segments.empty() && now - wkAt >= 1000) {
+        wkAt = now;
+        notifyWkState();
     }
 
     // Publish the scanned-source list to the picker, throttled to 2 s when new devices appeared.

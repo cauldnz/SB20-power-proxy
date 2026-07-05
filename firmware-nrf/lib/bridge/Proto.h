@@ -183,6 +183,36 @@ inline size_t packCalState(CalWireState st, uint16_t pairCount, uint16_t minPair
     return CALSTATE_LEN;
 }
 
+// ---- Workout + erg (write control + notify state, P4) ----------------------------------------
+// Write [ver, cmd, ...]:
+//   1 set trainer [ver,1, trainerFilter[≤19]] · 2 load preset [ver,2, presetIndex u8]
+//   3 start · 4 pause · 5 resume · 6 stop · 7 unload
+// Notify (18 bytes): [ver, flags, targetW i16, segIndex u8, nSeg u8, segRemainS u16,
+//   ergSentW i16, elapsedS u16, biasW i16, reserved u16]
+//   flags: b0 loaded · b1 running · b2 paused · b3 ergConnected · b4 ergControlled
+//   targetW already includes biasW (the shifter nudge); biasW is broken out for display.
+enum class WkCmd : uint8_t { SetTrainer = 1, LoadPreset = 2, Start = 3, Pause = 4, Resume = 5,
+                             Stop = 6, Unload = 7, BiasStep = 8 };
+// BiasStep: [ver,8, delta i8] nudges the erg target ± (the shifter feature — a Zwift-Click/SRAM
+// shifter would drive this via the pure Shifter decode as a 4th central; the web/CIQ drive it too).
+constexpr size_t WKSTATE_LEN = 18;
+
+inline size_t packWkState(uint8_t flags, int16_t targetW, uint8_t segIndex, uint8_t nSeg,
+                          uint16_t segRemainS, int16_t ergSentW, uint16_t elapsedS,
+                          int16_t biasW, uint8_t out[WKSTATE_LEN]) {
+    out[0] = PROTO_VER;
+    out[1] = flags;
+    packU16(out + 2, (uint16_t)targetW);
+    out[4] = segIndex;
+    out[5] = nSeg;
+    packU16(out + 6, segRemainS);
+    packU16(out + 8, (uint16_t)ergSentW);
+    packU16(out + 10, elapsedS);
+    packU16(out + 12, (uint16_t)biasW);
+    out[14] = 0; out[15] = 0; out[16] = 0; out[17] = 0;
+    return WKSTATE_LEN;
+}
+
 // ---- ScanList (read + notify) ----------------------------------------------------------------
 // Discovered nearby power meters / trainers for the web picker (P3). Fixed 21-byte slots so the
 // whole list fits one MTU-247 notify:  [ver, count, {name[19], rssi i8, flags u8}...]
