@@ -1,8 +1,18 @@
 # Bridge Remote (Connect IQ)
 
-Garmin device app for the nRF52840 Bike Bridge: live out/in watts + correction on screen,
-SELECT toggles the on-board IMU track recording. Consumes the Bridge GATT contract
-(`../GATT.md`, PROTO_VER 1).
+Garmin device app for the nRF52840 Bike Bridge — an **in-ride controller** for the bridge.
+Consumes the Bridge GATT contract (`../GATT.md`, PROTO_VER 1).
+
+On screen: live out/in watts + correction, the erg/workout line, and recording state.
+
+Controls:
+- **SELECT** — toggle the on-board IMU track recording.
+- **MENU** — start / pause / resume the loaded workout (erg).
+- **UP / DOWN** — the *shifter*: nudge the erg target ±10 W (the bridge clamps to ±200 W).
+
+Workout **setup** (pick the trainer, load a preset) is done from the Web Bluetooth app; the
+Garmin drives the ride. The erg line only appears once a workout is loaded on the bridge, and
+goes green when the trainer has granted control.
 
 ## Build (needs the Connect IQ SDK — Garmin-login-gated, owner installs)
 
@@ -14,5 +24,9 @@ SELECT toggles the on-board IMU track recording. Consumes the Bridge GATT contra
    (repeat with `-d epix2`).
 4. Sideload: copy the `.prg` to the device's `GARMIN/Apps/` over USB mass storage.
 
-Status: written against CIQ API 3.3 (BluetoothLowEnergy); NOT yet compiled — the SDK
-download is account-gated. Expect a round of compile fixes on first build.
+`build.sh` builds both targets (`edge540` + `epix2`); it needs a JDK 17+ on PATH (the SDK
+bundles none), the SDK, and the dev key.
+
+Status: compiles clean for **edge540** + **epix2** (CIQ SDK 9.2, Toybox.BluetoothLowEnergy).
+The record path is bench-proven; the erg/shifter path mirrors the P4 Workout characteristic and
+is pending on-device validation on the owner's Edge 540 / Epix 2.

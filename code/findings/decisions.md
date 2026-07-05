@@ -2367,3 +2367,19 @@ The findings that matter most for us:
   covers the NVS region — every USB factory flash erases WiFi creds/config (this explained every
   "WiFi not configured" portal after a reflash, including tonight's). Prefer OTA for updates; keep
   the factory flash for true bring-up. Fixing the flasher to skip/preserve NVS is an open follow-up.
+
+## 2026-07-05 — nRF Sense: Connect IQ app becomes an in-ride erg controller
+
+- Extended the Garmin app (was record-control + metrics, N7) to drive the P4 erg/workout over the
+  Workout characteristic (`…-0008-…`). **Division of labour:** workout *setup* (pick trainer, load
+  preset) stays in the Web Bluetooth app; the **Garmin is the in-ride controller**. Buttons:
+  **SELECT** = record toggle (unchanged) · **MENU** = start/pause/resume the loaded workout · **UP/DOWN**
+  = the *shifter* (BiasStep ±10 W). Screen gained an erg line (target + bias, green once the trainer
+  grants control).
+- `BridgeBle.mc`: added `CH_WK`, a CCCD-enable **queue** (`_toEnable` advanced by `onDescriptorWrite`)
+  so 3 notify subscriptions (Status/RecCtl/Workout) enable reliably one-write-in-flight (the old code
+  hard-coded "after Status, enable RecCtl" — didn't scale to a 3rd). Parses the 18-byte state; write
+  helpers `sendWkCmd(cmd)` + `sendBias(delta i8)`.
+- **Builds clean** for edge540 + epix2 (CIQ SDK 9.2). On-device validation pending on the owner's
+  Edge 540 / Epix 2 (morning). The portable Temurin JDK 21 (SDK bundles no JRE) lives in the session
+  scratchpad; `build.sh` needs a JDK 17+ on PATH.
