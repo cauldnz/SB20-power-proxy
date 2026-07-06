@@ -7,15 +7,18 @@ analysis) first — they change what's worth doing.
 
 ## What we already know (don't re-capture)
 
-- **The real SB20's FTMS is fully erg-capable** (task-1 GATT dump): Fitness Machine Control Point `0x2AD9`
+- **The real SB20's FTMS exposes an erg surface** (task-1 GATT dump): Fitness Machine Control Point `0x2AD9`
   (write+indicate), Target-Setting **Power(erg) + Resistance + Sim**, Supported Power Range **0–4000 W**.
-  Device `E4:AA:5A:D6:0E:D4`, advertises **unnamed** (filter by address, not `--name SB20`).
-- **qdomyos writes control to an Elite proprietary service (`347b…`) the SB20 doesn't have** → its
-  `stagesbike` driver can't move the SB20's resistance (pinned bug #1649). So **sniffing qz's control is
-  low-value** — it's writing into the void. Our own `FtmsErgClient` writes the **standard FTMS Control
-  Point** the SB20 *does* expose, so our path is the sound one.
+  Device `E4:AA:5A:D6:0E:D4` (adv name "Stages Bike 0105"; advertises **unnamed** on some scans — filter
+  by address, not `--name SB20`). No Elite `347b` service on it.
+- **The SB20 IS erg-controllable** — Zwift, MyWhoosh, and the owner-in-qz all move its resistance. ⚠️ But
+  *how* a controller must talk to it is **not yet pinned on the wire**, and it may not be trivial: the qz
+  maintainer reported the SB20 **"doesn't answer at all to my requests"** (#1649). So our own `--erg` write
+  (standard FTMS `0x2AD9`) **might also get no answer** — that's precisely the open question this capture
+  exists to settle. (Earlier notes here claimed "qz structurally can't control the SB20" — **retracted**;
+  see `decisions.md` 2026-07-06 *correction*.)
 - The 2026-07-06 sniff was **polluted** by our own boards (the nRF "SB20 Bridge", the S3/C3 spoofed cranks
-  all got connected). De-pollute before any sniff.
+  all got connected) and missed qz's control channel. De-pollute before any sniff.
 
 ---
 
@@ -52,10 +55,13 @@ the targets.** That closes §14-phase-5's core question and pins the golden erg 
 
 ---
 
-## Option B (only if curious about qz specifically): de-polluted passive sniff of qz's connection
+## Option B (HIGH value — sniff a WORKING controller driving the SB20): de-polluted passive sniff
 
-Lower value now (we know qz can't control the SB20), but it confirms *which* device qz connects to and
-*which driver* it uses (CPS `stagesbike` vs FTMS `ftmsbike`). Strictly passive.
+Now high-value, not low: the owner has a **working** SB20 controller (qz on the phone; Zwift/MyWhoosh as
+references). Sniffing it answers the open question Option A tests from our side — **which characteristic a
+working controller writes and the exact byte sequence** (does it use FTMS `0x2AD9`, and if so with what
+handshake — recall the SB20 reportedly "doesn't answer" naïve requests). This confirms *which* device qz
+connects to and *which* control path it uses. Strictly passive.
 
 1. **De-pollute** as in A.1 (power down all our boards + the nRF bridge).
 2. In qdomyos, connect to the bike; **read the connected-device name off the qz UI** (Settings/console).

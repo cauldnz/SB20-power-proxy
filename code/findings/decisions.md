@@ -2609,3 +2609,48 @@ Mined `QDZ-sniff-qdomyos-sb20-20260706-0742.pcap` (22,036 frames) with tshark, a
 - **Recovery capture design change:** the environment must be **de-polluted** — power down ALL our spoof
   boards (C3/CYD/S3 cranks) and the nRF "SB20 Bridge" so the only devices on air are the real SB20 + the
   qz host; then follow the exact device qz connects to (read its name off the qz UI). See the run-sheet.
+
+## 2026-07-06 (correction) — RETRACT the "qz structurally can't control the SB20 / our FTMS approach wins where qz is broken" overclaim
+
+Decision: **Downgrade the strong conclusion in the entry above.** The SB20 **is** erg-controllable; *how*
+a controller must talk to it is **not yet pinned**; and whether qz can control it is **version-dependent**,
+not the flat "documented-broken" I wrote. Only the byte-level GATT facts (0x2AD9 present, no 347b on the
+SB20) survive unqualified.
+
+Context: The **owner — a daily qz user on the real SB20 — flagged the over-reach directly:** *"I have been
+using QZ for months and it works fine for me."* That is first-hand lived-experience data; per our
+real-data-wins discipline it beats a single clean-room read of **one** driver file. The owner also asked
+us not to jump to a *new* conclusion before we actually diagnose — so this entry lowers certainty rather
+than swapping one verdict for another. Re-reading the **actual** issue #1649 (not inferring it) sharpens it.
+
+What the entry above overstated:
+- ❌ "qz **structurally cannot** drive the SB20's resistance." Refuted — the owner does it in qz. The
+  `stagesbike`→347b analysis covered **one** driver; it was never confirmed that `stagesbike` (vs qz's
+  FTMS driver `ftmsbike`) is what a **current** qz binds to the SB20. The report is old (qz **.15.4**,
+  Sept 2023) and may be fixed since.
+- ❌ "…where qdomyos is **documented-broken**." That elevates one stale 2023 bug report to a standing fact.
+
+What issue #1649 actually says (read 2026-07-06; still OPEN, 28 comments; ElmarMuc, iPhone/iPad iOS 16,
+qz .15.4, Sept 2023):
+- qz reads power/rpm fine; **resistance control did not work** in that version for the reporter.
+- Resistance control **does** work with **Zwift and MyWhoosh** → the SB20 is genuinely erg-controllable.
+- Maintainer's key clue on the SB20: **"it doesn't answer at all to my requests … we need to understand
+  how zwift communicates with it."**
+
+What still holds (unchanged, evidence-backed):
+- ✅ SB20 FTMS peripheral ("Stages Bike 0105" / `E4:AA:5A:D6:0E:D4`) exposes standard FTMS `0x1826` incl.
+  Control Point `0x2AD9` + power-target (task-1 GATT); **re-verified: no Elite `347b` service in the dump.**
+- ✅ SB20 is erg-controllable (Zwift / MyWhoosh / owner-in-qz all move resistance).
+
+New, better-graded status:
+- ⚠️ **OPEN question, now flagged as a real risk to OUR OWN erg drive:** does the SB20 *answer* a naïve
+  FTMS `Set Target Power`? The maintainer's "doesn't answer at all" warns the control handshake may be
+  non-obvious (Zwift does something specific). Our `--erg` write could hit the same wall. This **raises**
+  the value of §14-phase-5, it doesn't lower it.
+- 🔁 **Reframe the recovery capture:** sniffing how a **working** controller drives the SB20 is now **high**
+  value (the owner *has* one — qz on their phone — plus Zwift/MyWhoosh as references). The earlier
+  "sniffing qz is low-value because qz can't control it" was wrong.
+
+Will revisit if: the `--erg` round-trip shows the SB20 answers standard FTMS control (→ our path is clean,
+and *then* there's an evidence-backed thing to offer qz) OR shows "no answer" (→ the real deliverable is
+mining how Zwift / a current qz actually talks to it — the handshake, not just the characteristic).
