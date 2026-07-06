@@ -16,6 +16,7 @@
 #include "DiagReport.h"
 #include "Ftms.h"
 #include "Obc.h"
+#include "ObcSb20Map.h"
 #include "HttpSecurity.h"
 #include "MeterMatch.h"
 #include "OtaManifest.h"
@@ -720,6 +721,35 @@ void test_obc_encode_rejects_small_buffer_and_empty() {
     TEST_ASSERT_EQUAL_INT(0, (int)encodeButtonPress(OBC_BTN_LAP, OBC_STATE_PRESSED, small, sizeof(small)));
     uint8_t out[OBC_MAX_MSG];
     TEST_ASSERT_EQUAL_INT(0, (int)encodeButtonState(nullptr, 0, out, sizeof(out)));
+}
+
+// ---- M2: SB20 -> OBC default button mapping (pure) ----
+void test_obc_sb20_default_map() {
+    using namespace sb20proxy;
+    uint8_t ids[2];
+    TEST_ASSERT_EQUAL_INT(2, (int)defaultSb20ObcButtonIds(ShifterButton::LeftUp, ids, 2));
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_SHIFT_UP, ids[0]);
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_ERG_UP, ids[1]);
+    TEST_ASSERT_EQUAL_INT(2, (int)defaultSb20ObcButtonIds(ShifterButton::RightDown, ids, 2));
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_SHIFT_DOWN, ids[0]);
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_ERG_DOWN, ids[1]);
+    TEST_ASSERT_EQUAL_INT(1, (int)defaultSb20ObcButtonIds(ShifterButton::Left3, ids, 2));
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_LAP, ids[0]);
+    TEST_ASSERT_EQUAL_INT(0, (int)defaultSb20ObcButtonIds(ShifterButton::None, ids, 2));
+}
+
+void test_obc_sb20_encode_button_state() {
+    using namespace sb20proxy;
+    uint8_t out[OBC_MAX_MSG];
+    size_t n = encodeSb20ButtonState(ShifterButton::LeftUp, OBC_STATE_PRESSED, out, sizeof(out));
+    const uint8_t want[] = {0x01, 0x01, 0x01, 0x30, 0x01};  // ShiftUp + ERGUp, both pressed
+    TEST_ASSERT_EQUAL_INT(5, (int)n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(want, out, 5);
+    n = encodeSb20ButtonState(ShifterButton::LeftUp, OBC_STATE_RELEASED, out, sizeof(out));
+    const uint8_t wantR[] = {0x01, 0x01, 0x00, 0x30, 0x00};  // the release half of the click
+    TEST_ASSERT_EQUAL_INT(5, (int)n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantR, out, 5);
+    TEST_ASSERT_EQUAL_INT(0, (int)encodeSb20ButtonState(ShifterButton::None, OBC_STATE_PRESSED, out, sizeof(out)));
 }
 
 void test_shifter_decode_golden_buttons() {
@@ -2559,6 +2589,8 @@ int runUnityTests() {
     RUN_TEST(test_obc_encode_button_press_and_release);
     RUN_TEST(test_obc_encode_analog_and_device_status);
     RUN_TEST(test_obc_encode_rejects_small_buffer_and_empty);
+    RUN_TEST(test_obc_sb20_default_map);
+    RUN_TEST(test_obc_sb20_encode_button_state);
     RUN_TEST(test_calibration_session_lifecycle_and_fit);
     RUN_TEST(test_calibration_session_finish_needs_enough_pairs);
     RUN_TEST(test_calibration_session_cancel_resets);
