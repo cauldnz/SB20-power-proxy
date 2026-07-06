@@ -752,6 +752,20 @@ void test_obc_sb20_encode_button_state() {
     TEST_ASSERT_EQUAL_INT(0, (int)encodeSb20ButtonState(ShifterButton::None, OBC_STATE_PRESSED, out, sizeof(out)));
 }
 
+void test_runtime_config_obc_roundtrip() {
+    using namespace sb20proxy;
+    RuntimeConfig c = RuntimeConfig::defaults();
+    c.obcEnabled = true;
+    c.obcPort = 21587;
+    RuntimeConfig r = RuntimeConfig::fromLine(c.toLine());
+    TEST_ASSERT_TRUE(r.obcEnabled);
+    TEST_ASSERT_EQUAL_INT(21587, (int)r.obcPort);
+    // backward-compat: a pre-OBC line (no obc fields) -> OBC disabled, default port, no wedge
+    RuntimeConfig old = RuntimeConfig::fromLine("addr|ASSIOMA|0|Stages 62144|SER|0|||");
+    TEST_ASSERT_FALSE(old.obcEnabled);
+    TEST_ASSERT_EQUAL_INT(21587, (int)old.obcPort);
+}
+
 void test_shifter_decode_golden_buttons() {
     // the real session-3 `01`-frames, one per button (shifter-ble-protocol.md): `01 00 <bit LE>`
     const uint8_t l_up[4] = {0x01, 0x00, 0x01, 0x00};
@@ -2591,6 +2605,7 @@ int runUnityTests() {
     RUN_TEST(test_obc_encode_rejects_small_buffer_and_empty);
     RUN_TEST(test_obc_sb20_default_map);
     RUN_TEST(test_obc_sb20_encode_button_state);
+    RUN_TEST(test_runtime_config_obc_roundtrip);
     RUN_TEST(test_calibration_session_lifecycle_and_fit);
     RUN_TEST(test_calibration_session_finish_needs_enough_pairs);
     RUN_TEST(test_calibration_session_cancel_resets);

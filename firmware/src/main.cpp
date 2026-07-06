@@ -858,6 +858,7 @@ void setup() {
 #endif  // the device name = our advertised identity
     crank.setMode(cfg.mode);                    // SPOOF crank vs CORRECTOR (own honest CPS identity)
     crank.setIdentity(cfg.spoofName, cfg.spoofSerial);  // advertised name + DIS serial
+    crank.setObcEnabled(cfg.obcEnabled);        // OpenBikeControl BLE service (SB20 buttons -> OBC apps)
 
     // The correction between source and crank: CORRECTOR applies the fitted calibration curve
     // (DUT → reference) — and with an EMPTY curve falls through to identity (1.0×), NEVER the spoof's
