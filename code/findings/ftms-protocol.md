@@ -17,9 +17,12 @@ it's now grounded, not guessed.
 
 **Still the gate:** the **`capture_ftms.py --erg` write round-trip** — *does the bike's resistance
 actually track a Set Target Power we send?* — remains uncaptured. A qdomyos Peloton ride (2026-07-06)
-did NOT answer it: qdomyos never used the bike's FTMS connection at all (it drove resistance over a
-different link — `decisions.md` 2026-07-06). So the erg drive stays the §14-phase-5 / recovery-capture
-gate, and the `SPEC_VECTORS` in `ftms.py` remain spec-derived until we capture a real erg exchange.
+did NOT answer it: the sniff was polluted by our own boards + iOS rotating addresses and **did not
+capture qz's control channel** (`decisions.md` 2026-07-06 + its *correction*). Note the open risk: the
+SB20 reportedly "doesn't answer at all" to a naïve control request (qz issue #1649), so our own erg write
+may need a specific handshake — this capture is what tells us. The erg drive stays the §14-phase-5 /
+recovery-capture gate, and the `SPEC_VECTORS` in `ftms.py` remain spec-derived until we capture a real
+erg exchange.
 
 ## The service (from the SB20 recon `G-stagesL-ble-recon-20260615-064641.jsonl`)
 
