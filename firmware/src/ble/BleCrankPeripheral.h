@@ -35,6 +35,14 @@ public:
     // service) any head unit / Garmin pairs to. Call before begin(). Defaults to SPOOF.
     void setMode(ProxyMode m) { mode_ = m; }
 
+    // Enable an OpenBikeControl (OBC) BLE service (a Button-State notify char, d273f681) alongside the
+    // crank, so the SB20's re-presented handlebar buttons can drive OBC-speaking apps (MyWhoosh/qz) over
+    // BLE. Call before begin(). See lib/proxy/Obc.h + code/findings/obc-protocol.md.
+    void setObcEnabled(bool e) { obcEnabled_ = e; }
+    // Notify the OBC Button-State characteristic with a pre-encoded OBC message (from Obc.h). No-op if
+    // OBC is disabled / no subscriber.
+    void notifyObc(const uint8_t* data, size_t len);
+
     // Hook invoked (from the control-point write callback) when the SB20/app requests an offset-
     // compensation / zero-reset (CP 0x0C or 0x10). The seam wires this to forward a REAL zero to the
     // source meter (the Assioma). The handler MUST be cheap + non-blocking — it runs on the NimBLE host
@@ -47,6 +55,8 @@ private:
     std::string spoofName_ = Config::SPOOF_NAME;      // advertised identity
     std::string spoofSerial_ = Config::SPOOF_SERIAL;  // DIS serial (0x2A25)
     NimBLECharacteristic* meas_ = nullptr;
+    bool obcEnabled_ = false;
+    NimBLECharacteristic* obcButtonChar_ = nullptr;  // OBC Button-State (notify), created when obcEnabled_
     CrankCadence cadence_;        // advances crank revs / event time from each reading's rpm
     uint16_t accumTorque_ = 0;    // accumulated torque (1/32 Nm), advanced per completed rev
     uint32_t lastT_ = 0;          // previous reading's t_ms, for the cadence dt

@@ -211,6 +211,16 @@ static BLECharacteristic chCal(kUuidCal);       // calibration control + state (
 static BLECharacteristic chScan(kUuidScan);     // scanned-source list for the web picker (P3)
 static BLECharacteristic chWk(kUuidWk);         // workout + erg control + state (P4)
 
+// OpenBikeControl (OBC) — a Button-State notify char so the SB20's re-presented handlebar buttons drive
+// OBC-speaking apps over BLE (firmware/lib/proxy/Obc.h). 128-bit UUIDs stored little-endian:
+// d273f680-d548-419d-b9d1-fa0472345229 (service) / ...681 (button state).
+static const uint8_t kUuidObcSvc[16] =
+    {0x29, 0x52, 0x34, 0x72, 0x04, 0xfa, 0xd1, 0xb9, 0x9d, 0x41, 0x48, 0xd5, 0x80, 0xf6, 0x73, 0xd2};
+static const uint8_t kUuidObcButton[16] =
+    {0x29, 0x52, 0x34, 0x72, 0x04, 0xfa, 0xd1, 0xb9, 0x9d, 0x41, 0x48, 0xd5, 0x81, 0xf6, 0x73, 0xd2};
+static BLEService obcSvc(kUuidObcSvc);
+static BLECharacteristic chObcButton(kUuidObcButton);
+
 // Discovered nearby CPS/FTMS devices (the web source picker). The scan callback records every
 // advertiser; the list is deduped/capped by the pure addCandidate.
 static std::vector<SourceCandidate> g_candidates;
@@ -888,6 +898,13 @@ void setup() {
     chWk.setMaxLen(2 + 19);  // write: [ver, cmd, arg...]
     chWk.setWriteCallback(wkWriteCb);
     chWk.begin();
+
+    // OpenBikeControl button-state service (re-present the SB20 handlebar buttons to OBC apps over BLE).
+    obcSvc.begin();
+    chObcButton.setProperties(CHR_PROPS_NOTIFY | CHR_PROPS_READ);
+    chObcButton.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+    chObcButton.setMaxLen(20);
+    chObcButton.begin();
 
     // --- source: central scanning for a CPS meter (+ the reference during calibration) ---
     clientCps.begin();
