@@ -15,6 +15,7 @@
 #include "Cps.h"
 #include "DiagReport.h"
 #include "Ftms.h"
+#include "Obc.h"
 #include "HttpSecurity.h"
 #include "MeterMatch.h"
 #include "OtaManifest.h"
@@ -668,6 +669,58 @@ void test_curve_string_roundtrip() {
 }
 
 // --- SB20 shifter decode + debounce (the C++ mirror of shifter_erg.py) --------
+
+// ---- OpenBikeControl (OBC) ButtonState codec — golden vectors straight from the MIT spec ----
+void test_obc_encode_button_single() {
+    using namespace sb20proxy;
+    uint8_t out[OBC_MAX_MSG];
+    size_t n = encodeButtonPress(OBC_BTN_SHIFT_UP, OBC_STATE_PRESSED, out, sizeof(out));
+    const uint8_t want[] = {0x01, 0x01, 0x01};  // [msg-type, Shift Up, pressed]
+    TEST_ASSERT_EQUAL_INT(3, (int)n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(want, out, 3);
+}
+
+void test_obc_encode_button_multi_action() {
+    using namespace sb20proxy;
+    // One physical press -> Shift Up + ERG Up, so it works in shifting AND erg apps (spec §multi-action).
+    ObcAction acts[] = {{OBC_BTN_SHIFT_UP, OBC_STATE_PRESSED}, {OBC_BTN_ERG_UP, OBC_STATE_PRESSED}};
+    uint8_t out[OBC_MAX_MSG];
+    size_t n = encodeButtonState(acts, 2, out, sizeof(out));
+    const uint8_t want[] = {0x01, 0x01, 0x01, 0x30, 0x01};
+    TEST_ASSERT_EQUAL_INT(5, (int)n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(want, out, 5);
+}
+
+void test_obc_encode_button_press_and_release() {
+    using namespace sb20proxy;
+    ObcAction acts[] = {{OBC_BTN_SHIFT_UP, OBC_STATE_PRESSED}, {OBC_BTN_SHIFT_DOWN, OBC_STATE_RELEASED}};
+    uint8_t out[OBC_MAX_MSG];
+    size_t n = encodeButtonState(acts, 2, out, sizeof(out));
+    const uint8_t want[] = {0x01, 0x01, 0x01, 0x02, 0x00};  // spec example: 0x01 pressed, 0x02 released
+    TEST_ASSERT_EQUAL_INT(5, (int)n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(want, out, 5);
+}
+
+void test_obc_encode_analog_and_device_status() {
+    using namespace sb20proxy;
+    uint8_t out[OBC_MAX_MSG];
+    size_t n = encodeButtonPress(OBC_BTN_NAV_UP, 0x80, out, sizeof(out));  // analog nav-up @ 50%
+    const uint8_t wantA[] = {0x01, 0x10, 0x80};
+    TEST_ASSERT_EQUAL_INT(3, (int)n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantA, out, 3);
+    n = encodeDeviceStatus(0x55, true, out, sizeof(out));                 // 85% battery, connected
+    const uint8_t wantS[] = {0x02, 0x55, 0x01};
+    TEST_ASSERT_EQUAL_INT(3, (int)n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantS, out, 3);
+}
+
+void test_obc_encode_rejects_small_buffer_and_empty() {
+    using namespace sb20proxy;
+    uint8_t small[2];
+    TEST_ASSERT_EQUAL_INT(0, (int)encodeButtonPress(OBC_BTN_LAP, OBC_STATE_PRESSED, small, sizeof(small)));
+    uint8_t out[OBC_MAX_MSG];
+    TEST_ASSERT_EQUAL_INT(0, (int)encodeButtonState(nullptr, 0, out, sizeof(out)));
+}
 
 void test_shifter_decode_golden_buttons() {
     // the real session-3 `01`-frames, one per button (shifter-ble-protocol.md): `01 00 <bit LE>`
@@ -2501,6 +2554,11 @@ int runUnityTests() {
     RUN_TEST(test_curve_string_roundtrip);
     RUN_TEST(test_shifter_decode_golden_buttons);
     RUN_TEST(test_shifter_debounce_one_event_per_press);
+    RUN_TEST(test_obc_encode_button_single);
+    RUN_TEST(test_obc_encode_button_multi_action);
+    RUN_TEST(test_obc_encode_button_press_and_release);
+    RUN_TEST(test_obc_encode_analog_and_device_status);
+    RUN_TEST(test_obc_encode_rejects_small_buffer_and_empty);
     RUN_TEST(test_calibration_session_lifecycle_and_fit);
     RUN_TEST(test_calibration_session_finish_needs_enough_pairs);
     RUN_TEST(test_calibration_session_cancel_resets);
