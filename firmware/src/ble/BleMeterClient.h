@@ -82,6 +82,11 @@ public:
     // ftms envs never compile this .cpp, so the coupling stays app-only.
     static void setFtmsScanSink(class FtmsErgClient* sink);
 
+    // Shared-scan SB20-shifter routing (sink SB20 buttons -> OBC): the shifter client registers here so
+    // the ONE scan also feeds it named advertisers to match the SB20 ("Stages Bike"). Same discipline as
+    // the FTMS sink — it must NOT install its own scan callbacks. Registered from main.
+    static void setShifterScanSink(class BleShifterClient* sink);
+
     // Picker rescan boost: keep the shared scan running for `ms` even though every client already
     // has its target. Without this, Rescan on a fully-connected board cleared the candidate list
     // and NOTHING refilled it (the scan had stopped) — an empty picker until reboot (owner, S3

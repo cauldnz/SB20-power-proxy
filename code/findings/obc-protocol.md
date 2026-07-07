@@ -111,3 +111,31 @@ curl -X POST http://sb20proxy.local/obc/devmode/off  # back to the normal crank 
 Seam: `RuntimeConfig.obcDevmode` → `BleCrankPeripheral::setObcDevmode` (name override) + `WifiLink`
 `/obc*` routes → `setObcPressHook` → `encodeButtonPress` (Obc.h) → `notifyObc`. Host-tested (config
 roundtrip + encode) and compiled on `esp32c3-oled-live-ota`; the on-air subscribe is the manual step.
+
+### Sink the SB20's own shifter buttons → re-broadcast as OBC (the bike add-on)
+
+The real button source (vs Devmode's virtual presses): read the **SB20's own handlebar buttons** and
+re-broadcast them as OBC, so any OBC app gets shifting/erg/lap off the bike's native shifters with no
+extra hardware. The SB20 is a BLE **peripheral** exposing a vendor button characteristic
+(`0c46be60`, service `0c46be5f` — see `shifter-ble-protocol.md`), so the box opens a **separate central
+role** to the SB20 (it is already the SB20's power-meter *peripheral*) and subscribes to it.
+
+Pure spine (both firmwares): `ObcShifterSource` (`firmware/lib/proxy/`) composes the existing
+`ShifterDebounce` (decode `0c46be60` + collapse the ~10–20×/press held-frame stream to one event) and
+`encodeSb20ButtonState` (SB20 button → OBC ids), emitting a **momentary click** (all mapped ids PRESSED
+then RELEASED) per press. Host-tested with the real session-3 golden vectors
+(`test_obc_shifter_source_click_and_debounce`). Default map (`ObcSb20Map.h`): paddles → Shift + ERG,
+Left 3rd → Lap, Right 3rd → Menu.
+
+- **ESP32** (runtime option): `RuntimeConfig.obcSinkShifter` (NVS) → a third NimBLE central,
+  `BleShifterClient`, joins the shared scan hub (`BleMeterClient::setShifterScanSink`), matches the SB20
+  by name (`"Stages Bike"`), subscribes, and feeds `ObcShifterSource` → `crank.notifyObc`. Toggle over
+  the air: `curl -X POST http://sb20proxy.local/obc/shifter/on` (persists + reboots); `GET /obc` shows
+  state. Compiled on `esp32c3-oled-live-ota`.
+- **nRF** (build-flag option — no web UI for a runtime toggle): `-D OBC_SINK_SHIFTER=1` → a Bluefruit
+  central connects to `"Stages Bike"`, discovers `sb20VendorSvc`/`sb20Button`, subscribes, and feeds the
+  same `ObcShifterSource` → `notifyClients(chObcButton, …)`. Compiled on `xiao-sense`.
+
+Both are **bench-gated** for the on-air step (needs a real SB20): the box must be able to hold a central
+link to the SB20 *and* its power-meter peripheral link at once (dual-role) — the coex risk to watch on
+the single-core C3. The decode→map→encode is fully covered by the host test either way.

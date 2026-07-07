@@ -17,6 +17,7 @@
 #include "Ftms.h"
 #include "Obc.h"
 #include "ObcSb20Map.h"
+#include "ObcShifterSource.h"
 #include "HttpSecurity.h"
 #include "MeterMatch.h"
 #include "OtaManifest.h"
@@ -752,16 +753,65 @@ void test_obc_sb20_encode_button_state() {
     TEST_ASSERT_EQUAL_INT(0, (int)encodeSb20ButtonState(ShifterButton::None, OBC_STATE_PRESSED, out, sizeof(out)));
 }
 
+void test_obc_shifter_source_click_and_debounce() {
+    using namespace sb20proxy;
+    ObcShifterSource src;
+    std::vector<std::vector<uint8_t>> msgs;
+    auto emit = [&](const uint8_t* d, size_t n) { msgs.emplace_back(d, d + n); };
+
+    // LEFT up held frame (real session-3 capture: 01 00 01 00) -> ONE momentary click: PRESSED then
+    // RELEASED, across both mapped OBC ids (ShiftUp 0x01 + ERGUp 0x30).
+    const uint8_t leftUp[] = {0x01, 0x00, 0x01, 0x00};
+    src.feed(leftUp, sizeof(leftUp), emit);
+    TEST_ASSERT_EQUAL_INT(2, (int)msgs.size());
+    const uint8_t wantP[] = {0x01, 0x01, 0x01, 0x30, 0x01};
+    const uint8_t wantR[] = {0x01, 0x01, 0x00, 0x30, 0x00};
+    TEST_ASSERT_EQUAL_INT(5, (int)msgs[0].size());
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantP, msgs[0].data(), 5);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantR, msgs[1].data(), 5);
+
+    // Streamed repeats of the SAME held button are debounced away (the SB20 streams ~10-20x per press).
+    src.feed(leftUp, sizeof(leftUp), emit);
+    src.feed(leftUp, sizeof(leftUp), emit);
+    TEST_ASSERT_EQUAL_INT(2, (int)msgs.size());
+
+    // A terminator frame (type 0x04) ends the press; the next held frame is a fresh press again.
+    const uint8_t term[] = {0x04, 0x00, 0x01, 0x00};
+    src.feed(term, sizeof(term), emit);
+    TEST_ASSERT_EQUAL_INT(2, (int)msgs.size());  // boundary emits nothing
+    src.feed(leftUp, sizeof(leftUp), emit);
+    TEST_ASSERT_EQUAL_INT(4, (int)msgs.size());  // press fires again after the boundary
+
+    // A single-id button (LEFT 3rd -> Lap 0x35): click = [01 35 01] then [01 35 00].
+    msgs.clear();
+    const uint8_t left3[] = {0x01, 0x00, 0x04, 0x00};
+    src.feed(left3, sizeof(left3), emit);
+    TEST_ASSERT_EQUAL_INT(2, (int)msgs.size());
+    const uint8_t lapP[] = {0x01, 0x35, 0x01};
+    const uint8_t lapR[] = {0x01, 0x35, 0x00};
+    TEST_ASSERT_EQUAL_INT(3, (int)msgs[0].size());
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(lapP, msgs[0].data(), 3);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(lapR, msgs[1].data(), 3);
+
+    // A short/garbage frame is ignored (no emit, no crash).
+    const uint8_t shortF[] = {0x01, 0x00};
+    msgs.clear();
+    src.feed(shortF, sizeof(shortF), emit);
+    TEST_ASSERT_EQUAL_INT(0, (int)msgs.size());
+}
+
 void test_runtime_config_obc_roundtrip() {
     using namespace sb20proxy;
     RuntimeConfig c = RuntimeConfig::defaults();
     c.obcEnabled = true;
     c.obcPort = 21587;
     c.obcDevmode = true;
+    c.obcSinkShifter = true;
     RuntimeConfig r = RuntimeConfig::fromLine(c.toLine());
     TEST_ASSERT_TRUE(r.obcEnabled);
     TEST_ASSERT_EQUAL_INT(21587, (int)r.obcPort);
     TEST_ASSERT_TRUE(r.obcDevmode);
+    TEST_ASSERT_TRUE(r.obcSinkShifter);
     // backward-compat: a pre-OBC line (no obc fields) -> OBC disabled, default port, devmode off, no wedge
     RuntimeConfig old = RuntimeConfig::fromLine("addr|ASSIOMA|0|Stages 62144|SER|0|||");
     TEST_ASSERT_FALSE(old.obcEnabled);
@@ -773,6 +823,7 @@ void test_runtime_config_obc_roundtrip() {
     TEST_ASSERT_TRUE(preDev.obcEnabled);
     TEST_ASSERT_EQUAL_INT(21587, (int)preDev.obcPort);
     TEST_ASSERT_FALSE(preDev.obcDevmode);
+    TEST_ASSERT_FALSE(preDev.obcSinkShifter);
 }
 
 void test_shifter_decode_golden_buttons() {
@@ -2614,6 +2665,7 @@ int runUnityTests() {
     RUN_TEST(test_obc_encode_rejects_small_buffer_and_empty);
     RUN_TEST(test_obc_sb20_default_map);
     RUN_TEST(test_obc_sb20_encode_button_state);
+    RUN_TEST(test_obc_shifter_source_click_and_debounce);
     RUN_TEST(test_runtime_config_obc_roundtrip);
     RUN_TEST(test_calibration_session_lifecycle_and_fit);
     RUN_TEST(test_calibration_session_finish_needs_enough_pairs);

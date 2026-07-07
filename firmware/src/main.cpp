@@ -76,6 +76,31 @@ static ProxyCore proxy(meter, crank,
 static FtmsErgClient ergTrainer;
 static bool g_ergConfigured = false;
 
+// "Sink the SB20's own shifter buttons -> broadcast as OBC" (obcSinkShifter). A central to the SB20's
+// vendor button char (BleShifterClient) feeds each press through the pure ObcShifterSource, which emits
+// OBC ButtonState messages straight to the crank's OBC notify char. Live builds only (needs the shared
+// scan hub + a real central to the SB20). See code/findings/obc-protocol.md + shifter-ble-protocol.md.
+#include "ObcShifterSource.h"
+#include "ble/BleShifterClient.h"
+static BleShifterClient shifter;
+static ObcShifterSource shifterSrc;
+static bool g_shifterConfigured = false;
+
+static void shifterBegin(const RuntimeConfig& cfg) {
+#if !USE_MOCK_METER
+    if (!cfg.obcSinkShifter) return;
+    shifter.onNotify([](const uint8_t* d, size_t n) {
+        shifterSrc.feed(d, n, [](const uint8_t* b, size_t m) { crank.notifyObc(b, m); });
+    });
+    BleMeterClient::setShifterScanSink(&shifter);
+    shifter.beginShared("Stages Bike");  // the SB20's advertised-name substring
+    g_shifterConfigured = true;
+    Serial.println("[shifter] sink SB20 buttons -> OBC enabled (hunting 'Stages Bike')");
+#else
+    (void)cfg;
+#endif
+}
+
 // Start the erg client when a trainer is configured. Skipped on calibration boots (two meter
 // centrals already share the radio there) and while the fresh-onboarding portal is up.
 static void ergBegin(const RuntimeConfig& cfg) {
@@ -859,7 +884,7 @@ void setup() {
 #endif  // the device name = our advertised identity
     crank.setMode(cfg.mode);                    // SPOOF crank vs CORRECTOR (own honest CPS identity)
     crank.setIdentity(cfg.spoofName, cfg.spoofSerial);  // advertised name + DIS serial
-    crank.setObcEnabled(cfg.obcEnabled || cfg.obcDevmode);  // OBC BLE service (SB20 buttons -> OBC apps)
+    crank.setObcEnabled(cfg.obcEnabled || cfg.obcDevmode || cfg.obcSinkShifter);  // OBC BLE service
     crank.setObcDevmode(cfg.obcDevmode);        // Devmode: advertise as OBC-SB20 for the listener test
 
     // The correction between source and crank: CORRECTOR applies the fitted calibration curve
@@ -969,6 +994,7 @@ void setup() {
         if (g_calibrating) refMeter.begin();  // 2nd central joins the shared scan
 #endif
         ergBegin(cfg);  // FTMS erg drive, when a trainer is configured (§14 phase 4)
+        shifterBegin(cfg);  // sink SB20 shifter buttons -> OBC, when obcSinkShifter is on
     } else {
         Serial.println("[ble] held off while the setup portal is up (starts after provisioning)");
     }
@@ -978,6 +1004,7 @@ void setup() {
     if (g_calibrating) refMeter.begin();
 #endif
     ergBegin(cfg);
+    shifterBegin(cfg);  // sink SB20 shifter buttons -> OBC, when obcSinkShifter is on
 #endif
 #if USE_WIFI
 
@@ -1194,6 +1221,7 @@ void loop() {
 #endif
         ergTrainer.loop();
     }
+    if (g_shifterConfigured) shifter.loop();  // service the SB20-shifter central (sink -> OBC)
 #if !USE_MOCK_METER
     if (g_calibrating) {
         refMeter.loop();  // service the 2nd central during a calibration session

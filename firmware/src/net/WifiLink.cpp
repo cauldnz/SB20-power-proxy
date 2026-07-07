@@ -199,10 +199,14 @@ void WifiLink::addLogRoutes_() {
 void WifiLink::addObcRoute_() {
     // GET /obc — status + curl usage (plain text; the bring-up cheat-sheet).
     server_->on("/obc", HTTP_GET, [this]() {
-        const bool dev = configProvider_ ? configProvider_().obcDevmode : false;
-        std::string s = "OpenBikeControl (OBC) Devmode\n";
-        s += std::string("devmode: ") + (dev ? "ON (advertising as OBC-SB20)\n" : "off\n");
-        s += "\nEnable / disable (persists to NVS + reboots):\n";
+        const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        std::string s = "OpenBikeControl (OBC)\n";
+        s += std::string("devmode: ") + (cfg.obcDevmode ? "ON (advertising as OBC-SB20)\n" : "off\n");
+        s += std::string("sink SB20 shifter: ") + (cfg.obcSinkShifter ? "ON\n" : "off\n");
+        s += "\nSink the SB20's own shifter buttons -> OBC (the bike add-on; persists + reboots):\n";
+        s += "  curl -X POST http://sb20proxy.local/obc/shifter/on\n";
+        s += "  curl -X POST http://sb20proxy.local/obc/shifter/off\n";
+        s += "\nDevmode: advertise as OBC-SB20 for a listener test (persists + reboots):\n";
         s += "  curl -X POST http://sb20proxy.local/obc/devmode/on\n";
         s += "  curl -X POST http://sb20proxy.local/obc/devmode/off\n";
         s += "\nFire a virtual button press (OBC id, hex or dec; optional &state=, default 1):\n";
@@ -247,6 +251,26 @@ void WifiLink::addObcRoute_() {
         cfg.obcDevmode = false;
         if (configSave_) configSave_(cfg);
         server_->send(200, "text/plain", "OBC Devmode off - restarting with the normal identity.\n");
+        delay(400);
+        esp_restart();
+    });
+    // POST /obc/shifter/{on,off} — sink the SB20's own shifter buttons and re-broadcast them as OBC
+    // (the bike add-on); persists + reboots (a central to the SB20 comes up only on the next boot).
+    server_->on("/obc/shifter/on", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        cfg.obcSinkShifter = true;
+        if (configSave_) configSave_(cfg);
+        server_->send(200, "text/plain", "OBC sink-shifter ON - will read the SB20 buttons, restarting.\n");
+        delay(400);
+        esp_restart();
+    });
+    server_->on("/obc/shifter/off", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        cfg.obcSinkShifter = false;
+        if (configSave_) configSave_(cfg);
+        server_->send(200, "text/plain", "OBC sink-shifter off - restarting.\n");
         delay(400);
         esp_restart();
     });

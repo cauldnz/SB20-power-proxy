@@ -25,6 +25,7 @@
 #undef constrain
 #include "CalibrationSession.h"  // pure on-device DUT->reference calibration (shared with ESP32)
 #include "Correction.h"    // pure (shared with the ESP32 builds via lib_extra_dirs)
+#include "ObcShifterSource.h"  // pure: SB20 shifter notification -> OBC ButtonState (shared w/ ESP32)
 #include "Cps.h"           // pure CPS codec — the same bytes as the ESP32 + Python twins
 #include "Ftms.h"          // pure FTMS codec (erg control point) — shared with ESP32 (P4)
 #include "IPowerSource.h"  // PowerReading
@@ -157,6 +158,26 @@ static int16_t g_ergDesired = 0, g_ergLastSent = 0;
 static bool g_ergHaveSent = false;
 static FtmsPowerRange g_ergRange;  // set to a sane 0..1000 fallback in setup(); the trainer's
                                    // real range overwrites it on connect
+
+// ---- sink the SB20's own shifter buttons -> re-broadcast as OBC (the bike add-on) ----------------
+// A 4th central connects to the SB20 and subscribes to its vendor button char (0c46be60, service
+// 0c46be5f — code/findings/shifter-ble-protocol.md); each press feeds the pure ObcShifterSource, which
+// emits OBC ButtonState straight to our chObcButton (notifyClients). Build-flag gated (the nRF has no
+// web UI for a runtime toggle — enable with `-D OBC_SINK_SHIFTER=1`); the ESP32 keeps its NVS toggle.
+// 128-bit UUIDs stored little-endian (like the OBC UUIDs above).
+static const uint8_t kUuidSb20Svc[16] = {0xe5, 0xf4, 0xa2, 0xe1, 0xea, 0xc6, 0x0e, 0xae,
+                                         0xff, 0x48, 0x22, 0x9c, 0x5f, 0xbe, 0x46, 0x0c};
+static const uint8_t kUuidSb20Button[16] = {0xe5, 0xf4, 0xa2, 0xe1, 0xea, 0xc6, 0x0e, 0xae,
+                                            0xff, 0x48, 0x22, 0x9c, 0x60, 0xbe, 0x46, 0x0c};
+static BLEClientService sb20VendorSvc(kUuidSb20Svc);
+static BLEClientCharacteristic sb20Button(kUuidSb20Button);
+static uint16_t g_sb20ConnHandle = BLE_CONN_HANDLE_INVALID;
+static volatile bool g_sb20Connected = false;
+#ifndef OBC_SINK_SHIFTER
+#define OBC_SINK_SHIFTER 0
+#endif
+static bool g_sinkShifter = (OBC_SINK_SHIFTER != 0);  // read the SB20 shifter + re-broadcast as OBC
+static ObcShifterSource g_shifterSrc;                 // pure decode/debounce/map/encode
 
 // ---- structured workout (pure WorkoutRuntime, shared with the ESP32) --------------------------
 static WorkoutRuntime g_wk;
@@ -310,6 +331,13 @@ static void scanCb(ble_gap_evt_adv_report_t* report) {
         Bluefruit.Central.connect(report);
         return;
     }
+    // Sink the SB20's own shifter buttons -> OBC: grab the SB20 (its own central) when enabled.
+    if (g_sinkShifter && !g_sb20Connected && haveName &&
+        strstr((const char*)nameBuf, "Stages Bike") != nullptr) {
+        Serial.printf("[shifter] SB20 match '%s' - connecting\n", nameBuf);
+        Bluefruit.Central.connect(report);
+        return;
+    }
     if (g_srcConnected) { Bluefruit.Scanner.resume(); return; }  // source already up; keep scanning for ref
     if (g_cfg.srcFilter[0] != '\0') {
         if (haveName) {
@@ -412,6 +440,13 @@ static void ergStep() {
     }
 }
 
+// SB20 shifter button notification (char 0c46be60): feed the pure source, which emits an OBC click
+// (PRESSED then RELEASED, across every mapped id) straight to our chObcButton.
+static void sb20ButtonNotifyCb(BLEClientCharacteristic* /*chr*/, uint8_t* data, uint16_t len) {
+    g_shifterSrc.feed(data, len,
+                      [](const uint8_t* buf, size_t n) { notifyClients(chObcButton, buf, (uint16_t)n); });
+}
+
 static void centralConnectCb(uint16_t connHandle) {
     // Which meter is this? During calibration the REFERENCE (its name matches g_refFilter) uses
     // the 2nd central + its own client instances; everything else is the source/DUT.
@@ -438,6 +473,23 @@ static void centralConnectCb(uint16_t connHandle) {
         g_refConnHandle = connHandle;
         g_refConnected = true;
         Serial.printf("[cal] reference connected: '%s'\n", peer);
+        if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
+        return;
+    }
+    // The SB20 (sink shifter -> OBC): discover its vendor button service on this link + subscribe.
+    const bool isSb20 = g_sinkShifter && !g_sb20Connected && strstr(peer, "Stages Bike") != nullptr &&
+                        connHandle != g_srcConnHandle;
+    if (isSb20) {
+        if (!sb20VendorSvc.discover(connHandle) || !sb20Button.discover()) {
+            Bluefruit.disconnect(connHandle);  // not the SB20 vendor GATT after all
+            return;
+        }
+        sb20Button.setNotifyCallback(sb20ButtonNotifyCb);
+        sb20Button.enableNotify();
+        g_sb20ConnHandle = connHandle;
+        g_sb20Connected = true;
+        g_shifterSrc.reset();
+        Serial.printf("[shifter] SB20 connected: '%s' (buttons -> OBC)\n", peer);
         if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
         return;
     }
@@ -473,6 +525,11 @@ static void centralDisconnectCb(uint16_t connHandle, uint8_t reason) {
         g_refConnected = false;
         g_refConnHandle = BLE_CONN_HANDLE_INVALID;
         Serial.printf("[cal] reference dropped (0x%02X)\n", reason);
+    } else if (connHandle == g_sb20ConnHandle) {  // the SB20 shifter source dropped
+        g_sb20Connected = false;
+        g_sb20ConnHandle = BLE_CONN_HANDLE_INVALID;
+        g_shifterSrc.reset();  // drop any in-flight press so the next one fires cleanly on reconnect
+        Serial.printf("[shifter] SB20 dropped (0x%02X)\n", reason);
     } else {
         g_srcConnected = false;
         g_srcConnHandle = BLE_CONN_HANDLE_INVALID;
