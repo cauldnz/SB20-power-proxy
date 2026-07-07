@@ -13,7 +13,8 @@
 
 1. **G1 — OBC transmit + observe** (no SB20): a virtual press (`/obc/press`) reaches a real BLE consumer.
 2. **G2 — Sink the SB20's own shifter → OBC** (the headline): press a real SB20 paddle → the mapped OBC
-   action comes out. **The dual-role coex + ~8 KB heap is the risk.**
+   action comes out. **The dual-role central+peripheral coex is the risk** (heap is fine — the flashed
+   board idles at **~120 KB free**, min 112 KB; the "8 KB" I first read was a stale metric of the old build).
 3. **G3 — Web-config round-trip** (PR #250): change a button's action live, see the new action.
 
 ## Topology
@@ -113,9 +114,10 @@ link drops when the OBC peripheral + WiFi are also up — that's the single-core
   to its normal ride identity. Note in Actual which state it was left in.
 
 ## Risks & mitigations
-- **~8 KB idle heap + dual-role coex (the main risk).** The C3 already idles low; adding a central to the
-  SB20 while the OBC peripheral + WiFi are up may OOM or wedge (we've hit coex hangs before → Ride-mode
-  WiFi-off exists for exactly this). Mitigation: G1 first (no central), watch `/stats` heap continuously
+- **Dual-role central+peripheral coex (the main risk).** Adding a central to the SB20 while the OBC
+  peripheral + WiFi are up on the single-core C3 may wedge (we've hit coex hangs before → Ride-mode
+  WiFi-off exists for exactly this). **Heap is NOT the worry** — the flashed board idles at ~120 KB free
+  (min 112 KB), verified. Mitigation: G1 first (no central), watch `/stats` (free_heap + reset_reason)
   in G2, keep G2 bounded (~2 min), and treat a reset as a **finding** to log, not a session failure.
 - **Feature-branch firmware.** This is `feat/obc-web-config`, not `main` — fine for a test; restore
   `main` after (Cleanup). It IS current with `main` (9 ahead, 0 behind), so not stale.
@@ -126,8 +128,13 @@ link drops when the OBC peripheral + WiFi are also up — that's the single-core
 
 ## Actual (fill in live — annotate each gate ✅/❌/⚠️ with the observed obc_reader lines, `/log`, `/stats`)
 
-- **P0 flash:** …
-- **P1 endpoints / baseline heap:** …
+- **P0 flash:** ✅ **PRE-VERIFIED at the desk (2026-07-08).** OTA-flashed `esp32c3-oled-live-ota` to
+  `.165` (OTA OK, 1st attempt, RSSI −62), rebooted, `/status` = ver 0.1.0 / identity "Stages 62145" /
+  mode spoof; `/obc` cheat-sheet renders (devmode off, sink off). Board is on the OBC firmware now.
+- **P1 endpoints / baseline heap:** ✅ **PRE-VERIFIED.** `GET /obc/buttons.json` = `{"enabled":false,
+  "actions":[1,2,5,1,2,6]}`; `POST` (with `Content-Type: application/json`) of `[6,5,4,3,2,1]` persisted
+  and read back; restored to default. `/stats`: **free_heap 119288, min_free_heap 112828**, reset_reason
+  `sw` (the OTA reboot). **The config path works on real hardware — start the session at G1.**
 - **G1 Devmode → obc_reader:** …
 - **G2 SB20 shifter → OBC (+ coex/heap):** …
 - **G3 web-config round-trip:** …
