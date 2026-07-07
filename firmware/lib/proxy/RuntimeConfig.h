@@ -5,7 +5,8 @@
 #include <vector>
 
 #include "Config.h"
-#include "Correction.h"  // CorrectionCurve — the meter-to-meter correction stored in NVS
+#include "Correction.h"      // CorrectionCurve — the meter-to-meter correction stored in NVS
+#include "Sb20ButtonMap.h"   // the configurable SB20-shifter-button -> action binding
 
 namespace sb20proxy {
 
@@ -82,6 +83,7 @@ struct RuntimeConfig {
     bool obcSinkShifter = false;         // sink the SB20's own shifter buttons (a BLE central to the
                                          // SB20's vendor char 0c46be60) and re-broadcast them as OBC —
                                          // the "OBC bike add-on". Implies the OBC service.
+    Sb20ButtonMap obcButtons = Sb20ButtonMap::defaults();  // per-button action binding (web-configurable)
 
     // The factory defaults, from compile-time Config (used when nothing is stored in NVS yet).
     static RuntimeConfig defaults() {
@@ -105,7 +107,7 @@ struct RuntimeConfig {
                "|" + refMeterAddress + "|" + refMeterNameFilter + "|" + curveToString(curve) + "|" +
                (calibrating ? "1" : "0") + "|" + trainerNameFilter + "|" + (obcEnabled ? "1" : "0") +
                "|" + std::to_string(obcPort) + "|" + (obcDevmode ? "1" : "0") + "|" +
-               (obcSinkShifter ? "1" : "0");
+               (obcSinkShifter ? "1" : "0") + "|" + obcButtons.toString();
     }
 
     // Parse a stored line. Backward-compatible: an old line (no mode/ref/curve) keeps SPOOF + no
@@ -138,6 +140,7 @@ struct RuntimeConfig {
         if (f.size() >= 13 && !f[12].empty()) c.obcPort = (uint16_t)std::atoi(f[12].c_str());
         if (f.size() >= 14) c.obcDevmode = (f[13] == "1");
         if (f.size() >= 15) c.obcSinkShifter = (f[14] == "1");
+        if (f.size() >= 16 && !f[15].empty()) c.obcButtons = Sb20ButtonMap::fromString(f[15]);
         return c;
     }
 };

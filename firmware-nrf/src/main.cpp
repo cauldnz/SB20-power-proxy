@@ -443,8 +443,13 @@ static void ergStep() {
 // SB20 shifter button notification (char 0c46be60): feed the pure source, which emits an OBC click
 // (PRESSED then RELEASED, across every mapped id) straight to our chObcButton.
 static void sb20ButtonNotifyCb(BLEClientCharacteristic* /*chr*/, uint8_t* data, uint16_t len) {
-    g_shifterSrc.feed(data, len,
-                      [](const uint8_t* buf, size_t n) { notifyClients(chObcButton, buf, (uint16_t)n); });
+    g_shifterSrc.feed(
+        data, len,
+        [](const uint8_t* buf, size_t n) { notifyClients(chObcButton, buf, (uint16_t)n); },  // OBC
+        [](int8_t deltaW) {                                                                    // local erg
+            int v = g_ergBias + deltaW;
+            g_ergBias = (int16_t)(v < -200 ? -200 : (v > 200 ? 200 : v));
+        });
 }
 
 static void centralConnectCb(uint16_t connHandle) {

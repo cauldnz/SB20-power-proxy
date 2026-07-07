@@ -16,8 +16,10 @@
 #include "DiagReport.h"
 #include "Ftms.h"
 #include "Obc.h"
+#include "ObcButtonsPage.h"
 #include "ObcSb20Map.h"
 #include "ObcShifterSource.h"
+#include "Sb20ButtonMap.h"
 #include "HttpSecurity.h"
 #include "MeterMatch.h"
 #include "OtaManifest.h"
@@ -753,50 +755,105 @@ void test_obc_sb20_encode_button_state() {
     TEST_ASSERT_EQUAL_INT(0, (int)encodeSb20ButtonState(ShifterButton::None, OBC_STATE_PRESSED, out, sizeof(out)));
 }
 
+void test_sb20_button_map_default_serialize_resolve() {
+    using namespace sb20proxy;
+    Sb20ButtonMap m = Sb20ButtonMap::defaults();
+    TEST_ASSERT_EQUAL_STRING("shift_up,shift_down,lap,shift_up,shift_down,menu", m.toString().c_str());
+    // resolve the default bindings to their action specs
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_SHIFT_UP, m.resolve(ShifterButton::LeftUp).obcId);
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_LAP, m.resolve(ShifterButton::Left3).obcId);
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_MENU, m.resolve(ShifterButton::Right3).obcId);
+    // round-trip a custom binding; a short/partial string keeps defaults for the missing slots
+    Sb20ButtonMap c = Sb20ButtonMap::fromString("bias_up,none,erg_up");
+    TEST_ASSERT_EQUAL_INT((int)Sb20ActionKind::ErgBias, (int)c.resolve(ShifterButton::LeftUp).kind);
+    TEST_ASSERT_EQUAL_INT(10, (int)c.resolve(ShifterButton::LeftUp).ergDelta);
+    TEST_ASSERT_EQUAL_INT((int)Sb20ActionKind::None, (int)c.resolve(ShifterButton::LeftDown).kind);
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_ERG_UP, c.resolve(ShifterButton::Left3).obcId);
+    TEST_ASSERT_EQUAL_STRING("shift_up", c.token[3].c_str());  // slot 3 kept its default
+    // an unknown token resolves to None (never acts on garbage)
+    TEST_ASSERT_EQUAL_INT((int)Sb20ActionKind::None,
+                          (int)sb20SpecForToken("bogus").kind);
+}
+
+void test_obc_buttons_page_render_parse() {
+    using namespace sb20proxy;
+    const std::string html = renderObcButtonsPage(Sb20ButtonMap::defaults(), false);
+    TEST_ASSERT_TRUE(html.find("name='btn0'") != std::string::npos);
+    TEST_ASSERT_TRUE(html.find("name='btn5'") != std::string::npos);
+    TEST_ASSERT_TRUE(html.find("<option value='shift_up' selected>") != std::string::npos);
+    TEST_ASSERT_TRUE(html.find("<option value='bias_up'") != std::string::npos);  // erg-nudge offered
+
+    // Parse a submitted form -> the map; an unknown token is rejected (keeps the slot's default).
+    Sb20ButtonMap p =
+        parseObcButtonsForm("btn0=bias_up&btn1=none&btn2=lap&btn3=bogus&btn4=erg_down&btn5=menu");
+    TEST_ASSERT_EQUAL_STRING("bias_up", p.token[0].c_str());
+    TEST_ASSERT_EQUAL_STRING("none", p.token[1].c_str());
+    TEST_ASSERT_EQUAL_STRING("shift_up", p.token[3].c_str());  // "bogus" rejected -> default kept
+    TEST_ASSERT_EQUAL_STRING("erg_down", p.token[4].c_str());
+    TEST_ASSERT_TRUE(sb20IsKnownToken("lap"));
+    TEST_ASSERT_FALSE(sb20IsKnownToken("bogus"));
+}
+
 void test_obc_shifter_source_click_and_debounce() {
     using namespace sb20proxy;
-    ObcShifterSource src;
+    ObcShifterSource src;  // default bindings
     std::vector<std::vector<uint8_t>> msgs;
+    int ergSum = 0;
     auto emit = [&](const uint8_t* d, size_t n) { msgs.emplace_back(d, d + n); };
+    auto onErg = [&](int8_t d) { ergSum += d; };
 
-    // LEFT up held frame (real session-3 capture: 01 00 01 00) -> ONE momentary click: PRESSED then
-    // RELEASED, across both mapped OBC ids (ShiftUp 0x01 + ERGUp 0x30).
+    // LEFT up held frame (real session-3 capture: 01 00 01 00), default-bound to OBC Shift Up (0x01)
+    // -> ONE momentary click: PRESSED then RELEASED. No erg action.
     const uint8_t leftUp[] = {0x01, 0x00, 0x01, 0x00};
-    src.feed(leftUp, sizeof(leftUp), emit);
+    src.feed(leftUp, sizeof(leftUp), emit, onErg);
     TEST_ASSERT_EQUAL_INT(2, (int)msgs.size());
-    const uint8_t wantP[] = {0x01, 0x01, 0x01, 0x30, 0x01};
-    const uint8_t wantR[] = {0x01, 0x01, 0x00, 0x30, 0x00};
-    TEST_ASSERT_EQUAL_INT(5, (int)msgs[0].size());
-    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantP, msgs[0].data(), 5);
-    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantR, msgs[1].data(), 5);
+    const uint8_t wantP[] = {0x01, 0x01, 0x01};
+    const uint8_t wantR[] = {0x01, 0x01, 0x00};
+    TEST_ASSERT_EQUAL_INT(3, (int)msgs[0].size());
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantP, msgs[0].data(), 3);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantR, msgs[1].data(), 3);
+    TEST_ASSERT_EQUAL_INT(0, ergSum);
 
     // Streamed repeats of the SAME held button are debounced away (the SB20 streams ~10-20x per press).
-    src.feed(leftUp, sizeof(leftUp), emit);
-    src.feed(leftUp, sizeof(leftUp), emit);
+    src.feed(leftUp, sizeof(leftUp), emit, onErg);
+    src.feed(leftUp, sizeof(leftUp), emit, onErg);
     TEST_ASSERT_EQUAL_INT(2, (int)msgs.size());
 
     // A terminator frame (type 0x04) ends the press; the next held frame is a fresh press again.
     const uint8_t term[] = {0x04, 0x00, 0x01, 0x00};
-    src.feed(term, sizeof(term), emit);
+    src.feed(term, sizeof(term), emit, onErg);
     TEST_ASSERT_EQUAL_INT(2, (int)msgs.size());  // boundary emits nothing
-    src.feed(leftUp, sizeof(leftUp), emit);
+    src.feed(leftUp, sizeof(leftUp), emit, onErg);
     TEST_ASSERT_EQUAL_INT(4, (int)msgs.size());  // press fires again after the boundary
 
-    // A single-id button (LEFT 3rd -> Lap 0x35): click = [01 35 01] then [01 35 00].
+    // LEFT 3rd is default-bound to OBC Lap (0x35): click = [01 35 01] then [01 35 00].
     msgs.clear();
     const uint8_t left3[] = {0x01, 0x00, 0x04, 0x00};
-    src.feed(left3, sizeof(left3), emit);
+    src.feed(left3, sizeof(left3), emit, onErg);
     TEST_ASSERT_EQUAL_INT(2, (int)msgs.size());
     const uint8_t lapP[] = {0x01, 0x35, 0x01};
     const uint8_t lapR[] = {0x01, 0x35, 0x00};
-    TEST_ASSERT_EQUAL_INT(3, (int)msgs[0].size());
     TEST_ASSERT_EQUAL_UINT8_ARRAY(lapP, msgs[0].data(), 3);
     TEST_ASSERT_EQUAL_UINT8_ARRAY(lapR, msgs[1].data(), 3);
+
+    // Re-bind: LEFT up -> local erg bias +10 (onErg, no OBC); RIGHT up -> none (nothing at all).
+    Sb20ButtonMap cfg = Sb20ButtonMap::fromString("bias_up,shift_down,lap,none,shift_down,menu");
+    src.setBindings(cfg);
+    src.reset();
+    msgs.clear();
+    ergSum = 0;
+    src.feed(leftUp, sizeof(leftUp), emit, onErg);
+    TEST_ASSERT_EQUAL_INT(0, (int)msgs.size());  // erg-bias emits no OBC
+    TEST_ASSERT_EQUAL_INT(10, ergSum);           // ... it nudges erg instead
+    const uint8_t rightUp[] = {0x01, 0x00, 0x08, 0x00};  // bit3 = RIGHT up, now bound to none
+    src.feed(rightUp, sizeof(rightUp), emit, onErg);
+    TEST_ASSERT_EQUAL_INT(0, (int)msgs.size());
+    TEST_ASSERT_EQUAL_INT(10, ergSum);  // unchanged — none does nothing
 
     // A short/garbage frame is ignored (no emit, no crash).
     const uint8_t shortF[] = {0x01, 0x00};
     msgs.clear();
-    src.feed(shortF, sizeof(shortF), emit);
+    src.feed(shortF, sizeof(shortF), emit, onErg);
     TEST_ASSERT_EQUAL_INT(0, (int)msgs.size());
 }
 
@@ -807,11 +864,13 @@ void test_runtime_config_obc_roundtrip() {
     c.obcPort = 21587;
     c.obcDevmode = true;
     c.obcSinkShifter = true;
+    c.obcButtons = Sb20ButtonMap::fromString("bias_up,bias_down,lap,erg_up,erg_down,none");
     RuntimeConfig r = RuntimeConfig::fromLine(c.toLine());
     TEST_ASSERT_TRUE(r.obcEnabled);
     TEST_ASSERT_EQUAL_INT(21587, (int)r.obcPort);
     TEST_ASSERT_TRUE(r.obcDevmode);
     TEST_ASSERT_TRUE(r.obcSinkShifter);
+    TEST_ASSERT_EQUAL_STRING("bias_up,bias_down,lap,erg_up,erg_down,none", r.obcButtons.toString().c_str());
     // backward-compat: a pre-OBC line (no obc fields) -> OBC disabled, default port, devmode off, no wedge
     RuntimeConfig old = RuntimeConfig::fromLine("addr|ASSIOMA|0|Stages 62144|SER|0|||");
     TEST_ASSERT_FALSE(old.obcEnabled);
@@ -824,6 +883,9 @@ void test_runtime_config_obc_roundtrip() {
     TEST_ASSERT_EQUAL_INT(21587, (int)preDev.obcPort);
     TEST_ASSERT_FALSE(preDev.obcDevmode);
     TEST_ASSERT_FALSE(preDev.obcSinkShifter);
+    // a line with no button-map field keeps the sensible default binding (not all-none)
+    TEST_ASSERT_EQUAL_STRING("shift_up,shift_down,lap,shift_up,shift_down,menu",
+                             preDev.obcButtons.toString().c_str());
 }
 
 void test_shifter_decode_golden_buttons() {
@@ -2665,6 +2727,8 @@ int runUnityTests() {
     RUN_TEST(test_obc_encode_rejects_small_buffer_and_empty);
     RUN_TEST(test_obc_sb20_default_map);
     RUN_TEST(test_obc_sb20_encode_button_state);
+    RUN_TEST(test_sb20_button_map_default_serialize_resolve);
+    RUN_TEST(test_obc_buttons_page_render_parse);
     RUN_TEST(test_obc_shifter_source_click_and_debounce);
     RUN_TEST(test_runtime_config_obc_roundtrip);
     RUN_TEST(test_calibration_session_lifecycle_and_fit);

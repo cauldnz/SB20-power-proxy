@@ -85,17 +85,25 @@ static bool g_ergConfigured = false;
 static BleShifterClient shifter;
 static ObcShifterSource shifterSrc;
 static bool g_shifterConfigured = false;
+static int16_t g_ergBias = 0;  // SB20 shifter -> local erg-target nudge (± W), clamped; applied below
 
 static void shifterBegin(const RuntimeConfig& cfg) {
 #if !USE_MOCK_METER
     if (!cfg.obcSinkShifter) return;
+    shifterSrc.setBindings(cfg.obcButtons);  // the web-configured per-button action binding
     shifter.onNotify([](const uint8_t* d, size_t n) {
-        shifterSrc.feed(d, n, [](const uint8_t* b, size_t m) { crank.notifyObc(b, m); });
+        shifterSrc.feed(
+            d, n,
+            [](const uint8_t* b, size_t m) { crank.notifyObc(b, m); },  // OBC re-broadcast
+            [](int8_t deltaW) {                                         // local erg nudge
+                int v = g_ergBias + deltaW;
+                g_ergBias = (int16_t)(v < -200 ? -200 : (v > 200 ? 200 : v));
+            });
     });
     BleMeterClient::setShifterScanSink(&shifter);
     shifter.beginShared("Stages Bike");  // the SB20's advertised-name substring
     g_shifterConfigured = true;
-    Serial.println("[shifter] sink SB20 buttons -> OBC enabled (hunting 'Stages Bike')");
+    Serial.println("[shifter] sink SB20 buttons -> action enabled (hunting 'Stages Bike')");
 #else
     (void)cfg;
 #endif
@@ -1055,6 +1063,13 @@ void setup() {
         const size_t n = sb20proxy::encodeButtonPress(id, state, buf, sizeof(buf));
         if (n > 0) crank.notifyObc(buf, n);
     });
+    // /obc/buttons/save: persist the per-button action binding + apply it live (no reboot).
+    wifi.setObcButtonsHook([](const Sb20ButtonMap& m) {
+        RuntimeConfig c = ConfigStore::load();
+        c.obcButtons = m;
+        ConfigStore::save(c);
+        shifterSrc.setBindings(m);
+    });
     // The tester /diag report's raw meter frames (the bytes we add a new meter from). Live only.
 #if USE_MOCK_METER
     wifi.setDiagFrames([]() { return std::vector<std::string>{}; });
@@ -1216,7 +1231,9 @@ void loop() {
             const bool running = g_wk.running && !g_wk.paused;
             const int16_t target = running ? g_wk.state(nowMs).targetW : -1;
             lcdUnlock();
-            ergTrainer.setDesiredPower(target > 0 ? target : 0);
+            int desired = target > 0 ? target : 0;
+            if (running) { desired += g_ergBias; if (desired < 0) desired = 0; }  // SB20 shifter bias
+            ergTrainer.setDesiredPower((int16_t)desired);
         }
 #endif
         ergTrainer.loop();

@@ -23,6 +23,7 @@
 #include "Config.h"            // SETUP_PIN_SECRET (the setup-AP PIN derivation key)
 #include "HttpSecurity.h"      // pure same-origin (CSRF) check for state-changing routes (host-tested)
 #include "Provisioning.h"      // pure page render + form parse + validation (host-tested)
+#include "ObcButtonsPage.h"    // pure SB20-button -> action binding page (render + parse, host-tested)
 #include "SetupPin.h"          // pure per-device setup-AP PIN derivation (host-tested)
 #include "DiagReport.h"        // pure tester /diag report (config + status + raw meter frames)
 #include "WebApp.h"            // static streaming dashboard served at GET /ui (renders in the phone)
@@ -213,7 +214,19 @@ void WifiLink::addObcRoute_() {
         s += "  curl 'http://sb20proxy.local/obc/press?id=0x30'   # ERG Up\n";
         s += "  curl 'http://sb20proxy.local/obc/press?id=0x01'   # Shift Up\n";
         s += "  ids: 0x01 ShiftUp  0x02 ShiftDown  0x30 ErgUp  0x31 ErgDown  0x35 Lap\n";
+        s += "\nBind each SB20 button to an action (web form): http://sb20proxy.local/obc/buttons\n";
         server_->send(200, "text/plain", s.c_str());
+    });
+    // GET /obc/buttons — the per-button action-binding form; POST /obc/buttons/save applies it live.
+    server_->on("/obc/buttons", HTTP_GET, [this]() {
+        const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        sendHtml_(renderObcButtonsPage(cfg.obcButtons, false));
+    });
+    server_->on("/obc/buttons/save", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        const Sb20ButtonMap m = parseObcButtonsForm(formBody(server_));
+        if (obcButtons_) obcButtons_(m);  // persist to NVS + apply live to the running shifter source
+        sendHtml_(renderObcButtonsPage(m, true));
     });
     // GET /obc/press?id=0xNN[&state=N] — fire one virtual OBC button press (default state=1 pressed).
     // GET (not POST) is intentional: it's a transient, harmless bring-up action meant to be curl-driven.

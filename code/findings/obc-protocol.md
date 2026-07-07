@@ -120,21 +120,24 @@ extra hardware. The SB20 is a BLE **peripheral** exposing a vendor button charac
 (`0c46be60`, service `0c46be5f` — see `shifter-ble-protocol.md`), so the box opens a **separate central
 role** to the SB20 (it is already the SB20's power-meter *peripheral*) and subscribes to it.
 
-Pure spine (both firmwares): `ObcShifterSource` (`firmware/lib/proxy/`) composes the existing
-`ShifterDebounce` (decode `0c46be60` + collapse the ~10–20×/press held-frame stream to one event) and
-`encodeSb20ButtonState` (SB20 button → OBC ids), emitting a **momentary click** (all mapped ids PRESSED
-then RELEASED) per press. Host-tested with the real session-3 golden vectors
-(`test_obc_shifter_source_click_and_debounce`). Default map (`ObcSb20Map.h`): paddles → Shift + ERG,
-Left 3rd → Lap, Right 3rd → Menu.
+Pure spine (both firmwares): `ObcShifterSource` (`firmware/lib/proxy/`) composes `ShifterDebounce`
+(decode `0c46be60` + collapse the ~10–20×/press held-frame stream to one event) with the **configurable
+`Sb20ButtonMap`**: each of the 6 physical buttons binds to ONE action — an **OBC re-broadcast** (a
+momentary click, the mapped id PRESSED then RELEASED), a **local erg nudge** (±W to our own erg target),
+or **none**. Host-tested with the real session-3 golden vectors + custom bindings
+(`test_obc_shifter_source_click_and_debounce`, `test_sb20_button_map_*`). Default binding: paddles →
+Shift Up/Down, Left 3rd → Lap, Right 3rd → Menu. Action set: `shift_up/down`, `erg_up/down`, `lap`,
+`menu`, `pause` (OBC ids) + `bias_up/down` (local ±10 W) + `none`.
 
-- **ESP32** (runtime option): `RuntimeConfig.obcSinkShifter` (NVS) → a third NimBLE central,
+- **ESP32** (runtime + web-configurable): `RuntimeConfig.obcSinkShifter` (NVS) → a third NimBLE central,
   `BleShifterClient`, joins the shared scan hub (`BleMeterClient::setShifterScanSink`), matches the SB20
-  by name (`"Stages Bike"`), subscribes, and feeds `ObcShifterSource` → `crank.notifyObc`. Toggle over
-  the air: `curl -X POST http://sb20proxy.local/obc/shifter/on` (persists + reboots); `GET /obc` shows
-  state. Compiled on `esp32c3-oled-live-ota`.
-- **nRF** (build-flag option — no web UI for a runtime toggle): `-D OBC_SINK_SHIFTER=1` → a Bluefruit
+  by name (`"Stages Bike"`), subscribes, and feeds `ObcShifterSource` → OBC to `crank.notifyObc` and/or a
+  local erg-bias nudge. Enable: `curl -X POST http://sb20proxy.local/obc/shifter/on`. **Bind each button
+  at `GET /obc/buttons`** (a form of 6 dropdowns; `POST /obc/buttons/save` persists to NVS + applies live,
+  no reboot — pure `ObcButtonsPage.h`). Compiled on `esp32c3-oled-live-ota`.
+- **nRF** (build-flag option — no web UI, uses the default binding): `-D OBC_SINK_SHIFTER=1` → a Bluefruit
   central connects to `"Stages Bike"`, discovers `sb20VendorSvc`/`sb20Button`, subscribes, and feeds the
-  same `ObcShifterSource` → `notifyClients(chObcButton, …)`. Compiled on `xiao-sense`.
+  same `ObcShifterSource` → `notifyClients(chObcButton, …)` / `g_ergBias`. Compiled on `xiao-sense`.
 
 Both are **bench-gated** for the on-air step (needs a real SB20): the box must be able to hold a central
 link to the SB20 *and* its power-meter peripheral link at once (dual-role) — the coex risk to watch on

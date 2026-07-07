@@ -112,6 +112,11 @@ public:
     using ObcPressHook = std::function<void(uint8_t id, uint8_t state)>;
     void setObcPressHook(ObcPressHook h) { obcPress_ = h; }
 
+    // Save the per-button SB20->action binding (from the /obc/buttons page): the seam persists it to NVS
+    // and applies it live to the running shifter source (no reboot).
+    using ObcButtonsHook = std::function<void(const Sb20ButtonMap&)>;
+    void setObcButtonsHook(ObcButtonsHook h) { obcButtons_ = h; }
+
     // Call from loop(): services HTTP + OTA (station) or the captive DNS + portal (setup), and
     // promotes to healthy (which cancels the boot-guard and validates the running OTA image).
     void handle();
@@ -155,6 +160,7 @@ private:
     ConfigSaveHook configSave_;
     CurveSetHook curveSet_;
     ObcPressHook obcPress_;
+    ObcButtonsHook obcButtons_;
     ScanHook configScan_;
     DiagFramesProvider diagFrames_;
     CalViewProvider calView_;
