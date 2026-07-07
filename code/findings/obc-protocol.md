@@ -89,3 +89,25 @@ The spec's **MIT Python examples** are the consumer/producer to validate our out
 `tcp_trainer_app.py` / `mdns_trainer_app.py` (network), `protocol_parser.py` (the canonical decoder),
 `mock_device_*.py` (reference producers to diff our bytes against). Golden-vector parity first, then a live
 subscribe against a flashed board.
+
+### Devmode HTTP endpoint — the firmware-only test source (no shifter hardware)
+
+A `-live` ESP32 build carries an **OBC Devmode**: it advertises the board as an **`OBC-SB20`** controller
+(instead of the Stages crank) so an OBC listener (**qz**'s `obclistener`, or the Python examples) discovers
+and connects to it, and virtual button presses are driven over HTTP — no shifter, no bike. The counterpart
+qz listener matches an OBC-prefixed advert name (or the advertised OBC service UUID). Flow:
+
+```
+# 1. enable Devmode (persists to NVS + reboots → advertises as OBC-SB20)
+curl -X POST http://sb20proxy.local/obc/devmode/on
+# 2. on the qz (Linux-desktop) machine, with a BIKE connected, it auto-connects to OBC-SB20
+# 3. fire virtual presses (id hex or dec; ERG Up shown) → qz maps to power_up, etc.
+curl 'http://sb20proxy.local/obc/press?id=0x30'   # ERG Up   → qz target_power +
+curl 'http://sb20proxy.local/obc/press?id=0x01'   # Shift Up → qz gears +
+curl  http://sb20proxy.local/obc                  # status + the full id cheat-sheet
+curl -X POST http://sb20proxy.local/obc/devmode/off  # back to the normal crank identity
+```
+
+Seam: `RuntimeConfig.obcDevmode` → `BleCrankPeripheral::setObcDevmode` (name override) + `WifiLink`
+`/obc*` routes → `setObcPressHook` → `encodeButtonPress` (Obc.h) → `notifyObc`. Host-tested (config
+roundtrip + encode) and compiled on `esp32c3-oled-live-ota`; the on-air subscribe is the manual step.

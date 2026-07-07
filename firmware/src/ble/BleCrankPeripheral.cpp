@@ -138,7 +138,7 @@ void BleCrankPeripheral::begin() {
     //     crank's capture has name+1818 primary, d445fe01 in the scan response). ---
     // OpenBikeControl (OBC) service — a Button-State notify char so our re-presented SB20 buttons drive
     // OBC-speaking apps over BLE (lib/proxy/Obc.h). Gated on config; discoverable on connect.
-    if (obcEnabled_) {
+    if (obcEnabled_ || obcDevmode_) {
         NimBLEService* obc = server->createService(OBC_BLE_SERVICE_UUID);
         obcButtonChar_ = obc->createCharacteristic(
             OBC_BLE_BUTTON_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
@@ -146,7 +146,9 @@ void BleCrankPeripheral::begin() {
     }
 
     NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
-    adv->setName(spoofName_.c_str());  // runtime identity; defaults to Config::SPOOF_NAME
+    // Devmode advertises as an OBC controller so an OBC listener finds us by an "OBC-"-prefixed name
+    // (the crank identity would otherwise read as "Stages …"); normal builds keep the runtime identity.
+    adv->setName(obcDevmode_ ? "OBC-SB20" : spoofName_.c_str());
     adv->addServiceUUID(UUID_CPS);
     if (!corrector) {
         // SPOOF: the 128-bit Stages proprietary UUID rides in the scan response (mirrors the real

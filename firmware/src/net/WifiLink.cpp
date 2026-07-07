@@ -192,6 +192,66 @@ void WifiLink::addLogRoutes_() {
     });
 }
 
+// OpenBikeControl (OBC) Devmode bring-up routes — a firmware-only test source for the OBC listener (qz).
+// Devmode advertises the board as an "OBC-…" controller (BleCrankPeripheral::setObcDevmode) so a listener
+// discovers + connects to it; /obc/press then fires virtual button presses through the OBC characteristic
+// with no shifter hardware. See code/findings/obc-protocol.md.
+void WifiLink::addObcRoute_() {
+    // GET /obc — status + curl usage (plain text; the bring-up cheat-sheet).
+    server_->on("/obc", HTTP_GET, [this]() {
+        const bool dev = configProvider_ ? configProvider_().obcDevmode : false;
+        std::string s = "OpenBikeControl (OBC) Devmode\n";
+        s += std::string("devmode: ") + (dev ? "ON (advertising as OBC-SB20)\n" : "off\n");
+        s += "\nEnable / disable (persists to NVS + reboots):\n";
+        s += "  curl -X POST http://sb20proxy.local/obc/devmode/on\n";
+        s += "  curl -X POST http://sb20proxy.local/obc/devmode/off\n";
+        s += "\nFire a virtual button press (OBC id, hex or dec; optional &state=, default 1):\n";
+        s += "  curl 'http://sb20proxy.local/obc/press?id=0x30'   # ERG Up\n";
+        s += "  curl 'http://sb20proxy.local/obc/press?id=0x01'   # Shift Up\n";
+        s += "  ids: 0x01 ShiftUp  0x02 ShiftDown  0x30 ErgUp  0x31 ErgDown  0x35 Lap\n";
+        server_->send(200, "text/plain", s.c_str());
+    });
+    // GET /obc/press?id=0xNN[&state=N] — fire one virtual OBC button press (default state=1 pressed).
+    // GET (not POST) is intentional: it's a transient, harmless bring-up action meant to be curl-driven.
+    server_->on("/obc/press", HTTP_GET, [this]() {
+        if (!server_->hasArg("id")) {
+            server_->send(400, "text/plain", "missing ?id= (OBC button id, e.g. 0x30). See /obc\n");
+            return;
+        }
+        const long id = strtol(server_->arg("id").c_str(), nullptr, 0);  // base 0: accepts 0x30 or 48
+        const long st = server_->hasArg("state") ? strtol(server_->arg("state").c_str(), nullptr, 0) : 1;
+        if (id < 0 || id > 255 || st < 0 || st > 255) {
+            server_->send(400, "text/plain", "id/state out of range [0,255]\n");
+            return;
+        }
+        if (obcPress_) obcPress_((uint8_t)id, (uint8_t)st);
+        char msg[64];
+        std::snprintf(msg, sizeof(msg), "OBC press id=0x%02lX state=%ld sent\n", id & 0xFF, st);
+        server_->send(200, "text/plain", msg);
+    });
+    // POST /obc/devmode/{on,off} — toggle the OBC-controller advertising identity; persists + reboots
+    // (mirrors /setup/save). CSRF-guarded like the other state-changing config routes.
+    server_->on("/obc/devmode/on", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        cfg.obcDevmode = true;
+        cfg.obcEnabled = true;  // Devmode implies the OBC service is present
+        if (configSave_) configSave_(cfg);
+        server_->send(200, "text/plain", "OBC Devmode ON - advertising as OBC-SB20, restarting.\n");
+        delay(400);
+        esp_restart();
+    });
+    server_->on("/obc/devmode/off", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        cfg.obcDevmode = false;
+        if (configSave_) configSave_(cfg);
+        server_->send(200, "text/plain", "OBC Devmode off - restarting with the normal identity.\n");
+        delay(400);
+        esp_restart();
+    });
+}
+
 // Drain-aware HTML page send. Arduino's WebServer::send() writes the body with WiFiClient::write
 // and IGNORES short writes — under lwIP memory pressure (the no-PSRAM CYD idles ~30 KB free with
 // WiFi+BLE+LVGL up) multi-KB pages get silently TRUNCATED mid-stream (2026-07-04). This streams
@@ -320,6 +380,7 @@ void WifiLink::startStationServer_() {
     addRideModeRoute_();  // GET/POST /wifi/off — turn WiFi off for a BLE-only ride
     addWorkoutRoutes_();  // GET /workout (+ /state) + POST /workout/{load,preset,controls}
     addLogRoutes_();
+    addObcRoute_();  // GET /obc + /obc/press + POST /obc/devmode/{on,off} — OBC listener bring-up test
     server_->begin();
 }
 

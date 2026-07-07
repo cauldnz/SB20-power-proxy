@@ -757,13 +757,22 @@ void test_runtime_config_obc_roundtrip() {
     RuntimeConfig c = RuntimeConfig::defaults();
     c.obcEnabled = true;
     c.obcPort = 21587;
+    c.obcDevmode = true;
     RuntimeConfig r = RuntimeConfig::fromLine(c.toLine());
     TEST_ASSERT_TRUE(r.obcEnabled);
     TEST_ASSERT_EQUAL_INT(21587, (int)r.obcPort);
-    // backward-compat: a pre-OBC line (no obc fields) -> OBC disabled, default port, no wedge
+    TEST_ASSERT_TRUE(r.obcDevmode);
+    // backward-compat: a pre-OBC line (no obc fields) -> OBC disabled, default port, devmode off, no wedge
     RuntimeConfig old = RuntimeConfig::fromLine("addr|ASSIOMA|0|Stages 62144|SER|0|||");
     TEST_ASSERT_FALSE(old.obcEnabled);
     TEST_ASSERT_EQUAL_INT(21587, (int)old.obcPort);
+    TEST_ASSERT_FALSE(old.obcDevmode);
+    // a line with obc fields but NO devmode field (pre-devmode) -> devmode off (backward-compat).
+    // 13 fields: …|refAddr|refFilter|curve|calibrating|trainer|obcEnabled=1|obcPort=21587 (no field 13).
+    RuntimeConfig preDev = RuntimeConfig::fromLine("addr|ASSIOMA|0|Stages 62144|SER|0||||||1|21587");
+    TEST_ASSERT_TRUE(preDev.obcEnabled);
+    TEST_ASSERT_EQUAL_INT(21587, (int)preDev.obcPort);
+    TEST_ASSERT_FALSE(preDev.obcDevmode);
 }
 
 void test_shifter_decode_golden_buttons() {

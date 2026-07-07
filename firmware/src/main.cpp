@@ -9,6 +9,7 @@
 #include "Config.h"
 #include "ConfigStore.h"  // NVS-backed RuntimeConfig (the user's source/doubling)
 #include "Correction.h"
+#include "Obc.h"  // OpenBikeControl codec (encodeButtonPress) for the /obc/press Devmode hook
 #include "WorkoutRuntime.h"  // live workout clock + engine (lib/proxy)
 #include "PerfMonitor.h"
 #include "PerfStats.h"
@@ -858,7 +859,8 @@ void setup() {
 #endif  // the device name = our advertised identity
     crank.setMode(cfg.mode);                    // SPOOF crank vs CORRECTOR (own honest CPS identity)
     crank.setIdentity(cfg.spoofName, cfg.spoofSerial);  // advertised name + DIS serial
-    crank.setObcEnabled(cfg.obcEnabled);        // OpenBikeControl BLE service (SB20 buttons -> OBC apps)
+    crank.setObcEnabled(cfg.obcEnabled || cfg.obcDevmode);  // OBC BLE service (SB20 buttons -> OBC apps)
+    crank.setObcDevmode(cfg.obcDevmode);        // Devmode: advertise as OBC-SB20 for the listener test
 
     // The correction between source and crank: CORRECTOR applies the fitted calibration curve
     // (DUT → reference) — and with an EMPTY curve falls through to identity (1.0×), NEVER the spoof's
@@ -1018,6 +1020,13 @@ void setup() {
             corr.offset = Config::CORRECTION_OFFSET;
         }
         proxy.setCorrection(corr);
+    });
+    // OBC Devmode: GET /obc/press fires a virtual button — encode it (Obc.h) + notify the OBC char, so
+    // an OBC listener (qz) can be driven with no shifter hardware. See code/findings/obc-protocol.md.
+    wifi.setObcPressHook([](uint8_t id, uint8_t state) {
+        uint8_t buf[sb20proxy::OBC_MAX_MSG];
+        const size_t n = sb20proxy::encodeButtonPress(id, state, buf, sizeof(buf));
+        if (n > 0) crank.notifyObc(buf, n);
     });
     // The tester /diag report's raw meter frames (the bytes we add a new meter from). Live only.
 #if USE_MOCK_METER

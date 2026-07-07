@@ -76,6 +76,9 @@ struct RuntimeConfig {
     bool obcEnabled = false;             // re-present the SB20 shifter buttons as OpenBikeControl
                                          // (BLE on ESP+nRF; mDNS/TCP on the ESP). See obc-protocol.md.
     uint16_t obcPort = 21587;            // OBC mDNS/TCP listen port (ESP network transport)
+    bool obcDevmode = false;             // Devmode: advertise as an "OBC-…" controller (not the Stages
+                                         // crank) so an OBC listener (e.g. qz) can discover + connect,
+                                         // and drive virtual button presses over HTTP (GET /obc/press).
 
     // The factory defaults, from compile-time Config (used when nothing is stored in NVS yet).
     static RuntimeConfig defaults() {
@@ -98,7 +101,7 @@ struct RuntimeConfig {
                spoofName + "|" + spoofSerial + "|" + (mode == ProxyMode::Corrector ? "1" : "0") +
                "|" + refMeterAddress + "|" + refMeterNameFilter + "|" + curveToString(curve) + "|" +
                (calibrating ? "1" : "0") + "|" + trainerNameFilter + "|" + (obcEnabled ? "1" : "0") +
-               "|" + std::to_string(obcPort);
+               "|" + std::to_string(obcPort) + "|" + (obcDevmode ? "1" : "0");
     }
 
     // Parse a stored line. Backward-compatible: an old line (no mode/ref/curve) keeps SPOOF + no
@@ -129,6 +132,7 @@ struct RuntimeConfig {
         if (f.size() >= 11) c.trainerNameFilter = f[10];
         if (f.size() >= 12) c.obcEnabled = (f[11] == "1");
         if (f.size() >= 13 && !f[12].empty()) c.obcPort = (uint16_t)std::atoi(f[12].c_str());
+        if (f.size() >= 14) c.obcDevmode = (f[13] == "1");
         return c;
     }
 };
