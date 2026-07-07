@@ -179,6 +179,40 @@ static volatile bool g_sb20Connected = false;
 static bool g_sinkShifter = (OBC_SINK_SHIFTER != 0);  // read the SB20 shifter + re-broadcast as OBC
 static ObcShifterSource g_shifterSrc;                 // pure decode/debounce/map/encode
 
+// The Buttons GATT characteristic (0009) + its LittleFS persistence: the web app writes the binding +
+// enable over Web Bluetooth; it applies live to g_sinkShifter + g_shifterSrc and survives reboot.
+static const char* kButtonsPath = "/buttons.bin";
+static ButtonsPacket currentButtons() {
+    ButtonsPacket b;
+    b.enabled = g_sinkShifter;
+    g_shifterSrc.bindings().toIndices(b.act);
+    return b;
+}
+static void applyButtons(const ButtonsPacket& b) {
+    g_sinkShifter = b.enabled;
+    g_shifterSrc.setBindings(Sb20ButtonMap::fromIndices(b.act));
+}
+static void buttonsSave() {
+    InternalFS.remove(kButtonsPath);
+    uint8_t buf[BUTTONS_LEN];
+    packButtons(currentButtons(), buf);
+    File f(InternalFS);
+    if (f.open(kButtonsPath, FILE_O_WRITE)) { f.write(buf, sizeof(buf)); f.close(); }
+}
+static void buttonsLoad() {
+    File f(InternalFS);
+    if (!f.open(kButtonsPath, FILE_O_READ)) return;
+    uint8_t buf[BUTTONS_LEN];
+    int n = f.read(buf, sizeof(buf));
+    f.close();
+    ButtonsPacket b;
+    if (n == (int)BUTTONS_LEN && unpackButtons(buf, BUTTONS_LEN, b)) {
+        applyButtons(b);
+        Serial.printf("[shifter] buttons loaded (sink=%d)\n", (int)b.enabled);
+    }
+}
+// buttonsWriteCb is defined after the chButtons characteristic (it reads it back) — see below.
+
 // ---- structured workout (pure WorkoutRuntime, shared with the ESP32) --------------------------
 static WorkoutRuntime g_wk;
 static int16_t g_ergBias = 0;  // the "shifter" nudge: added to the workout target (± W), clamped below
@@ -221,6 +255,7 @@ static const uint8_t kUuidCurve[16] = BRIDGE_UUID(0x0005);
 static const uint8_t kUuidCal[16] = BRIDGE_UUID(0x0006);
 static const uint8_t kUuidScan[16] = BRIDGE_UUID(0x0007);
 static const uint8_t kUuidWk[16] = BRIDGE_UUID(0x0008);
+static const uint8_t kUuidButtons[16] = BRIDGE_UUID(0x0009);
 
 static BLEService bridgeSvc(kUuidBridgeSvc);
 static BLECharacteristic chStatus(kUuidStatus);
@@ -231,6 +266,25 @@ static BLECharacteristic chCurve(kUuidCurve);   // correction-curve write/read (
 static BLECharacteristic chCal(kUuidCal);       // calibration control + state (P2)
 static BLECharacteristic chScan(kUuidScan);     // scanned-source list for the web picker (P3)
 static BLECharacteristic chWk(kUuidWk);         // workout + erg control + state (P4)
+static BLECharacteristic chButtons(kUuidButtons);  // SB20-shifter -> action binding + sink enable
+
+// The Buttons (0009) write handler — applies the binding + enable live, persists, reads back, and
+// starts/stops the SB20 central in place. Defined here (after chButtons) since it reads it back.
+static void buttonsWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t* data, uint16_t len) {
+    ButtonsPacket b;
+    if (!unpackButtons(data, len, b)) { Serial.println("[shifter] buttons write REJECTED"); return; }
+    const bool was = g_sinkShifter;
+    applyButtons(b);
+    buttonsSave();
+    uint8_t buf[BUTTONS_LEN];
+    packButtons(currentButtons(), buf);
+    chButtons.write(buf, sizeof(buf));  // read-back reflects what stuck
+    if (g_sinkShifter && !was && !Bluefruit.Scanner.isRunning())
+        Bluefruit.Scanner.start(0);  // start hunting the SB20 now
+    if (!g_sinkShifter && g_sb20Connected && g_sb20ConnHandle != BLE_CONN_HANDLE_INVALID)
+        Bluefruit.disconnect(g_sb20ConnHandle);  // drop the SB20 when disabled
+    Serial.printf("[shifter] buttons set (sink=%d)\n", (int)g_sinkShifter);
+}
 
 // OpenBikeControl (OBC) — a Button-State notify char so the SB20's re-presented handlebar buttons drive
 // OBC-speaking apps over BLE (firmware/lib/proxy/Obc.h). 128-bit UUIDs stored little-endian:
@@ -858,6 +912,7 @@ void setup() {
     cfgLoad();
     curveLoad();
     trainerLoad();
+    buttonsLoad();  // the SB20-shifter -> action binding + sink enable (before the char's initial write)
 
     // RGB status LED (active-low)
     pinMode(LED_RED, OUTPUT);
@@ -960,6 +1015,14 @@ void setup() {
     chWk.setMaxLen(2 + 19);  // write: [ver, cmd, arg...]
     chWk.setWriteCallback(wkWriteCb);
     chWk.begin();
+
+    // Buttons (0009): the SB20-shifter -> action binding + sink enable (web-configurable over BLE).
+    chButtons.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
+    chButtons.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+    chButtons.setFixedLen(BUTTONS_LEN);
+    chButtons.setWriteCallback(buttonsWriteCb);
+    chButtons.begin();
+    { uint8_t bb[BUTTONS_LEN]; packButtons(currentButtons(), bb); chButtons.write(bb, sizeof(bb)); }
 
     // OpenBikeControl button-state service (re-present the SB20 handlebar buttons to OBC apps over BLE).
     obcSvc.begin();

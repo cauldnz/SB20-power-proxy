@@ -94,6 +94,31 @@ inline bool unpackConfig(const uint8_t* p, size_t len, ConfigPacket& c) {
     return true;
 }
 
+// ---- Buttons (read/write, 8 bytes) — the SB20-shifter -> action binding + sink enable --------
+// [ver, enabled, act0..act5] where actN is an action-option INDEX (the shared Sb20ButtonMap option
+// order; the JS + firmware both map index<->token). `enabled` sinks the SB20's own buttons (a
+// separate central to the SB20) and re-broadcasts them per the binding. See GATT.md + the pure
+// firmware/lib/proxy/Sb20ButtonMap.h. Persisted to LittleFS; applies live.
+constexpr size_t BUTTONS_LEN = 8;
+struct ButtonsPacket {
+    bool enabled = false;
+    uint8_t act[6] = {0, 0, 0, 0, 0, 0};  // action-option indices (0 = none)
+};
+inline size_t packButtons(const ButtonsPacket& b, uint8_t out[BUTTONS_LEN]) {
+    out[0] = PROTO_VER;
+    out[1] = b.enabled ? 1 : 0;
+    for (int i = 0; i < 6; ++i) out[2 + i] = b.act[i];
+    return BUTTONS_LEN;
+}
+inline bool unpackButtons(const uint8_t* p, size_t len, ButtonsPacket& b) {
+    if (len < BUTTONS_LEN || p[0] != PROTO_VER) return false;
+    ButtonsPacket n;
+    n.enabled = p[1] != 0;
+    for (int i = 0; i < 6; ++i) n.act[i] = p[2 + i];
+    b = n;
+    return true;
+}
+
 // ---- Correction curve (write/read, variable) ------------------------------------------------
 // A piecewise power->factor curve wins over scale/offset when present (Correction.h). Wire form:
 //   [ver, nPoints, {power u16 W, factor u16 milli}...]  -> 2 + 4*nPoints bytes.

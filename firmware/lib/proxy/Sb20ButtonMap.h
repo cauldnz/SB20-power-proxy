@@ -58,6 +58,26 @@ inline Sb20ActionSpec sb20SpecForToken(const std::string& token) {
     return {Sb20ActionKind::None, 0, 0};
 }
 
+// Index <-> token, so a compact wire form (the Bridge GATT Buttons char uses a u8 action INDEX into
+// this same option order) and the SPA can agree byte-for-byte. Index 0 is always "none".
+inline size_t sb20ActionCount() {
+    size_t n = 0;
+    sb20ActionOptions(n);
+    return n;
+}
+inline const char* sb20TokenForIndex(size_t i) {
+    size_t n = 0;
+    const Sb20ActionOption* o = sb20ActionOptions(n);
+    return i < n ? o[i].token : "none";
+}
+inline int sb20IndexForToken(const std::string& token) {
+    size_t n = 0;
+    const Sb20ActionOption* o = sb20ActionOptions(n);
+    for (size_t i = 0; i < n; ++i)
+        if (token == o[i].token) return (int)i;
+    return 0;  // unknown -> "none" (index 0)
+}
+
 // The 6 physical SB20 buttons in a stable order (the map array + the UI rows share this order).
 inline const ShifterButton* sb20Buttons(size_t& count) {
     static const ShifterButton kButtons[] = {
@@ -97,6 +117,17 @@ struct Sb20ButtonMap {
         const int i = sb20ButtonIndex(b);
         if (i < 0) return {Sb20ActionKind::None, 0, 0};
         return sb20SpecForToken(token[i]);
+    }
+
+    // The compact wire form: each button's token as an action-option INDEX (the Bridge GATT Buttons
+    // char / the SPA's BLE transport). Round-trips through fromIndices below.
+    void toIndices(uint8_t idx[6]) const {
+        for (int i = 0; i < 6; ++i) idx[i] = (uint8_t)sb20IndexForToken(token[i]);
+    }
+    static Sb20ButtonMap fromIndices(const uint8_t idx[6]) {
+        Sb20ButtonMap m;  // indices are authoritative (not defaults())
+        for (int i = 0; i < 6; ++i) m.token[i] = sb20TokenForIndex(idx[i]);
+        return m;
     }
 
     std::string toString() const {

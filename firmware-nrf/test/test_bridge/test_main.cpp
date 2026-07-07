@@ -75,6 +75,25 @@ void test_config_roundtrip(void) {
     TEST_ASSERT_EQUAL_STRING("SB20 Bridge", r.outName);
 }
 
+void test_buttons_roundtrip(void) {
+    ButtonsPacket b;
+    b.enabled = true;
+    for (int i = 0; i < 6; ++i) b.act[i] = (uint8_t)(i + 1);
+    uint8_t w[BUTTONS_LEN];
+    TEST_ASSERT_EQUAL_UINT(BUTTONS_LEN, packButtons(b, w));
+    TEST_ASSERT_EQUAL_UINT8(1, w[0]);  // proto version
+    TEST_ASSERT_EQUAL_UINT8(1, w[1]);  // enabled
+    TEST_ASSERT_EQUAL_UINT8(3, w[4]);  // act[2]
+    ButtonsPacket r;
+    TEST_ASSERT_TRUE(unpackButtons(w, BUTTONS_LEN, r));
+    TEST_ASSERT_TRUE(r.enabled);
+    for (int i = 0; i < 6; ++i) TEST_ASSERT_EQUAL_UINT8((uint8_t)(i + 1), r.act[i]);
+    w[0] = 2;  // bad version rejected (r untouched)
+    TEST_ASSERT_FALSE(unpackButtons(w, BUTTONS_LEN, r));
+    w[0] = 1;
+    TEST_ASSERT_FALSE(unpackButtons(w, BUTTONS_LEN - 1, r));  // short rejected
+}
+
 void test_config_name_padding_and_truncation(void) {
     ConfigPacket c;
     // exactly 19 chars fills the field with no NUL on the wire
@@ -300,6 +319,7 @@ int main(int, char**) {
     RUN_TEST(test_status_layout);
     RUN_TEST(test_status_none_sentinels);
     RUN_TEST(test_config_roundtrip);
+    RUN_TEST(test_buttons_roundtrip);
     RUN_TEST(test_config_name_padding_and_truncation);
     RUN_TEST(test_config_rejects_bad_version_and_length);
     RUN_TEST(test_config_rejects_out_of_range);

@@ -773,6 +773,22 @@ void test_sb20_button_map_default_serialize_resolve() {
     // an unknown token resolves to None (never acts on garbage)
     TEST_ASSERT_EQUAL_INT((int)Sb20ActionKind::None,
                           (int)sb20SpecForToken("bogus").kind);
+
+    // index <-> token (the compact Bridge GATT wire form): "none" is index 0; round-trips.
+    TEST_ASSERT_EQUAL_INT(0, sb20IndexForToken("none"));
+    TEST_ASSERT_EQUAL_STRING("none", sb20TokenForIndex(0));
+    TEST_ASSERT_EQUAL_INT(0, sb20IndexForToken("bogus"));  // unknown -> 0 (none)
+    TEST_ASSERT_EQUAL_STRING("none", sb20TokenForIndex(999));  // OOB -> none
+    const int biasIdx = sb20IndexForToken("bias_up");
+    TEST_ASSERT_TRUE(biasIdx > 0);
+    TEST_ASSERT_EQUAL_STRING("bias_up", sb20TokenForIndex((size_t)biasIdx));
+
+    // to/fromIndices round-trips a map through its wire indices
+    Sb20ButtonMap orig = Sb20ButtonMap::fromString("bias_up,none,lap,erg_up,shift_down,menu");
+    uint8_t idx[6];
+    orig.toIndices(idx);
+    Sb20ButtonMap back = Sb20ButtonMap::fromIndices(idx);
+    TEST_ASSERT_EQUAL_STRING(orig.toString().c_str(), back.toString().c_str());
 }
 
 void test_obc_buttons_page_render_parse() {
