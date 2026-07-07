@@ -16,7 +16,6 @@
 #include "DiagReport.h"
 #include "Ftms.h"
 #include "Obc.h"
-#include "ObcButtonsPage.h"
 #include "ObcSb20Map.h"
 #include "ObcShifterSource.h"
 #include "Sb20ButtonMap.h"
@@ -789,25 +788,22 @@ void test_sb20_button_map_default_serialize_resolve() {
     orig.toIndices(idx);
     Sb20ButtonMap back = Sb20ButtonMap::fromIndices(idx);
     TEST_ASSERT_EQUAL_STRING(orig.toString().c_str(), back.toString().c_str());
-}
 
-void test_obc_buttons_page_render_parse() {
-    using namespace sb20proxy;
-    const std::string html = renderObcButtonsPage(Sb20ButtonMap::defaults(), false);
-    TEST_ASSERT_TRUE(html.find("name='btn0'") != std::string::npos);
-    TEST_ASSERT_TRUE(html.find("name='btn5'") != std::string::npos);
-    TEST_ASSERT_TRUE(html.find("<option value='shift_up' selected>") != std::string::npos);
-    TEST_ASSERT_TRUE(html.find("<option value='bias_up'") != std::string::npos);  // erg-nudge offered
-
-    // Parse a submitted form -> the map; an unknown token is rejected (keeps the slot's default).
-    Sb20ButtonMap p =
-        parseObcButtonsForm("btn0=bias_up&btn1=none&btn2=lap&btn3=bogus&btn4=erg_down&btn5=menu");
-    TEST_ASSERT_EQUAL_STRING("bias_up", p.token[0].c_str());
-    TEST_ASSERT_EQUAL_STRING("none", p.token[1].c_str());
-    TEST_ASSERT_EQUAL_STRING("shift_up", p.token[3].c_str());  // "bogus" rejected -> default kept
-    TEST_ASSERT_EQUAL_STRING("erg_down", p.token[4].c_str());
-    TEST_ASSERT_TRUE(sb20IsKnownToken("lap"));
-    TEST_ASSERT_FALSE(sb20IsKnownToken("bogus"));
+    // JSON round-trip for the ESP32 HttpTransport ({"enabled":..,"actions":[..]}).
+    const std::string js = buttonsToJson(true, orig);
+    TEST_ASSERT_TRUE(js.find("\"enabled\":true") != std::string::npos);
+    bool en = false;
+    Sb20ButtonMap parsed;
+    TEST_ASSERT_TRUE(buttonsFromJson(js, en, parsed));
+    TEST_ASSERT_TRUE(en);
+    TEST_ASSERT_EQUAL_STRING(orig.toString().c_str(), parsed.toString().c_str());
+    // whitespace + disabled + a short/garbage body
+    bool en2 = true;
+    Sb20ButtonMap p2;
+    TEST_ASSERT_TRUE(buttonsFromJson("{ \"enabled\" : false , \"actions\" : [8,9,0,1,2,3] }", en2, p2));
+    TEST_ASSERT_FALSE(en2);
+    TEST_ASSERT_EQUAL_STRING("bias_up", p2.token[0].c_str());  // index 8
+    TEST_ASSERT_FALSE(buttonsFromJson("{}", en2, p2));  // missing keys -> false
 }
 
 void test_obc_shifter_source_click_and_debounce() {
@@ -2744,7 +2740,6 @@ int runUnityTests() {
     RUN_TEST(test_obc_sb20_default_map);
     RUN_TEST(test_obc_sb20_encode_button_state);
     RUN_TEST(test_sb20_button_map_default_serialize_resolve);
-    RUN_TEST(test_obc_buttons_page_render_parse);
     RUN_TEST(test_obc_shifter_source_click_and_debounce);
     RUN_TEST(test_runtime_config_obc_roundtrip);
     RUN_TEST(test_calibration_session_lifecycle_and_fit);

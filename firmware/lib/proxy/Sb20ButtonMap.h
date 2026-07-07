@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 
 #include "Obc.h"      // OBC button ids + OBC_STATE_* (the re-broadcast targets)
@@ -154,5 +155,50 @@ struct Sb20ButtonMap {
         return m;
     }
 };
+
+// JSON for the shared web SPA's HttpTransport (the ESP32 side): {"enabled":<bool>,"actions":[i0..i5]}
+// — the SAME action-option indices as the BLE Buttons char. Build is trivial; the parse handles ONLY
+// this fixed shape (our own trusted SPA; there is no general JSON parser on-device — mirrors how the
+// curve uses a compact string). Host-tested.
+inline std::string buttonsToJson(bool enabled, const Sb20ButtonMap& m) {
+    uint8_t idx[6];
+    m.toIndices(idx);
+    std::string s = "{\"enabled\":";
+    s += enabled ? "true" : "false";
+    s += ",\"actions\":[";
+    for (int i = 0; i < 6; ++i) {
+        if (i) s += ',';
+        char num[8];
+        std::snprintf(num, sizeof(num), "%d", (int)idx[i]);  // not std::to_string (newlib-nano lacks it)
+        s += num;
+    }
+    s += "]}";
+    return s;
+}
+// Parse {"enabled":...,"actions":[i0,..]} -> enabled + map. Returns false (leaving outputs untouched) if
+// the "enabled"/"actions" keys aren't both present. Whitespace-tolerant; reads up to 6 ints in actions[].
+inline bool buttonsFromJson(const std::string& body, bool& enabled, Sb20ButtonMap& m) {
+    const size_t e = body.find("\"enabled\"");
+    const size_t a = body.find("\"actions\"");
+    if (e == std::string::npos || a == std::string::npos) return false;
+    size_t ev = e + 9;  // past "enabled"
+    while (ev < body.size() && body[ev] != 't' && body[ev] != 'f') ++ev;
+    const bool en = (ev < body.size() && body[ev] == 't');
+    const size_t lb = body.find('[', a);
+    if (lb == std::string::npos) return false;
+    uint8_t idx[6] = {0, 0, 0, 0, 0, 0};
+    size_t p = lb + 1;
+    int n = 0;
+    while (p < body.size() && body[p] != ']' && n < 6) {
+        while (p < body.size() && (body[p] < '0' || body[p] > '9') && body[p] != ']') ++p;
+        if (p >= body.size() || body[p] == ']') break;
+        int v = 0;
+        while (p < body.size() && body[p] >= '0' && body[p] <= '9') { v = v * 10 + (body[p] - '0'); ++p; }
+        idx[n++] = (uint8_t)(v > 255 ? 0 : v);
+    }
+    enabled = en;
+    m = Sb20ButtonMap::fromIndices(idx);
+    return true;
+}
 
 }  // namespace sb20proxy

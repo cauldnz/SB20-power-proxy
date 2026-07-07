@@ -23,7 +23,6 @@
 #include "Config.h"            // SETUP_PIN_SECRET (the setup-AP PIN derivation key)
 #include "HttpSecurity.h"      // pure same-origin (CSRF) check for state-changing routes (host-tested)
 #include "Provisioning.h"      // pure page render + form parse + validation (host-tested)
-#include "ObcButtonsPage.h"    // pure SB20-button -> action binding page (render + parse, host-tested)
 #include "SetupPin.h"          // pure per-device setup-AP PIN derivation (host-tested)
 #include "DiagReport.h"        // pure tester /diag report (config + status + raw meter frames)
 #include "WebApp.h"            // static streaming dashboard served at GET /ui (renders in the phone)
@@ -214,19 +213,28 @@ void WifiLink::addObcRoute_() {
         s += "  curl 'http://sb20proxy.local/obc/press?id=0x30'   # ERG Up\n";
         s += "  curl 'http://sb20proxy.local/obc/press?id=0x01'   # Shift Up\n";
         s += "  ids: 0x01 ShiftUp  0x02 ShiftDown  0x30 ErgUp  0x31 ErgDown  0x35 Lap\n";
-        s += "\nBind each SB20 button to an action (web form): http://sb20proxy.local/obc/buttons\n";
+        s += "\nBind each SB20 button to an action in the web app (http://sb20proxy.local/app),\n";
+        s += "or over the API: GET/POST http://sb20proxy.local/obc/buttons.json {enabled,actions[6]}\n";
         server_->send(200, "text/plain", s.c_str());
     });
-    // GET /obc/buttons — the per-button action-binding form; POST /obc/buttons/save applies it live.
-    server_->on("/obc/buttons", HTTP_GET, [this]() {
+    // GET/POST /obc/buttons.json — the SB20-button binding + sink-enable for the shared web SPA's
+    // HttpTransport (same action-option indices as the nRF Bridge GATT Buttons char). The SPA served at
+    // /app owns the UI; there is no ESP-served HTML page for it.
+    server_->on("/obc/buttons.json", HTTP_GET, [this]() {
         const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
-        sendHtml_(renderObcButtonsPage(cfg.obcButtons, false));
+        server_->send(200, "application/json",
+                      buttonsToJson(cfg.obcSinkShifter, cfg.obcButtons).c_str());
     });
-    server_->on("/obc/buttons/save", HTTP_POST, [this]() {
+    server_->on("/obc/buttons.json", HTTP_POST, [this]() {
         if (!csrfOk_()) return;
-        const Sb20ButtonMap m = parseObcButtonsForm(formBody(server_));
-        if (obcButtons_) obcButtons_(m);  // persist to NVS + apply live to the running shifter source
-        sendHtml_(renderObcButtonsPage(m, true));
+        bool enabled = false;
+        Sb20ButtonMap m;
+        if (!buttonsFromJson(formBody(server_), enabled, m)) {
+            server_->send(400, "application/json", "{\"error\":\"expected {enabled,actions[6]}\"}");
+            return;
+        }
+        if (obcButtons_) obcButtons_(enabled, m);  // persist to NVS + apply live
+        server_->send(200, "application/json", buttonsToJson(enabled, m).c_str());
     });
     // GET /obc/press?id=0xNN[&state=N] — fire one virtual OBC button press (default state=1 pressed).
     // GET (not POST) is intentional: it's a transient, harmless bring-up action meant to be curl-driven.

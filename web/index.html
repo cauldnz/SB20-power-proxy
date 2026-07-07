@@ -92,6 +92,16 @@
     </div>
   </div>
 
+  <div class="card" id="buttonsCard">
+    <h2>SB20 handlebar buttons</h2>
+    <div class="note" style="margin-bottom:8px">Read the SB20's own shifter buttons and re-broadcast each press as the action you pick &mdash; an OpenBikeControl id (to a training app) or a local erg nudge. Applies live.</div>
+    <label style="display:flex;align-items:center;gap:8px;font-weight:400"><input id="btnSink" type="checkbox" style="width:auto"> Sink SB20 buttons (read the shifter)</label>
+    <div id="btnRows" style="margin-top:8px"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="btnButtonsApply" disabled>Apply to bridge</button>
+    </div>
+  </div>
+
   <div class="card">
     <h2>Calibrate against a reference</h2>
     <div class="note" style="margin-bottom:8px">Reads your source (DUT) + a reference meter at once, then fits a correction curve so the source reads like the reference. Ride a spread of powers.</div>
@@ -198,14 +208,14 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;"
 
 // ================= BleTransport (Web Bluetooth) =================
 const SVC = "53423230-0000-4bd9-a4ae-1b4e2c633a1d";
-const CH = { stat:"0001", cfg:"0002", rctl:"0003", rdat:"0004", curv:"0005", cal:"0006", scan:"0007", wk:"0008" };
+const CH = { stat:"0001", cfg:"0002", rctl:"0003", rdat:"0004", curv:"0005", cal:"0006", scan:"0007", wk:"0008", btn:"0009" };
 const uuid = s => `53423230-${s}-4bd9-a4ae-1b4e2c633a1d`;
 const dec = b => new TextDecoder().decode(b).replace(/\0+$/, "");
 
 class BleTransport {
   constructor() {
     this.kind = "ble"; this.autoConnect = false;
-    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:true };
+    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:true, buttons:true };
     this.dev = null; this.ch = {}; this.dl = null;
     this.onStatus = this.onScan = this.onCal = this.onWk = this.onRec = this.onRecDone =
       this.onConn = this.onLog = () => {};
@@ -228,6 +238,7 @@ class BleTransport {
       catch (e) { this.ch[key] = null; this.onLog(`${key} not available (older firmware)`); }
     }
     try { await get("curv"); } catch (e) { this.ch.curv = null; }  // read/write, no notify
+    try { await get("btn"); } catch (e) { this.ch.btn = null; }    // SB20 buttons (read/write, no notify)
     if (this.ch.scan) { try { this.onScan(parseScan(await this.ch.scan.readValue())); } catch (e) {} }
     this.onConn(true, this.dev.name || "");
     this.onLog(`connected to ${this.dev.name}`);
@@ -260,6 +271,22 @@ class BleTransport {
       v.setUint16(4 + i * 4, Math.max(250, Math.min(4000, Math.round(f * 1000))), true);  // 0.25–4.0×
     });
     await this.ch.curv.writeValueWithResponse(b);
+  }
+  // Buttons char (0x0009): [ver, enabled, act0..act5] — actN is an action-option INDEX (Sb20ButtonMap
+  // order; OBC_ACTIONS below mirrors it). The SB20-shifter -> action binding + sink enable.
+  async getButtons() {
+    if (!this.ch.btn) return { enabled: false, actions: [0, 0, 0, 0, 0, 0] };
+    const d = await this.ch.btn.readValue();
+    if (d.byteLength < 8 || d.getUint8(0) !== VER) return { enabled: false, actions: [0, 0, 0, 0, 0, 0] };
+    const a = []; for (let i = 0; i < 6; i++) a.push(d.getUint8(2 + i));
+    return { enabled: d.getUint8(1) !== 0, actions: a };
+  }
+  async setButtons(b) {
+    if (!this.ch.btn) throw new Error("this device has no buttons characteristic");
+    const w = new Uint8Array(8); w[0] = VER; w[1] = b.enabled ? 1 : 0;
+    for (let i = 0; i < 6; i++) w[2 + i] = (b.actions[i] || 0) & 0xff;
+    await this.ch.btn.writeValueWithResponse(w);
+    return this.getButtons();
   }
   async scan() {}  // the bridge scans autonomously; ScanList pushes updates
   calStart(ref) { return this._wstr("cal", 1, ref); }
@@ -361,7 +388,7 @@ function assembleImu(dl, devCrc) {
 class HttpTransport {
   constructor() {
     this.kind = "http"; this.autoConnect = true;
-    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:false };
+    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:false, buttons:true };
     this.cfg = { scale: 1, offset: 0 }; this.timer = null;
     this.onStatus = this.onScan = this.onCal = this.onWk = this.onRec = this.onRecDone =
       this.onConn = this.onLog = () => {};
@@ -403,6 +430,9 @@ class HttpTransport {
   // it with curveFromString — no JSON parser on-device). Same portable profile as the BLE Curve char.
   async getCurve() { try { const j = await this._get("/curve"); return { hasCurve: !!j.has_curve, breakpoints: j.curve || [] }; } catch (e) { return { hasCurve: false, breakpoints: [] }; } }
   setCurve(bp) { return this._post("/curve", bp.map(([p, f]) => `${(+p).toFixed(1)}:${(+f).toFixed(4)}`).join(",")); }
+  // /obc/buttons.json: {enabled, actions:[i0..i5]} — same action-option indices as the BLE Buttons char.
+  async getButtons() { try { const j = await this._get("/obc/buttons.json"); return { enabled: !!j.enabled, actions: (j.actions || [0,0,0,0,0,0]).slice(0, 6) }; } catch (e) { return { enabled: false, actions: [0,0,0,0,0,0] }; } }
+  setButtons(b) { return this._post("/obc/buttons.json", JSON.stringify({ enabled: !!b.enabled, actions: b.actions })); }
   scan() { return this._post("/setup/scan"); }
   calStart(ref) { return this._post("/calibrate/start", "ref=" + encodeURIComponent(ref)); }
   calCancel() { return this._post("/calibrate/cancel"); }
@@ -437,7 +467,7 @@ PRESETS.forEach((p, i) => { const o = document.createElement("option"); o.value 
 
 function setConnected(on) {
   $("connDot").classList.toggle("on", on);
-  ["btnApply","btnRec","btnStop","btnDownload","btnErase","btnCalStart","btnWkSetTrainer","btnWkLoad","btnWkStart","btnCurveExport","btnCurveImport"].forEach(id => $(id).disabled = !on);
+  ["btnApply","btnButtonsApply","btnRec","btnStop","btnDownload","btnErase","btnCalStart","btnWkSetTrainer","btnWkLoad","btnWkStart","btnCurveExport","btnCurveImport"].forEach(id => $(id).disabled = !on);
   if (!on) ["btnWkPause","btnWkStop","btnBiasDown","btnBiasUp"].forEach(id => $(id).disabled = true);
   $("btnDisconnect").disabled = !on; $("btnConnect").disabled = on;
   if (!on) $("devName").textContent = "";
@@ -522,8 +552,9 @@ function wire(t) {
   T = t;
   t.onStatus = renderStatus; t.onScan = renderScan; t.onCal = renderCal; t.onWk = renderWk;
   t.onRec = renderRec; t.onRecDone = onRecDone; t.onLog = log;
-  t.onConn = (on, name) => { setConnected(on); if (on) { $("devName").textContent = name; loadConfig(); refreshCurve(); } log(on ? "connected" : "disconnected"); };
+  t.onConn = (on, name) => { setConnected(on); if (on) { $("devName").textContent = name; loadConfig(); refreshCurve(); loadButtons(); } log(on ? "connected" : "disconnected"); };
   if (!t.caps.recording) $("recCard").style.display = "none";
+  if (!t.caps.buttons) $("buttonsCard").style.display = "none";
   if (t.kind === "ble" && !navigator.bluetooth) $("unsupported").style.display = "block";
 }
 async function loadConfig() {
@@ -531,6 +562,28 @@ async function loadConfig() {
     const c = await T.getConfig();
     $("cfgScale").value = c.scale.toFixed(3); $("cfgOffset").value = c.offset.toFixed(1);
     $("cfgSingle").checked = !!c.singleSided; $("cfgSrc").value = c.srcFilter; $("cfgOut").value = c.outName;
+  } catch (e) {}
+}
+// ---- SB20 buttons: bind each handlebar button to an action ----
+// OBC_ACTIONS mirrors firmware/lib/proxy/Sb20ButtonMap.h sb20ActionOptions ORDER — the wire form is a
+// u8 index into this list, so the JS and firmware must agree byte-for-byte (index 0 = none).
+const OBC_ACTIONS = ["None", "OBC Shift Up", "OBC Shift Down", "OBC ERG Up", "OBC ERG Down", "OBC Lap",
+  "OBC Menu", "OBC Pause", "Erg target +10W (local)", "Erg target −10W (local)"];
+const SB20_BUTTONS = ["LEFT up", "LEFT down", "LEFT 3rd", "RIGHT up", "RIGHT down", "RIGHT 3rd"];
+function buildButtonRows() {
+  if ($("btnRows").children.length) return;  // once
+  const opts = OBC_ACTIONS.map((label, i) => `<option value="${i}">${label}</option>`).join("");
+  $("btnRows").innerHTML = SB20_BUTTONS.map((name, i) =>
+    `<label style="font-weight:600;font-size:.9rem">${name}</label>` +
+    `<select id="btnAct${i}" style="width:100%;margin:4px 0 10px">${opts}</select>`).join("");
+}
+async function loadButtons() {
+  if (!T.caps.buttons) return;
+  buildButtonRows();
+  try {
+    const b = await T.getButtons();
+    $("btnSink").checked = !!b.enabled;
+    for (let i = 0; i < 6; i++) $("btnAct" + i).value = String(b.actions[i] ?? 0);
   } catch (e) {}
 }
 // ---- Calibration profile (portable curve; format = the desk-tooling CalibrationProfile) ----
@@ -569,6 +622,14 @@ $("btnApply").onclick = async () => {
     $("cfgScale").value = c.scale.toFixed(3); $("cfgOffset").value = c.offset.toFixed(1); $("cfgSingle").checked = !!c.singleSided;
     $("cfgSrc").value = c.srcFilter; $("cfgOut").value = c.outName; log("config applied");
   } catch (e) { log(`config failed: ${e.message}`); }
+};
+$("btnButtonsApply").onclick = async () => {
+  try {
+    const actions = []; for (let i = 0; i < 6; i++) actions.push(parseInt($("btnAct" + i).value, 10) || 0);
+    const b = await T.setButtons({ enabled: $("btnSink").checked, actions });
+    if (b) { $("btnSink").checked = !!b.enabled; for (let i = 0; i < 6; i++) $("btnAct" + i).value = String(b.actions[i] ?? 0); }
+    log("button actions applied");
+  } catch (e) { log(`buttons failed: ${e.message}`); }
 };
 $("btnRec").onclick = async () => { await T.recSetRate(+$("recRate").value); await T.recStart(); };
 $("btnStop").onclick = () => T.recStop();

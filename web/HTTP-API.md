@@ -54,6 +54,19 @@ or the desk tooling loads here, and vice versa.
 `breakpoints` are `[power_w, factor]` (1 dp power, 4 dp factor) — the same across the nRF Curve
 characteristic, the ESP32 `/curve`, and `code/scripts/09_fit_calibration.py`.
 
+### `GET /obc/buttons.json` → the SB20-button binding + sink enable
+```json
+{ "enabled":false, "actions":[1,2,5,1,2,6] }
+```
+`actions` are action-option **indices** (0 = none) into the shared `firmware/lib/proxy/Sb20ButtonMap.h`
+option order — byte-identical to the nRF Bridge GATT Buttons char (0009). The 6 slots are LEFT
+up/down/3rd then RIGHT up/down/3rd.
+
+### `POST /obc/buttons.json`  (body: the same JSON) → persist + apply LIVE (no reboot); return the new value.
+Sinks the SB20's own shifter buttons and re-broadcasts each press as the bound action (an OBC id, or a
+local erg nudge). Enabling starts the SB20 central in place. The ESP32 parses this one fixed shape (no
+general JSON parser on-device — `buttonsFromJson`, host-tested), mirroring the nRF's index wire form.
+
 ### `GET /scan` → **Scan** list
 ```json
 { "devices":[ {"name":"SB20-FTMS-Server","rssi":-55,"cps":false,"ftms":true,"crank":false} ] }

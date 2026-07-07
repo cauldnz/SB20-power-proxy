@@ -112,9 +112,9 @@ public:
     using ObcPressHook = std::function<void(uint8_t id, uint8_t state)>;
     void setObcPressHook(ObcPressHook h) { obcPress_ = h; }
 
-    // Save the per-button SB20->action binding (from the /obc/buttons page): the seam persists it to NVS
-    // and applies it live to the running shifter source (no reboot).
-    using ObcButtonsHook = std::function<void(const Sb20ButtonMap&)>;
+    // Save the SB20 sink-enable + per-button action binding (from the shared SPA's /obc/buttons.json):
+    // the seam persists both to NVS and applies them live to the running shifter (no reboot).
+    using ObcButtonsHook = std::function<void(bool enabled, const Sb20ButtonMap&)>;
     void setObcButtonsHook(ObcButtonsHook h) { obcButtons_ = h; }
 
     // Call from loop(): services HTTP + OTA (station) or the captive DNS + portal (setup), and

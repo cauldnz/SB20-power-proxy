@@ -84,14 +84,18 @@ static bool g_ergConfigured = false;
 #include "ble/BleShifterClient.h"
 static BleShifterClient shifter;
 static ObcShifterSource shifterSrc;
-static bool g_shifterConfigured = false;
+static bool g_shifterConfigured = false;  // the SB20 central has been started this boot
+static bool g_shifterEnabled = false;     // emit presses (runtime toggle from the web app)
 static int16_t g_ergBias = 0;  // SB20 shifter -> local erg-target nudge (± W), clamped; applied below
 
-static void shifterBegin(const RuntimeConfig& cfg) {
+// Start the SB20-shifter central (idempotent). The emit is gated by g_shifterEnabled so the web app can
+// toggle sinking live (over /obc/buttons.json) without restarting the radio.
+static void shifterEnsureStarted(const RuntimeConfig& cfg) {
 #if !USE_MOCK_METER
-    if (!cfg.obcSinkShifter) return;
+    if (g_shifterConfigured) return;
     shifterSrc.setBindings(cfg.obcButtons);  // the web-configured per-button action binding
     shifter.onNotify([](const uint8_t* d, size_t n) {
+        if (!g_shifterEnabled) return;  // sink toggled off — connected but silent
         shifterSrc.feed(
             d, n,
             [](const uint8_t* b, size_t m) { crank.notifyObc(b, m); },  // OBC re-broadcast
@@ -103,10 +107,16 @@ static void shifterBegin(const RuntimeConfig& cfg) {
     BleMeterClient::setShifterScanSink(&shifter);
     shifter.beginShared("Stages Bike");  // the SB20's advertised-name substring
     g_shifterConfigured = true;
-    Serial.println("[shifter] sink SB20 buttons -> action enabled (hunting 'Stages Bike')");
+    Serial.println("[shifter] SB20 central started (hunting 'Stages Bike')");
 #else
     (void)cfg;
 #endif
+}
+// Boot: start the SB20 central + enable sinking only if it's configured on.
+static void shifterBegin(const RuntimeConfig& cfg) {
+    if (!cfg.obcSinkShifter) return;
+    g_shifterEnabled = true;
+    shifterEnsureStarted(cfg);
 }
 
 // Start the erg client when a trainer is configured. Skipped on calibration boots (two meter
@@ -1063,12 +1073,16 @@ void setup() {
         const size_t n = sb20proxy::encodeButtonPress(id, state, buf, sizeof(buf));
         if (n > 0) crank.notifyObc(buf, n);
     });
-    // /obc/buttons/save: persist the per-button action binding + apply it live (no reboot).
-    wifi.setObcButtonsHook([](const Sb20ButtonMap& m) {
+    // /obc/buttons.json: persist the sink-enable + per-button binding, apply both live (no reboot) —
+    // bindings take effect immediately; enabling starts the SB20 central in place.
+    wifi.setObcButtonsHook([](bool enabled, const Sb20ButtonMap& m) {
         RuntimeConfig c = ConfigStore::load();
+        c.obcSinkShifter = enabled;
         c.obcButtons = m;
         ConfigStore::save(c);
-        shifterSrc.setBindings(m);
+        shifterSrc.setBindings(m);   // bindings apply live
+        g_shifterEnabled = enabled;  // emit gate applies live
+        if (enabled) shifterEnsureStarted(c);  // start the SB20 central if it wasn't yet
     });
     // The tester /diag report's raw meter frames (the bytes we add a new meter from). Live only.
 #if USE_MOCK_METER
