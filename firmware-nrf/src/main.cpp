@@ -37,12 +37,16 @@
 #include "WorkoutPresets.h"  // built-in workouts (presetJson) — pure (P4)
 #include "WorkoutRuntime.h"  // pure structured-workout clock (shared with ESP32) (P4)
 
+#include "BridgeConfigStore.h"  // the LittleFS persistence seam (config/curve/trainer/buttons)
+
 using namespace sb20proxy;
 using namespace nrfbridge;
 using namespace Adafruit_LittleFS_Namespace;
 
-// ================= config (persisted to internal LittleFS) ====================================
-static const char* kCfgPath = "/bridge.cfg";
+// ================= config (persisted to internal LittleFS via BridgeConfigStore) ==============
+// The globals + the "apply to running state" policy live here; the flash I/O is the seam
+// (BridgeConfigStore.h). The cfg/curve/trainer wrappers keep their names so every call site is
+// unchanged — they just delegate to bridgestore::.
 static ConfigPacket g_cfg;  // defaults: scale 1.0, offset 0, any-CPS source, name below
 static Correction g_corr;
 static char g_trainerFilter[20] = {0};  // FTMS trainer name filter ("" = erg off) — declared here
@@ -55,86 +59,17 @@ static void applyCorrectionFromCfg() {
     // Correction::apply — so a fitted curve keeps applying regardless of the scalar fields.
 }
 
-// ---- correction curve (persisted separately from the scalar config) --------------------------
-static const char* kCurvePath = "/curve.bin";
-static void curveSave() {
-    InternalFS.remove(kCurvePath);
-    if (g_corr.curve.empty()) return;
-    File f(InternalFS);
-    if (f.open(kCurvePath, FILE_O_WRITE)) {
-        const uint8_t n = (uint8_t)g_corr.curve.points.size();
-        uint8_t buf[2 + CURVE_MAX_POINTS * 4];
-        CurvePoint pts[CURVE_MAX_POINTS];
-        for (uint8_t i = 0; i < n && i < CURVE_MAX_POINTS; ++i) {
-            pts[i].powerW = (uint16_t)g_corr.curve.points[i].power_w;
-            pts[i].factorMilli = (uint16_t)(g_corr.curve.points[i].factor * 1000.0f + 0.5f);
-        }
-        f.write(buf, packCurve(pts, n, buf));
-        f.close();
-    }
-}
-static void curveLoad() {
-    File f(InternalFS);
-    if (!f.open(kCurvePath, FILE_O_READ)) return;
-    uint8_t buf[2 + CURVE_MAX_POINTS * 4];
-    int rd = f.read(buf, sizeof(buf));
-    f.close();
-    CurvePoint pts[CURVE_MAX_POINTS];
-    int n = (rd >= 2) ? unpackCurve(buf, rd, pts) : -1;
-    if (n > 0) {
-        g_corr.curve = CorrectionCurve{};
-        for (int i = 0; i < n; ++i) g_corr.curve.add(pts[i].powerW, pts[i].factorMilli / 1000.0f);
-        Serial.printf("[bridge] correction curve loaded (%d points)\n", n);
-    }
-}
-
-// ---- trainer name (erg) persistence, separate from the scalar config -------------------------
-static const char* kTrainerPath = "/trainer.txt";
-static void trainerSave() {
-    InternalFS.remove(kTrainerPath);
-    if (!g_trainerFilter[0]) return;
-    File f(InternalFS);
-    if (f.open(kTrainerPath, FILE_O_WRITE)) { f.write((uint8_t*)g_trainerFilter, strlen(g_trainerFilter)); f.close(); }
-}
-static void trainerLoad() {
-    File f(InternalFS);
-    if (!f.open(kTrainerPath, FILE_O_READ)) return;
-    int n = f.read((uint8_t*)g_trainerFilter, sizeof(g_trainerFilter) - 1);
-    f.close();
-    if (n > 0) { g_trainerFilter[n] = 0; Serial.printf("[erg] trainer configured: '%s'\n", g_trainerFilter); }
-}
+static void curveSave() { bridgestore::saveCurve(g_corr.curve); }
+static void curveLoad() { bridgestore::loadCurve(g_corr.curve); }
+static void trainerSave() { bridgestore::saveTrainer(g_trainerFilter); }
+static void trainerLoad() { bridgestore::loadTrainer(g_trainerFilter, sizeof(g_trainerFilter)); }
 
 // ---- Status LED — routed through the board seam so single-LED/Feather boards also build (board.h).
 // Track use: glanceable link state (RGB on the XIAO; on/off on a single-LED board).
 static void setLed(bool r, bool g, bool b) { boardLed(r, g, b); }
 
-static void cfgLoad() {
-    strcpy(g_cfg.outName, "SB20 Bridge");
-    File f(InternalFS);
-    if (f.open(kCfgPath, FILE_O_READ)) {
-        uint8_t buf[CONFIG_LEN];
-        if (f.read(buf, sizeof(buf)) == (int)sizeof(buf)) {
-            ConfigPacket c;
-            if (unpackConfig(buf, sizeof(buf), c)) g_cfg = c;
-        }
-        f.close();
-        Serial.println("[bridge] config loaded from flash");
-    } else {
-        Serial.println("[bridge] no stored config - defaults (dev flashes wipe LittleFS)");
-    }
-    applyCorrectionFromCfg();
-}
-
-static void cfgSave() {
-    uint8_t buf[CONFIG_LEN];
-    packConfig(g_cfg, buf);
-    InternalFS.remove(kCfgPath);
-    File f(InternalFS);
-    if (f.open(kCfgPath, FILE_O_WRITE)) {
-        f.write(buf, sizeof(buf));
-        f.close();
-    }
-}
+static void cfgLoad() { g_cfg = bridgestore::loadConfig(); applyCorrectionFromCfg(); }
+static void cfgSave() { bridgestore::saveConfig(g_cfg); }
 
 // ================= source side: BLE central reading a CPS meter ===============================
 static BLEClientService clientCps(UUID16_SVC_CYCLING_POWER);
@@ -178,9 +113,8 @@ static volatile bool g_sb20Connected = false;
 static bool g_sinkShifter = (OBC_SINK_SHIFTER != 0);  // read the SB20 shifter + re-broadcast as OBC
 static ObcShifterSource g_shifterSrc;                 // pure decode/debounce/map/encode
 
-// The Buttons GATT characteristic (0009) + its LittleFS persistence: the web app writes the binding +
-// enable over Web Bluetooth; it applies live to g_sinkShifter + g_shifterSrc and survives reboot.
-static const char* kButtonsPath = "/buttons.bin";
+// The Buttons GATT characteristic (0009): the web app writes the binding + enable over Web Bluetooth;
+// it applies live to g_sinkShifter + g_shifterSrc and survives reboot (persistence in BridgeConfigStore).
 static ButtonsPacket currentButtons() {
     ButtonsPacket b;
     b.enabled = g_sinkShifter;
@@ -191,21 +125,10 @@ static void applyButtons(const ButtonsPacket& b) {
     g_sinkShifter = b.enabled;
     g_shifterSrc.setBindings(Sb20ButtonMap::fromIndices(b.act));
 }
-static void buttonsSave() {
-    InternalFS.remove(kButtonsPath);
-    uint8_t buf[BUTTONS_LEN];
-    packButtons(currentButtons(), buf);
-    File f(InternalFS);
-    if (f.open(kButtonsPath, FILE_O_WRITE)) { f.write(buf, sizeof(buf)); f.close(); }
-}
+static void buttonsSave() { bridgestore::saveButtons(currentButtons()); }
 static void buttonsLoad() {
-    File f(InternalFS);
-    if (!f.open(kButtonsPath, FILE_O_READ)) return;
-    uint8_t buf[BUTTONS_LEN];
-    int n = f.read(buf, sizeof(buf));
-    f.close();
     ButtonsPacket b;
-    if (n == (int)BUTTONS_LEN && unpackButtons(buf, BUTTONS_LEN, b)) {
+    if (bridgestore::loadButtons(b)) {
         applyButtons(b);
         Serial.printf("[shifter] buttons loaded (sink=%d)\n", (int)b.enabled);
     }

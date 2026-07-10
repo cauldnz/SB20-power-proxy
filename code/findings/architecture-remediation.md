@@ -45,12 +45,13 @@ wiring file over seam classes in `firmware-nrf/src/`.
 **Order is deliberate — shrink the surface with the low-risk lifts first, do the entangled radio seam
 last.** Extracting R1a–R1c removes ~700 lines and is the precondition that makes R1d tractable.
 
-- [ ] **R1a — `BridgeConfigStore`** (~145 lines: `main.cpp:44–137` config/curve/trainer LittleFS +
-  `183–212` buttons persistence). Direct mirror of the ESP32 `ConfigStore`. **Lowest risk / first.**
-  Move `cfgLoad/Save`, `curveSave/Load`, `trainerSave/Load`, `applyCorrectionFromCfg`, buttons persist
-  behind a class owning the `/bridge.cfg`, `/curve.bin`, `/trainer.txt` paths + `g_cfg`/`g_corr`. Pure
-  pack/unpack is already host-tested in `test_bridge`; the LittleFS glue is the seam. **Prove:** both nRF
-  envs compile; `pio test -e native` (nRF) still green.
+- [x] **R1a — `BridgeConfigStore`** ✅ done (2026-07-10). New `firmware-nrf/src/BridgeConfigStore.h`
+  owns the LittleFS I/O for all four blobs (config/curve/trainer/buttons) against the pure Proto.h/
+  Correction.h codecs; main.cpp keeps the globals + the apply-policy (`applyCorrectionFromCfg`/
+  `applyButtons`) and the `cfg/curve/trainer/buttons Save/Load` wrappers now one-line delegate to
+  `bridgestore::` (no call-site changes). Behaviour-preserving (Serial breadcrumbs verbatim); main.cpp
+  **1495 → 1418 lines**; both nRF envs compile, native **28/28**. On-hardware persistence round-trip is
+  R-gated (LittleFS glue isn't host-testable), consistent with the other nRF seams.
 - [ ] **R1b — `BridgeService`** (~350 lines: the GATT control/telemetry callbacks `main.cpp:691–975` +
   char decls `243–269` + the `setup()` begin block). One cohesive service over one already-pure protocol
   (`lib/bridge/Proto.h`); self-similar write/notify handlers touching a bounded global set
