@@ -13,11 +13,9 @@ linked docs.
 
 ## 0. TL;DR
 
-- All work is on branch **`feat/nrf-ant-spoof`** (23 commits ahead of `origin/main`, **0 behind** — it's
-  on a current base). Pull it and check it out.
-- **CI has NOT run on this branch** (there is no PR for it yet) — only *local* test runs, all green.
-  Opening a PR triggers CI. Merge stack: `main ← #248 (obc-transmitter) ← #250 (obc-web-config) ←
-  feat/nrf-ant-spoof`. **The owner manages merges** (concurrent sessions).
+- All work is **merged to `main`** via **PR #251** (green CI: pytest 3.10/3.12 + firmware). It was on
+  `feat/nrf-ant-spoof`; that PR was a linear superset of the OBC stack, so it **subsumed PRs #248 + #250**.
+  **On the new box, just work off `main`.**
 - The big win of *this* machine: it has hardware the desk box lacked, so the **hardware-gated
   verifications in §4 are now unblocked** — that's the highest-value thing to do first. Everything shipped
   so far is compile- + host-tested; the on-air / persistence / HTTP round-trips have been waiting for a
@@ -29,7 +27,7 @@ linked docs.
 
 ```powershell
 git fetch origin
-git checkout feat/nrf-ant-spoof          # the arc lives here
+git checkout main                         # the arc merged to main via PR #251
 git pull
 
 # Toolchain (pinned build/flash env) + pre-flight — see tools/README.md
@@ -74,7 +72,8 @@ ruff check src tests                                 # CI lint scope
 | `5a2c8ff` | **BLE SB20 crank-spoof mode** ported to the nRF (Stages 0x2F framing + identity + 442 calibrate). |
 | (earlier) | nRF P1 ANT codec, P2 board seam + Feather env, and the OBC stack it's based on. |
 
-Everything above is **compile- + host-verified**. The on-air / on-hardware behaviour is §4.
+Everything above is **compile- + host-verified**, and **merged to `main` via PR #251 with green CI**
+(pytest 3.10/3.12 + firmware). The on-air / on-hardware behaviour is §4.
 
 ---
 
@@ -132,8 +131,8 @@ rough priority:
    `architecture-remediation.md`. Its own branch/PR; host-test + compile, then bench-verify the GATT
    round-trip on the nRF you now have. Then R1c (`ImuRecorder`), R1d (the radio seam) — the plan doc has
    the order + rationale.
-3. **Open a PR** for `feat/nrf-ant-spoof` (and/or land the OBC stack #248→#250) to get CI + enable merge.
-   Confirm CI is green before merging (it hasn't run on this branch).
+3. (Done — the arc merged to `main` via PR #251 with green CI. Separate open PR **#242** (a docs retro)
+   is unrelated and still open if you want it.)
 
 ---
 
