@@ -555,6 +555,25 @@ void WifiLink::addConfigRoutes_() {
         const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
         server_->send(200, "application/json", renderConfigJson(cfg).c_str());
     });
+    // POST /config -> the shared SPA's "Correction & identity" Apply (incl. the spoof/corrector mode
+    // selector). Unlike /setup/save it MERGES onto the current config (mergeSpaConfigForm), so it never
+    // wipes the fitted curve / reference meter / trainer. Persists + reboots to apply the identity (the
+    // crank DIS/services are built at boot, like /setup/save). Same-origin CSRF guard as the others.
+    server_->on("/config", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        const RuntimeConfig cur = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        RuntimeConfig cfg = mergeSpaConfigForm(cur, formBody(server_));
+        const char* err = configValidationError(cfg);
+        if (err) {
+            server_->send(400, "application/json",
+                          (std::string("{\"error\":\"") + err + "\"}").c_str());
+            return;
+        }
+        if (configSave_) configSave_(cfg);  // persist to NVS
+        server_->send(200, "application/json", "{\"ok\":true,\"reboot\":true}");
+        delay(400);
+        esp_restart();  // reboot to apply the mode/identity/source (mirrors /setup/save)
+    });
     // GET/POST /curve: export/import a portable correction curve (a calibration profile fitted on the
     // OTHER device, or the desk tooling). GET returns the breakpoints; POST loads a curve LIVE (no
     // reboot) from the compact "power:factor,..." form (empty body clears it). The SPA does the

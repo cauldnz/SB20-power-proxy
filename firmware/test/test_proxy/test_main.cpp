@@ -1421,8 +1421,40 @@ void test_config_json_maps_fields() {
     TEST_ASSERT_TRUE(j.find("\"out_name\":\"Stages 62144\"") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"scale\":1.0") != std::string::npos);       // baseline (curve is the real model)
     TEST_ASSERT_TRUE(j.find("\"has_curve\":false") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"mode\":\"spoof\"") != std::string::npos);  // defaults() is spoof
     c.curve.add(200.0f, 1.1f);
     TEST_ASSERT_TRUE(renderConfigJson(c).find("\"has_curve\":true") != std::string::npos);
+    c.mode = ProxyMode::Corrector;
+    TEST_ASSERT_TRUE(renderConfigJson(c).find("\"mode\":\"corrector\"") != std::string::npos);
+}
+
+// The SPA's POST /config MERGES onto the current config: it flips mode + touches single/src/out_name,
+// but must PRESERVE the fitted curve, reference meter, trainer, and spoof serial the SPA never sends.
+void test_merge_spa_config_form() {
+    RuntimeConfig cur = RuntimeConfig::defaults();  // mode = Spoof
+    cur.curve.add(200.0f, 1.15f);                   // a fitted correction the SPA must not wipe
+    cur.refMeterNameFilter = "ASSIOMA";
+    cur.trainerNameFilter = "SB20-FTMS";
+    cur.spoofSerial = "9999";
+    cur.meterAddress = "e3:25:39:38:92:71";
+    // Flip to corrector, change source + identity name, clear single-sided.
+    RuntimeConfig c = mergeSpaConfigForm(cur, "single=0&src_filter=XCADEY&out_name=SB20+Corrector&mode=corrector");
+    TEST_ASSERT_TRUE(c.mode == ProxyMode::Corrector);
+    TEST_ASSERT_FALSE(c.singleSidedDouble);
+    TEST_ASSERT_EQUAL_STRING("XCADEY", c.meterNameFilter.c_str());
+    TEST_ASSERT_EQUAL_STRING("SB20 Corrector", c.spoofName.c_str());
+    // preserved (never sent by the SPA):
+    TEST_ASSERT_EQUAL_UINT(1, c.curve.points.size());
+    TEST_ASSERT_EQUAL_STRING("ASSIOMA", c.refMeterNameFilter.c_str());
+    TEST_ASSERT_EQUAL_STRING("SB20-FTMS", c.trainerNameFilter.c_str());
+    TEST_ASSERT_EQUAL_STRING("9999", c.spoofSerial.c_str());
+    TEST_ASSERT_EQUAL_STRING("e3:25:39:38:92:71", c.meterAddress.c_str());
+    // Spoof back on; single on; a blank out_name falls back to the default (never nameless).
+    RuntimeConfig d = mergeSpaConfigForm(c, "single=1&out_name=&mode=spoof");
+    TEST_ASSERT_TRUE(d.mode == ProxyMode::Spoof);
+    TEST_ASSERT_TRUE(d.singleSidedDouble);
+    TEST_ASSERT_EQUAL_STRING(Config::SPOOF_NAME, d.spoofName.c_str());
+    TEST_ASSERT_EQUAL_STRING("XCADEY", d.meterNameFilter.c_str());  // absent key = unchanged
 }
 
 void test_curve_json_export_and_roundtrip() {
@@ -2647,6 +2679,7 @@ int runUnityTests() {
     RUN_TEST(test_scan_json_shape_and_flags);
     RUN_TEST(test_scan_json_empty);
     RUN_TEST(test_config_json_maps_fields);
+    RUN_TEST(test_merge_spa_config_form);
     RUN_TEST(test_curve_json_export_and_roundtrip);
     RUN_TEST(test_diag_report_has_firmware_version);
     RUN_TEST(test_firmware_version_feeds_ota_decision);

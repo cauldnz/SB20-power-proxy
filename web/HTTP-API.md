@@ -32,9 +32,19 @@ Garmin/web erg line + shifter bias render; default 0/false until then).
 
 ### `GET /config` → normalized **Config**
 ```json
-{ "scale":1.05, "offset":-2.0, "single_sided":false, "src_filter":"ASSIOMA", "out_name":"Stages 62144" }
+{ "scale":1.0, "offset":0.0, "single_sided":false, "src_filter":"ASSIOMA", "out_name":"Stages 62144",
+  "mode":"spoof", "has_curve":false }
 ```
-### `POST /config`  (body: the same JSON) → persist + apply; return the new `/config`.
+`mode` is `"spoof"` (impersonate the Stages crank — drive an SB20) or `"corrector"` (our own identity).
+The ESP32's correction is a fitted **curve**, so `scale`/`offset` report the `1.0`/`0` baseline and
+`has_curve` flags whether a curve is active (the nRF's Config is scalar scale/offset instead).
+
+### `POST /config` → persist + **reboot** to apply (mode/identity are built at boot; mirrors `/setup/save`)
+Body is **urlencoded form fields** (the ESP32 has no JSON parser): `single` (`1`/`0`), `src_filter`,
+`out_name`, `mode` (`spoof`/`corrector`). It **merges** onto the stored config — fields not sent are
+preserved (the fitted curve, reference meter, trainer, spoof serial), so a partial Apply never wipes a
+calibration. Returns `{"ok":true,"reboot":true}` (or `{"error":"…"}` on a validation failure), then
+restarts. The SPA posts only the ESP32-meaningful fields (scale/offset are the nRF's scalar model).
 
 ### `GET /curve` → the correction curve as portable breakpoints
 ```json

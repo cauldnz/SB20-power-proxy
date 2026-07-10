@@ -39,6 +39,8 @@ inline std::string renderConfigJson(const RuntimeConfig& c) {
     j += ",\"single_sided\":" + std::string(c.singleSidedDouble ? "true" : "false");
     j += ",\"src_filter\":\"" + jsonEscape(c.meterNameFilter) + "\"";
     j += ",\"out_name\":\"" + jsonEscape(c.spoofName) + "\"";
+    // Broadcast mode so the SPA's spoof/corrector selector reflects the device (matches /status).
+    j += ",\"mode\":\"" + std::string(c.mode == ProxyMode::Corrector ? "corrector" : "spoof") + "\"";
     j += ",\"has_curve\":" + std::string(c.curve.points.empty() ? "false" : "true");
     j += "}";
     return j;

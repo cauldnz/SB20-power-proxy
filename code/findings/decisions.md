@@ -2696,3 +2696,48 @@ Numbers/toolchain notes for future work:
 Open (untested): does a real SB20 accept the nRF as its crank over BLE (pair + power shows + calibrate
 completes)? That's **R3** — the session 8–9 criteria, now on the nRF. The ANT+ Stages-spoof path (P4,
 S340-gated) remains the other, potentially-more-faithful route.
+
+## 2026-07-10 — spoof/corrector is now a first-class UI control in the shared SPA, coherent across every platform + both radios
+
+Decision: surface the spoof↔corrector **mode** in the one shared web SPA (`web/index.html`) so it reads
+the same on every board, and make it actually *work* on the ESP32 (its whole SPA config-write path was
+missing). Requested by the owner ("make the spoof setup UI make sense across all platforms and for both
+BLE and ANT+"). The model settled on: **mode** (Corrector | Spoof) is the identity axis, shown everywhere;
+**spoof radio** (BLE | ANT+) is the transport axis, shown only on ANT-capable hardware (the nRF) with
+ANT+ disabled until the S340 lands; the ESP32 is BLE-only so no radio picker appears. In spoof the
+broadcast name is fixed to `Stages 62144` (the identity the SB20 keys on) and the field is disabled;
+corrector keeps an editable name.
+
+What the exploration turned up (three Explore agents, code-verified) — the honest starting state was worse
+than "just add a toggle":
+- The SPA had **no** mode concept at all.
+- The **ESP32 could not write ANY config from the SPA** — `POST /config` was never implemented (the
+  deferred "U4"), so the "Apply" button was a silent no-op on the ESP32; the only mode switch was the
+  one-way calibrate wizard (SPOOF→CORRECTOR). Latent data-loss too: `/setup/save` rebuilds config from a
+  fresh `RuntimeConfig` (default Spoof, empty curve), so saving the source picker while in corrector mode
+  reverted to spoof and **wiped the fitted curve**.
+- nRF: `spoof` (Config bit 3) already accepted by firmware; ANT bits (`outIsAnt`) still reject-until-S340;
+  the Config char read-back — **not** Status — is authoritative for mode (Status never even populates
+  srcIsAnt/outIsAnt).
+
+Shipped (branch `feat/nrf-ant-spoof`, stacked on the OBC base):
+- **SPA** (`web/index.html`): a "Broadcast mode" selector + a conditional "Spoof radio" select
+  (`caps.antCapable` gates it — true on BLE/nRF with ANT+ disabled, false on HTTP/ESP32) + per-mode help,
+  a reboot hint, and the fixed-name behaviour. Normalized `Config` gains `spoof`. BLE codec reads/writes
+  flags bit 3 (combined with single-sided, ANT bits left 0). HTTP `getConfig` reads `mode`; `setConfig`
+  POSTs urlencoded fields (`single/src_filter/out_name/mode`) — the ESP32 has no JSON parser.
+- **ESP32**: `renderConfigJson` now emits `"mode"`; new **`POST /config`** (`WifiLink`) that **merges**
+  onto the stored config via the new pure `mergeSpaConfigForm` (ConfigPage.h) — preserving the curve /
+  reference meter / trainer / serial (so it can't repeat the `/setup/save` wipe) — persists, and reboots
+  to apply (identity is boot-time; mirrors `/setup/save`). Same-origin CSRF guard as the other routes.
+- **Reboot model (coherent, not identical):** on both platforms the crank identity is built at boot, so a
+  mode change needs a reboot to re-advertise. The nRF applies framing/scale live and *hints* the reboot
+  (no remote-reboot channel yet); the ESP32 auto-reboots on save. The SPA messages each path.
+
+Verification (all desk/host — no hardware needed): ESP32 native **201/201** (incl. `mode` in
+`renderConfigJson` + `mergeSpaConfigForm` preserve/merge), SPA sync+XSS **3/3**, `WebSpa.h` regenerated in
+sync, ESP32-C3 compile green. A rendered mockup of all four states is in `design/spoof-ui-mockup.png`.
+**Untested (hardware-gated):** the ESP32's SPA-over-HTTP path end-to-end (the whole HttpTransport is still
+"unverified until U4" — this *is* part of U4, but the on-device round-trip needs an ESP32 on WiFi).
+**Follow-ups:** a remote-reboot affordance (both platforms) so a mode change applies without a power
+cycle; wiring `outIsAnt` + enabling the ANT+ radio option once the S340 capability is detectable.

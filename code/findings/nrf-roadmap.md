@@ -62,9 +62,12 @@ corrector, the honest identity, stays right for the track-bike product):
   service), and answers the app's 0x10 enhanced-offset with the **442 company-id + captured `mfgData`**
   (BLE zero offset 0). Framing switches live; the identity is boot-time (reboot to re-advertise; serial
   `SPOOF1`/`SPOOF0` toggles). nRF native **28/28**. **Next: R3** — pair to a real SB20, confirm power +
-  the calibrate/zero handshake (the session 8–9 criteria). **Follow-ups:** a web-SPA mode toggle (the
-  Bridge Config char already carries the bit); consider aligning `firmware-nrf` to gnu++17 (it builds at
-  gnu++11 — see decisions.md 2026-07-10 for the ODR gotcha this forced).
+  the calibrate/zero handshake (the session 8–9 criteria). The spoof/corrector mode is now a **first-class
+  control in the shared web SPA** across every platform (nRF + ESP32) — ANT+ shown-but-disabled until the
+  S340 lands (decisions.md 2026-07-10; mockup `design/spoof-ui-mockup.png`); this also implemented the
+  ESP32's missing `POST /config`. **Follow-ups:** a remote-reboot channel (apply a mode change without a
+  power cycle) + enabling the ANT+ radio option once S340 capability is detectable; consider aligning
+  `firmware-nrf` to gnu++17 (it builds at gnu++11 — see decisions.md 2026-07-10 for the ODR gotcha).
 
 - **ANT+ Stages spoof** 🔧 (codec DONE in P1; the ANT radio is P4, S340-gated). The nRF-native path: an
   ANT+ **master** on the Stages crank's channel params (device # 62144, device-type **0x0B** Bike Power,

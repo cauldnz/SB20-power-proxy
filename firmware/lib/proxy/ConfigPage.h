@@ -48,6 +48,34 @@ inline RuntimeConfig parseConfigForm(const std::string& body) {
     return c;
 }
 
+// Merge the shared web SPA's `POST /config` body into an EXISTING config, changing only the fields the
+// SPA sends and PRESERVING everything it doesn't (the fitted correction curve, reference meter, trainer,
+// spoof serial, pinned address). This is the difference from parseConfigForm, which builds a FRESH
+// config (right for the full /setup page, but as a partial update it would silently wipe the curve +
+// revert the mode to the default). Keys (all optional; absent = keep current): `single` (checkbox,
+// "1"/"on"/"true" = on), `src_filter` (source name filter), `out_name` (advertised identity name),
+// `mode` ("corrector" | "spoof"). Pure + host-tested. Reuses urlDecode / stripConfigDelims.
+inline RuntimeConfig mergeSpaConfigForm(const RuntimeConfig& current, const std::string& body) {
+    RuntimeConfig c = current;
+    size_t pos = 0;
+    while (pos <= body.size()) {
+        size_t amp = body.find('&', pos);
+        size_t end = (amp == std::string::npos) ? body.size() : amp;
+        std::string pair = body.substr(pos, end - pos);
+        size_t eq = pair.find('=');
+        std::string key = urlDecode(eq == std::string::npos ? pair : pair.substr(0, eq));
+        std::string val = urlDecode(eq == std::string::npos ? std::string() : pair.substr(eq + 1));
+        if (key == "single") c.singleSidedDouble = (val == "1" || val == "on" || val == "true");
+        else if (key == "src_filter") c.meterNameFilter = stripConfigDelims(val);
+        else if (key == "out_name") c.spoofName = stripConfigDelims(val);
+        else if (key == "mode") c.mode = (val == "corrector") ? ProxyMode::Corrector : ProxyMode::Spoof;
+        if (amp == std::string::npos) break;
+        pos = amp + 1;
+    }
+    if (c.spoofName.empty()) c.spoofName = Config::SPOOF_NAME;  // we always advertise a name
+    return c;
+}
+
 // Does the urlencoded form body carry `key` at all? Distinguishes "present but empty" (an explicit
 // CLEAR — e.g. wiping the trainer field) from "absent" (an old page / a curl without the field —
 // PRESERVE the stored value). The /setup/save route uses this so a save from a form that predates
