@@ -7,6 +7,7 @@
 
 #include "Config.h"
 #include "Cps.h"
+#include "Obc.h"           // OBC BLE service/characteristic UUIDs
 #include "LogBuffer.h"     // toHex
 #include "net/DebugLog.h"  // logf -> /log (learn the SB20's interactive protocol by observation)
 
@@ -135,8 +136,19 @@ void BleCrankPeripheral::begin() {
     //     advert, and the 128-bit Stages proprietary service in the SCAN RESPONSE. Putting the
     //     128-bit UUID in the primary packet crowds the name out of the 31-byte advert (the real
     //     crank's capture has name+1818 primary, d445fe01 in the scan response). ---
+    // OpenBikeControl (OBC) service — a Button-State notify char so our re-presented SB20 buttons drive
+    // OBC-speaking apps over BLE (lib/proxy/Obc.h). Gated on config; discoverable on connect.
+    if (obcEnabled_ || obcDevmode_) {
+        NimBLEService* obc = server->createService(OBC_BLE_SERVICE_UUID);
+        obcButtonChar_ = obc->createCharacteristic(
+            OBC_BLE_BUTTON_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+        obc->start();
+    }
+
     NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
-    adv->setName(spoofName_.c_str());  // runtime identity; defaults to Config::SPOOF_NAME
+    // Devmode advertises as an OBC controller so an OBC listener finds us by an "OBC-"-prefixed name
+    // (the crank identity would otherwise read as "Stages …"); normal builds keep the runtime identity.
+    adv->setName(obcDevmode_ ? "OBC-SB20" : spoofName_.c_str());
     adv->addServiceUUID(UUID_CPS);
     if (!corrector) {
         // SPOOF: the 128-bit Stages proprietary UUID rides in the scan response (mirrors the real
@@ -148,6 +160,12 @@ void BleCrankPeripheral::begin() {
         adv->setScanResponseData(scanResp);
     }
     adv->start();
+}
+
+void BleCrankPeripheral::notifyObc(const uint8_t* data, size_t len) {
+    if (obcButtonChar_ == nullptr || data == nullptr || len == 0) return;
+    obcButtonChar_->setValue(data, len);
+    obcButtonChar_->notify();
 }
 
 void BleCrankPeripheral::publishPower(const PowerReading& r) {

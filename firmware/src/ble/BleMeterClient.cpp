@@ -30,6 +30,12 @@ static std::vector<BleMeterClient*> g_clients;
 static FtmsErgClient* g_ftmsSink = nullptr;
 void BleMeterClient::setFtmsScanSink(FtmsErgClient* sink) { g_ftmsSink = sink; }
 
+// The SB20-shifter client (at most one), fed named advertisers from the same shared scan so it can
+// match + connect to the SB20 and re-broadcast its buttons as OBC (obcSinkShifter).
+#include "ble/BleShifterClient.h"
+static BleShifterClient* g_shifterSink = nullptr;
+void BleMeterClient::setShifterScanSink(BleShifterClient* sink) { g_shifterSink = sink; }
+
 // Picker rescan boost: a deadline during which the scan keeps running (and candidates keep
 // recording) even with every client satisfied — so Rescan can refill the picker list.
 static uint32_t g_pickerScanUntilMs = 0;
@@ -47,6 +53,7 @@ static bool noClientNeedsScan() {
         if (c->wantsTarget()) return false;
     }
     if (g_ftmsSink && g_ftmsSink->wantsTarget()) return false;  // the erg client still hunts too
+    if (g_shifterSink && g_shifterSink->wantsTarget()) return false;  // the shifter client too
     if (millis() < g_pickerScanUntilMs) return false;           // Rescan window still open
     return true;
 }
@@ -87,6 +94,11 @@ class MeterScanCallbacks : public NimBLEScanCallbacks {
         // Feed FTMS advertisers to the erg client (it never touches the scan callbacks itself).
         if (ftms && g_ftmsSink && g_ftmsSink->wantsTarget()) {
             g_ftmsSink->onFtmsAdvert(addr.c_str(), d->getAddress().getType(), name.c_str());
+        }
+        // Feed NAMED advertisers to the shifter client so it can match the SB20 ("Stages Bike") and
+        // subscribe to its vendor button char — the SB20 advertises a name (not the CPS UUID).
+        if (!name.empty() && g_shifterSink && g_shifterSink->wantsTarget()) {
+            g_shifterSink->onSb20Advert(addr.c_str(), d->getAddress().getType(), name.c_str());
         }
         // Assign the advertiser to the FIRST client that wants it and isn't being claimed elsewhere.
         // isTarget (pure, host-tested isTargetMeter) picks per RUNTIME config: a PINNED address wins;

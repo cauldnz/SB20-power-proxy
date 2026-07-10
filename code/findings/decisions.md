@@ -2654,3 +2654,137 @@ New, better-graded status:
 Will revisit if: the `--erg` round-trip shows the SB20 answers standard FTMS control (→ our path is clean,
 and *then* there's an evidence-backed thing to offer qz) OR shows "no answer" (→ the real deliverable is
 mining how Zwift / a current qz actually talks to it — the handshake, not just the characteristic).
+
+## 2026-07-10 — nRF gains a BLE SB20 crank-spoof MODE (ported from the ESP32); host-tested + compiles, on-SB20 gated (R3)
+
+Decision: the nRF52840 bridge is no longer corrector-only. A **runtime `spoof|corrector` mode** (default
+corrector — the honest track-bike identity is unchanged) now lets the Seeed XIAO / Feather present as the
+**real Stages SPM2 crank**, so it can drive a real SB20's erg loop — the capability the ESP32-C3 already
+had, now on the ANT-capable board. Executes the owner's "port it" decision + `nrf-roadmap.md` "BLE Stages
+spoof" bullet. Built **host-tested/compile-first** (no hardware on the dev box); the on-SB20 pairing +
+calibrate handshake is run-sheet **R3**.
+
+What shipped (branch `feat/nrf-ant-spoof`, on the OBC stack):
+- **Wire contract:** `ConfigPacket.spoof` = flags **bit 3** (`Proto.h`), backward-compatible — a pre-spoof
+  config (bit 3 clear) decodes as corrector, exactly today's behaviour. Host test
+  `test_config_spoof_mode_bit` (nRF native **28/28**).
+- **Measurement:** in spoof, `measNotifyCb` emits the **Stages 0x2F** frame (`encodeStagesCpsMeasurement`,
+  shared `Cps.h`) — pedal balance + accumulated torque + crank rev. Crank-rev fields **pass through from
+  the source meter** (its real cadence); accumulated torque is integrated per completed rev from the
+  corrected power (T = P·60/(2π·rpm), 1/32 Nm units) — the ESP32 `publishPower` math, but driven off the
+  source's own crank delta rather than a regenerated stream. Reset on source disconnect.
+- **Identity (boot-time):** DIS = Stages SPM2 (manuf/model/fw/serial), CP Feature = `0x0008030B`
+  (`CP_FEATURE_STAGES`), Sensor Location = **0 "other"** (the real crank, not 5 left), name = `Stages
+  62144`, the **Stages proprietary service** (`d445fe01…`, opaque) in the scan response, + a Battery
+  Service — all mirroring `BleCrankPeripheral`. Corrector path unchanged (plain CPS, own name).
+- **Calibration handshake:** `cpWriteCb` now passes the **442 company id + captured mfg data** into the
+  0x10 enhanced-offset reply when spoof (the session-8 fix that stopped the Stages app's calibrate
+  spinning); BLE zero-reset offset stays **0** in both modes (the BLE value, not the ANT+ 903).
+- **Mode change:** framing switches **live**; the advertised services/DIS/feature are boot-time, so the
+  crank **identity needs a reboot** (logged; the web UI will surface it). Serial console `SPOOF1`/`SPOOF0`
+  for bench toggling.
+
+Numbers/toolchain notes for future work:
+- The nRF core builds at **gnu++11** (the ESP32 firmware overrides to gnu++17; `firmware-nrf` does not).
+  Consequence hit here: ODR-using a class-static `constexpr` array (`Config::SPOOF_MFG_DATA`) via pointer
+  arithmetic would need an out-of-line definition the header-only shared `Config.h` can't give → link
+  error. Worked around with literal-index constant reads (+ a `static_assert` on length). `Shifter.h`'s
+  `inline constexpr` also warns at gnu++11 (accepted as an extension). **Follow-up candidate:** align
+  `firmware-nrf` to gnu++17 to match the shared headers' authored standard and kill this class of risk.
+- Both envs compile: **xiao-sense** Flash 23.4% / RAM 48.6%; **feather-nrf52840** green.
+
+Open (untested): does a real SB20 accept the nRF as its crank over BLE (pair + power shows + calibrate
+completes)? That's **R3** — the session 8–9 criteria, now on the nRF. The ANT+ Stages-spoof path (P4,
+S340-gated) remains the other, potentially-more-faithful route.
+
+## 2026-07-10 — spoof/corrector is now a first-class UI control in the shared SPA, coherent across every platform + both radios
+
+Decision: surface the spoof↔corrector **mode** in the one shared web SPA (`web/index.html`) so it reads
+the same on every board, and make it actually *work* on the ESP32 (its whole SPA config-write path was
+missing). Requested by the owner ("make the spoof setup UI make sense across all platforms and for both
+BLE and ANT+"). The model settled on: **mode** (Corrector | Spoof) is the identity axis, shown everywhere;
+**spoof radio** (BLE | ANT+) is the transport axis, shown only on ANT-capable hardware (the nRF) with
+ANT+ disabled until the S340 lands; the ESP32 is BLE-only so no radio picker appears. In spoof the
+broadcast name is fixed to `Stages 62144` (the identity the SB20 keys on) and the field is disabled;
+corrector keeps an editable name.
+
+What the exploration turned up (three Explore agents, code-verified) — the honest starting state was worse
+than "just add a toggle":
+- The SPA had **no** mode concept at all.
+- The **ESP32 could not write ANY config from the SPA** — `POST /config` was never implemented (the
+  deferred "U4"), so the "Apply" button was a silent no-op on the ESP32; the only mode switch was the
+  one-way calibrate wizard (SPOOF→CORRECTOR). Latent data-loss too: `/setup/save` rebuilds config from a
+  fresh `RuntimeConfig` (default Spoof, empty curve), so saving the source picker while in corrector mode
+  reverted to spoof and **wiped the fitted curve**.
+- nRF: `spoof` (Config bit 3) already accepted by firmware; ANT bits (`outIsAnt`) still reject-until-S340;
+  the Config char read-back — **not** Status — is authoritative for mode (Status never even populates
+  srcIsAnt/outIsAnt).
+
+Shipped (branch `feat/nrf-ant-spoof`, stacked on the OBC base):
+- **SPA** (`web/index.html`): a "Broadcast mode" selector + a conditional "Spoof radio" select
+  (`caps.antCapable` gates it — true on BLE/nRF with ANT+ disabled, false on HTTP/ESP32) + per-mode help,
+  a reboot hint, and the fixed-name behaviour. Normalized `Config` gains `spoof`. BLE codec reads/writes
+  flags bit 3 (combined with single-sided, ANT bits left 0). HTTP `getConfig` reads `mode`; `setConfig`
+  POSTs urlencoded fields (`single/src_filter/out_name/mode`) — the ESP32 has no JSON parser.
+- **ESP32**: `renderConfigJson` now emits `"mode"`; new **`POST /config`** (`WifiLink`) that **merges**
+  onto the stored config via the new pure `mergeSpaConfigForm` (ConfigPage.h) — preserving the curve /
+  reference meter / trainer / serial (so it can't repeat the `/setup/save` wipe) — persists, and reboots
+  to apply (identity is boot-time; mirrors `/setup/save`). Same-origin CSRF guard as the other routes.
+- **Reboot model (coherent, not identical):** on both platforms the crank identity is built at boot, so a
+  mode change needs a reboot to re-advertise. The nRF applies framing/scale live and *hints* the reboot
+  (no remote-reboot channel yet); the ESP32 auto-reboots on save. The SPA messages each path.
+
+Verification (all desk/host — no hardware needed): ESP32 native **201/201** (incl. `mode` in
+`renderConfigJson` + `mergeSpaConfigForm` preserve/merge), SPA sync+XSS **3/3**, `WebSpa.h` regenerated in
+sync, ESP32-C3 compile green. A rendered mockup of all four states is in `design/spoof-ui-mockup.png`.
+**Untested (hardware-gated):** the ESP32's SPA-over-HTTP path end-to-end (the whole HttpTransport is still
+"unverified until U4" — this *is* part of U4, but the on-device round-trip needs an ESP32 on WiFi).
+**Follow-ups:** a remote-reboot affordance (both platforms) so a mode change applies without a power
+cycle; wiring `outIsAnt` + enabling the ANT+ radio option once the S340 capability is detectable.
+
+## 2026-07-10 — Architecture audit (3-agent survey): "one codec, many deployments" is enforced only C++↔C++; language boundaries were a claim. Closed the cheap gaps; ranked the structural ones.
+
+A grounded architecture pass (three Explore agents: codec-drift, main.cpp cohesion, config/correction
+model) produced an evidence-backed map. The central finding: the project's core bet — one wire format,
+deployed many times — is **genuinely enforced in exactly one place** (the nRF compiles the *same*
+`firmware/lib/proxy/*.h` as the ESP32 via `lib_extra_dirs`, so CPS/FTMS/OBC are one C++ source compiled
+twice, not mirrors) and is **unenforced at every language boundary** (Python, the SPA's JS, the Garmin
+Monkey C each hand-copy vectors; no test cross-checks `cpp_encode(x) == other_encode(x)`). The team
+already has the fix idiom (`test_calibration_parity.py`, `test_ota_sign.py`, `test_workout_engine_parity.py`)
+— it just was never pointed at the BLE/ANT wire formats.
+
+**Shipped this pass (safe, host-tested):**
+- **`code/tests/test_wire_format_parity.py`** (new home for the invariant): asserts `pages.py` produces
+  the *exact* bytes the C++ `AntBikePower.h` golden vectors assert (power-only, calibration
+  response+request, manufacturer) — cross-checking the ANT port I wrote 2026-07-10 against the
+  3,209-record-grounded Python codec — and that the SPA's `OBC_ACTIONS` order == firmware
+  `sb20ActionOptions` (a reorder would silently remap the Buttons-char index to the wrong action). 5/5 pass.
+- **OBC label drift fixed:** the SPA used `"−10W"` (U+2212) vs the firmware's `"-10W"` (ASCII) — now
+  identical, and the parity test locks it.
+- **SPA scale/offset "lying control" fixed** (a real correctness defect, not just fragmentation): the SPA
+  offered editable Scale/Offset on the ESP32/HTTP transport, but `setConfig` silently dropped them (the
+  ESP32 correction is a fitted *curve*, no scalar field — `WebJson.h:33`) while the local echo made the UI
+  look like the edit took. Added `caps.scalarCorrection` (BLE true / HTTP false); the scalar inputs now
+  hide on curve-only devices, replaced by a "correction is the Calibrate wizard's curve" note.
+
+**Deferred — structural, owner to steer (ranked):**
+1. **nRF `main.cpp` is a god-object** (1495 lines, *zero* seam classes; re-implements inline the four
+   seams the ESP32 has as classes — `BleCrankPeripheral`/`BleMeterClient`/`FtmsErgClient`/`BleShifterClient`
+   — and bypasses `ProxyCore`). The ESP32 by contrast is a disciplined wiring file with one fat tenant
+   (the ~590-line LCD head-unit controller). Best ROI order for the nRF: extract `BridgeConfigStore` →
+   `BridgeService` (the ~350-line GATT service) → `ImuRecorder` → the `IRadioSource/Sink` seam last
+   (biggest win, riskiest — the 4-way central multiplex). Extracting the first three removes ~700 lines and
+   would let the nRF finally adopt the shared `ProxyCore`. This is the real liability under the active nRF
+   spoof/ANT work.
+2. **Bridge GATT JS + Monkey-C mirrors are unpinned** (highest silent-drift blast radius — the JS is the
+   primary user control surface; a `Proto.h` offset change corrupts it with zero CI signal, `test_spa_sync`
+   only checks copy-drift). Needs a decision: extract the SPA's Bridge codec into a testable JS module
+   (+ Node in CI) so it *can* be byte-checked against shared golden vectors.
+3. **`|`-line `RuntimeConfig`** is positional, **untagged (no version byte, unlike the nRF's `PROTO_VER`)**,
+   append-only-by-convention, and delimiter-injectable (mitigated only by the easily-forgotten
+   `stripConfigDelims`). Contained (one production round-trip, `ConfigStore`) but a real trap; a middle
+   insert or a missed strip corrupts silently. Candidate: a tagged/versioned line.
+4. **Config field-name vocabulary diverges 3 ways** (`meterNameFilter`/`srcFilter`/`src_filter`;
+   `spoofName`/`outName`/`out_name`; mode as enum/bool/string). Accidental, not essential — a shared
+   field-name vocabulary would remove the translation layer + reader friction. (The three *serializers*/
+   storage backends and the scalar-vs-curve *model* are justified by transport and left alone.)

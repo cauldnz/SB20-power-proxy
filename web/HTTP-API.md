@@ -32,9 +32,19 @@ Garmin/web erg line + shifter bias render; default 0/false until then).
 
 ### `GET /config` → normalized **Config**
 ```json
-{ "scale":1.05, "offset":-2.0, "single_sided":false, "src_filter":"ASSIOMA", "out_name":"Stages 62144" }
+{ "scale":1.0, "offset":0.0, "single_sided":false, "src_filter":"ASSIOMA", "out_name":"Stages 62144",
+  "mode":"spoof", "has_curve":false }
 ```
-### `POST /config`  (body: the same JSON) → persist + apply; return the new `/config`.
+`mode` is `"spoof"` (impersonate the Stages crank — drive an SB20) or `"corrector"` (our own identity).
+The ESP32's correction is a fitted **curve**, so `scale`/`offset` report the `1.0`/`0` baseline and
+`has_curve` flags whether a curve is active (the nRF's Config is scalar scale/offset instead).
+
+### `POST /config` → persist + **reboot** to apply (mode/identity are built at boot; mirrors `/setup/save`)
+Body is **urlencoded form fields** (the ESP32 has no JSON parser): `single` (`1`/`0`), `src_filter`,
+`out_name`, `mode` (`spoof`/`corrector`). It **merges** onto the stored config — fields not sent are
+preserved (the fitted curve, reference meter, trainer, spoof serial), so a partial Apply never wipes a
+calibration. Returns `{"ok":true,"reboot":true}` (or `{"error":"…"}` on a validation failure), then
+restarts. The SPA posts only the ESP32-meaningful fields (scale/offset are the nRF's scalar model).
 
 ### `GET /curve` → the correction curve as portable breakpoints
 ```json
@@ -53,6 +63,19 @@ or the desk tooling loads here, and vice versa.
 ```
 `breakpoints` are `[power_w, factor]` (1 dp power, 4 dp factor) — the same across the nRF Curve
 characteristic, the ESP32 `/curve`, and `code/scripts/09_fit_calibration.py`.
+
+### `GET /obc/buttons.json` → the SB20-button binding + sink enable
+```json
+{ "enabled":false, "actions":[1,2,5,1,2,6] }
+```
+`actions` are action-option **indices** (0 = none) into the shared `firmware/lib/proxy/Sb20ButtonMap.h`
+option order — byte-identical to the nRF Bridge GATT Buttons char (0009). The 6 slots are LEFT
+up/down/3rd then RIGHT up/down/3rd.
+
+### `POST /obc/buttons.json`  (body: the same JSON) → persist + apply LIVE (no reboot); return the new value.
+Sinks the SB20's own shifter buttons and re-broadcasts each press as the bound action (an OBC id, or a
+local erg nudge). Enabling starts the SB20 central in place. The ESP32 parses this one fixed shape (no
+general JSON parser on-device — `buttonsFromJson`, host-tested), mirroring the nRF's index wire form.
 
 ### `GET /scan` → **Scan** list
 ```json

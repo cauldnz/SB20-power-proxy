@@ -130,7 +130,9 @@ Convergence work so the ESP32 web UI, the nRF Web Bluetooth app, and the LVGL de
   the Infisical secrets scripts.
 - **Root — living operational docs:** [`CLAUDE.md`](CLAUDE.md) (the project instructions),
   [`DEV-PLAYBOOK.md`](DEV-PLAYBOOK.md) (desk dev loop), [`USERS-PLAYBOOK.md`](USERS-PLAYBOOK.md) (working with
-  testers), [`BIKE-SESSION-READY.md`](BIKE-SESSION-READY.md) (bike-machine cold-start), [`README.md`](README.md),
+  testers), [`BIKE-SESSION-READY.md`](BIKE-SESSION-READY.md) (bike-machine cold-start),
+  [`HANDOFF-NEXT-SESSION.md`](HANDOFF-NEXT-SESSION.md) (**resume on the hardware machine** — build + the
+  hardware verifications now unblocked; points at the architecture-remediation tracker), [`README.md`](README.md),
   [`CHANGELOG.md`](CHANGELOG.md).
 - **Root — pre-pivot brief (background; superseded by `findings/`):** the numbered `01-…`–`12-…` docs +
   `START-HERE.md`, `HANDOFF.md`, `CLAUDE-CODE-PROMPT.md`. Useful history; `findings/` wins on any conflict.

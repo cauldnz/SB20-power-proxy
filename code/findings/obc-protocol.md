@@ -1,0 +1,144 @@
+# OpenBikeControl (OBC) — protocol reference + our transmitter
+
+**Status:** **M1 built + host-tested** (the pure `firmware/lib/proxy/Obc.h` ButtonState codec, green under
+`pio test -e native`). Transports (BLE / mDNS-TCP) are the next milestones. This is the canonical doc for
+the OBC subsystem: what to emit so an OBC-speaking app accepts our SB20 buttons. Sibling to
+[`shifter-ble-protocol.md`](shifter-ble-protocol.md) (the read side) — this is the OBC re-presentation.
+Issue: [`cauldnz/SB20-power-proxy#247`](https://github.com/cauldnz/SB20-power-proxy/issues/247).
+
+## What OBC is (and why it's clean to implement)
+
+[OpenBikeControl](https://github.com/OpenBikeControl/openbikecontrol-protocol) is an **open, MIT-licensed**
+protocol for wireless input devices (buttons/shifters) to control trainer apps (MyWhoosh, Rouvy, iCTrainer,
+qz via #4504, …). **MIT means we implement directly from the spec — no clean-room concern** (unlike qz's
+GPL producer #4504, which we do NOT copy). Spec repo carries `PROTOCOL.md`, `BLE.md`, `MDNS.md`, and MIT
+reference Python examples (a ready-made bench consumer — see §Bench).
+
+## Two transports, one message format
+
+Both transports carry the **identical binary message** (message-type prefix byte + payload). This is the
+key enabler for our two boards:
+
+- **BLE (`BLE.md`)** — a GATT service; the notification value IS the message. **The nRF52840's only path
+  (no WiFi), and available on the ESP32 too.**
+  - Service `d273f680-d548-419d-b9d1-fa0472345229`
+  - Button-State char (Read/**Notify**) `d273f681-…` · Haptic (Write) `d273f682-…` · AppInfo (Write) `d273f683-…`
+- **mDNS / TCP-UDP (`MDNS.md`)** — advertise `_openbikecontrol._tcp.local.`, stream messages over TCP/UDP.
+  **ESP32 (WiFi) only.** qz's producer (#4504) uses **port 21587**; the port is discovered via the mDNS SRV
+  record, so any port works if advertised.
+
+No length prefix — BLE notify and UDP datagrams are self-framing; TCP is one-message-per-write.
+
+## Message format (from `PROTOCOL.md` / `BLE.md` / `MDNS.md`)
+
+| Msg | Bytes |
+|---|---|
+| **ButtonState** `0x01` (device→app) | `[0x01, id, state, id, state, …]` |
+| **DeviceStatus** `0x02` (device→app) | `[0x02, battery(0-100 or 0xFF), connected(0/1)]` |
+| **Haptic** `0x03` (app→device) | `[0x03, pattern, duration, intensity]` |
+| **AppInfo** `0x04` (app→device) | — |
+
+- **state:** `0x00` released · `0x01` pressed · `0x02-0xFF` analog (0x02 min … 0xFF max).
+- Notify only on **change**; combine simultaneous changes into one message; max ~20 bytes (1 + 9 pairs).
+- Golden vectors (spec examples, mirrored in our host tests): `[0x01,0x01,0x01]` = Shift-Up pressed;
+  `[0x01,0x01,0x01,0x02,0x00]` = 0x01 pressed + 0x02 released; `[0x01,0x10,0x80]` = nav-up analog 50%;
+  `[0x02,0x55,0x01]` = 85% battery, connected.
+
+### Standard button IDs (subset we use)
+
+`0x01` Shift Up · `0x02` Shift Down · `0x03` Gear Set(analog) · `0x10-0x13` Nav Up/Down/Left/Right ·
+`0x14` Select · `0x15` Back · `0x16` Menu · `0x18/0x19` Steer L/R · `0x20` Emote · `0x30` ERG Up
+(increase difficulty) · `0x31` ERG Down · `0x32` Skip · `0x33` Pause · `0x34` Resume · `0x35` Lap ·
+`0x38` Change Mode. Ranges: `0x80-0x9F` app-specific, `0xA0-0xFF` manufacturer-specific.
+
+### Multiple actions per button (the feature that makes this easy)
+
+A single physical press MAY emit several action IDs at once, so it works across apps without mode-switching.
+e.g. an SB20 paddle → `[0x01, 0x01,0x01, 0x30,0x01]` = **Shift Up AND ERG Up** (the shifting app shifts,
+the erg app bumps power). This is how the reference `bikecontrol` app maps buttons; it's our default too.
+
+## Our transmitter — status (real-data-first, pure-core-first)
+
+- **M1 — pure codec `Obc.h`** ✅ **host-tested** — `encodeButtonState/encodeButtonPress/encodeDeviceStatus`
+  + message-type/button-ID constants + BLE UUIDs + mDNS service/port. No Arduino/BLE. (`test_obc_*`.)
+- **M2 — SB20→OBC default mapping `ObcSb20Map.h`** ✅ **host-tested** — each `Shifter.h` button → a set of
+  OBC action IDs via multi-action (paddles → Shift + ERG up/down; 3rd → Lap / Menu). `encodeSb20ButtonState`.
+- **M3 — BLE transport seam** ✅ **compiles on both boards** — a GATT OBC service (`d273f680`) + Button-State
+  notify char (`d273f681`). ESP (NimBLE, `BleCrankPeripheral`, gated by `setObcEnabled`) + nRF (Bluefruit,
+  `firmware-nrf/src/main.cpp`). Envs `esp32c3-oled-live` + `xiao-sense` green.
+- **M4 — ESP mDNS/TCP-UDP transport `firmware/src/net/ObcNet.h`** ✅ **implemented** — a single-consumer TCP
+  server advertised via `_openbikecontrol._tcp`. Staged (activates once the shifter read below feeds it).
+- **M5 — config + enable** ✅ **partial** — `RuntimeConfig.obcEnabled/obcPort` (NVS, host-tested,
+  backward-compatible) + `crank.setObcEnabled(cfg.obcEnabled)` in `main` (the ESP OBC-BLE service is now
+  config-driven; compiled). **REMAINING (bench-gated): the on-device shifter READ.**
+- **M6 — docs + issue** ✅ this doc + `#247`.
+
+### Topology note (why the READ is the remaining piece)
+In SPOOF mode the ESP is the SB20's **peripheral** (the SB20 connects to our crank), so reading the SB20's
+shifter char `0c46be60` needs a **separate central connection to the SB20** — a new BLE role, coex-sensitive
+on the single-core C3, distinct from `BleMeterClient` (which reads the *source* meter, e.g. the Assioma).
+The full chain is then `[SB20 central] ShifterDebounce → encodeSb20ButtonState → crank.notifyObc + ObcNet.send`.
+That new central role + the on-air subscribe test (vs the spec's MIT `ble_trainer_app.py` /
+`tcp_trainer_app.py`) is the hardware bench step. The pure core (M1/M2), the transports (M3/M4), and the
+config/enable (M5) are all built + verified (host-tested / compiled) behind that seam.
+
+## Bench testing (no qz / MyWhoosh needed)
+
+The spec's **MIT Python examples** are the consumer/producer to validate our output:
+`examples/python/ble_trainer_app.py` (subscribes to a BLE OBC device),
+`tcp_trainer_app.py` / `mdns_trainer_app.py` (network), `protocol_parser.py` (the canonical decoder),
+`mock_device_*.py` (reference producers to diff our bytes against). Golden-vector parity first, then a live
+subscribe against a flashed board.
+
+### Devmode HTTP endpoint — the firmware-only test source (no shifter hardware)
+
+A `-live` ESP32 build carries an **OBC Devmode**: it advertises the board as an **`OBC-SB20`** controller
+(instead of the Stages crank) so an OBC listener (**qz**'s `obclistener`, or the Python examples) discovers
+and connects to it, and virtual button presses are driven over HTTP — no shifter, no bike. The counterpart
+qz listener matches an OBC-prefixed advert name (or the advertised OBC service UUID). Flow:
+
+```
+# 1. enable Devmode (persists to NVS + reboots → advertises as OBC-SB20)
+curl -X POST http://sb20proxy.local/obc/devmode/on
+# 2. on the qz (Linux-desktop) machine, with a BIKE connected, it auto-connects to OBC-SB20
+# 3. fire virtual presses (id hex or dec; ERG Up shown) → qz maps to power_up, etc.
+curl 'http://sb20proxy.local/obc/press?id=0x30'   # ERG Up   → qz target_power +
+curl 'http://sb20proxy.local/obc/press?id=0x01'   # Shift Up → qz gears +
+curl  http://sb20proxy.local/obc                  # status + the full id cheat-sheet
+curl -X POST http://sb20proxy.local/obc/devmode/off  # back to the normal crank identity
+```
+
+Seam: `RuntimeConfig.obcDevmode` → `BleCrankPeripheral::setObcDevmode` (name override) + `WifiLink`
+`/obc*` routes → `setObcPressHook` → `encodeButtonPress` (Obc.h) → `notifyObc`. Host-tested (config
+roundtrip + encode) and compiled on `esp32c3-oled-live-ota`; the on-air subscribe is the manual step.
+
+### Sink the SB20's own shifter buttons → re-broadcast as OBC (the bike add-on)
+
+The real button source (vs Devmode's virtual presses): read the **SB20's own handlebar buttons** and
+re-broadcast them as OBC, so any OBC app gets shifting/erg/lap off the bike's native shifters with no
+extra hardware. The SB20 is a BLE **peripheral** exposing a vendor button characteristic
+(`0c46be60`, service `0c46be5f` — see `shifter-ble-protocol.md`), so the box opens a **separate central
+role** to the SB20 (it is already the SB20's power-meter *peripheral*) and subscribes to it.
+
+Pure spine (both firmwares): `ObcShifterSource` (`firmware/lib/proxy/`) composes `ShifterDebounce`
+(decode `0c46be60` + collapse the ~10–20×/press held-frame stream to one event) with the **configurable
+`Sb20ButtonMap`**: each of the 6 physical buttons binds to ONE action — an **OBC re-broadcast** (a
+momentary click, the mapped id PRESSED then RELEASED), a **local erg nudge** (±W to our own erg target),
+or **none**. Host-tested with the real session-3 golden vectors + custom bindings
+(`test_obc_shifter_source_click_and_debounce`, `test_sb20_button_map_*`). Default binding: paddles →
+Shift Up/Down, Left 3rd → Lap, Right 3rd → Menu. Action set: `shift_up/down`, `erg_up/down`, `lap`,
+`menu`, `pause` (OBC ids) + `bias_up/down` (local ±10 W) + `none`.
+
+- **ESP32** (runtime + web-configurable): `RuntimeConfig.obcSinkShifter` (NVS) → a third NimBLE central,
+  `BleShifterClient`, joins the shared scan hub (`BleMeterClient::setShifterScanSink`), matches the SB20
+  by name (`"Stages Bike"`), subscribes, and feeds `ObcShifterSource` → OBC to `crank.notifyObc` and/or a
+  local erg-bias nudge. Enable: `curl -X POST http://sb20proxy.local/obc/shifter/on`. **Bind each button
+  at `GET /obc/buttons`** (a form of 6 dropdowns; `POST /obc/buttons/save` persists to NVS + applies live,
+  no reboot — pure `ObcButtonsPage.h`). Compiled on `esp32c3-oled-live-ota`.
+- **nRF** (build-flag option — no web UI, uses the default binding): `-D OBC_SINK_SHIFTER=1` → a Bluefruit
+  central connects to `"Stages Bike"`, discovers `sb20VendorSvc`/`sb20Button`, subscribes, and feeds the
+  same `ObcShifterSource` → `notifyClients(chObcButton, …)` / `g_ergBias`. Compiled on `xiao-sense`.
+
+Both are **bench-gated** for the on-air step (needs a real SB20): the box must be able to hold a central
+link to the SB20 *and* its power-meter peripheral link at once (dual-role) — the coex risk to watch on
+the single-core C3. The decode→map→encode is fully covered by the host test either way.

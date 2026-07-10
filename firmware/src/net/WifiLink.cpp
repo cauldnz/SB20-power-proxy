@@ -192,6 +192,111 @@ void WifiLink::addLogRoutes_() {
     });
 }
 
+// OpenBikeControl (OBC) Devmode bring-up routes — a firmware-only test source for the OBC listener (qz).
+// Devmode advertises the board as an "OBC-…" controller (BleCrankPeripheral::setObcDevmode) so a listener
+// discovers + connects to it; /obc/press then fires virtual button presses through the OBC characteristic
+// with no shifter hardware. See code/findings/obc-protocol.md.
+void WifiLink::addObcRoute_() {
+    // GET /obc — status + curl usage (plain text; the bring-up cheat-sheet).
+    server_->on("/obc", HTTP_GET, [this]() {
+        const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        std::string s = "OpenBikeControl (OBC)\n";
+        s += std::string("devmode: ") + (cfg.obcDevmode ? "ON (advertising as OBC-SB20)\n" : "off\n");
+        s += std::string("sink SB20 shifter: ") + (cfg.obcSinkShifter ? "ON\n" : "off\n");
+        s += "\nSink the SB20's own shifter buttons -> OBC (the bike add-on; persists + reboots):\n";
+        s += "  curl -X POST http://sb20proxy.local/obc/shifter/on\n";
+        s += "  curl -X POST http://sb20proxy.local/obc/shifter/off\n";
+        s += "\nDevmode: advertise as OBC-SB20 for a listener test (persists + reboots):\n";
+        s += "  curl -X POST http://sb20proxy.local/obc/devmode/on\n";
+        s += "  curl -X POST http://sb20proxy.local/obc/devmode/off\n";
+        s += "\nFire a virtual button press (OBC id, hex or dec; optional &state=, default 1):\n";
+        s += "  curl 'http://sb20proxy.local/obc/press?id=0x30'   # ERG Up\n";
+        s += "  curl 'http://sb20proxy.local/obc/press?id=0x01'   # Shift Up\n";
+        s += "  ids: 0x01 ShiftUp  0x02 ShiftDown  0x30 ErgUp  0x31 ErgDown  0x35 Lap\n";
+        s += "\nBind each SB20 button to an action in the web app (http://sb20proxy.local/app),\n";
+        s += "or over the API: GET/POST http://sb20proxy.local/obc/buttons.json {enabled,actions[6]}\n";
+        server_->send(200, "text/plain", s.c_str());
+    });
+    // GET/POST /obc/buttons.json — the SB20-button binding + sink-enable for the shared web SPA's
+    // HttpTransport (same action-option indices as the nRF Bridge GATT Buttons char). The SPA served at
+    // /app owns the UI; there is no ESP-served HTML page for it.
+    server_->on("/obc/buttons.json", HTTP_GET, [this]() {
+        const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        server_->send(200, "application/json",
+                      buttonsToJson(cfg.obcSinkShifter, cfg.obcButtons).c_str());
+    });
+    server_->on("/obc/buttons.json", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        bool enabled = false;
+        Sb20ButtonMap m;
+        if (!buttonsFromJson(formBody(server_), enabled, m)) {
+            server_->send(400, "application/json", "{\"error\":\"expected {enabled,actions[6]}\"}");
+            return;
+        }
+        if (obcButtons_) obcButtons_(enabled, m);  // persist to NVS + apply live
+        server_->send(200, "application/json", buttonsToJson(enabled, m).c_str());
+    });
+    // GET /obc/press?id=0xNN[&state=N] — fire one virtual OBC button press (default state=1 pressed).
+    // GET (not POST) is intentional: it's a transient, harmless bring-up action meant to be curl-driven.
+    server_->on("/obc/press", HTTP_GET, [this]() {
+        if (!server_->hasArg("id")) {
+            server_->send(400, "text/plain", "missing ?id= (OBC button id, e.g. 0x30). See /obc\n");
+            return;
+        }
+        const long id = strtol(server_->arg("id").c_str(), nullptr, 0);  // base 0: accepts 0x30 or 48
+        const long st = server_->hasArg("state") ? strtol(server_->arg("state").c_str(), nullptr, 0) : 1;
+        if (id < 0 || id > 255 || st < 0 || st > 255) {
+            server_->send(400, "text/plain", "id/state out of range [0,255]\n");
+            return;
+        }
+        if (obcPress_) obcPress_((uint8_t)id, (uint8_t)st);
+        char msg[64];
+        std::snprintf(msg, sizeof(msg), "OBC press id=0x%02lX state=%ld sent\n", id & 0xFF, st);
+        server_->send(200, "text/plain", msg);
+    });
+    // POST /obc/devmode/{on,off} — toggle the OBC-controller advertising identity; persists + reboots
+    // (mirrors /setup/save). CSRF-guarded like the other state-changing config routes.
+    server_->on("/obc/devmode/on", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        cfg.obcDevmode = true;
+        cfg.obcEnabled = true;  // Devmode implies the OBC service is present
+        if (configSave_) configSave_(cfg);
+        server_->send(200, "text/plain", "OBC Devmode ON - advertising as OBC-SB20, restarting.\n");
+        delay(400);
+        esp_restart();
+    });
+    server_->on("/obc/devmode/off", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        cfg.obcDevmode = false;
+        if (configSave_) configSave_(cfg);
+        server_->send(200, "text/plain", "OBC Devmode off - restarting with the normal identity.\n");
+        delay(400);
+        esp_restart();
+    });
+    // POST /obc/shifter/{on,off} — sink the SB20's own shifter buttons and re-broadcast them as OBC
+    // (the bike add-on); persists + reboots (a central to the SB20 comes up only on the next boot).
+    server_->on("/obc/shifter/on", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        cfg.obcSinkShifter = true;
+        if (configSave_) configSave_(cfg);
+        server_->send(200, "text/plain", "OBC sink-shifter ON - will read the SB20 buttons, restarting.\n");
+        delay(400);
+        esp_restart();
+    });
+    server_->on("/obc/shifter/off", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        cfg.obcSinkShifter = false;
+        if (configSave_) configSave_(cfg);
+        server_->send(200, "text/plain", "OBC sink-shifter off - restarting.\n");
+        delay(400);
+        esp_restart();
+    });
+}
+
 // Drain-aware HTML page send. Arduino's WebServer::send() writes the body with WiFiClient::write
 // and IGNORES short writes — under lwIP memory pressure (the no-PSRAM CYD idles ~30 KB free with
 // WiFi+BLE+LVGL up) multi-KB pages get silently TRUNCATED mid-stream (2026-07-04). This streams
@@ -320,6 +425,7 @@ void WifiLink::startStationServer_() {
     addRideModeRoute_();  // GET/POST /wifi/off — turn WiFi off for a BLE-only ride
     addWorkoutRoutes_();  // GET /workout (+ /state) + POST /workout/{load,preset,controls}
     addLogRoutes_();
+    addObcRoute_();  // GET /obc + /obc/press + POST /obc/devmode/{on,off} — OBC listener bring-up test
     server_->begin();
 }
 
@@ -406,12 +512,11 @@ void WifiLink::addConfigRoutes_() {
     server_->on("/setup/save", HTTP_POST, [this]() {
         if (!csrfOk_()) return;
         const std::string body = formBody(server_);
-        RuntimeConfig cfg = parseConfigForm(body);
-        // A body WITHOUT the trainer field (an old cached page, or a curl that predates it) must
-        // PRESERVE the stored trainer; present-but-empty is the explicit "erg off" clear.
-        if (!formHasField(body, "trainer") && configProvider_) {
-            cfg.trainerNameFilter = configProvider_().trainerNameFilter;
-        }
+        // Merge onto the STORED config so this page — which owns only the source, spoof identity, and
+        // trainer — can't wipe the broadcast mode, fitted curve, or reference meter that the SPA /
+        // calibration wizard set (mergeSetupForm also handles the trainer absent=preserve rule).
+        const RuntimeConfig cur = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        RuntimeConfig cfg = mergeSetupForm(cur, body);
         const char* err = configValidationError(cfg);
         if (err) {
             const std::vector<SourceCandidate> srcs =
@@ -448,6 +553,25 @@ void WifiLink::addConfigRoutes_() {
     server_->on("/config", HTTP_GET, [this]() {
         const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
         server_->send(200, "application/json", renderConfigJson(cfg).c_str());
+    });
+    // POST /config -> the shared SPA's "Correction & identity" Apply (incl. the spoof/corrector mode
+    // selector). Unlike /setup/save it MERGES onto the current config (mergeSpaConfigForm), so it never
+    // wipes the fitted curve / reference meter / trainer. Persists + reboots to apply the identity (the
+    // crank DIS/services are built at boot, like /setup/save). Same-origin CSRF guard as the others.
+    server_->on("/config", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        const RuntimeConfig cur = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        RuntimeConfig cfg = mergeSpaConfigForm(cur, formBody(server_));
+        const char* err = configValidationError(cfg);
+        if (err) {
+            server_->send(400, "application/json",
+                          (std::string("{\"error\":\"") + err + "\"}").c_str());
+            return;
+        }
+        if (configSave_) configSave_(cfg);  // persist to NVS
+        server_->send(200, "application/json", "{\"ok\":true,\"reboot\":true}");
+        delay(400);
+        esp_restart();  // reboot to apply the mode/identity/source (mirrors /setup/save)
     });
     // GET/POST /curve: export/import a portable correction curve (a calibration profile fitted on the
     // OTHER device, or the desk tooling). GET returns the breakpoints; POST loads a curve LIVE (no

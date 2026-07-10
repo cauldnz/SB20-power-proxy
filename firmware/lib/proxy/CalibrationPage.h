@@ -54,21 +54,12 @@ struct CalForm {
 
 inline CalForm parseCalibrationForm(const std::string& body) {
     CalForm f;
-    size_t pos = 0;
-    while (pos <= body.size()) {
-        const size_t amp = body.find('&', pos);
-        const size_t end = (amp == std::string::npos) ? body.size() : amp;
-        const std::string pair = body.substr(pos, end - pos);
-        const size_t eq = pair.find('=');
-        const std::string key = urlDecode(eq == std::string::npos ? pair : pair.substr(0, eq));
-        const std::string val = urlDecode(eq == std::string::npos ? std::string() : pair.substr(eq + 1));
+    forEachFormField(body, [&](const std::string& key, const std::string& val) {
         if (key == "action") f.action = val;
         else if (key == "dut") f.dutAddr = val;
         else if (key == "ref") f.refAddr = val;
         else if (key == "name") f.deviceName = stripConfigDelims(val);
-        if (amp == std::string::npos) break;
-        pos = amp + 1;
-    }
+    });
     return f;
 }
 

@@ -9,6 +9,7 @@
 #include "Config.h"
 #include "ConfigStore.h"  // NVS-backed RuntimeConfig (the user's source/doubling)
 #include "Correction.h"
+#include "Obc.h"  // OpenBikeControl codec (encodeButtonPress) for the /obc/press Devmode hook
 #include "WorkoutRuntime.h"  // live workout clock + engine (lib/proxy)
 #include "PerfMonitor.h"
 #include "PerfStats.h"
@@ -74,6 +75,49 @@ static ProxyCore proxy(meter, crank,
 #include "ble/FtmsErgClient.h"
 static FtmsErgClient ergTrainer;
 static bool g_ergConfigured = false;
+
+// "Sink the SB20's own shifter buttons -> broadcast as OBC" (obcSinkShifter). A central to the SB20's
+// vendor button char (BleShifterClient) feeds each press through the pure ObcShifterSource, which emits
+// OBC ButtonState messages straight to the crank's OBC notify char. Live builds only (needs the shared
+// scan hub + a real central to the SB20). See code/findings/obc-protocol.md + shifter-ble-protocol.md.
+#include "ObcShifterSource.h"
+#include "ble/BleShifterClient.h"
+static BleShifterClient shifter;
+static ObcShifterSource shifterSrc;
+static bool g_shifterConfigured = false;  // the SB20 central has been started this boot
+static bool g_shifterEnabled = false;     // emit presses (runtime toggle from the web app)
+static int16_t g_ergBias = 0;  // SB20 shifter -> local erg-target nudge (± W), clamped; applied below
+
+// Start the SB20-shifter central (idempotent). The emit is gated by g_shifterEnabled so the web app can
+// toggle sinking live (over /obc/buttons.json) without restarting the radio.
+static void shifterEnsureStarted(const RuntimeConfig& cfg) {
+#if !USE_MOCK_METER
+    if (g_shifterConfigured) return;
+    shifterSrc.setBindings(cfg.obcButtons);  // the web-configured per-button action binding
+    shifter.onNotify([](const uint8_t* d, size_t n) {
+        if (!g_shifterEnabled) return;  // sink toggled off — connected but silent
+        shifterSrc.feed(
+            d, n,
+            [](const uint8_t* b, size_t m) { crank.notifyObc(b, m); },  // OBC re-broadcast
+            [](int8_t deltaW) {                                         // local erg nudge
+                int v = g_ergBias + deltaW;
+                g_ergBias = (int16_t)(v < -200 ? -200 : (v > 200 ? 200 : v));
+            });
+    });
+    BleMeterClient::setShifterScanSink(&shifter);
+    shifter.beginShared("Stages Bike");  // the SB20's advertised-name substring
+    g_shifterConfigured = true;
+    Serial.println("[shifter] SB20 central started (hunting 'Stages Bike')");
+#else
+    (void)cfg;
+#endif
+}
+// Boot: start the SB20 central + enable sinking only if it's configured on.
+static void shifterBegin(const RuntimeConfig& cfg) {
+    if (!cfg.obcSinkShifter) return;
+    g_shifterEnabled = true;
+    shifterEnsureStarted(cfg);
+}
 
 // Start the erg client when a trainer is configured. Skipped on calibration boots (two meter
 // centrals already share the radio there) and while the fresh-onboarding portal is up.
@@ -858,6 +902,8 @@ void setup() {
 #endif  // the device name = our advertised identity
     crank.setMode(cfg.mode);                    // SPOOF crank vs CORRECTOR (own honest CPS identity)
     crank.setIdentity(cfg.spoofName, cfg.spoofSerial);  // advertised name + DIS serial
+    crank.setObcEnabled(cfg.obcEnabled || cfg.obcDevmode || cfg.obcSinkShifter);  // OBC BLE service
+    crank.setObcDevmode(cfg.obcDevmode);        // Devmode: advertise as OBC-SB20 for the listener test
 
     // The correction between source and crank: CORRECTOR applies the fitted calibration curve
     // (DUT → reference) — and with an EMPTY curve falls through to identity (1.0×), NEVER the spoof's
@@ -966,6 +1012,7 @@ void setup() {
         if (g_calibrating) refMeter.begin();  // 2nd central joins the shared scan
 #endif
         ergBegin(cfg);  // FTMS erg drive, when a trainer is configured (§14 phase 4)
+        shifterBegin(cfg);  // sink SB20 shifter buttons -> OBC, when obcSinkShifter is on
     } else {
         Serial.println("[ble] held off while the setup portal is up (starts after provisioning)");
     }
@@ -975,6 +1022,7 @@ void setup() {
     if (g_calibrating) refMeter.begin();
 #endif
     ergBegin(cfg);
+    shifterBegin(cfg);  // sink SB20 shifter buttons -> OBC, when obcSinkShifter is on
 #endif
 #if USE_WIFI
 
@@ -1017,6 +1065,24 @@ void setup() {
             corr.offset = Config::CORRECTION_OFFSET;
         }
         proxy.setCorrection(corr);
+    });
+    // OBC Devmode: GET /obc/press fires a virtual button — encode it (Obc.h) + notify the OBC char, so
+    // an OBC listener (qz) can be driven with no shifter hardware. See code/findings/obc-protocol.md.
+    wifi.setObcPressHook([](uint8_t id, uint8_t state) {
+        uint8_t buf[sb20proxy::OBC_MAX_MSG];
+        const size_t n = sb20proxy::encodeButtonPress(id, state, buf, sizeof(buf));
+        if (n > 0) crank.notifyObc(buf, n);
+    });
+    // /obc/buttons.json: persist the sink-enable + per-button binding, apply both live (no reboot) —
+    // bindings take effect immediately; enabling starts the SB20 central in place.
+    wifi.setObcButtonsHook([](bool enabled, const Sb20ButtonMap& m) {
+        RuntimeConfig c = ConfigStore::load();
+        c.obcSinkShifter = enabled;
+        c.obcButtons = m;
+        ConfigStore::save(c);
+        shifterSrc.setBindings(m);   // bindings apply live
+        g_shifterEnabled = enabled;  // emit gate applies live
+        if (enabled) shifterEnsureStarted(c);  // start the SB20 central if it wasn't yet
     });
     // The tester /diag report's raw meter frames (the bytes we add a new meter from). Live only.
 #if USE_MOCK_METER
@@ -1179,11 +1245,14 @@ void loop() {
             const bool running = g_wk.running && !g_wk.paused;
             const int16_t target = running ? g_wk.state(nowMs).targetW : -1;
             lcdUnlock();
-            ergTrainer.setDesiredPower(target > 0 ? target : 0);
+            int desired = target > 0 ? target : 0;
+            if (running) { desired += g_ergBias; if (desired < 0) desired = 0; }  // SB20 shifter bias
+            ergTrainer.setDesiredPower((int16_t)desired);
         }
 #endif
         ergTrainer.loop();
     }
+    if (g_shifterConfigured) shifter.loop();  // service the SB20-shifter central (sink -> OBC)
 #if !USE_MOCK_METER
     if (g_calibrating) {
         refMeter.loop();  // service the 2nd central during a calibration session

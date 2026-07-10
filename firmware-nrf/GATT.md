@@ -24,6 +24,7 @@ All multi-byte fields are **little-endian**. First byte of every payload is a fo
 | Calibrate | `…-0006-…` | write, notify | on-device DUT→reference calibration control + state |
 | ScanList | `…-0007-…` | read, notify | nearby meters/trainers for the source picker |
 | Workout | `…-0008-…` | write, notify | FTMS erg: pick a trainer, load a preset, run it + shifter bias |
+| Buttons | `…-0009-…` | read, write | SB20-shifter → action binding + sink enable (P5) |
 
 Full UUIDs: replace `XXXX` in `53423230-XXXX-4bd9-a4ae-1b4e2c633a1d`.
 
@@ -48,15 +49,23 @@ Full UUIDs: replace `XXXX` in `53423230-XXXX-4bd9-a4ae-1b4e2c633a1d`.
 | off | type | field |
 |---|---|---|
 | 0 | u8 | proto version (1) |
-| 1 | u8 | flags: b0 srcIsAnt · b1 outIsAnt (ANT bits reject-write until S340 present) · **b2 single-sided ×2** |
+| 1 | u8 | flags: b0 srcIsAnt · b1 outIsAnt (ANT bits reject-write until S340 present) · **b2 single-sided ×2** · **b3 spoof** |
 | 2 | u16 | correction scale ×1000 |
 | 4 | i16 | correction offset ×10 (W) |
 | 6 | u8[19] | source name filter (NUL-padded; empty = any CPS) |
 | 25 | u8[19] | broadcast identity name (NUL-padded) |
 
-Writes persist to internal flash (LittleFS) and apply live (no reboot — the nRF re-configures the
-radio roles in place; a rejected write notifies the old value back via Status). **single-sided ×2**
-doubles the source power *before* correction (an R-only crank reports half of total).
+Writes persist to internal flash (LittleFS). Scale/offset/name apply live; a rejected write (ANT bits,
+or out-of-range) notifies the old value back via the Config read-back. **single-sided ×2** doubles the
+source power *before* correction (an R-only crank reports half of total).
+
+**b3 spoof** — the product mode: **0 = corrector** (our own honest CPS identity, the default) · **1 =
+SB20 Stages-crank spoof** (the 0x2F Stages frame + the Stages DIS/CP-Feature/proprietary service, so a
+real SB20 accepts us as its crank). The 0x2F **framing switches live**, but the advertised
+services/DIS/feature are built at boot, so **changing the mode needs a reboot to re-present the crank
+identity** (the read-back reflects the new mode immediately; the on-air identity follows on reboot).
+`spoof` (identity) is orthogonal to `outIsAnt` (radio): `spoof=1,outIsAnt=0` = BLE Stages spoof (shipped);
+`spoof=1,outIsAnt=1` = ANT+ Stages spoof (S340-gated).
 
 ## Curve (read/write, variable)
 
@@ -127,6 +136,18 @@ elapsedS u16, biasW i16, reserved u16]` — emitted on every command and @1 Hz w
 ergControlled (trainer granted control). **`targetW` already includes `biasW`** (what the erg is asked
 to hold); `biasW` is broken out so the UI can show the shifter offset. `ergSentW` is the last value
 actually written to the trainer's control point.
+
+## Buttons (read/write, 8 bytes, P5)
+
+Sink the SB20's own handlebar buttons (a separate central onto the SB20's vendor button char `0c46be60`
+— see `../code/findings/shifter-ble-protocol.md`) and re-broadcast each press as the user-configured
+action: an OBC id (to a training app, via the OBC service) or a local erg-target nudge.
+
+`[ver, enabled, act0..act5]` — `enabled` turns the sink on (the board opens the extra central); each
+`actN` is an action-option **index** (0 = none) into the shared option order in
+`firmware/lib/proxy/Sb20ButtonMap.h` (`sb20ActionOptions`), which the JS + firmware map index↔token.
+The 6 slots are LEFT up/down/3rd then RIGHT up/down/3rd. Persisted to LittleFS (`/buttons.bin`); applies
+live (toggling `enabled` starts/stops the SB20 central in place). Read returns the current binding.
 
 ## BLE OTA (firmware update over Bluetooth, P3)
 
