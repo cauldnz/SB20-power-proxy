@@ -88,29 +88,35 @@ inline std::string stripConfigDelims(const std::string& s) {
     return o;
 }
 
+// Iterate an application/x-www-form-urlencoded body, invoking fn(key, val) for each `key=value` pair
+// with both sides urlDecoded. This is the ONE place the `&`/`=` splitting + decode lives — every form
+// parser (WiFi creds, source config, the SPA config POST, the calibration wizard) is built on it, so
+// the decoding rules can't drift between them. `fn` is any callable taking two `const std::string&`.
+template <typename Fn>
+inline void forEachFormField(const std::string& body, Fn&& fn) {
+    size_t pos = 0;
+    while (pos <= body.size()) {
+        const size_t amp = body.find('&', pos);
+        const size_t end = (amp == std::string::npos) ? body.size() : amp;
+        const std::string pair = body.substr(pos, end - pos);
+        const size_t eq = pair.find('=');
+        const std::string key = urlDecode(eq == std::string::npos ? pair : pair.substr(0, eq));
+        const std::string val = urlDecode(eq == std::string::npos ? std::string() : pair.substr(eq + 1));
+        fn(key, val);
+        if (amp == std::string::npos) break;
+        pos = amp + 1;
+    }
+}
+
 // Parse an application/x-www-form-urlencoded body into credentials. Recognises the keys
 // `ssid` and `pass` (also accepts `password`); unknown keys are ignored. Missing keys yield
 // empty strings — validation is the caller's job (credValidationError).
 inline WifiCredentials parseFormUrlEncoded(const std::string& body) {
     WifiCredentials c;
-    size_t pos = 0;
-    while (pos <= body.size()) {
-        size_t amp = body.find('&', pos);
-        size_t end = (amp == std::string::npos) ? body.size() : amp;
-        std::string pair = body.substr(pos, end - pos);
-        size_t eq = pair.find('=');
-        std::string key = (eq == std::string::npos) ? pair : pair.substr(0, eq);
-        std::string val = (eq == std::string::npos) ? std::string() : pair.substr(eq + 1);
-        key = urlDecode(key);
-        val = urlDecode(val);
-        if (key == "ssid") {
-            c.ssid = val;
-        } else if (key == "pass" || key == "password") {
-            c.pass = val;
-        }
-        if (amp == std::string::npos) break;
-        pos = amp + 1;
-    }
+    forEachFormField(body, [&](const std::string& key, const std::string& val) {
+        if (key == "ssid") c.ssid = val;
+        else if (key == "pass" || key == "password") c.pass = val;
+    });
     return c;
 }
 

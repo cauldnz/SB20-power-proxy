@@ -1457,6 +1457,31 @@ void test_merge_spa_config_form() {
     TEST_ASSERT_EQUAL_STRING("XCADEY", d.meterNameFilter.c_str());  // absent key = unchanged
 }
 
+// The on-device /setup page owns only source/identity/trainer; saving it must NOT wipe the mode,
+// fitted curve, or reference meter (the old /setup/save bug: it rebuilt a fresh config). mergeSetupForm
+// merges onto current. Its own fields keep the fresh /setup semantics (checkbox absent = off).
+void test_merge_setup_form_preserves_mode_curve_ref() {
+    RuntimeConfig cur = RuntimeConfig::defaults();
+    cur.mode = ProxyMode::Corrector;   // set by the calibrate wizard
+    cur.curve.add(200.0f, 1.15f);      // a fitted correction
+    cur.refMeterNameFilter = "ASSIOMA";
+    cur.trainerNameFilter = "SB20-FTMS";
+    // A normal /setup save: change the source, single-sided on. (Old code would revert to spoof + wipe curve.)
+    RuntimeConfig c = mergeSetupForm(cur, "addr=&name=XCADEY&single=1&spoof_name=Stages+62144&spoof_serial=11821518");
+    TEST_ASSERT_EQUAL_STRING("XCADEY", c.meterNameFilter.c_str());  // /setup-owned: updated
+    TEST_ASSERT_TRUE(c.singleSidedDouble);
+    TEST_ASSERT_TRUE(c.mode == ProxyMode::Corrector);              // preserved
+    TEST_ASSERT_EQUAL_UINT(1, c.curve.points.size());              // preserved
+    TEST_ASSERT_EQUAL_STRING("ASSIOMA", c.refMeterNameFilter.c_str());  // preserved
+    TEST_ASSERT_EQUAL_STRING("SB20-FTMS", c.trainerNameFilter.c_str()); // absent trainer key = preserved
+    // Checkbox semantics kept: `single` absent = off (an unchecked HTML checkbox isn't submitted).
+    RuntimeConfig d = mergeSetupForm(c, "addr=&name=XCADEY");
+    TEST_ASSERT_FALSE(d.singleSidedDouble);
+    // Present-but-empty trainer is an explicit clear.
+    RuntimeConfig e = mergeSetupForm(cur, "addr=&name=XCADEY&trainer=");
+    TEST_ASSERT_EQUAL_STRING("", e.trainerNameFilter.c_str());
+}
+
 void test_curve_json_export_and_roundtrip() {
     CorrectionCurve empty;
     TEST_ASSERT_EQUAL_STRING("{\"has_curve\":false,\"curve\":[]}", renderCurveJson(empty).c_str());
@@ -2680,6 +2705,7 @@ int runUnityTests() {
     RUN_TEST(test_scan_json_empty);
     RUN_TEST(test_config_json_maps_fields);
     RUN_TEST(test_merge_spa_config_form);
+    RUN_TEST(test_merge_setup_form_preserves_mode_curve_ref);
     RUN_TEST(test_curve_json_export_and_roundtrip);
     RUN_TEST(test_diag_report_has_firmware_version);
     RUN_TEST(test_firmware_version_feeds_ota_decision);

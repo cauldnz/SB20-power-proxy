@@ -512,12 +512,11 @@ void WifiLink::addConfigRoutes_() {
     server_->on("/setup/save", HTTP_POST, [this]() {
         if (!csrfOk_()) return;
         const std::string body = formBody(server_);
-        RuntimeConfig cfg = parseConfigForm(body);
-        // A body WITHOUT the trainer field (an old cached page, or a curl that predates it) must
-        // PRESERVE the stored trainer; present-but-empty is the explicit "erg off" clear.
-        if (!formHasField(body, "trainer") && configProvider_) {
-            cfg.trainerNameFilter = configProvider_().trainerNameFilter;
-        }
+        // Merge onto the STORED config so this page — which owns only the source, spoof identity, and
+        // trainer — can't wipe the broadcast mode, fitted curve, or reference meter that the SPA /
+        // calibration wizard set (mergeSetupForm also handles the trainer absent=preserve rule).
+        const RuntimeConfig cur = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        RuntimeConfig cfg = mergeSetupForm(cur, body);
         const char* err = configValidationError(cfg);
         if (err) {
             const std::vector<SourceCandidate> srcs =

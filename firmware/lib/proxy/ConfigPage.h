@@ -23,23 +23,14 @@ namespace sb20proxy {
 inline RuntimeConfig parseConfigForm(const std::string& body) {
     RuntimeConfig c;
     bool single = false;
-    size_t pos = 0;
-    while (pos <= body.size()) {
-        size_t amp = body.find('&', pos);
-        size_t end = (amp == std::string::npos) ? body.size() : amp;
-        std::string pair = body.substr(pos, end - pos);
-        size_t eq = pair.find('=');
-        std::string key = urlDecode(eq == std::string::npos ? pair : pair.substr(0, eq));
-        std::string val = urlDecode(eq == std::string::npos ? std::string() : pair.substr(eq + 1));
+    forEachFormField(body, [&](const std::string& key, const std::string& val) {
         if (key == "addr") c.meterAddress = val;
         else if (key == "name") c.meterNameFilter = stripConfigDelims(val);
         else if (key == "single") single = (val == "1" || val == "on" || val.empty());
         else if (key == "spoof_name") c.spoofName = stripConfigDelims(val);
         else if (key == "spoof_serial") c.spoofSerial = stripConfigDelims(val);
         else if (key == "trainer") c.trainerNameFilter = stripConfigDelims(val);
-        if (amp == std::string::npos) break;
-        pos = amp + 1;
-    }
+    });
     c.singleSidedDouble = single;
     // The spoof identity must always be present (we advertise it); fall back to the default when the
     // form leaves it blank, so the device can never end up nameless.
@@ -57,21 +48,12 @@ inline RuntimeConfig parseConfigForm(const std::string& body) {
 // `mode` ("corrector" | "spoof"). Pure + host-tested. Reuses urlDecode / stripConfigDelims.
 inline RuntimeConfig mergeSpaConfigForm(const RuntimeConfig& current, const std::string& body) {
     RuntimeConfig c = current;
-    size_t pos = 0;
-    while (pos <= body.size()) {
-        size_t amp = body.find('&', pos);
-        size_t end = (amp == std::string::npos) ? body.size() : amp;
-        std::string pair = body.substr(pos, end - pos);
-        size_t eq = pair.find('=');
-        std::string key = urlDecode(eq == std::string::npos ? pair : pair.substr(0, eq));
-        std::string val = urlDecode(eq == std::string::npos ? std::string() : pair.substr(eq + 1));
+    forEachFormField(body, [&](const std::string& key, const std::string& val) {
         if (key == "single") c.singleSidedDouble = (val == "1" || val == "on" || val == "true");
         else if (key == "src_filter") c.meterNameFilter = stripConfigDelims(val);
         else if (key == "out_name") c.spoofName = stripConfigDelims(val);
         else if (key == "mode") c.mode = (val == "corrector") ? ProxyMode::Corrector : ProxyMode::Spoof;
-        if (amp == std::string::npos) break;
-        pos = amp + 1;
-    }
+    });
     if (c.spoofName.empty()) c.spoofName = Config::SPOOF_NAME;  // we always advertise a name
     return c;
 }
@@ -81,17 +63,27 @@ inline RuntimeConfig mergeSpaConfigForm(const RuntimeConfig& current, const std:
 // PRESERVE the stored value). The /setup/save route uses this so a save from a form that predates
 // a field can never silently wipe it. Pure + host-tested.
 inline bool formHasField(const std::string& body, const std::string& key) {
-    size_t pos = 0;
-    while (pos <= body.size()) {
-        size_t amp = body.find('&', pos);
-        size_t end = (amp == std::string::npos) ? body.size() : amp;
-        std::string pair = body.substr(pos, end - pos);
-        size_t eq = pair.find('=');
-        if (urlDecode(eq == std::string::npos ? pair : pair.substr(0, eq)) == key) return true;
-        if (amp == std::string::npos) break;
-        pos = amp + 1;
-    }
-    return false;
+    bool found = false;
+    forEachFormField(body, [&](const std::string& k, const std::string&) { found = found || (k == key); });
+    return found;
+}
+
+// Merge the on-device /setup page's form onto the CURRENT config: overwrite the fields that page owns
+// (source address/name, single-sided, spoof identity, and — if the field is present — the trainer) and
+// PRESERVE everything else (the broadcast mode, fitted curve, reference meter, calibrating flag), which
+// /setup has no control for. Fixes the old /setup/save that rebuilt a fresh config and silently wiped
+// the curve + reverted the mode. Every other config writer already merges like this; /setup was the
+// holdout. Pure + host-tested. (The SPA's POST /config has its own field vocab -> mergeSpaConfigForm.)
+inline RuntimeConfig mergeSetupForm(const RuntimeConfig& current, const std::string& body) {
+    const RuntimeConfig form = parseConfigForm(body);  // applies the /setup field vocab + checkbox rules
+    RuntimeConfig c = current;                          // preserve mode / curve / refMeter / calibrating
+    c.meterAddress = form.meterAddress;
+    c.meterNameFilter = form.meterNameFilter;
+    c.singleSidedDouble = form.singleSidedDouble;
+    c.spoofName = form.spoofName;
+    c.spoofSerial = form.spoofSerial;
+    if (formHasField(body, "trainer")) c.trainerNameFilter = form.trainerNameFilter;  // absent = keep
+    return c;
 }
 
 // Validate a submitted source config: at least one of (pinned address, name filter) must be set,
