@@ -53,13 +53,18 @@ The SB20's crank↔bike link is **internally ANT+** (`sb20-hardware-reference.md
 the nRF to impersonate the Stages crank — a config-selectable `spoof|corrector` mode gates them (default
 corrector, the honest identity, stays right for the track-bike product):
 
-- **BLE Stages spoof** 📋 NEXT (host-test + compile now; on-SB20 gated). Port the proven ESP32
-  `firmware/src/ble/BleCrankPeripheral.{h,cpp}` into the nRF (Bluefruit): `encodeStagesCpsMeasurement`
-  (the 0x2F frame — shared `Cps.h`, reuse it, torque via the shared `CrankCadence` @ `Cps.h:314`),
-  `CP_FEATURE_STAGES` (0x0008030B), sensor-location 0, Stages DIS strings+serial, the Stages proprietary
-  service + scan-response UUID + battery service, and the **442 company-id + captured `mfgData`** into the
-  control-point handler (`main.cpp` ~619 passes 0/none today). Plus the dual-crank pairing rule (sessions
-  8–9). This is the **proven** path ("Pair with Bluetooth"). On-SB20 proof → **R3**.
+- **BLE Stages spoof** ✅ DONE (2026-07-10; host-tested + both envs compile; on-SB20 = R3). A runtime
+  `spoof|corrector` mode (`ConfigPacket.spoof`, flags bit 3, default corrector) ported from the ESP32
+  `BleCrankPeripheral`: spoof emits the **Stages 0x2F** frame (`encodeStagesCpsMeasurement`; crank rev
+  passes through from the source, accumulated torque integrated per rev from corrected power like the ESP
+  `publishPower`), presents the Stages identity at boot (DIS SPM2, `CP_FEATURE_STAGES` 0x0008030B,
+  sensor-location 0, name `Stages 62144`, the Stages proprietary service in the scan response + a battery
+  service), and answers the app's 0x10 enhanced-offset with the **442 company-id + captured `mfgData`**
+  (BLE zero offset 0). Framing switches live; the identity is boot-time (reboot to re-advertise; serial
+  `SPOOF1`/`SPOOF0` toggles). nRF native **28/28**. **Next: R3** — pair to a real SB20, confirm power +
+  the calibrate/zero handshake (the session 8–9 criteria). **Follow-ups:** a web-SPA mode toggle (the
+  Bridge Config char already carries the bit); consider aligning `firmware-nrf` to gnu++17 (it builds at
+  gnu++11 — see decisions.md 2026-07-10 for the ODR gotcha this forced).
 
 - **ANT+ Stages spoof** 🔧 (codec DONE in P1; the ANT radio is P4, S340-gated). The nRF-native path: an
   ANT+ **master** on the Stages crank's channel params (device # 62144, device-type **0x0B** Bike Power,

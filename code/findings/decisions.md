@@ -2654,3 +2654,45 @@ New, better-graded status:
 Will revisit if: the `--erg` round-trip shows the SB20 answers standard FTMS control (→ our path is clean,
 and *then* there's an evidence-backed thing to offer qz) OR shows "no answer" (→ the real deliverable is
 mining how Zwift / a current qz actually talks to it — the handshake, not just the characteristic).
+
+## 2026-07-10 — nRF gains a BLE SB20 crank-spoof MODE (ported from the ESP32); host-tested + compiles, on-SB20 gated (R3)
+
+Decision: the nRF52840 bridge is no longer corrector-only. A **runtime `spoof|corrector` mode** (default
+corrector — the honest track-bike identity is unchanged) now lets the Seeed XIAO / Feather present as the
+**real Stages SPM2 crank**, so it can drive a real SB20's erg loop — the capability the ESP32-C3 already
+had, now on the ANT-capable board. Executes the owner's "port it" decision + `nrf-roadmap.md` "BLE Stages
+spoof" bullet. Built **host-tested/compile-first** (no hardware on the dev box); the on-SB20 pairing +
+calibrate handshake is run-sheet **R3**.
+
+What shipped (branch `feat/nrf-ant-spoof`, on the OBC stack):
+- **Wire contract:** `ConfigPacket.spoof` = flags **bit 3** (`Proto.h`), backward-compatible — a pre-spoof
+  config (bit 3 clear) decodes as corrector, exactly today's behaviour. Host test
+  `test_config_spoof_mode_bit` (nRF native **28/28**).
+- **Measurement:** in spoof, `measNotifyCb` emits the **Stages 0x2F** frame (`encodeStagesCpsMeasurement`,
+  shared `Cps.h`) — pedal balance + accumulated torque + crank rev. Crank-rev fields **pass through from
+  the source meter** (its real cadence); accumulated torque is integrated per completed rev from the
+  corrected power (T = P·60/(2π·rpm), 1/32 Nm units) — the ESP32 `publishPower` math, but driven off the
+  source's own crank delta rather than a regenerated stream. Reset on source disconnect.
+- **Identity (boot-time):** DIS = Stages SPM2 (manuf/model/fw/serial), CP Feature = `0x0008030B`
+  (`CP_FEATURE_STAGES`), Sensor Location = **0 "other"** (the real crank, not 5 left), name = `Stages
+  62144`, the **Stages proprietary service** (`d445fe01…`, opaque) in the scan response, + a Battery
+  Service — all mirroring `BleCrankPeripheral`. Corrector path unchanged (plain CPS, own name).
+- **Calibration handshake:** `cpWriteCb` now passes the **442 company id + captured mfg data** into the
+  0x10 enhanced-offset reply when spoof (the session-8 fix that stopped the Stages app's calibrate
+  spinning); BLE zero-reset offset stays **0** in both modes (the BLE value, not the ANT+ 903).
+- **Mode change:** framing switches **live**; the advertised services/DIS/feature are boot-time, so the
+  crank **identity needs a reboot** (logged; the web UI will surface it). Serial console `SPOOF1`/`SPOOF0`
+  for bench toggling.
+
+Numbers/toolchain notes for future work:
+- The nRF core builds at **gnu++11** (the ESP32 firmware overrides to gnu++17; `firmware-nrf` does not).
+  Consequence hit here: ODR-using a class-static `constexpr` array (`Config::SPOOF_MFG_DATA`) via pointer
+  arithmetic would need an out-of-line definition the header-only shared `Config.h` can't give → link
+  error. Worked around with literal-index constant reads (+ a `static_assert` on length). `Shifter.h`'s
+  `inline constexpr` also warns at gnu++11 (accepted as an extension). **Follow-up candidate:** align
+  `firmware-nrf` to gnu++17 to match the shared headers' authored standard and kill this class of risk.
+- Both envs compile: **xiao-sense** Flash 23.4% / RAM 48.6%; **feather-nrf52840** green.
+
+Open (untested): does a real SB20 accept the nRF as its crank over BLE (pair + power shows + calibrate
+completes)? That's **R3** — the session 8–9 criteria, now on the nRF. The ANT+ Stages-spoof path (P4,
+S340-gated) remains the other, potentially-more-faithful route.

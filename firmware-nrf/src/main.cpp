@@ -295,6 +295,21 @@ static const uint8_t kUuidObcButton[16] =
 static BLEService obcSvc(kUuidObcSvc);
 static BLECharacteristic chObcButton(kUuidObcButton);
 
+// Stages proprietary service — SPOOF mode only. The real Stages crank advertises + exposes this and
+// the SB20 checks for it to confirm a genuine crank; contents are opaque (presence is the point). It
+// mirrors the ESP32 BleCrankPeripheral. 128-bit UUIDs stored little-endian (full byte reverse of the
+// string): d445fe0X-d139-9a5d-6707-1cc6a58b6303 -> byte [12] carries the 0X sub-id.
+#define STAGES_UUID(sub)                                                                         \
+    {0x03, 0x63, 0x8b, 0xa5, 0xc6, 0x1c, 0x07, 0x67, 0x5d, 0x9a, 0x39, 0xd1, (uint8_t)(sub),     \
+     0xfe, 0x45, 0xd4}
+static const uint8_t kUuidStagesSvc[16] = STAGES_UUID(0x01);
+static const uint8_t kUuidStagesCtrl[16] = STAGES_UUID(0x02);  // notify + write
+static const uint8_t kUuidStagesData[16] = STAGES_UUID(0x03);  // notify
+static BLEService stagesSvc(kUuidStagesSvc);
+static BLECharacteristic chStagesCtrl(kUuidStagesCtrl);
+static BLECharacteristic chStagesData(kUuidStagesData);
+static BLEBas blebas;  // Battery Service (180F/2A19) — a real crank exposes it; spoof-only
+
 // Discovered nearby CPS/FTMS devices (the web source picker). The scan callback records every
 // advertiser; the list is deduped/capped by the pure addCandidate.
 static std::vector<SourceCandidate> g_candidates;
@@ -405,6 +420,14 @@ static void scanCb(ble_gap_evt_adv_report_t* report) {
     else Bluefruit.Scanner.resume();
 }
 
+// Stages-spoof (0x2F) accumulated-torque state + the previous source crank sample it integrates
+// against. Reset on a source disconnect so a new meter's cumulative-rev baseline can't inject a
+// bogus delta. Only touched in SPOOF mode (measNotifyCb below).
+static uint16_t g_spoofAccumTorque = 0;
+static uint16_t g_spoofPrevRevs = 0;
+static uint16_t g_spoofPrevEvt = 0;
+static bool g_spoofHavePrev = false;
+
 static void measNotifyCb(BLEClientCharacteristic* /*chr*/, uint8_t* data, uint16_t len) {
     // Decode the meter's frame with the shared pure codec, correct it, and relay: the output
     // frame passes the source's own crank fields through unchanged (cadence is identical).
@@ -428,7 +451,38 @@ static void measNotifyCb(BLEClientCharacteristic* /*chr*/, uint8_t* data, uint16
     g_lastOut = out;
 
     std::vector<uint8_t> frame;
-    if (flags & CPM_CRANK_REV_DATA_PRESENT) {
+    if (g_cfg.spoof) {
+        // SB20 crank spoof: re-frame as the Stages 0x2F measurement (pedal balance + accumulated
+        // torque + crank rev), byte-identical to the ESP32 BleCrankPeripheral. The crank-rev fields
+        // pass through from the SOURCE meter (its real cadence); accumulated torque is integrated per
+        // completed crank revolution from the corrected power, exactly like the ESP publishPower.
+        uint16_t curRevs = 0, curEvt = 0;
+        if (flags & CPM_CRANK_REV_DATA_PRESENT) {
+            const CpsCrankData cd = decodeCrankData(data, len);
+            curRevs = cd.cumulativeRevs;
+            curEvt = cd.lastEventTime;
+            if (g_spoofHavePrev && out.power_w > 0) {
+                const uint16_t dRevs = (uint16_t)(curRevs - g_spoofPrevRevs);
+                const uint16_t dTicks = (uint16_t)(curEvt - g_spoofPrevEvt);
+                if (dRevs > 0 && dTicks > 0) {
+                    // Cadence (rpm) from the source crank delta (1/1024 s ticks), then accumulated
+                    // torque in 1/32 Nm units per rev: T = P·60 / (2·pi·rpm).
+                    const float rpm = (float)dRevs * 1024.0f * 60.0f / (float)dTicks;
+                    const float torqueNm = (float)out.power_w * 60.0f / (6.2831853f * rpm);
+                    g_spoofAccumTorque = (uint16_t)(g_spoofAccumTorque +
+                        (uint16_t)((float)dRevs * torqueNm * 32.0f + 0.5f));
+                }
+            }
+            g_spoofPrevRevs = curRevs;
+            g_spoofPrevEvt = curEvt;
+            g_spoofHavePrev = true;
+        }
+        // Forward the source's real left-referenced L/R split; 100 (=50 %) when it carries none.
+        const uint8_t balanceOut =
+            (r.balance_half_pct >= 0) ? (uint8_t)r.balance_half_pct : (uint8_t)100;
+        frame = encodeStagesCpsMeasurement(out.power_w, balanceOut, g_spoofAccumTorque, curRevs,
+                                           curEvt);
+    } else if (flags & CPM_CRANK_REV_DATA_PRESENT) {
         const CpsCrankData cd = decodeCrankData(data, len);
         frame = encodeCpsMeasurement(out.power_w, cd.cumulativeRevs, cd.lastEventTime);
     } else {
@@ -592,6 +646,7 @@ static void centralDisconnectCb(uint16_t connHandle, uint8_t reason) {
         g_srcConnected = false;
         g_srcConnHandle = BLE_CONN_HANDLE_INVALID;
         g_srcName[0] = 0;
+        g_spoofHavePrev = false;  // a new source restarts the spoof torque integration cleanly
         Serial.printf("[bridge] source dropped (0x%02X); rescanning\n", reason);
     }
     Bluefruit.Scanner.start(0);
@@ -615,7 +670,19 @@ static void cpWriteCb(uint16_t connHandle, BLECharacteristic* /*chr*/, uint8_t* 
     // The pure handler answers offset-comp / crank-length ops; when the head unit asks for a
     // zero-reset (0x0C/0x10) we ALSO forward a real zero to the source meter — flagged here,
     // written from loop() (never a re-entrant central op inside this callback).
-    CpResult res = handleControlPoint(data, len, g_crankLenHalfMm, /*calOffset=*/0);
+    // SPOOF answers the Stages app's ENHANCED offset-comp (0x10) with the real crank's company id
+    // (442 = Stages) + captured mfg data; without it the app's calibrate spins (session 8 G2). The BLE
+    // zero-reset offset is 0 in both modes (SPOOF_CAL_OFFSET; captured over BLE, not the ANT+ 903).
+    // Copy the Config bytes via literal-index constant reads (Config.h is the source of truth) — NOT
+    // pointer arithmetic, which would ODR-use the class-static constexpr array and need an out-of-line
+    // definition the shared header can't give at the nRF core's gnu++11.
+    static_assert(sizeof(Config::SPOOF_MFG_DATA) == 5, "SPOOF_MFG_DATA length changed — update below");
+    static const std::vector<uint8_t> kSpoofMfgData = {
+        Config::SPOOF_MFG_DATA[0], Config::SPOOF_MFG_DATA[1], Config::SPOOF_MFG_DATA[2],
+        Config::SPOOF_MFG_DATA[3], Config::SPOOF_MFG_DATA[4]};
+    CpResult res = handleControlPoint(data, len, g_crankLenHalfMm, /*calOffset=*/0,
+                                      g_cfg.spoof ? Config::SPOOF_MFG_COMPANY_ID : 0,
+                                      g_cfg.spoof ? kSpoofMfgData : std::vector<uint8_t>{});
     if (res.crankLengthChanged) g_crankLenHalfMm = res.crankLengthHalfMm;
     if (res.requestSourceZero) g_pendSourceZero = true;
     if (!res.response.empty()) outCp.indicate(connHandle, res.response.data(), res.response.size());
@@ -642,16 +709,24 @@ static void configWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t
     const bool wasSingle = g_cfg.singleSided;
     const bool nameChanged = strncmp(c.outName, g_cfg.outName, CFG_NAME_LEN) != 0;
     const bool filterChanged = strncmp(c.srcFilter, g_cfg.srcFilter, CFG_NAME_LEN) != 0;
+    const bool spoofChanged = c.spoof != g_cfg.spoof;
     g_cfg = c;
     applyCorrectionFromCfg();
     cfgSave();
     uint8_t buf[CONFIG_LEN];
     packConfig(g_cfg, buf);
     chConfig.write(buf, sizeof(buf));  // read-back reflects what stuck
-    if (nameChanged) {
+    if (nameChanged && !g_cfg.spoof) {  // SPOOF's advertised name is fixed to the Stages crank
         Bluefruit.setName(g_cfg.outName);
         Bluefruit.Advertising.stop();
         Bluefruit.Advertising.start(0);
+    }
+    if (spoofChanged) {
+        // The 0x2F measurement framing switches live (measNotifyCb reads g_cfg.spoof each frame), but
+        // the advertised services / DIS / CP-Feature / sensor-location are built once at boot — so the
+        // crank IDENTITY only changes after a reboot. The web UI surfaces this to the user.
+        Serial.printf("[bridge] mode -> %s; REBOOT to re-present the crank identity\n",
+                      g_cfg.spoof ? "SPOOF (Stages crank)" : "CORRECTOR");
     }
     if (filterChanged) {
         // re-pick the source under the new filter (drop the CENTRAL link, not the web app's)
@@ -938,11 +1013,20 @@ void setup() {
     // reference meter during calibration + the FTMS trainer for erg). 5 links total; S140 default 20.
     Bluefruit.begin(/*peripheral*/ 2, /*central*/ 3);
     Bluefruit.setTxPower(4);
-    Bluefruit.setName(g_cfg.outName);
+    // SPOOF advertises as the real Stages crank; CORRECTOR advertises our own configurable name.
+    Bluefruit.setName(g_cfg.spoof ? Config::SPOOF_NAME : g_cfg.outName);
 
-    // --- output: standard CPS peripheral (a head unit pairs to this) ---
-    bledis.setManufacturer("SB20 Proxy");
-    bledis.setModel("nRF Bridge");
+    // --- output: CPS peripheral. SPOOF presents the real Stages SPM2 identity (the SB20 only accepts
+    //     its own crank); CORRECTOR presents our own honest identity (any head unit takes a plain CPS). ---
+    if (g_cfg.spoof) {
+        bledis.setManufacturer(Config::SPOOF_MANUFACTURER);
+        bledis.setModel(Config::SPOOF_MODEL);
+        bledis.setFirmwareRev(Config::SPOOF_FW);
+        bledis.setSerialNum(Config::SPOOF_SERIAL);
+    } else {
+        bledis.setManufacturer("SB20 Proxy");
+        bledis.setModel("nRF Bridge");
+    }
     bledis.begin();
     bledfu.begin();  // buttonless DFU: a DFU write reboots into the bootloader's BLE-OTA mode so
                      // `adafruit-nrfutil dfu ble` can push new firmware — no USB reflash needed
@@ -955,13 +1039,15 @@ void setup() {
     outFeature.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
     outFeature.setFixedLen(4);
     outFeature.begin();
-    const uint32_t feat = CP_FEATURE_CRANK_REV_SUPPORTED;
+    // SPOOF reports the exact CP Feature the real crank does (0x0008030B); CORRECTOR just crank-rev.
+    const uint32_t feat = g_cfg.spoof ? CP_FEATURE_STAGES : CP_FEATURE_CRANK_REV_SUPPORTED;
     outFeature.write32(feat);
     outSensorLoc.setProperties(CHR_PROPS_READ);
     outSensorLoc.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
     outSensorLoc.setFixedLen(1);
     outSensorLoc.begin();
-    outSensorLoc.write8(5);  // left crank
+    // The real Stages crank reports Sensor Location 0 ("other"), NOT 5 (left crank); match it in spoof.
+    outSensorLoc.write8(g_cfg.spoof ? SENSOR_LOCATION_OTHER : 5);
     outCp.setProperties(CHR_PROPS_WRITE | CHR_PROPS_INDICATE);
     outCp.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     outCp.setWriteCallback(cpWriteCb);
@@ -1028,6 +1114,23 @@ void setup() {
     chObcButton.setMaxLen(20);
     chObcButton.begin();
 
+    // --- Stages proprietary service + battery: SPOOF only. The real crank exposes both; the SB20
+    //     checks for the proprietary service to confirm a genuine crank. Contents opaque (the ESP32
+    //     BleCrankPeripheral does the same). CORRECTOR omits them — a plain CPS meter. ---
+    if (g_cfg.spoof) {
+        stagesSvc.begin();
+        chStagesCtrl.setProperties(CHR_PROPS_NOTIFY | CHR_PROPS_WRITE);
+        chStagesCtrl.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+        chStagesCtrl.setMaxLen(20);
+        chStagesCtrl.begin();
+        chStagesData.setProperties(CHR_PROPS_NOTIFY);
+        chStagesData.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+        chStagesData.setMaxLen(20);
+        chStagesData.begin();
+        blebas.begin();
+        blebas.write(90);  // a healthy spoofed crank battery level
+    }
+
     // --- source: central scanning for a CPS meter (+ the reference during calibration) ---
     clientCps.begin();
     clientMeas.setNotifyCallback(measNotifyCb);
@@ -1055,7 +1158,15 @@ void setup() {
     Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
     Bluefruit.Advertising.addTxPower();
     Bluefruit.Advertising.addService(outCps);
-    Bluefruit.ScanResponse.addName();
+    if (g_cfg.spoof) {
+        // Mirror the real crank's advert: name + CPS(0x1818) in the PRIMARY packet, the 128-bit Stages
+        // proprietary UUID in the SCAN RESPONSE (a 128-bit UUID in the primary would crowd out the
+        // name in the 31-byte budget — exactly what the ESP32 BleCrankPeripheral does).
+        Bluefruit.Advertising.addName();
+        Bluefruit.ScanResponse.addService(stagesSvc);
+    } else {
+        Bluefruit.ScanResponse.addName();
+    }
     Bluefruit.Advertising.restartOnDisconnect(true);
     Bluefruit.Advertising.setInterval(32, 244);
     Bluefruit.Advertising.setFastTimeout(30);
@@ -1164,7 +1275,8 @@ void loop() {
 
     // Serial self-test commands (USB CDC) — desk diagnostics, bench-verify the correction logic
     // without a BLE client (the desktop Windows GATT cache fights repeated reflashes):
-    //   IMUTEST · SINGLE1/SINGLE0 (single-sided x2) · CURVE (200W->1.25 test curve) · LINEAR
+    //   IMUTEST · SINGLE1/SINGLE0 (single-sided x2) · SPOOF1/SPOOF0 (SB20 Stages-crank spoof mode;
+    //   framing is live, identity applies on reboot) · CURVE (200W->1.25 test curve) · LINEAR
     //   (clear curve) · ZERO (trigger source zero-forward) · SHOW (print correction state).
     static char cmd[16];
     static uint8_t ci = 0;
@@ -1175,6 +1287,8 @@ void loop() {
             if (strcmp(cmd, "IMUTEST") == 0) imuSelfTest();
             else if (strcmp(cmd, "SINGLE1") == 0) { g_cfg.singleSided = true; cfgSave(); Serial.println("[test] single-sided x2 ON"); }
             else if (strcmp(cmd, "SINGLE0") == 0) { g_cfg.singleSided = false; cfgSave(); Serial.println("[test] single-sided OFF"); }
+            else if (strcmp(cmd, "SPOOF1") == 0) { g_cfg.spoof = true; cfgSave(); Serial.println("[test] SPOOF ON (Stages crank) - framing live now; REBOOT to advertise the identity"); }
+            else if (strcmp(cmd, "SPOOF0") == 0) { g_cfg.spoof = false; cfgSave(); Serial.println("[test] SPOOF OFF (corrector) - framing live now; REBOOT to advertise the identity"); }
             else if (strcmp(cmd, "CURVE") == 0) {
                 g_corr.curve = CorrectionCurve{};
                 g_corr.curve.add(100, 1.0f); g_corr.curve.add(200, 1.25f); g_corr.curve.add(300, 1.25f);

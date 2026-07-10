@@ -55,6 +55,10 @@ struct ConfigPacket {
     bool srcIsAnt = false;
     bool outIsAnt = false;
     bool singleSided = false;  // double a single-sided (R-only) source before correcting
+    bool spoof = false;        // product mode: false = corrector (honest CPS identity, the default),
+                               // true = SB20 Stages-crank spoof (0x2F frames + the Stages identity).
+                               // The advertised services/DIS/feature are boot-time, so a mode change
+                               // needs a reboot to re-present the identity (the framing switches live).
     uint16_t scaleMilli = 1000;
     int16_t offsetDeciW = 0;
     char srcFilter[CFG_NAME_LEN + 1] = {0};  // NUL-terminated in the struct, NUL-padded on the wire
@@ -64,7 +68,8 @@ constexpr size_t CONFIG_LEN = 44;
 
 inline size_t packConfig(const ConfigPacket& c, uint8_t out[CONFIG_LEN]) {
     out[0] = PROTO_VER;
-    out[1] = (uint8_t)((c.srcIsAnt ? 1 : 0) | (c.outIsAnt ? 2 : 0) | (c.singleSided ? 4 : 0));
+    out[1] = (uint8_t)((c.srcIsAnt ? 1 : 0) | (c.outIsAnt ? 2 : 0) | (c.singleSided ? 4 : 0) |
+                       (c.spoof ? 8 : 0));
     packU16(out + 2, c.scaleMilli);
     packU16(out + 4, (uint16_t)c.offsetDeciW);
     memset(out + 6, 0, CFG_NAME_LEN);
@@ -81,6 +86,7 @@ inline bool unpackConfig(const uint8_t* p, size_t len, ConfigPacket& c) {
     n.srcIsAnt = (p[1] & 1) != 0;
     n.outIsAnt = (p[1] & 2) != 0;
     n.singleSided = (p[1] & 4) != 0;
+    n.spoof = (p[1] & 8) != 0;  // old configs have bit 3 clear -> corrector (unchanged default)
     n.scaleMilli = unpackU16(p + 2);
     n.offsetDeciW = (int16_t)unpackU16(p + 4);
     memcpy(n.srcFilter, p + 6, CFG_NAME_LEN);

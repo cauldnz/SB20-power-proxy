@@ -70,10 +70,28 @@ void test_config_roundtrip(void) {
     ConfigPacket r;
     TEST_ASSERT_TRUE(unpackConfig(b, CONFIG_LEN, r));
     TEST_ASSERT_TRUE(r.singleSided);
+    TEST_ASSERT_FALSE(r.spoof);  // default corrector when the spoof bit is clear
     TEST_ASSERT_EQUAL_UINT16(1234, r.scaleMilli);
     TEST_ASSERT_EQUAL_INT16(-75, r.offsetDeciW);
     TEST_ASSERT_EQUAL_STRING("ASSIOMA", r.srcFilter);
     TEST_ASSERT_EQUAL_STRING("SB20 Bridge", r.outName);
+}
+
+void test_config_spoof_mode_bit(void) {
+    // The spoof mode rides in flags bit 3; corrector is the default and must round-trip unchanged.
+    ConfigPacket c;
+    c.spoof = true; c.singleSided = false;
+    uint8_t b[CONFIG_LEN];
+    packConfig(c, b);
+    TEST_ASSERT_EQUAL_UINT8(0x08, b[1]);  // b3 spoof, nothing else
+    ConfigPacket r;
+    TEST_ASSERT_TRUE(unpackConfig(b, CONFIG_LEN, r));
+    TEST_ASSERT_TRUE(r.spoof);
+    // Backward-compat: a pre-spoof config (flags with bit 3 clear) decodes as corrector, not spoof.
+    b[1] = 0x04;  // single-sided only, as an old firmware would have written
+    TEST_ASSERT_TRUE(unpackConfig(b, CONFIG_LEN, r));
+    TEST_ASSERT_FALSE(r.spoof);
+    TEST_ASSERT_TRUE(r.singleSided);
 }
 
 void test_buttons_roundtrip(void) {
@@ -402,6 +420,7 @@ int main(int, char**) {
     RUN_TEST(test_status_layout);
     RUN_TEST(test_status_none_sentinels);
     RUN_TEST(test_config_roundtrip);
+    RUN_TEST(test_config_spoof_mode_bit);
     RUN_TEST(test_buttons_roundtrip);
     RUN_TEST(test_ant_power_only_golden_and_roundtrip);
     RUN_TEST(test_ant_power_only_balance_and_no_cadence);
