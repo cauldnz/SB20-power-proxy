@@ -15,6 +15,8 @@
 #include "LSM6DS3.h"
 #include "Wire.h"
 
+#include "board.h"  // board LED/IMU capability seam (XIAO Sense default; -DBOARD_FEATHER for generic)
+
 // The Adafruit nRF core's Arduino.h defines abs/round/min/max as MACROS, which break the
 // std::round / std::min<> inside the shared pure headers (CalibrationFit et al). Undo them
 // before those includes — the pure code wants the real std functions, not the Arduino macros.
@@ -102,12 +104,9 @@ static void trainerLoad() {
     if (n > 0) { g_trainerFilter[n] = 0; Serial.printf("[erg] trainer configured: '%s'\n", g_trainerFilter); }
 }
 
-// ---- RGB status LED (active-low; pins from the probe). Track use: glanceable link state. ------
-static void setLed(bool r, bool g, bool b) {
-    digitalWrite(LED_RED, r ? LOW : HIGH);
-    digitalWrite(LED_GREEN, g ? LOW : HIGH);
-    digitalWrite(LED_BLUE, b ? LOW : HIGH);
-}
+// ---- Status LED — routed through the board seam so single-LED/Feather boards also build (board.h).
+// Track use: glanceable link state (RGB on the XIAO; on/off on a single-LED board).
+static void setLed(bool r, bool g, bool b) { boardLed(r, g, b); }
 
 static void cfgLoad() {
     strcpy(g_cfg.outName, "SB20 Bridge");
@@ -914,10 +913,8 @@ void setup() {
     trainerLoad();
     buttonsLoad();  // the SB20-shifter -> action binding + sink enable (before the char's initial write)
 
-    // RGB status LED (active-low)
-    pinMode(LED_RED, OUTPUT);
-    pinMode(LED_GREEN, OUTPUT);
-    pinMode(LED_BLUE, OUTPUT);
+    // Status LED (board seam — RGB on the XIAO, single LED on a Feather/generic board)
+    boardLedBegin();
     setLed(false, false, false);
 
     // IMU (power-gated on the Sense)
