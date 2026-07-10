@@ -99,8 +99,11 @@ inline const char* webSpaHtml() { return R"SB20SPA(
         <option value="ant" disabled>ANT+ — the SB20's internal radio (needs the S340 SoftDevice — coming)</option>
       </select>
     </div>
-    <label>Scale (×)</label><input id="cfgScale" type="number" step="0.001" min="0.5" max="2" value="1.000">
-    <label>Offset (W)</label><input id="cfgOffset" type="number" step="0.1" min="-100" max="100" value="0">
+    <div id="cfgScalarRow">
+      <label>Scale (×)</label><input id="cfgScale" type="number" step="0.001" min="0.5" max="2" value="1.000">
+      <label>Offset (W)</label><input id="cfgOffset" type="number" step="0.1" min="-100" max="100" value="0">
+    </div>
+    <div class="note" id="cfgCurveNote" style="display:none">Correction on this device is set by the Calibrate wizard below (a fitted curve), not a scale/offset.</div>
     <label style="display:flex;align-items:center;gap:8px;font-weight:400"><input id="cfgSingle" type="checkbox" style="width:auto"> Single-sided ×2 (double an R-only crank)</label>
     <label>Source name filter (blank = any power meter)</label><input id="cfgSrc" maxlength="19" placeholder="e.g. ASSIOMA">
     <div class="note" style="margin-top:6px">Nearby (tap to use as source):</div>
@@ -239,7 +242,7 @@ class BleTransport {
     this.kind = "ble"; this.autoConnect = false;
     // antCapable: the nRF52840 (this transport's only device) is ANT-capable silicon, so the spoof
     // radio can be BLE or ANT+ (ANT+ still gated on the S340 SoftDevice — the UI shows it disabled).
-    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:true, buttons:true, antCapable:true };
+    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:true, buttons:true, antCapable:true, scalarCorrection:true };
     this.dev = null; this.ch = {}; this.dl = null;
     this.onStatus = this.onScan = this.onCal = this.onWk = this.onRec = this.onRecDone =
       this.onConn = this.onLog = () => {};
@@ -416,7 +419,9 @@ class HttpTransport {
   constructor() {
     this.kind = "http"; this.autoConnect = true;
     // antCapable:false — the ESP32 has no ANT radio, so spoof is BLE-only (no radio picker shown).
-    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:false, buttons:true, antCapable:false };
+    // scalarCorrection:false — the ESP32's correction is a fitted curve, not editable scale/offset, so
+    // the SPA hides the scalar inputs here (setConfig would otherwise silently drop them, WebJson.h:33).
+    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:false, buttons:true, antCapable:false, scalarCorrection:false };
     this.cfg = { scale: 1, offset: 0 }; this.timer = null;
     this.onStatus = this.onScan = this.onCal = this.onWk = this.onRec = this.onRecDone =
       this.onConn = this.onLog = () => {};
@@ -591,6 +596,11 @@ function wire(t) {
   t.onConn = (on, name) => { setConnected(on); if (on) { $("devName").textContent = name; loadConfig(); refreshCurve(); loadButtons(); } log(on ? "connected" : "disconnected"); };
   if (!t.caps.recording) $("recCard").style.display = "none";
   if (!t.caps.buttons) $("buttonsCard").style.display = "none";
+  // Scalar scale/offset is real on the nRF (packConfig writes it) but a no-op on the ESP32 (curve-only);
+  // hide the inputs where they'd be silently dropped, and point at the curve instead.
+  const scalar = t.caps.scalarCorrection !== false;
+  $("cfgScalarRow").style.display = scalar ? "" : "none";
+  $("cfgCurveNote").style.display = scalar ? "none" : "";
   if (t.kind === "ble" && !navigator.bluetooth) $("unsupported").style.display = "block";
 }
 // Broadcast-mode (spoof/corrector) UI. Spoof impersonates the Stages crank the SB20 expects, so its
@@ -624,7 +634,7 @@ async function loadConfig() {
 // OBC_ACTIONS mirrors firmware/lib/proxy/Sb20ButtonMap.h sb20ActionOptions ORDER — the wire form is a
 // u8 index into this list, so the JS and firmware must agree byte-for-byte (index 0 = none).
 const OBC_ACTIONS = ["None", "OBC Shift Up", "OBC Shift Down", "OBC ERG Up", "OBC ERG Down", "OBC Lap",
-  "OBC Menu", "OBC Pause", "Erg target +10W (local)", "Erg target −10W (local)"];
+  "OBC Menu", "OBC Pause", "Erg target +10W (local)", "Erg target -10W (local)"];
 const SB20_BUTTONS = ["LEFT up", "LEFT down", "LEFT 3rd", "RIGHT up", "RIGHT down", "RIGHT 3rd"];
 function buildButtonRows() {
   if ($("btnRows").children.length) return;  // once

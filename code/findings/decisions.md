@@ -2741,3 +2741,50 @@ sync, ESP32-C3 compile green. A rendered mockup of all four states is in `design
 "unverified until U4" — this *is* part of U4, but the on-device round-trip needs an ESP32 on WiFi).
 **Follow-ups:** a remote-reboot affordance (both platforms) so a mode change applies without a power
 cycle; wiring `outIsAnt` + enabling the ANT+ radio option once the S340 capability is detectable.
+
+## 2026-07-10 — Architecture audit (3-agent survey): "one codec, many deployments" is enforced only C++↔C++; language boundaries were a claim. Closed the cheap gaps; ranked the structural ones.
+
+A grounded architecture pass (three Explore agents: codec-drift, main.cpp cohesion, config/correction
+model) produced an evidence-backed map. The central finding: the project's core bet — one wire format,
+deployed many times — is **genuinely enforced in exactly one place** (the nRF compiles the *same*
+`firmware/lib/proxy/*.h` as the ESP32 via `lib_extra_dirs`, so CPS/FTMS/OBC are one C++ source compiled
+twice, not mirrors) and is **unenforced at every language boundary** (Python, the SPA's JS, the Garmin
+Monkey C each hand-copy vectors; no test cross-checks `cpp_encode(x) == other_encode(x)`). The team
+already has the fix idiom (`test_calibration_parity.py`, `test_ota_sign.py`, `test_workout_engine_parity.py`)
+— it just was never pointed at the BLE/ANT wire formats.
+
+**Shipped this pass (safe, host-tested):**
+- **`code/tests/test_wire_format_parity.py`** (new home for the invariant): asserts `pages.py` produces
+  the *exact* bytes the C++ `AntBikePower.h` golden vectors assert (power-only, calibration
+  response+request, manufacturer) — cross-checking the ANT port I wrote 2026-07-10 against the
+  3,209-record-grounded Python codec — and that the SPA's `OBC_ACTIONS` order == firmware
+  `sb20ActionOptions` (a reorder would silently remap the Buttons-char index to the wrong action). 5/5 pass.
+- **OBC label drift fixed:** the SPA used `"−10W"` (U+2212) vs the firmware's `"-10W"` (ASCII) — now
+  identical, and the parity test locks it.
+- **SPA scale/offset "lying control" fixed** (a real correctness defect, not just fragmentation): the SPA
+  offered editable Scale/Offset on the ESP32/HTTP transport, but `setConfig` silently dropped them (the
+  ESP32 correction is a fitted *curve*, no scalar field — `WebJson.h:33`) while the local echo made the UI
+  look like the edit took. Added `caps.scalarCorrection` (BLE true / HTTP false); the scalar inputs now
+  hide on curve-only devices, replaced by a "correction is the Calibrate wizard's curve" note.
+
+**Deferred — structural, owner to steer (ranked):**
+1. **nRF `main.cpp` is a god-object** (1495 lines, *zero* seam classes; re-implements inline the four
+   seams the ESP32 has as classes — `BleCrankPeripheral`/`BleMeterClient`/`FtmsErgClient`/`BleShifterClient`
+   — and bypasses `ProxyCore`). The ESP32 by contrast is a disciplined wiring file with one fat tenant
+   (the ~590-line LCD head-unit controller). Best ROI order for the nRF: extract `BridgeConfigStore` →
+   `BridgeService` (the ~350-line GATT service) → `ImuRecorder` → the `IRadioSource/Sink` seam last
+   (biggest win, riskiest — the 4-way central multiplex). Extracting the first three removes ~700 lines and
+   would let the nRF finally adopt the shared `ProxyCore`. This is the real liability under the active nRF
+   spoof/ANT work.
+2. **Bridge GATT JS + Monkey-C mirrors are unpinned** (highest silent-drift blast radius — the JS is the
+   primary user control surface; a `Proto.h` offset change corrupts it with zero CI signal, `test_spa_sync`
+   only checks copy-drift). Needs a decision: extract the SPA's Bridge codec into a testable JS module
+   (+ Node in CI) so it *can* be byte-checked against shared golden vectors.
+3. **`|`-line `RuntimeConfig`** is positional, **untagged (no version byte, unlike the nRF's `PROTO_VER`)**,
+   append-only-by-convention, and delimiter-injectable (mitigated only by the easily-forgotten
+   `stripConfigDelims`). Contained (one production round-trip, `ConfigStore`) but a real trap; a middle
+   insert or a missed strip corrupts silently. Candidate: a tagged/versioned line.
+4. **Config field-name vocabulary diverges 3 ways** (`meterNameFilter`/`srcFilter`/`src_filter`;
+   `spoofName`/`outName`/`out_name`; mode as enum/bool/string). Accidental, not essential — a shared
+   field-name vocabulary would remove the translation layer + reader friction. (The three *serializers*/
+   storage backends and the scalar-vs-curve *model* are justified by transport and left alone.)
