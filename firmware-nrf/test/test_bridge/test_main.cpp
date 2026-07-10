@@ -12,6 +12,7 @@
 
 #include "Proto.h"
 #include "ImuCapture.h"
+#include "AntBikePower.h"
 
 using namespace nrfbridge;
 
@@ -314,12 +315,99 @@ void test_imu_crc32_deterministic_and_data_sensitive(void) {
     TEST_ASSERT_NOT_EQUAL(a.crc32(), c.crc32());     // different data -> different crc
 }
 
+// ================= ANT+ Bike Power page codec (AntBikePower.h) =================================
+void test_ant_power_only_golden_and_roundtrip(void) {
+    uint8_t b[8];
+    // event=10, power=250 W, accum=1000, cadence=90, no balance (0xFF)
+    TEST_ASSERT_EQUAL_UINT(8, nrfant::encodePowerOnly(10, 250, 1000, 90, nrfant::ANT_RESERVED, b));
+    const uint8_t want[8] = {0x10, 0x0A, 0xFF, 0x5A, 0xE8, 0x03, 0xFA, 0x00};
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(want, b, 8);
+    nrfant::AntPowerReading r = nrfant::decodePage(b, 8);  // round-trip
+    TEST_ASSERT_TRUE(r.valid);
+    TEST_ASSERT_EQUAL_UINT8(nrfant::PAGE_POWER_ONLY, r.page);
+    TEST_ASSERT_EQUAL_INT(250, r.instantaneousPowerW);
+    TEST_ASSERT_EQUAL_INT(90, r.cadenceRpm);
+    TEST_ASSERT_EQUAL_INT(-1, r.balancePct);  // none
+    TEST_ASSERT_EQUAL_UINT16(1000, r.accumulatedPower);
+}
+
+void test_ant_power_only_balance_and_no_cadence(void) {
+    uint8_t b[8];
+    const uint8_t pp = nrfant::pedalPowerByte(50, true);  // 50% left, differentiated
+    TEST_ASSERT_EQUAL_UINT8(0xB2, pp);                    // 0x80 | 50
+    nrfant::encodePowerOnly(5, 200, 500, -1, pp, b);      // cadence none -> 0xFF
+    TEST_ASSERT_EQUAL_UINT8(0xFF, b[3]);
+    nrfant::AntPowerReading r = nrfant::decodePage(b, 8);
+    TEST_ASSERT_EQUAL_INT(50, r.balancePct);
+    TEST_ASSERT_EQUAL_INT(-1, r.cadenceRpm);
+    TEST_ASSERT_EQUAL_INT(200, r.instantaneousPowerW);
+}
+
+void test_ant_calibration_pages_golden(void) {
+    uint8_t b[8];
+    // offset 903, manual-zero SUCCESS -> the captured `01 AC FF FF FF FF 87 03` the bike accepts
+    nrfant::encodeCalibrationResponse(903, nrfant::CAL_ID_MANUAL_ZERO_SUCCESS, nrfant::ANT_RESERVED, b);
+    const uint8_t wantResp[8] = {0x01, 0xAC, 0xFF, 0xFF, 0xFF, 0xFF, 0x87, 0x03};
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantResp, b, 8);
+    nrfant::encodeCalibrationRequest(b);  // display -> meter manual-zero request
+    const uint8_t wantReq[8] = {0x01, 0xAA, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantReq, b, 8);
+}
+
+void test_ant_common_pages(void) {
+    uint8_t b[8];
+    // manufacturer info: hw 3, mfg 69 (Stages), model 3 -> 50 FF FF 03 45 00 03 00
+    nrfant::encodeManufacturerInfo(3, 69, 3, b);
+    const uint8_t wantMfg[8] = {0x50, 0xFF, 0xFF, 0x03, 0x45, 0x00, 0x03, 0x00};
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantMfg, b, 8);
+    // product info: sw_main 18, serial 11821518, sw_supp 0xFF — check structure + reconstruct serial
+    nrfant::encodeProductInfo(18, 11821518u, nrfant::ANT_RESERVED, b);
+    TEST_ASSERT_EQUAL_UINT8(0x51, b[0]);
+    TEST_ASSERT_EQUAL_UINT8(0xFF, b[1]);
+    TEST_ASSERT_EQUAL_UINT8(0xFF, b[2]);  // sw_supp
+    TEST_ASSERT_EQUAL_UINT8(0x12, b[3]);  // sw_main 18
+    const uint32_t serial = (uint32_t)b[4] | ((uint32_t)b[5] << 8) | ((uint32_t)b[6] << 16) | ((uint32_t)b[7] << 24);
+    TEST_ASSERT_EQUAL_UINT32(11821518u, serial);
+    // battery status round-trips its fields
+    nrfant::encodeBatteryStatus(0, 0x123456u, 0x80, 0x0F, b);
+    TEST_ASSERT_EQUAL_UINT8(0x52, b[0]);
+    TEST_ASSERT_EQUAL_UINT8(0xFF, b[1]);
+    const uint32_t opTime = (uint32_t)b[3] | ((uint32_t)b[4] << 8) | ((uint32_t)b[5] << 16);
+    TEST_ASSERT_EQUAL_UINT32(0x123456u, opTime);
+    TEST_ASSERT_EQUAL_UINT8(0x80, b[6]);
+    TEST_ASSERT_EQUAL_UINT8(0x0F, b[7]);
+}
+
+void test_ant_crank_torque_decode(void) {
+    uint8_t b[8];
+    nrfant::encodeCrankTorque(7, 20, 5000, 12345, 85, b);
+    const uint8_t want[8] = {0x12, 0x07, 0x14, 0x55, 0x88, 0x13, 0x39, 0x30};
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(want, b, 8);
+    nrfant::AntPowerReading r = nrfant::decodePage(b, 8);
+    TEST_ASSERT_TRUE(r.valid);
+    TEST_ASSERT_EQUAL_INT(-1, r.instantaneousPowerW);  // 0x12 power is derived by the caller (stateful)
+    TEST_ASSERT_EQUAL_UINT8(20, r.crankTicks);
+    TEST_ASSERT_EQUAL_UINT16(5000, r.accumulatedCrankPeriod);
+    TEST_ASSERT_EQUAL_UINT16(12345, r.accumulatedTorque);
+    TEST_ASSERT_EQUAL_INT(85, r.cadenceRpm);
+    // a short / unknown page decodes as invalid, never crashes
+    const uint8_t shortF[3] = {0x10, 0x00, 0x00};
+    TEST_ASSERT_FALSE(nrfant::decodePage(shortF, 3).valid);
+    const uint8_t unknown[8] = {0x99, 0, 0, 0, 0, 0, 0, 0};
+    TEST_ASSERT_FALSE(nrfant::decodePage(unknown, 8).valid);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_status_layout);
     RUN_TEST(test_status_none_sentinels);
     RUN_TEST(test_config_roundtrip);
     RUN_TEST(test_buttons_roundtrip);
+    RUN_TEST(test_ant_power_only_golden_and_roundtrip);
+    RUN_TEST(test_ant_power_only_balance_and_no_cadence);
+    RUN_TEST(test_ant_calibration_pages_golden);
+    RUN_TEST(test_ant_common_pages);
+    RUN_TEST(test_ant_crank_torque_decode);
     RUN_TEST(test_config_name_padding_and_truncation);
     RUN_TEST(test_config_rejects_bad_version_and_length);
     RUN_TEST(test_config_rejects_out_of_range);
