@@ -47,18 +47,38 @@ Garmin Connect IQ in-ride remote (builds Edge540/Epix2; record proven, erg/shift
 Mirrors the Phase-0-validated `code/src/sb20proxy/ant/pages.py` byte-for-byte, incl. the captured
 `01 AC FF FF FF FF 87 03` offset-903 calibration vector. Needs neither S340 nor hardware. **Unblocks P4.**
 
-### Spoof-mode port to the nRF  📋 NEXT (host-test + compile now; on-SB20 gated)
-Port `firmware/src/ble/BleCrankPeripheral.{h,cpp}` into the nRF as a **config-selectable mode** (add a
-`spoof|corrector` selector to the `ConfigPacket`, default corrector — the honest identity stays right for
-the track-bike product). Thread through: `encodeStagesCpsMeasurement` (the 0x2F frame — the ESP32 codec
-in `firmware/lib/proxy/Cps.h` is shared, so reuse it), `CP_FEATURE_STAGES` (0x0008030B), sensor-location
-0, the Stages DIS strings + serial, the Stages proprietary service + scan-response UUID + battery service,
-and the **442 company-id + captured `mfgData`** into the control-point handler (`main.cpp` ~619 currently
-passes 0/none). Also the dual-crank pairing rule (SB20 needs both crank IDs findable — sessions 8–9).
-Host-test the framing against the ESP32's golden vectors; compile on `xiao-sense`. **On-SB20 proof →
-run-sheet R3.**
+### Spoof the SB20 — TWO paths (owner, 2026-07-10: do both)
+The SB20's crank↔bike link is **internally ANT+** (`sb20-hardware-reference.md`; session 7 measured
+"SB20 = Stages crank 1:1" on ANT), while the app pairs the crank over **BLE**. So there are two ways for
+the nRF to impersonate the Stages crank — a config-selectable `spoof|corrector` mode gates them (default
+corrector, the honest identity, stays right for the track-bike product):
 
-### P2 — Generic-board seam + Feather env  📋 (compile-verify now; the primary-hardware enabler)
+- **BLE Stages spoof** 📋 NEXT (host-test + compile now; on-SB20 gated). Port the proven ESP32
+  `firmware/src/ble/BleCrankPeripheral.{h,cpp}` into the nRF (Bluefruit): `encodeStagesCpsMeasurement`
+  (the 0x2F frame — shared `Cps.h`, reuse it, torque via the shared `CrankCadence` @ `Cps.h:314`),
+  `CP_FEATURE_STAGES` (0x0008030B), sensor-location 0, Stages DIS strings+serial, the Stages proprietary
+  service + scan-response UUID + battery service, and the **442 company-id + captured `mfgData`** into the
+  control-point handler (`main.cpp` ~619 passes 0/none today). Plus the dual-crank pairing rule (sessions
+  8–9). This is the **proven** path ("Pair with Bluetooth"). On-SB20 proof → **R3**.
+
+- **ANT+ Stages spoof** 🔧 (codec DONE in P1; the ANT radio is P4, S340-gated). The nRF-native path: an
+  ANT+ **master** on the Stages crank's channel params (device # 62144, device-type **0x0B** Bike Power,
+  tx-type 5, period 8182, rf 57 — from `code/…/ant/master.py`) broadcasting Bike Power pages **as the
+  Stages crank** (power-only 0x10 + crank-torque 0x12 + common 0x50/0x51/0x52, and answering the
+  calibration/zero request with the offset-903 response) so the SB20 takes it over its **own internal
+  ANT+ receiver** — potentially the *most faithful* spoof. **P1's `AntBikePower.h` already provides every
+  encoder this needs** (incl. `encodeCalibrationResponse`); it becomes a **mode of the P4 ANT master**.
+  Open question (on-air, R2/R3): does the SB20 accept a *spoofed* ANT+ crank on its internal link? The
+  Python `ant/master.py` + `openant_master.py` already target this identity — the desk codec is proven,
+  only the SB20's acceptance is untested. **Uniquely the nRF** (the ESP32-C3 has no ANT).
+
+### P2 — Generic-board seam + Feather env  ✅ DONE (2026-07-10, commit 01869f9)
+`firmware-nrf/src/board.h` (`boardLed`/`boardLedBegin` + `BOARD_HAS_RGB_LED`/`BOARD_HAS_IMU`) routes the
+LED off the XIAO-only RGB macros; new `[env:feather-nrf52840]` (`-DBOARD_FEATHER`, Adafruit bootloader
+family). **Both envs compile** (xiao-sense no-regression + feather RAM 46%/Flash 23%). The only compile
+blocker off the XIAO was the RGB LED; the IMU driver links + fails safe. **Minor follow-up (deferred):**
+`#if BOARD_HAS_IMU`-gate the IMU include/object to reclaim its flash on Feather — not needed to build.
+<details><summary>original plan detail</summary>
 1. New `firmware-nrf/src/board.h`: `boardLed(r,g,b)` + `boardLedBegin()` mapping — XIAO drives the RGB
    triad, single-LED boards map to `LED_BUILTIN` (lit if any channel on). Route `setLed()`/pinMode/status
    colours (`main.cpp` ~106,~918,~1329) through it. Cap flags `BOARD_HAS_RGB_LED` / `BOARD_HAS_IMU`.
@@ -68,6 +88,7 @@ run-sheet R3.**
    UF2 + buttonless DFU keep working; `-DBOARD_FEATHER`, no IMU). Compile **both** envs green.
 Effort: ~1 hr for a Feather; the pure core needs zero changes. (Nordic dongle / bare module = +½ day of
 bootloader/upload plumbing — see R1.)
+</details>
 
 ### P3 — S340 SoftDevice swap  🔧 HARDWARE (brick-risk; run-sheet R1) — gated on the S340 download
 Custom board json (`softdevice s340 6.1.1 fwid 0x00B9`), custom linker (app FLASH origin **0x31000** vs
