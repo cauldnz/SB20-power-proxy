@@ -52,11 +52,22 @@ last.** Extracting R1a–R1c removes ~700 lines and is the precondition that mak
   `bridgestore::` (no call-site changes). Behaviour-preserving (Serial breadcrumbs verbatim); main.cpp
   **1495 → 1418 lines**; both nRF envs compile, native **28/28**. On-hardware persistence round-trip is
   R-gated (LittleFS glue isn't host-testable), consistent with the other nRF seams.
-- [ ] **R1b — `BridgeService`** (~350 lines: the GATT control/telemetry callbacks `main.cpp:691–975` +
-  char decls `243–269` + the `setup()` begin block). One cohesive service over one already-pure protocol
-  (`lib/bridge/Proto.h`); self-similar write/notify handlers touching a bounded global set
-  (`g_cfg`,`g_corr`,`g_cal`,`g_wk`,`g_cap`). **Prove:** compile both envs; native green; a bench GATT
-  round-trip once hardware is back (R-gated).
+- [~] **R1b — `BridgeService`** — **part 1 done (2026-07-11, commit on `r1b-bridge-service`).** New
+  `firmware-nrf/src/BridgeService.h` owns the GATT *table*: the `53423230-XXXX` UUIDs, the 10
+  characteristic objects, and the `begin()` char-setup block (order-faithful — each 128-bit char burns a
+  vendor-UUID slot, see `configUuid128Count`). main.cpp holds one `g_bridge` and reaches chars via
+  `g_bridge.chX`; main.cpp 1345→1283. Both nRF envs compile, native 28/28, on-hardware GATT round-trip
+  (config/curve/buttons) verified byte-identical.
+  **Part 2 (deferred): migrate the write-callback *bodies*** (`configWriteCb`/`curveWriteCb`/`calWriteCb`/
+  `recCtlWriteCb`/`wkWriteCb`/`buttonsWriteCb` + the notify/publish helpers) into the class. On-hardware
+  this session revealed the coupling is **wider than the audit's "bounded set of 5"**: the six callbacks
+  touch **~30 globals** across config/correction/calibration/recording/erg/scanning/shifter and call
+  Bluefruit's scanner/central directly (74 char-references total). A wholesale move needs an explicit
+  `BridgeContext` (references + action hooks) so the coupling is explicit not implicit — and, critically,
+  **3 of the 6 callbacks (cal/rec/wk) can only be *behaviour*-verified with a reference meter / IMU
+  activity / an FTMS trainer connected.** So part 2 is best done with the bike-side hardware present.
+  Part 1 deliberately reroutes only char *access* (no callback logic changed) so it's behaviour-identical
+  by construction and fully bench-verifiable now.
 - [ ] **R1c — `ImuRecorder`** (~200 lines: `pumpDownload`, `imuSelfTest`, `recCtlWriteCb`, IMU globals,
   loop pacing). Buffer is already pure (`lib/bridge/ImuCapture.h`); this is the hardware + BLE-download
   glue. **Prove:** compile; `IMUTEST` serial self-test once on hardware.
