@@ -1,0 +1,150 @@
+{
+  "_doc": "SINGLE SOURCE for the Bridge GATT contract. code/scripts/gen_bridge.py emits the mirrors (web/bridge-codec.js, golden vectors, C++ golden test) from this. Grounded 1:1 in firmware-nrf/lib/bridge/Proto.h + GATT.md. All fields little-endian. Byte 0 of every packet is the PROTO_VER const. Offsets are auto-computed from field order. DO NOT hand-edit the generated files; edit this + rerun gen_bridge.py.",
+  "proto_ver": 1,
+  "base_uuid": "53423230-XXXX-4bd9-a4ae-1b4e2c633a1d",
+
+  "enums": {
+    "RecCmd":       { "Stop": 0, "Start": 1, "Erase": 2, "Download": 3, "SetRate": 4 },
+    "RecState":     { "Idle": 0, "Recording": 1, "Downloading": 2 },
+    "CalCmd":       { "Start": 1, "Cancel": 2, "Save": 3, "Discard": 4 },
+    "CalWireState": { "Idle": 0, "Collecting": 1, "Fitted": 2 },
+    "WkCmd":        { "SetTrainer": 1, "LoadPreset": 2, "Start": 3, "Pause": 4, "Resume": 5, "Stop": 6, "Unload": 7, "BiasStep": 8 }
+  },
+
+  "packets": {
+    "Status": {
+      "char": "0001", "dir": "notify", "len": 20,
+      "fields": [
+        { "name": "ver",  "type": "const", "value": 1 },
+        { "type": "flags", "bits": ["srcConnected", "outAdvertising", "recording", "srcIsAnt", "outIsAnt"] },
+        { "name": "srcPowerW",  "type": "i16", "none": -1 },
+        { "name": "outPowerW",  "type": "i16", "none": -1 },
+        { "name": "cadenceRpm", "type": "i16", "none": -1 },
+        { "name": "balancePct", "type": "i8",  "none": -1 },
+        { "name": "batteryPct", "type": "u8",  "none": 255 },
+        { "name": "scale",      "type": "scaled", "raw": "u16", "scale": 1000 },
+        { "name": "offset",     "type": "scaled", "raw": "i16", "scale": 10 },
+        { "name": "recSamples", "type": "u32" },
+        { "name": "uptimeS",    "type": "u16" }
+      ]
+    },
+
+    "Config": {
+      "char": "0002", "dir": "rw", "len": 44,
+      "fields": [
+        { "name": "ver", "type": "const", "value": 1 },
+        { "type": "flags", "bits": ["srcIsAnt", "outIsAnt", "singleSided", "spoof"] },
+        { "name": "scale",     "type": "scaled", "raw": "u16", "scale": 1000, "min": 500, "max": 2000 },
+        { "name": "offset",    "type": "scaled", "raw": "i16", "scale": 10,   "min": -1000, "max": 1000 },
+        { "name": "srcFilter", "type": "str", "len": 19 },
+        { "name": "outName",   "type": "str", "len": 19 }
+      ],
+      "validate": "unpack rejects (returns false) when scale raw not in 500..2000 or offset raw not in -1000..1000; ANT bits reject-write until the S340 SoftDevice is present"
+    },
+
+    "Buttons": {
+      "char": "0009", "dir": "rw", "len": 8,
+      "fields": [
+        { "name": "ver",     "type": "const", "value": 1 },
+        { "name": "enabled", "type": "u8", "bool": true },
+        { "name": "act",     "type": "u8", "repeat": 6, "note": "action-option indices into sb20ActionOptions (0 = none)" }
+      ]
+    },
+
+    "RecState": {
+      "char": "0003", "dir": "notify", "len": 12,
+      "fields": [
+        { "name": "ver",      "type": "const", "value": 1 },
+        { "name": "state",    "type": "enum", "enum": "RecState" },
+        { "name": "rateHz",   "type": "u8" },
+        { "name": "reserved", "type": "u8", "value": 0 },
+        { "name": "samples",  "type": "u32" },
+        { "name": "capacity", "type": "u32" }
+      ]
+    },
+
+    "CalState": {
+      "char": "0006", "dir": "notify", "len": 16,
+      "fields": [
+        { "name": "ver",          "type": "const", "value": 1 },
+        { "name": "state",        "type": "enum", "enum": "CalWireState" },
+        { "name": "reserved",     "type": "u8", "value": 0 },
+        { "name": "pairCount",    "type": "u16" },
+        { "name": "minPairs",     "type": "u16" },
+        { "name": "residual",     "type": "scaled", "raw": "i16", "scale": 10 },
+        { "name": "coverage",     "type": "u8", "repeat": 6 },
+        { "name": "enoughToFit",  "type": "u8", "bool": true }
+      ]
+    },
+
+    "WkState": {
+      "char": "0008", "dir": "notify", "len": 18,
+      "fields": [
+        { "name": "ver", "type": "const", "value": 1 },
+        { "type": "flags", "bits": ["loaded", "running", "paused", "ergConnected", "ergControlled"] },
+        { "name": "targetW",    "type": "i16", "note": "already includes biasW" },
+        { "name": "segIndex",   "type": "u8" },
+        { "name": "nSeg",       "type": "u8" },
+        { "name": "segRemainS", "type": "u16" },
+        { "name": "ergSentW",   "type": "i16" },
+        { "name": "elapsedS",   "type": "u16" },
+        { "name": "biasW",      "type": "i16" },
+        { "name": "reserved",   "type": "u32", "value": 0, "note": "Proto.h zeroes out[14..17] (4 bytes)" }
+      ]
+    },
+
+    "Curve": {
+      "char": "0005", "dir": "rw", "variable": true,
+      "fields": [
+        { "name": "ver", "type": "const", "value": 1 },
+        { "name": "points", "type": "array", "count": "u8", "max": 8, "of": [
+          { "name": "powerW",  "type": "u16" },
+          { "name": "factor",  "type": "scaled", "raw": "u16", "scale": 1000, "min": 250, "max": 4000 }
+        ] }
+      ],
+      "validate": "unpack returns -1 when nPoints > 8 or any factor raw not in 250..4000; empty (0 points) clears the curve"
+    },
+
+    "ScanList": {
+      "char": "0007", "dir": "notify", "variable": true,
+      "fields": [
+        { "name": "ver", "type": "const", "value": 1 },
+        { "name": "entries", "type": "array", "count": "u8", "max": 8, "slot_len": 21, "of": [
+          { "name": "name",  "type": "str", "len": 19 },
+          { "name": "rssi",  "type": "i8" },
+          { "type": "flags", "bits": ["isCps", "isFtms", "isStagesCrank"] }
+        ] }
+      ]
+    }
+  },
+
+  "writes": {
+    "_doc": "Control-point writes: [ver, cmd, args...]. Small + dispatched, listed for the JS/CIQ senders.",
+    "RecCtl":    { "char": "0003", "cmd_enum": "RecCmd",  "args": "SetRate adds [rateHz] (13|26|52|104)" },
+    "Calibrate": { "char": "0006", "cmd_enum": "CalCmd",  "args": "Start adds refFilter[<=19]" },
+    "Workout":   { "char": "0008", "cmd_enum": "WkCmd",   "args": "SetTrainer +trainerFilter[<=19]; LoadPreset +presetIndex u8; BiasStep +delta i8" }
+  },
+
+  "caps": {
+    "_doc": "Per-transport capability flags the SPA reads to gate UI. Verified live 2026-07-11 (scalarCorrection:false gates Scale/Offset off on the ESP32/HTTP transport).",
+    "flags": ["config", "scan", "calibration", "workout", "recording", "buttons", "antCapable", "scalarCorrection"],
+    "ble":  { "config": true, "scan": true, "calibration": true, "workout": true, "recording": true, "buttons": true, "antCapable": true, "scalarCorrection": true },
+    "http": { "config": true, "scan": true, "calibration": true, "workout": true, "recording": false, "buttons": true, "antCapable": false, "scalarCorrection": false }
+  },
+
+  "buttonActions": {
+    "_doc": "The shared sb20ActionOptions order (index<->token). Index is the Buttons-char wire value. Mirrors firmware/lib/proxy/Sb20ButtonMap.h::sb20ActionOptions; parity-checked by code/tests/test_wire_format_parity.py + gen_bridge.py --check (diffs this vs the firmware list).",
+    "options": [
+      { "token": "none",       "label": "None" },
+      { "token": "shift_up",   "label": "OBC Shift Up" },
+      { "token": "shift_down", "label": "OBC Shift Down" },
+      { "token": "erg_up",     "label": "OBC ERG Up" },
+      { "token": "erg_down",   "label": "OBC ERG Down" },
+      { "token": "lap",        "label": "OBC Lap" },
+      { "token": "menu",       "label": "OBC Menu" },
+      { "token": "pause",      "label": "OBC Pause" },
+      { "token": "bias_up",    "label": "Erg target +10W (local)" },
+      { "token": "bias_down",  "label": "Erg target -10W (local)" }
+    ]
+  }
+}
