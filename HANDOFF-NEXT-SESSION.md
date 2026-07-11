@@ -99,9 +99,11 @@ Everything above is **compile- + host-verified**, and **merged to `main` via PR 
 The desk box could only compile + host-test. **This machine can verify the parts that were gated.** In
 rough priority:
 
-- [ ] **R1a persistence round-trip (nRF).** Flash `xiao-sense`. Set a config / curve / button binding
-  (via the web app over Web Bluetooth, or the serial console), **reboot**, confirm they survive. This is
-  the LittleFS glue R1a moved that isn't host-testable. Quick, high-confidence.
+- [x] **R1a persistence round-trip (nRF).** ✅ **PASS (2026-07-11).** Wrote config (flags/scale/offset/
+  src/out) + a 3-point curve over the Bridge GATT (Config `0002` + Curve `0005`), reflashed (LittleFS
+  survives a flash — the boot-time config load is the persistence test), re-read: every field survived
+  (`scale=1.234 offset=-5.0 single2x=1 src='CAULD' out='RT-TEST'`, curve `[100:1.0,200:1.25,300:1.5]`).
+  See decisions.md 2026-07-11.
 - [x] **ESP32 SPA-over-HTTP — the "unverified until U4" path.** ✅ **PASS (2026-07-11)** over the LAN
   against a provisioned ESP32 (`192.168.0.92`): (a) the **spoof/corrector toggle** `POST /config` persists
   through the reboot and the partial-update merge preserves the curve/name/filter; (b) **Scale/Offset are
@@ -109,11 +111,14 @@ rough priority:
   (c) `/setup/save` **preserves mode + curve** (changed the source to FAVERO, `mode:corrector` +
   `has_curve:true` survived). Board restored afterward. See decisions.md 2026-07-11. *(NB: verify over the
   LAN — never join the board's AP from the WiFi-only host; it cuts Claude's own link.)*
-- [ ] **nRF BLE spoof identity (partial R3 — no SB20 required).** Flash the spoof-mode build (config
-  `spoof`=on, or serial `SPOOF1` + reboot). Use the **sniffer dongle** or **nRF Connect** on a phone to
-  confirm it advertises as `Stages 62144` with the Stages proprietary service in the scan response, emits
-  the 0x2F measurement, and answers the `0x10` enhanced-offset with company-id **442** + the captured mfg
-  data. **Full R3** (pair a real SB20 + complete calibrate/zero) still needs the SB20 bike.
+- [x] **nRF BLE spoof identity (partial R3 — no SB20 required).** ✅ **PASS (2026-07-11)** via laptop
+  bleak. In spoof mode it advertises as `Stages 62144` with the Stages proprietary service in the scan
+  response; DIS = Stages Cycling / SPM2 / 1.8.2 / 11821518; CP-Feature `0x0008030B`; the Battery service
+  is present; and the `0x10` enhanced-offset answers `2010010000ba01048503b703` (company id **442** =
+  `0x01BA` + the 5-byte `SPOOF_MFG_DATA`). The live **0x2F** frame needs a source meter — host-verified
+  byte-for-byte (`test_bridge` golden vectors; shared `encodeStagesCpsMeasurement`) and deferred to a real
+  source. **Full R3** (pair a real SB20 + complete calibrate/zero) still needs the SB20 bike. See
+  decisions.md 2026-07-11.
 - [ ] **Wire-format parity** — already host/CI-green (`code/tests/test_wire_format_parity.py`); no
   hardware needed, but good to run.
 - [ ] **ANT+ stick** — enables the **Python** ANT tooling (`scripts/01_capture_stages.py`,

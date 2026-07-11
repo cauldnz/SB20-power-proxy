@@ -2856,3 +2856,77 @@ shared network (no host-WiFi juggling). All three checks pass:
 
 Board restored to its original config afterward (`mode:spoof, src_filter:ASSIOMA, out_name:Stages 62145,
 has_curve:true`). This closes the last hardware-gated §4 verification.
+
+## 2026-07-11 — Hardware verification session (nRF on the hardware box): R1a + spoof PASS; a real VS-UUID bug found & fixed
+
+First session on the machine that actually has the nRF/ESP32/ANT hardware, so the compile-only
+verifications from 2026-07-10 (HANDOFF §4) could finally run on-air. Toolchain provisioned + doctor'd;
+`pytest` 451 passed / 3 skipped, `ruff` clean; ESP32 native 202/202, nRF native 28/28; all sanity builds
+(`esp32c3-oled-live-ota`, `xiao-sense`, `feather-nrf52840`) green. XIAO on COM9, ESP32-C3 on COM5, ANT
+stick + nRF sniffer dongle present.
+
+**R1a persistence round-trip (nRF) — PASS.** Wrote a distinctive config over the Bridge GATT (Config
+`0002`: `flags=0x04` single-sided, `scale=1.234`, `offset=-5.0`, `src='CAULD'`, `out='RT-TEST'`) + a
+3-point curve (Curve `0005`: `[100W:1.0, 200W:1.25, 300W:1.5]`), reflashed the app (LittleFS survives a
+flash, so the boot-time load exercises the persistence path — per HANDOFF §6), and re-read: **every field
+survived byte-for-byte** and the board advertised its persisted `out='RT-TEST'` name. The `BridgeConfigStore`
+LittleFS glue R1a extracted works on hardware.
+
+**nRF BLE Stages-crank spoof identity — PASS (static + control-point; no SB20 needed).** In spoof mode
+(`spoof=1`, reboot) the XIAO advertises as **`Stages 62144`** with the Stages proprietary service
+(`d445fe01-…`) in the scan response; DIS reads **Stages Cycling / SPM2 / 1.8.2 / 11821518**; CP-Feature =
+**`0x0008030B`**; the Battery service is present. The enhanced offset-comp (`0x10`) control-point answer is
+**`2010010000ba01048503b703`** = resp `0x20`, req `0x10`, success, offset `0`, company id **442 (`0x01BA`)**,
+then the 5-byte `SPOOF_MFG_DATA` `04 85 03 B7 03` — exactly the captured real-crank reply. The live **0x2F**
+measurement needs a source meter (measNotifyCb only fires on source data); it stays host-verified
+byte-for-byte (`test_bridge` golden vectors + the shared `encodeStagesCpsMeasurement`) and is deferred to a
+real source. (The WinRT `fake_meter` peripheral wasn't a reliable source here — the known 2026-06-22 WinRT
+`advertising=False` quirk + a triple-role-on-one-adapter contention; not worth chasing when the on-bike
+session provides a real Assioma.) **Full R3 still needs the SB20 bike.**
+
+**BUG FOUND + FIXED — the nRF only exposed Bridge chars `0001`–`0008`; the Buttons char `0009` AND the
+whole OBC button-state service were silently missing over the air.** This is the *first on-air GATT
+enumeration* of the nRF (compile/host tests can't see it), and it exposed a real defect. Diagnosis chain:
+- A bleak GATT dump (uncached) showed the Bridge service ending at char `0008`, no OBC service. Not a
+  Windows cache artifact (a spoof-mode reflash correctly surfaced the new Battery/Stages services, and the
+  corrector-mode dump correctly *lacked* them — so uncached discovery reflects the live table).
+- First hypothesis (attribute-table overflow, default `BLE_GATTS_ATTR_TAB_SIZE_DEFAULT = 0x580 = 1408 B`)
+  was **wrong**: `Bluefruit.configAttrTableSize(0x1000)` changed nothing, and `begin()` succeeding for
+  `0001`–`0008` proves the table config applied.
+- Ground truth via a temporary on-device `DBG` serial command printing the `.begin()` return codes:
+  `chButtons.begin()=7`, `obcSvc.begin()=7`, `chObcButton.begin()=7`. **`7 = NRF_ERROR_INVALID_PARAM`**
+  (not `NO_MEM=4`), which `sd_ble_gatts_characteristic_add`/`service_add` return when the attribute's
+  vendor-specific UUID base was never registered (`sd_ble_uuid_vs_add` failed → UUID type stays UNKNOWN).
+- **Root cause: vendor-specific (128-bit) UUID slot exhaustion.** Our custom UUIDs
+  (`53423230-XXXX-…` Bridge, `d273f680-…` OBC, the Stages base) put their varying 16-bit id at bytes
+  **[10][11]**, but the SoftDevice's VS-UUID aliasing keys on bytes **[12][13]** (constant `0x30,0x32`
+  here). So the SoftDevice treats **every Bridge characteristic as its own distinct base** and consumes one
+  of the **default 10** VS-UUID slots each: DFU (1) + Bridge service `0000` + chars `0001`–`0008` = 10
+  slots, all gone by the time `chWk` (`0008`) registers. `chButtons` (`0009`) and the OBC service are the
+  11th/12th → no slot → `INVALID_PARAM` → absent on air. (Also why only the *last-registered* attributes
+  drop, and why it's `INVALID_PARAM` not `NO_MEM`.)
+- **Fix (1 line):** `Bluefruit.configUuid128Count(24);` before `Bluefruit.begin()` in
+  `firmware-nrf/src/main.cpp`. **Verified on-air:** after the fix, `DBG` shows all three `begin()=0`, a
+  fresh GATT dump lists Bridge `0001`–**`0009`** plus the OBC service `d273f680`/char `d273f681`, and a
+  Buttons `0009` write round-trip works (wrote `[6,5,4,3,2,1]`, read back identical). Both nRF envs compile,
+  native 28/28. Shipping on branch `fix/nrf-attr-table-size`. **Impact:** the SB20-shifter web-config
+  binding and the OBC re-broadcast were shipped-but-dead on the nRF; this restores them. (The ESP32 build is
+  a separate codebase and unaffected.) *Note the WinRT read cache: a `read_gatt_char` immediately after a
+  `write_gatt_char` in the same bleak connection returns the pre-write value; a fresh connection shows the
+  truth — cost a couple of false "write rejected" reads before this was recognised.*
+
+**ESP32-C3 WiFi setup-AP not appearing (owner-reported regression) — diagnosed, not yet resolved (needs
+the desk).** The owner reported the C3 "in setup mode" but no `SB20-Setup` AP visible on their iPhone, and
+called it a **regression** (it used to work). Established remotely: (a) the laptop's own WiFi scan sees 5
+neighbouring APs but **no `SB20-Setup`** (so the scan is healthy and the AP genuinely isn't broadcasting);
+(b) `sb20proxy.local` doesn't resolve and `192.168.4.1` is unreachable (not connected to a portal AP);
+(c) the board **is alive on BLE** — it advertises `OBC-SB20` (MAC `38:44:BE:45:E9:A6`, the session-11 OBC
+devmode identity from `POST /obc/devmode/on`, which persists+reboots). C3-OLED routes logs to `/log` (HTTP)
+not USB CDC, so COM5 is silent; the definitive next step (OLED readout or a boot-log capture) needs the
+owner at the desk. Working theory to check first: OBC **devmode** persisted on + away from home WiFi → the
+stored creds fail here → the board should fall to the portal after the 15 s join timeout, but the AP isn't
+coming up (candidate causes: a boot-guard reset loop, or the C3 WiFi/BLE-coex softAP not beaconing while
+BLE advertises). **Since `obcDevmode` is a station-server-only toggle and it's persisted, the cleanest
+recovery when back at the desk is to power it near home WiFi (or clear creds via the portal/`/forget`) so
+it rejoins, then turn devmode off.** Filed as an open task; ESP32 SPA-over-HTTP verification (HANDOFF §4)
+is blocked on the same WiFi access.
