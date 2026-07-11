@@ -2789,6 +2789,74 @@ already has the fix idiom (`test_calibration_parity.py`, `test_ota_sign.py`, `te
    field-name vocabulary would remove the translation layer + reader friction. (The three *serializers*/
    storage backends and the scalar-vs-curve *model* are justified by transport and left alone.)
 
+## 2026-07-11 — ESP32-C3 setup-portal AP was up but invisible: root-caused to STA-reconnect thrash (+ per-device SSID, BLE-off)
+
+Owner reported the C3 "in setup mode" (OLED shows the portal) but the `SB20-Setup` AP never appeared on
+a phone — a **regression**. Diagnosed + fixed on hardware. Three distinct issues, three fixes; verified
+end-to-end (AP beacons, associates, DHCP, and the portal page loads).
+
+**Symptom chain (what the boot log finally showed).** The C3-OLED build logs to `/log` over HTTP, not
+USB-CDC, so COM5 is silent on a passive read; a reset-and-capture of the boot log (control-line reset,
+reopen after the native-USB re-enumerates — `scratchpad/reset_capture_c3.py`) was the key instrument. It
+printed: `setup portal up: AP 'Setup-E9A4' (WPA2; 0 networks scanned)`. **"0 networks scanned"** was the
+tell — the board's own STA scan found nothing while the laptop saw 5 APs, i.e. the C3 WiFi radio was
+wedged.
+
+**Root cause (the real one).** After the 15 s join failure (the board had stored home creds; away from
+home they don't match), it falls to the **join-fail portal** but the STA side keeps **auto-reconnecting to
+the absent stored network in the background**. On the ESP32-C3's single shared 2.4 GHz radio that thrash
+means the SoftAP never holds a channel long enough to **beacon** (AP "up" but invisible/unconnectable) and
+the picker scan returns 0. A **fresh** onboarding portal has no stored creds → no thrash → it works —
+which is exactly why fresh worked and the join-fail recovery didn't. **Fix:** in `startPortal_()`, after
+`WiFi.mode(WIFI_AP_STA)`, `WiFi.setAutoReconnect(false)` + `WiFi.disconnect(false,false)` (keep the radio
+on for the AP + one-shot scan, keep stored creds — a Save reboots to apply). After the fix the boot log
+showed **`4 networks scanned`** and the `Setup-E9A4` AP appeared in a laptop scan; joining it (DHCP →
+`172.29.4.2`) and `GET http://172.29.4.1/` returned the full setup page with a live network picker.
+
+**Two more portal fixes shipped alongside (same branch `feat/unique-setup-ap-ssid`):**
+- **Per-device AP SSID** — `WIFI_AP_SSID` base changed `SB20-Setup` → **`Setup`**, and a new pure
+  host-tested `setupApSsid()` (`SetupPin.h`) appends the last 2 MAC bytes → **`Setup-A6E9`**. Two boards in
+  setup mode at once were raising identically-named `SB20-Setup` APs that collide on 2.4 GHz; the suffix
+  disambiguates. Short "Setup" base keeps it inside the 0.42" OLED's ~14-char row. Threaded through
+  `softAP()`, the OLED portal rows (`formatOledLines` now takes the SSID), the CYD QR, and the boot log.
+- **BLE held off during ANY portal** (not just fresh onboarding) — `main.cpp` gate `!wifi.inPortal() ||
+  wifi.portalAfterJoinFail()` → `!wifi.inPortal()`. Active BLE (crank adv + the OBC/shifter scan) starves
+  the SoftAP data path on the CYD and adds radio load on the C3; the join-fail portal used to keep BLE on
+  "so a ride isn't bricked", but a portal you can't reach is worse. NimBLE **init** (no adv/scan) is fine —
+  only advertising/scanning is gated. (Owner picked this over an NVS-erase recovery.) **Follow-up:** the
+  `/wifi/off` ride-mode route drops WiFi but does **not** start BLE, so the ride-away-from-home path now
+  needs a "start BLE" escape in the portal — logged as a follow-up (that path was already broken while the
+  AP was starved).
+
+Native host tests 204/204 (added `setupApSsid` + OLED-SSID coverage). Verified on the C3 hardware.
+
+**OPERATIONAL LESSON — never take the dev host's WiFi down.** The hardware machine's **only** internet is
+WiFi, so `netsh wlan disconnect` (to force a clean scan) or joining an ESP board's AP from the host drops
+the host's internet and **cuts Claude Code's own API connection**. Verify an ESP AP via the **serial boot
+log**, not by scanning from the host; to reach a board over HTTP, put it on the **same LAN** (owner
+provisions it to the local WiFi) and hit it over the shared network. (Memory: `host-wifi-is-only-internet`.)
+
+## 2026-07-11 — ESP32 SPA-over-HTTP path verified on hardware (HANDOFF §4 item 2) — PASS
+
+Once the portal fix let a board join the LAN (an ESP32 at `192.168.0.92`, mode `spoof`, `src_filter`
+`ASSIOMA`, `has_curve:true`), the "unverified until U4" SPA/HTTP path was exercised end-to-end over the
+shared network (no host-WiFi juggling). All three checks pass:
+- **(a) spoof/corrector toggle persists via `POST /config` + the merge.** `POST /config` with only
+  `mode=corrector` returned `{"ok":true,"reboot":true}`; after the reboot `GET /config` read
+  `mode:corrector` **and** preserved every unsent field (`src_filter:ASSIOMA`, `out_name:Stages 62145`,
+  `has_curve:true`) — the partial-update merge (`mergeSpaConfigForm`) works, no CSRF friction with
+  same-origin headers.
+- **(b) Scale/Offset hidden on the ESP32.** The served `/app` carries two capability sets — BLE
+  `scalarCorrection:true` vs HTTP/ESP32 `scalarCorrection:false` ("the ESP32's correction is a fitted
+  curve, not editable scale/offset") — and gates the inputs with `const scalar = t.caps.scalarCorrection
+  !== false`. The `d58426e` "lying control" fix is live on-device.
+- **(c) `/setup/save` preserves mode + curve.** `POST /setup/save name=FAVERO` (a source change) rebooted
+  and came back `src_filter:FAVERO` but `mode:corrector` + `has_curve:true` intact — the `e84d189`
+  `mergeSetupForm` fix holds (pre-fix it rebuilt fresh, wiping mode→default + the curve).
+
+Board restored to its original config afterward (`mode:spoof, src_filter:ASSIOMA, out_name:Stages 62145,
+has_curve:true`). This closes the last hardware-gated §4 verification.
+
 ## 2026-07-11 — Hardware verification session (nRF on the hardware box): R1a + spoof PASS; a real VS-UUID bug found & fixed
 
 First session on the machine that actually has the nRF/ESP32/ANT hardware, so the compile-only

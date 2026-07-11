@@ -104,12 +104,13 @@ rough priority:
   survives a flash — the boot-time config load is the persistence test), re-read: every field survived
   (`scale=1.234 offset=-5.0 single2x=1 src='CAULD' out='RT-TEST'`, curve `[100:1.0,200:1.25,300:1.5]`).
   See decisions.md 2026-07-11.
-- [ ] **ESP32 SPA-over-HTTP — the "unverified until U4" path.** Flash `esp32c3-oled-live-ota`, join WiFi,
-  open `http://<board-ip>/app`. Verify end-to-end: (a) the **spoof/corrector toggle** actually
-  `POST`s `/config` + persists (reboot to apply the identity); (b) **Scale/Offset are hidden** on the
-  ESP32 (curve-only, the `scalarCorrection` gate); (c) `/setup/save` now **preserves mode + curve** (set
-  corrector+curve, change the source via `/setup`, confirm it didn't revert to spoof / wipe the curve).
-  This validates a whole path that is only compile-verified today.
+- [x] **ESP32 SPA-over-HTTP — the "unverified until U4" path.** ✅ **PASS (2026-07-11)** over the LAN
+  against a provisioned ESP32 (`192.168.0.92`): (a) the **spoof/corrector toggle** `POST /config` persists
+  through the reboot and the partial-update merge preserves the curve/name/filter; (b) **Scale/Offset are
+  hidden** on the ESP32 (the served `/app` sets `scalarCorrection:false` for HTTP and gates the inputs);
+  (c) `/setup/save` **preserves mode + curve** (changed the source to FAVERO, `mode:corrector` +
+  `has_curve:true` survived). Board restored afterward. See decisions.md 2026-07-11. *(NB: verify over the
+  LAN — never join the board's AP from the WiFi-only host; it cuts Claude's own link.)*
 - [x] **nRF BLE spoof identity (partial R3 — no SB20 required).** ✅ **PASS (2026-07-11)** via laptop
   bleak. In spoof mode it advertises as `Stages 62144` with the Stages proprietary service in the scan
   response; DIS = Stages Cycling / SPM2 / 1.8.2 / 11821518; CP-Feature `0x0008030B`; the Battery service

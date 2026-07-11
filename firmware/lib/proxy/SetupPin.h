@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <cstdio>
 #include <string>
 
 // monocypher (vendored) at file scope — keyed BLAKE2b is our MAC primitive. See OtaVerify.h.
@@ -31,6 +32,19 @@ inline std::string deriveSetupPin(const uint8_t* mac, size_t macLen, const std::
     }
     buf[8] = '\0';
     return std::string(buf);
+}
+
+// Build the per-device setup-AP SSID: the base name + "-" + the last 2 MAC bytes as 4 uppercase hex
+// (e.g. "Setup-A6E9"). Multiple boards in setup mode at once would otherwise all raise an
+// identically-named AP on 2.4 GHz — they collide and clients can't reliably see or associate with
+// any of them. The suffix is deterministic (re-derivable from the MAC) and unique per board; the
+// short "Setup" base keeps "Setup-A6E9" (10 chars) well inside the 0.42" OLED's ~14-char row while
+// 2 bytes (65536 values) give good collision resistance. macLen<2 -> base unchanged.
+inline std::string setupApSsid(const std::string& base, const uint8_t* mac, size_t macLen) {
+    if (macLen < 2) return base;
+    char suf[6];
+    snprintf(suf, sizeof(suf), "-%02X%02X", mac[macLen - 2], mac[macLen - 1]);
+    return base + suf;
 }
 
 }  // namespace sb20proxy

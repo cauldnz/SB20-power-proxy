@@ -227,7 +227,8 @@ static void oledTask(void*) {
         const int balPct = proxy.lastSource().balance_half_pct >= 0
                                ? proxy.lastSource().balance_half_pct / 2 : -1;  // left %, -1 = none
         auto lines = formatOledLines(mode, ip, proxy.lastOutput().power_w,
-                                     proxy.lastOutput().cadence_rpm, rssi, balPct, setupPin);
+                                     proxy.lastOutput().cadence_rpm, rssi, balPct, setupPin,
+                                     WifiLink::apSsid());
         if (lines != last) {
             oled.drawLines(lines);
             last = lines;
@@ -990,23 +991,27 @@ void setup() {
         return s;
     });
     if (wifi.inPortal()) {
-        Serial.printf("[sb20proxy] WiFi not configured; setup portal up on AP 'SB20-Setup' -> %s\n",
-                      Config::SETUP_PORTAL_URL);
+        Serial.printf("[sb20proxy] WiFi not configured; setup portal up on AP '%s' -> %s\n",
+                      WifiLink::apSsid(), Config::SETUP_PORTAL_URL);
     } else {
         Serial.printf("[sb20proxy] WiFi connected; status at http://%s/\n",
                       WiFi.localIP().toString().c_str());
     }
 #endif
 
-    // BLE comes up AFTER (and only outside) the setup portal: on the classic-ESP32 CYD, ANY BLE
-    // activity starves the SoftAP's data path — association + DHCP squeak through, but ARP/TCP
-    // never flow, so the portal page can't load (2026-07-04; the S3/C3 cores tolerate it).
-    // Onboarding always ends in an esp_restart (/save and /forget both reboot), so holding BLE
-    // off here costs nothing: the next boot joins the home WiFi and starts BLE normally.
+    // BLE comes up AFTER (and only outside) the setup portal — for BOTH fresh onboarding and the
+    // join-failed recovery portal. Active BLE (crank advertising, and especially the OBC/shifter
+    // scan) starves the SoftAP: on the classic-ESP32 CYD it kills the data path (association + DHCP
+    // squeak through, but ARP/TCP never flow), and on the ESP32-C3 the OBC-era BLE load starves the
+    // AP *beacon* itself — the portal is up (OLED shows it) but never becomes visible/connectable, so
+    // you can neither re-provision nor reach ride mode (2026-07-11: confirmed on a C3 sitting in the
+    // join-fail portal while advertising OBC-SB20). A working portal (which offers both /setup and the
+    // /wifi/off ride-mode escape) beats an auto-BLE portal you can't reach — so hold BLE off whenever
+    // the portal is up. Onboarding ends in an esp_restart (/save, /forget, /wifi/off all reboot or
+    // drop the radio), so BLE starts on the next boot. NimBLEDevice::init above (no adv/scan) is fine
+    // — only active advertising/scanning starves the AP, which is exactly what we gate here.
 #if USE_WIFI
-    if (!wifi.inPortal() || wifi.portalAfterJoinFail()) {
-        // Normal boot — or the join-failed recovery portal, where BLE must still run so a ride
-        // away from the home network isn't bricked (the portal is just a background affordance).
+    if (!wifi.inPortal()) {
         proxy.begin();  // crank advertises; source begins (scan, or nothing for mock)
 #if !USE_MOCK_METER
         if (g_calibrating) refMeter.begin();  // 2nd central joins the shared scan
