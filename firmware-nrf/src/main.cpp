@@ -38,6 +38,7 @@
 #include "WorkoutRuntime.h"  // pure structured-workout clock (shared with ESP32) (P4)
 
 #include "BridgeConfigStore.h"  // the LittleFS persistence seam (config/curve/trainer/buttons)
+#include "BridgeService.h"      // the Bridge GATT service seam (UUIDs + chars + begin() wiring)
 
 using namespace sb20proxy;
 using namespace nrfbridge;
@@ -164,31 +165,9 @@ static BLEDfu bledfu;   // BLE OTA (Adafruit buttonless DFU) — flash over Blue
 static uint16_t g_crankLenHalfMm = 345;  // 172.5 mm
 
 // ================= the Bridge service (GATT.md) ================================================
-// 53423230-XXXX-4bd9-a4ae-1b4e2c633a1d, little-endian; bytes [10],[11] carry XXXX.
-#define BRIDGE_UUID(id)                                                                       \
-    {0x1d, 0x3a, 0x63, 0x2c, 0x4e, 0x1b, 0xae, 0xa4, 0xd9, 0x4b, (uint8_t)(id), \
-     (uint8_t)((id) >> 8), 0x30, 0x32, 0x42, 0x53}
-static const uint8_t kUuidBridgeSvc[16] = BRIDGE_UUID(0x0000);
-static const uint8_t kUuidStatus[16] = BRIDGE_UUID(0x0001);
-static const uint8_t kUuidConfig[16] = BRIDGE_UUID(0x0002);
-static const uint8_t kUuidRecCtl[16] = BRIDGE_UUID(0x0003);
-static const uint8_t kUuidRecData[16] = BRIDGE_UUID(0x0004);
-static const uint8_t kUuidCurve[16] = BRIDGE_UUID(0x0005);
-static const uint8_t kUuidCal[16] = BRIDGE_UUID(0x0006);
-static const uint8_t kUuidScan[16] = BRIDGE_UUID(0x0007);
-static const uint8_t kUuidWk[16] = BRIDGE_UUID(0x0008);
-static const uint8_t kUuidButtons[16] = BRIDGE_UUID(0x0009);
-
-static BLEService bridgeSvc(kUuidBridgeSvc);
-static BLECharacteristic chStatus(kUuidStatus);
-static BLECharacteristic chConfig(kUuidConfig);
-static BLECharacteristic chRecCtl(kUuidRecCtl);
-static BLECharacteristic chRecData(kUuidRecData);
-static BLECharacteristic chCurve(kUuidCurve);   // correction-curve write/read (P1)
-static BLECharacteristic chCal(kUuidCal);       // calibration control + state (P2)
-static BLECharacteristic chScan(kUuidScan);     // scanned-source list for the web picker (P3)
-static BLECharacteristic chWk(kUuidWk);         // workout + erg control + state (P4)
-static BLECharacteristic chButtons(kUuidButtons);  // SB20-shifter -> action binding + sink enable
+// The GATT table (UUIDs + characteristic objects + the begin() wiring) is the BridgeService seam;
+// the write-callback bodies + notify/publish helpers stay here and reach the chars via g_bridge.
+static BridgeService g_bridge;
 
 // The Buttons (0009) write handler — applies the binding + enable live, persists, reads back, and
 // starts/stops the SB20 central in place. Defined here (after chButtons) since it reads it back.
@@ -200,7 +179,7 @@ static void buttonsWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_
     buttonsSave();
     uint8_t buf[BUTTONS_LEN];
     packButtons(currentButtons(), buf);
-    chButtons.write(buf, sizeof(buf));  // read-back reflects what stuck
+    g_bridge.chButtons.write(buf, sizeof(buf));  // read-back reflects what stuck
     if (g_sinkShifter && !was && !Bluefruit.Scanner.isRunning())
         Bluefruit.Scanner.start(0);  // start hunting the SB20 now
     if (!g_sinkShifter && g_sb20Connected && g_sb20ConnHandle != BLE_CONN_HANDLE_INVALID)
@@ -615,7 +594,7 @@ static void cpWriteCb(uint16_t connHandle, BLECharacteristic* /*chr*/, uint8_t* 
 static void notifyRecState() {
     uint8_t buf[RECSTATE_LEN];
     packRecState(g_recState, g_cap.rateHz(), g_cap.count(), g_cap.capacity(), buf);
-    notifyClients(chRecCtl, buf, sizeof(buf));
+    notifyClients(g_bridge.chRecCtl, buf, sizeof(buf));
 }
 
 static void configWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t* data,
@@ -638,7 +617,7 @@ static void configWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t
     cfgSave();
     uint8_t buf[CONFIG_LEN];
     packConfig(g_cfg, buf);
-    chConfig.write(buf, sizeof(buf));  // read-back reflects what stuck
+    g_bridge.chConfig.write(buf, sizeof(buf));  // read-back reflects what stuck
     if (nameChanged && !g_cfg.spoof) {  // SPOOF's advertised name is fixed to the Stages crank
         Bluefruit.setName(g_cfg.outName);
         Bluefruit.Advertising.stop();
@@ -680,8 +659,8 @@ static void publishScanList() {
     }
     uint8_t buf[2 + SCAN_MAX * SCAN_SLOT];
     size_t len = packScanList(e, n, buf);
-    chScan.write(buf, len);
-    notifyClients(chScan, buf, len);
+    g_bridge.chScan.write(buf, len);
+    notifyClients(g_bridge.chScan, buf, len);
 }
 
 // Publish the active curve to the Curve characteristic for read-back.
@@ -693,7 +672,7 @@ static void publishCurve() {
         pts[i].powerW = (uint16_t)g_corr.curve.points[i].power_w;
         pts[i].factorMilli = (uint16_t)(g_corr.curve.points[i].factor * 1000.0f + 0.5f);
     }
-    chCurve.write(buf, packCurve(pts, n, buf));
+    g_bridge.chCurve.write(buf, packCurve(pts, n, buf));
 }
 
 // Curve write: replace the correction curve (empty clears it -> back to scale/offset). Persisted.
@@ -724,7 +703,7 @@ static void notifyCalState() {
     uint8_t buf[CALSTATE_LEN];
     packCalState(st, (uint16_t)g_cal.pairCount(), (uint16_t)g_cal.minPairs(),
                  (int16_t)(g_cal.residualW() * 10.0f), cov6, g_cal.enoughToFit(), buf);
-    notifyClients(chCal, buf, sizeof(buf));
+    notifyClients(g_bridge.chCal, buf, sizeof(buf));
 }
 
 // Apply a fitted Correction (curve or linear) as the live correction + persist it.
@@ -851,7 +830,7 @@ static void notifyWkState() {
                 (uint8_t)g_wk.workout.segments.size(),
                 (uint16_t)(s.segRemainingS > 0 ? s.segRemainingS : 0), g_ergLastSent,
                 (uint16_t)(s.totalElapsedS > 0 ? s.totalElapsedS : 0), g_ergBias, buf);
-    notifyClients(chWk, buf, sizeof(buf));
+    notifyClients(g_bridge.chWk, buf, sizeof(buf));
 }
 
 static void wkWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t* data, uint16_t len) {
@@ -987,59 +966,16 @@ void setup() {
     outCp.setWriteCallback(cpWriteCb);
     outCp.begin();
 
-    // --- the Bridge control/telemetry service (GATT.md) ---
-    bridgeSvc.begin();
-    chStatus.setProperties(CHR_PROPS_NOTIFY | CHR_PROPS_READ);
-    chStatus.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
-    chStatus.setFixedLen(STATUS_LEN);
-    chStatus.begin();
-    chConfig.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
-    chConfig.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    chConfig.setFixedLen(CONFIG_LEN);
-    chConfig.setWriteCallback(configWriteCb);
-    chConfig.begin();
+    // --- the Bridge control/telemetry service (GATT.md) — the BridgeService seam owns the table +
+    //     wiring; the write-callback bodies stay here and are passed in (registration order faithful). ---
+    g_bridge.begin(configWriteCb, recCtlWriteCb, curveWriteCb, calWriteCb, wkWriteCb, buttonsWriteCb);
     {
         uint8_t buf[CONFIG_LEN];
         packConfig(g_cfg, buf);
-        chConfig.write(buf, sizeof(buf));
+        g_bridge.chConfig.write(buf, sizeof(buf));  // Config read-back reflects the loaded config
     }
-    chRecCtl.setProperties(CHR_PROPS_WRITE | CHR_PROPS_NOTIFY);
-    chRecCtl.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    chRecCtl.setMaxLen(RECSTATE_LEN);  // the NOTIFY needs 12 (maxLen 4 truncated it - bench)
-    chRecCtl.setWriteCallback(recCtlWriteCb);
-    chRecCtl.begin();
-    chRecData.setProperties(CHR_PROPS_NOTIFY);
-    chRecData.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
-    chRecData.setMaxLen(180);
-    chRecData.begin();
-    chCurve.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
-    chCurve.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    chCurve.setMaxLen(2 + CURVE_MAX_POINTS * 4);
-    chCurve.setWriteCallback(curveWriteCb);
-    chCurve.begin();
-    publishCurve();  // read-back reflects the loaded curve
-    chCal.setProperties(CHR_PROPS_WRITE | CHR_PROPS_NOTIFY);
-    chCal.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    chCal.setMaxLen(2 + 19);  // write: [ver, cmd, refFilter...]
-    chCal.setWriteCallback(calWriteCb);
-    chCal.begin();
-    chScan.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
-    chScan.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
-    chScan.setMaxLen(2 + SCAN_MAX * SCAN_SLOT);
-    chScan.begin();
-    chWk.setProperties(CHR_PROPS_WRITE | CHR_PROPS_NOTIFY);
-    chWk.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    chWk.setMaxLen(2 + 19);  // write: [ver, cmd, arg...]
-    chWk.setWriteCallback(wkWriteCb);
-    chWk.begin();
-
-    // Buttons (0009): the SB20-shifter -> action binding + sink enable (web-configurable over BLE).
-    chButtons.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
-    chButtons.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    chButtons.setFixedLen(BUTTONS_LEN);
-    chButtons.setWriteCallback(buttonsWriteCb);
-    chButtons.begin();
-    { uint8_t bb[BUTTONS_LEN]; packButtons(currentButtons(), bb); chButtons.write(bb, sizeof(bb)); }
+    publishCurve();  // Curve read-back reflects the loaded curve
+    { uint8_t bb[BUTTONS_LEN]; packButtons(currentButtons(), bb); g_bridge.chButtons.write(bb, sizeof(bb)); }
 
     // OpenBikeControl button-state service (re-present the SB20 handlebar buttons to OBC apps over BLE).
     obcSvc.begin();
@@ -1115,7 +1051,7 @@ static void pumpDownload() {
     if (!g_dlHeaderSent) {
         uint8_t hdr[12];
         packRecHeader(g_cap.rateHz(), g_cap.count(), g_cap.startMs(), hdr);
-        if (!notifyClients(chRecData, hdr, sizeof(hdr))) return;  // buffers full: retry next loop
+        if (!notifyClients(g_bridge.chRecData, hdr, sizeof(hdr))) return;  // buffers full: retry next loop
         g_dlHeaderSent = true;
     }
     // Size frames to the smallest subscriber MTU (notify payload = MTU-3; 4-byte frame header;
@@ -1123,7 +1059,7 @@ static void pumpDownload() {
     uint16_t mtu = 247;
     for (uint16_t h = 0; h < 8; ++h) {
         BLEConnection* conn = Bluefruit.Connection(h);
-        if (conn && conn->connected() && chRecData.notifyEnabled(h)) {
+        if (conn && conn->connected() && g_bridge.chRecData.notifyEnabled(h)) {
             mtu = min(mtu, conn->getMtu());
         }
     }
@@ -1134,14 +1070,14 @@ static void pumpDownload() {
         const size_t n = min(perFrame, (size_t)(g_cap.count() - g_dlNext));
         uint8_t frame[DATA_FRAME_OVERHEAD + DATA_SAMPLES_PER_FRAME * SAMPLE_LEN];
         const size_t len = packRecDataFrame(g_dlSeq, g_cap.sample(g_dlNext), n, frame);
-        if (!notifyClients(chRecData, frame, len)) return;
+        if (!notifyClients(g_bridge.chRecData, frame, len)) return;
         g_dlNext += n;
         ++g_dlSeq;
     }
     if (g_dlNext >= g_cap.count()) {
         uint8_t tail[6];
         packRecTrailer(g_cap.crc32(), tail);
-        if (!notifyClients(chRecData, tail, sizeof(tail))) return;
+        if (!notifyClients(g_bridge.chRecData, tail, sizeof(tail))) return;
         g_recState = RecState::Idle;
         notifyRecState();
         Serial.println("[rec] download complete");
@@ -1390,7 +1326,7 @@ void loop() {
             if (conn) {
                 Serial.printf("[hb]   link h=%u conn=%d role=%d statusSub=%d recSub=%d mtu=%u\n",
                               h, (int)conn->connected(), (int)conn->getRole(),
-                              (int)chStatus.notifyEnabled(h), (int)chRecData.notifyEnabled(h),
+                              (int)g_bridge.chStatus.notifyEnabled(h), (int)g_bridge.chRecData.notifyEnabled(h),
                               conn->getMtu());
             }
         }
@@ -1419,8 +1355,8 @@ void loop() {
         st.uptimeS = (uint16_t)(now / 1000);
         uint8_t buf[STATUS_LEN];
         packStatus(st, buf);
-        chStatus.write(buf, STATUS_LEN);  // readable snapshot
-        notifyClients(chStatus, buf, STATUS_LEN);
+        g_bridge.chStatus.write(buf, STATUS_LEN);  // readable snapshot
+        notifyClients(g_bridge.chStatus, buf, STATUS_LEN);
         static uint8_t recTick = 0;
         if (st.recording && (++recTick & 1)) notifyRecState();
     }
