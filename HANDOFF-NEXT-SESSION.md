@@ -102,12 +102,13 @@ rough priority:
 - [ ] **R1a persistence round-trip (nRF).** Flash `xiao-sense`. Set a config / curve / button binding
   (via the web app over Web Bluetooth, or the serial console), **reboot**, confirm they survive. This is
   the LittleFS glue R1a moved that isn't host-testable. Quick, high-confidence.
-- [ ] **ESP32 SPA-over-HTTP — the "unverified until U4" path.** Flash `esp32c3-oled-live-ota`, join WiFi,
-  open `http://<board-ip>/app`. Verify end-to-end: (a) the **spoof/corrector toggle** actually
-  `POST`s `/config` + persists (reboot to apply the identity); (b) **Scale/Offset are hidden** on the
-  ESP32 (curve-only, the `scalarCorrection` gate); (c) `/setup/save` now **preserves mode + curve** (set
-  corrector+curve, change the source via `/setup`, confirm it didn't revert to spoof / wipe the curve).
-  This validates a whole path that is only compile-verified today.
+- [x] **ESP32 SPA-over-HTTP — the "unverified until U4" path.** ✅ **PASS (2026-07-11)** over the LAN
+  against a provisioned ESP32 (`192.168.0.92`): (a) the **spoof/corrector toggle** `POST /config` persists
+  through the reboot and the partial-update merge preserves the curve/name/filter; (b) **Scale/Offset are
+  hidden** on the ESP32 (the served `/app` sets `scalarCorrection:false` for HTTP and gates the inputs);
+  (c) `/setup/save` **preserves mode + curve** (changed the source to FAVERO, `mode:corrector` +
+  `has_curve:true` survived). Board restored afterward. See decisions.md 2026-07-11. *(NB: verify over the
+  LAN — never join the board's AP from the WiFi-only host; it cuts Claude's own link.)*
 - [ ] **nRF BLE spoof identity (partial R3 — no SB20 required).** Flash the spoof-mode build (config
   `spoof`=on, or serial `SPOOF1` + reboot). Use the **sniffer dongle** or **nRF Connect** on a phone to
   confirm it advertises as `Stages 62144` with the Stages proprietary service in the scan response, emits

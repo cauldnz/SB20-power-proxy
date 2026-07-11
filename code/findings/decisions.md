@@ -2835,3 +2835,24 @@ WiFi, so `netsh wlan disconnect` (to force a clean scan) or joining an ESP board
 the host's internet and **cuts Claude Code's own API connection**. Verify an ESP AP via the **serial boot
 log**, not by scanning from the host; to reach a board over HTTP, put it on the **same LAN** (owner
 provisions it to the local WiFi) and hit it over the shared network. (Memory: `host-wifi-is-only-internet`.)
+
+## 2026-07-11 — ESP32 SPA-over-HTTP path verified on hardware (HANDOFF §4 item 2) — PASS
+
+Once the portal fix let a board join the LAN (an ESP32 at `192.168.0.92`, mode `spoof`, `src_filter`
+`ASSIOMA`, `has_curve:true`), the "unverified until U4" SPA/HTTP path was exercised end-to-end over the
+shared network (no host-WiFi juggling). All three checks pass:
+- **(a) spoof/corrector toggle persists via `POST /config` + the merge.** `POST /config` with only
+  `mode=corrector` returned `{"ok":true,"reboot":true}`; after the reboot `GET /config` read
+  `mode:corrector` **and** preserved every unsent field (`src_filter:ASSIOMA`, `out_name:Stages 62145`,
+  `has_curve:true`) — the partial-update merge (`mergeSpaConfigForm`) works, no CSRF friction with
+  same-origin headers.
+- **(b) Scale/Offset hidden on the ESP32.** The served `/app` carries two capability sets — BLE
+  `scalarCorrection:true` vs HTTP/ESP32 `scalarCorrection:false` ("the ESP32's correction is a fitted
+  curve, not editable scale/offset") — and gates the inputs with `const scalar = t.caps.scalarCorrection
+  !== false`. The `d58426e` "lying control" fix is live on-device.
+- **(c) `/setup/save` preserves mode + curve.** `POST /setup/save name=FAVERO` (a source change) rebooted
+  and came back `src_filter:FAVERO` but `mode:corrector` + `has_curve:true` intact — the `e84d189`
+  `mergeSetupForm` fix holds (pre-fix it rebuilt fresh, wiping mode→default + the curve).
+
+Board restored to its original config afterward (`mode:spoof, src_filter:ASSIOMA, out_name:Stages 62145,
+has_curve:true`). This closes the last hardware-gated §4 verification.
