@@ -211,3 +211,40 @@ high-value contract unification; 3–4 fold the stragglers in.
 
 Once you pick on these, I'll turn the chosen phases into tracked slices (one branch/PR each) the same way we
 run the R-items.
+
+---
+
+## 7. Decisions — LOCKED (owner, 2026-07-11)
+
+1. **Renderer:** ✅ **LVGL is the single on-device renderer** for every colour panel; **canvas becomes a
+   pure host-side test-oracle** (screenshot/BMP regression of the view models), not a shippable renderer.
+   Delete the ⛔ SUPERSEDED `esp32s3-touch` env and the dead `LCD_BANDS` config.
+2. **OLED (chosen for the owner):** **fold both OLEDs into the shared view-model + interaction layer** —
+   the separate `OledMode` enum + hand-fed scalars go away; the OLED renderer consumes the *same*
+   `RideView/MoreView/ProvisionView` structs `buildLcdViews()` fills for the LCDs. The new **0.96" 128×64**
+   becomes a full member (LVGL mono theme — it has the room). The tiny **0.42" 72×40** keeps a *thin
+   text-row* renderer as the **documented "smallest size bucket"** (a scene graph can't fit 72×40), but it
+   reads the shared view models — so **data + interaction are unified across every panel; only the final
+   row layout is size-specialised.**
+3. **Schema → codegen:** ✅ **full implementation.** A single `ui-schema` source generates the wire/data
+   mirrors — `Proto.h` (C++ binary + golden vectors), `bridge-codec.js` (+ Node parity test), and
+   `WebJson.h` JSON serializers — plus the capability-flags enum. This *is* R2, widened from "parity test"
+   to "generate the mirrors."
+4. **Web scope (my recommended default, taken):** the web SPA **stays its own DOM app**; we share only the
+   *contract* (schema-generated codecs/objects) + design tokens, **not** render code.
+5. **Sequencing (my recommended default, taken):** fold UI-contract unification into the
+   `architecture-remediation.md` **R2** track; run the on-device renderer/OLED consolidation adjacent to it.
+
+### Execution order (each a branch → PR → green CI → merge)
+- **U0 — cleanup:** delete the superseded `esp32s3-touch` env + dead `LCD_BANDS`; document canvas as
+  host-test-oracle. Generate `LcdTheme.h` + `tokens.css` from `design/tokens.json` (+ sync test).
+- **U1 — one interaction model:** LVGL defers to the pure `lcdHandleTap()` (or generates hit-regions from
+  the shared layout constants); delete the duplicated per-callback nav/action logic.
+- **U2 — schema → codegen (the big one, = R2 widened):** `ui-schema/` + generator → `Proto.h` vectors +
+  `bridge-codec.js` + `WebJson.h` + caps enum; committed golden vectors; Node parity job in CI.
+- **U3 — OLED into the model:** retire `OledMode`; drive both OLEDs from the shared view models (128×64 via
+  LVGL mono; 72×40 via the thin documented text-row bucket).
+- **U4 — unify onboarding:** one capability-scaled portal/QR screen via a real `IProvisioningDisplay` per
+  size bucket.
+
+Tracked in the task list; U0/U1 are pure cleanup, U2 is the high-value contract unification.
