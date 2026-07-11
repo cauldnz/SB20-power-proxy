@@ -216,9 +216,20 @@ run the R-items.
 
 ## 7. Decisions — LOCKED (owner, 2026-07-11)
 
-1. **Renderer:** ✅ **LVGL is the single on-device renderer** for every colour panel; **canvas becomes a
-   pure host-side test-oracle** (screenshot/BMP regression of the view models), not a shippable renderer.
-   Delete the ⛔ SUPERSEDED `esp32s3-touch` env and the dead `LCD_BANDS` config.
+1. **Renderer:** ✅ **LVGL is the single on-device renderer** for every colour panel.
+   **REFINED (2026-07-11, after the LVGL-vs-canvas discussion):** originally we said "keep canvas as the
+   host-test oracle" — but since canvas no longer ships on *any* device (only the ⛔ superseded
+   `esp32s3-touch` env used it on-device), preserving it as an oracle means **maintaining a second draw
+   implementation to test a renderer nobody runs** — the opposite of less code. So instead: **retire the
+   canvas *draw* code** (`lcdRender*`), **keep** the shared, ship-relevant pure logic it sat on (the
+   `*View` view models, the `lcdlay` layout constants, `lcdHandleTap` routing, the format helpers —
+   LVGL consumes these), and **move testing to where bugs live**: plain host unit tests on
+   `buildLcdViews` + `lcdHandleTap` + the format helpers, plus (optionally) an **LVGL host-simulator +
+   `lv_snapshot`** harness for real pixel regression of the *actual shipped* UI (strictly better than
+   canvas screenshots). Rationale: LVGL owns the hard parts (AA fonts, touch/gestures, redraw) and already
+   looks good on-device; the only thing canvas did better was host-testability, which the shared-logic
+   tests (+ optional LVGL sim) cover without a duplicate renderer. Delete the ⛔ SUPERSEDED `esp32s3-touch`
+   env; the on-device canvas path (`LcdDisplay`, `LCD_BANDS`, `lcdRender`) retires with it.
 2. **OLED (chosen for the owner):** **fold both OLEDs into the shared view-model + interaction layer** —
    the separate `OledMode` enum + hand-fed scalars go away; the OLED renderer consumes the *same*
    `RideView/MoreView/ProvisionView` structs `buildLcdViews()` fills for the LCDs. The new **0.96" 128×64**
