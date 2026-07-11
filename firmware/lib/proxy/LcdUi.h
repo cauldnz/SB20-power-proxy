@@ -166,6 +166,16 @@ inline std::string lcdFit(const std::string& s, size_t maxChars) {
     return s.substr(0, maxChars > 1 ? maxChars - 1 : 0) + "~";
 }
 
+// The More/Settings tab's network line: the assigned IP + the live WiFi RSSI (dBm) on one line, so a
+// user can both reach the board over HTTP and judge signal strength for positioning. "no wifi" when
+// the link is down. ASCII only (renders on the OLED 5x7 + LVGL fonts alike).
+inline std::string formatWifiStatusLine(bool up, const std::string& ip, int rssiDbm) {
+    if (!up) return "no wifi";
+    char b[64];
+    std::snprintf(b, sizeof(b), "%s   %d dBm", ip.c_str(), rssiDbm);
+    return b;
+}
+
 // ---------- chrome -------------------------------------------------------------------------
 inline void lcdDrawNav(LcdCanvas& c, LcdScreen screen) {
     using namespace lcdlay;

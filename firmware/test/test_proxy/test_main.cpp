@@ -2622,6 +2622,16 @@ void test_oled_portal_shows_pin_when_present() {
     TEST_ASSERT_EQUAL_STRING("join wifi:", noPin[1].c_str());
 }
 
+void test_wifi_status_line_shows_ip_and_rssi() {
+    TEST_ASSERT_EQUAL_STRING("192.168.0.92   -92 dBm",
+                             formatWifiStatusLine(true, "192.168.0.92", -92).c_str());
+    TEST_ASSERT_EQUAL_STRING("no wifi", formatWifiStatusLine(false, "", 0).c_str());
+    // both facts present so the More tab is glanceable
+    const std::string s = formatWifiStatusLine(true, "10.0.0.5", -55);
+    TEST_ASSERT_TRUE(s.find("10.0.0.5") != std::string::npos);
+    TEST_ASSERT_TRUE(s.find("-55 dBm") != std::string::npos);
+}
+
 void test_oled_portal_shows_per_device_ssid() {
     // The per-device SSID must appear on the screen so it matches the broadcast AP (and fits the row).
     auto withPin = formatOledLines(OledMode::Portal, "", 0, -1, 0, -1, "12345678", "Setup-A6E9");
@@ -2638,6 +2648,7 @@ int runUnityTests() {
     RUN_TEST(test_setup_pin_is_eight_digits);
     RUN_TEST(test_setup_pin_deterministic_and_sensitive);
     RUN_TEST(test_setup_ap_ssid_has_unique_mac_suffix);
+    RUN_TEST(test_wifi_status_line_shows_ip_and_rssi);
     RUN_TEST(test_oled_portal_shows_per_device_ssid);
     RUN_TEST(test_oled_portal_shows_pin_when_present);
     RUN_TEST(test_request_authority_extracts_host);

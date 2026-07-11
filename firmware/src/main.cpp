@@ -403,7 +403,12 @@ static void buildLcdViews(LcdViews& v) {
 #endif
 #if USE_WIFI
     r.wifiRssi = WiFi.RSSI();
-    v.more.ip = wifi.isUp() ? std::string(WiFi.localIP().toString().c_str()) : std::string("no wifi");
+    // The More/Settings tab's network line shows BOTH the assigned IP (to reach the board over HTTP)
+    // and the live WiFi RSSI in dBm (to position the board for a strong-enough link) — the two facts a
+    // user actually needs, on one glanceable line. formatWifiStatusLine is pure + host-tested.
+    v.more.ip = formatWifiStatusLine(wifi.isUp(),
+                                     wifi.isUp() ? WiFi.localIP().toString().c_str() : "",
+                                     (int)WiFi.RSSI());
     // Captive portal up -> the LCD shows the QR onboarding screen instead of the normal UI
     v.prov.portal = wifi.inPortal();
     if (v.prov.portal) {
