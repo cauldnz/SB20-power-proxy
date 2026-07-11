@@ -21,14 +21,17 @@ enum class OledMode { Portal, Connecting, Connected };
 inline std::array<std::string, 4> formatOledLines(OledMode mode, const std::string& ip,
                                                   int watts, int cadenceRpm, int rssi = 0,
                                                   int balancePct = -1,
-                                                  const std::string& setupPin = std::string()) {
+                                                  const std::string& setupPin = std::string(),
+                                                  const std::string& apSsid = "Setup") {
     switch (mode) {
         case OledMode::Portal:
             // When the AP is WPA2-protected the rider needs the SSID + PIN to join (the captive portal
             // then auto-pops, so the IP falls off the bottom). Open AP -> the old "join + URL" layout.
+            // apSsid is the per-device name (e.g. "Setup-A6E9") so the screen matches the broadcast
+            // AP when several boards are in setup mode at once.
             if (!setupPin.empty())
-                return {"SB20 SETUP", "SB20-Setup", "PIN " + setupPin, Config::SETUP_PORTAL_HOST};
-            return {"SB20 SETUP", "join wifi:", "SB20-Setup", Config::SETUP_PORTAL_HOST};
+                return {"SB20 SETUP", apSsid, "PIN " + setupPin, Config::SETUP_PORTAL_HOST};
+            return {"SB20 SETUP", "join wifi:", apSsid, Config::SETUP_PORTAL_HOST};
         case OledMode::Connecting:
             return {"SB20 PROXY", "connecting", std::string(), std::string()};
         case OledMode::Connected: {

@@ -1720,8 +1720,8 @@ void test_status_led_searching_blinks_faster_than_connected() {
 
 void test_oled_portal_lines() {
     auto l = formatOledLines(OledMode::Portal, std::string(), 0, 0);
-    TEST_ASSERT_EQUAL_STRING("SB20 SETUP", l[0].c_str());
-    TEST_ASSERT_EQUAL_STRING("SB20-Setup", l[2].c_str());
+    TEST_ASSERT_EQUAL_STRING("SB20 SETUP", l[0].c_str());  // heading text (not the SSID)
+    TEST_ASSERT_EQUAL_STRING("Setup", l[2].c_str());       // SSID row (default base; MAC-suffixed at runtime)
     TEST_ASSERT_EQUAL_STRING(Config::SETUP_PORTAL_HOST, l[3].c_str());
 }
 
@@ -2601,12 +2601,34 @@ void test_setup_pin_deterministic_and_sensitive() {
     TEST_ASSERT_TRUE(deriveSetupPin(mac, 6, "secret") != deriveSetupPin(mac, 6, "other"));   // per-secret
 }
 
+void test_setup_ap_ssid_has_unique_mac_suffix() {
+    const uint8_t mac[6] = {0xAA, 0xBB, 0xCC, 0x11, 0xA6, 0xE9};
+    const uint8_t mac2[6] = {0xAA, 0xBB, 0xCC, 0x11, 0xB7, 0x33};  // differs in the last 2 bytes
+    // base + "-" + last 2 MAC bytes, uppercase hex (short enough for the 0.42" OLED row)
+    TEST_ASSERT_EQUAL_STRING("Setup-A6E9", setupApSsid("Setup", mac, 6).c_str());
+    // deterministic + distinct per board (so two boards in setup mode don't collide)
+    TEST_ASSERT_EQUAL_STRING(setupApSsid("Setup", mac, 6).c_str(),
+                             setupApSsid("Setup", mac, 6).c_str());
+    TEST_ASSERT_TRUE(setupApSsid("Setup", mac, 6) != setupApSsid("Setup", mac2, 6));
+    TEST_ASSERT_TRUE(setupApSsid("Setup", mac, 6).size() <= 14);  // fits the OLED detail row
+    TEST_ASSERT_EQUAL_STRING("Setup", setupApSsid("Setup", mac, 1).c_str());  // short-mac fallback
+}
+
 void test_oled_portal_shows_pin_when_present() {
     auto withPin = formatOledLines(OledMode::Portal, "", 0, -1, 0, -1, "12345678");
-    TEST_ASSERT_EQUAL_STRING("SB20-Setup", withPin[1].c_str());
+    TEST_ASSERT_EQUAL_STRING("Setup", withPin[1].c_str());  // default base (no MAC threaded here)
     TEST_ASSERT_EQUAL_STRING("PIN 12345678", withPin[2].c_str());
     auto noPin = formatOledLines(OledMode::Portal, "", 0, -1, 0, -1, "");  // open-AP fallback layout
     TEST_ASSERT_EQUAL_STRING("join wifi:", noPin[1].c_str());
+}
+
+void test_oled_portal_shows_per_device_ssid() {
+    // The per-device SSID must appear on the screen so it matches the broadcast AP (and fits the row).
+    auto withPin = formatOledLines(OledMode::Portal, "", 0, -1, 0, -1, "12345678", "Setup-A6E9");
+    TEST_ASSERT_EQUAL_STRING("Setup-A6E9", withPin[1].c_str());
+    TEST_ASSERT_TRUE(withPin[1].size() <= 14);  // stays within the 0.42" OLED 5x7 row budget
+    auto noPin = formatOledLines(OledMode::Portal, "", 0, -1, 0, -1, "", "Setup-A6E9");
+    TEST_ASSERT_EQUAL_STRING("Setup-A6E9", noPin[2].c_str());
 }
 
 // --- runner -------------------------------------------------------------------
@@ -2615,6 +2637,8 @@ int runUnityTests() {
     UNITY_BEGIN();
     RUN_TEST(test_setup_pin_is_eight_digits);
     RUN_TEST(test_setup_pin_deterministic_and_sensitive);
+    RUN_TEST(test_setup_ap_ssid_has_unique_mac_suffix);
+    RUN_TEST(test_oled_portal_shows_per_device_ssid);
     RUN_TEST(test_oled_portal_shows_pin_when_present);
     RUN_TEST(test_request_authority_extracts_host);
     RUN_TEST(test_same_origin_allows_tools_and_self);

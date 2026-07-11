@@ -2,7 +2,7 @@
 // OPTIONAL — you usually do NOT need this file.
 //
 // WiFi credentials are provisioned at runtime via the captive portal: on first boot (or
-// whenever the stored network can't be joined) the device raises the open AP 'SB20-Setup'
+// whenever the stored network can't be joined) the device raises the WPA2 AP 'Setup-XXXX' (per-device)
 // and serves a setup page at http://192.168.4.1/ — pick your 2.4 GHz network there and it is
 // saved to NVS. The esp32c3-ota build compiles fine with this file absent.
 //

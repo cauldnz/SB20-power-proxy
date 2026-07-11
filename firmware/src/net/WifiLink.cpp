@@ -23,7 +23,9 @@
 #include "Config.h"            // SETUP_PIN_SECRET (the setup-AP PIN derivation key)
 #include "HttpSecurity.h"      // pure same-origin (CSRF) check for state-changing routes (host-tested)
 #include "Provisioning.h"      // pure page render + form parse + validation (host-tested)
-#include "SetupPin.h"          // pure per-device setup-AP PIN derivation (host-tested)
+#include "SetupPin.h"          // pure per-device setup-AP PIN derivation + SSID suffix (host-tested)
+
+#include <esp_mac.h>           // esp_read_mac — the efuse MAC, valid before any WiFi init
 #include "DiagReport.h"        // pure tester /diag report (config + status + raw meter frames)
 #include "WebApp.h"            // static streaming dashboard served at GET /ui (renders in the phone)
 #include "WorkoutPresets.h"    // built-in workouts (presetJson) for the /workout/preset route
@@ -58,7 +60,8 @@ using namespace sb20proxy;
 #define WIFI_HEALTH_DEADLINE_MS 35000  // reset if not healthy (WiFi + HTTP up) within this
 #endif
 #ifndef WIFI_AP_SSID
-#define WIFI_AP_SSID "SB20-Setup"  // the open SoftAP raised for provisioning
+#define WIFI_AP_SSID "Setup"  // base for the SoftAP raised for provisioning; per-device suffix added
+                             // at runtime (apSsid() -> "Setup-A6E9") so multiple boards don't collide
 #endif
 
 static const char* kPortalUrl = Config::SETUP_PORTAL_URL;
@@ -702,7 +705,17 @@ bool WifiLink::collectScan_() {
     return false;  // idle or failed (-2): nothing in flight
 }
 
-const char* WifiLink::apSsid() { return WIFI_AP_SSID; }
+// Per-device setup-AP SSID: WIFI_AP_SSID + a MAC-derived hex suffix (e.g. "Setup-A6E9"), so
+// two boards in setup mode at once don't raise identically-named APs that collide on 2.4 GHz.
+// Computed once from the efuse MAC (esp_read_mac works before WiFi is initialised) and cached.
+const char* WifiLink::apSsid() {
+    static const std::string ssid = [] {
+        uint8_t mac[6] = {0};
+        esp_read_mac(mac, ESP_MAC_WIFI_STA);
+        return setupApSsid(WIFI_AP_SSID, mac, sizeof(mac));
+    }();
+    return ssid.c_str();
+}
 
 void WifiLink::startPortal_() {
     portal_ = true;
@@ -711,6 +724,16 @@ void WifiLink::startPortal_() {
     disarmBootGuard();
 
     WiFi.mode(WIFI_AP_STA);  // AP for the portal; STA enabled so we can scan for networks
+    // Halt the STA side before raising the AP. After a failed join (the join-fail portal) the STA
+    // keeps auto-reconnecting to the absent stored network in the background, and on the ESP32-C3
+    // that thrashes the single shared 2.4 GHz radio: the SoftAP never holds a channel long enough to
+    // beacon (the AP is "up" but invisible/unconnectable) and even the picker scan comes back "0
+    // networks" (confirmed on hardware 2026-07-11 — the boot log showed the portal up but 0 scanned).
+    // A fresh onboarding portal has no stored creds so it never thrashes — which is why fresh worked
+    // and the join-fail recovery didn't. Keep the radio on (AP + the one-shot scan below still need
+    // it) and keep the stored creds (a Save reboots to apply); just stop the background retry.
+    WiFi.setAutoReconnect(false);
+    WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/false);
     // The setup AP is WPA2-protected (closes the cleartext-PSK window when the user types their home
     // WiFi password into the portal). OLED builds use a per-device 8-digit PIN shown on the screen;
     // screenless builds fall back to a known default passphrase the user can type (Config).
@@ -734,7 +757,7 @@ void WifiLink::startPortal_() {
     const IPAddress apAddr(Config::SETUP_AP_IP[0], Config::SETUP_AP_IP[1],
                            Config::SETUP_AP_IP[2], Config::SETUP_AP_IP[3]);
     WiFi.softAPConfig(apAddr, apAddr, IPAddress(255, 255, 255, 0));
-    WiFi.softAP(WIFI_AP_SSID, setupPin_.c_str());
+    WiFi.softAP(apSsid(), setupPin_.c_str());  // per-device SSID so multiple boards don't collide
     IPAddress apIP = WiFi.softAPIP();
 
     // Wildcard DNS: every lookup resolves to us, which triggers the OS captive-portal popup.
@@ -802,9 +825,9 @@ void WifiLink::startPortal_() {
     server_->onNotFound(redirect);
     server_->begin();
 
-    logf("[wifi] setup portal up: AP '%s' (WPA2; %d networks scanned)", WIFI_AP_SSID,
+    logf("[wifi] setup portal up: AP '%s' (WPA2; %d networks scanned)", apSsid(),
          (int)networks_.size());
-    display_->showPortal(WIFI_AP_SSID, kPortalUrl, setupPin_.c_str());
+    display_->showPortal(apSsid(), kPortalUrl, setupPin_.c_str());
 }
 
 void WifiLink::handle() {
