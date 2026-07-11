@@ -934,6 +934,17 @@ void setup() {
     // negotiate MTU 247 on the peripheral link; pumpDownload sizes frames per-client anyway.
     // TWO peripheral links (head unit + web app/Garmin) and THREE central links (source/DUT +
     // reference meter during calibration + the FTMS trainer for erg). 5 links total; S140 default 20.
+    //
+    // Raise the vendor-specific (128-bit) UUID slot count BEFORE begin(). Our custom UUIDs
+    // (53423230-XXXX-… Bridge, d273f680-… OBC, the Stages proprietary base) carry their varying
+    // 16-bit id at bytes [10][11], but the SoftDevice's VS-UUID aliasing keys on bytes [12][13]
+    // (constant 0x30,0x32 here) — so it treats EVERY Bridge characteristic as a distinct base and
+    // burns one of the default 10 slots each. DFU(1) + Bridge service 0000 + chars 0001..0008 = 10
+    // slots, exhausted by the time chWk(0008) registers; chButtons(0009) and the OBC service then get
+    // no slot, sd_ble_uuid_vs_add fails, and characteristic_add/service_add return INVALID_PARAM (7),
+    // so they never appear on air. Found on hardware 2026-07-11 (a GATT dump ended at char 0008, no OBC;
+    // on-device begin() returned 7 for chButtons/obcSvc/chObcButton). Bump the count so every base fits.
+    Bluefruit.configUuid128Count(24);
     Bluefruit.begin(/*peripheral*/ 2, /*central*/ 3);
     Bluefruit.setTxPower(4);
     // SPOOF advertises as the real Stages crank; CORRECTOR advertises our own configurable name.
