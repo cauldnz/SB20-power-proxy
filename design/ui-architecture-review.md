@@ -235,9 +235,25 @@ run the R-items.
 5. **Sequencing (my recommended default, taken):** fold UI-contract unification into the
    `architecture-remediation.md` **R2** track; run the on-device renderer/OLED consolidation adjacent to it.
 
+### ⚠️ Corrected by code investigation (2026-07-11) — the tree is closer to target than first written
+- **Token generation is ALREADY DONE.** `design/gen_tokens.py` propagates `design/tokens.json` → the SPA
+  `:root` CSS, the ESP32 `WebUi.h` CSS string, **and** the LVGL `LcdCanvas.h` RGB565 constants, with a
+  `--check` CI mode (marker-block splice). U0's "generate the theme" is a no-op — this was already built.
+  (The earlier draft's `gen_spa_header` name was wrong; the real generator is `gen_tokens.py`.)
+- **LVGL is ALREADY the single on-device renderer everywhere current.** `USE_LVGL=1` is set on the
+  `esp32s3-pio` family **and** the `esp32cyd` family; `LvglUi` "replaces the LcdCanvas renderer on device."
+  The canvas (`LcdUi`/`LcdCanvas`/`LcdDisplay`, `LCD_BANDS`) is used on-device **only** by the
+  ⛔ SUPERSEDED `esp32s3-touch` env (`-DUSE_LCD=1`, no LVGL). So "LVGL everywhere" is the shipped reality;
+  the decision just needs the *superseded* canvas env retired and the canvas documented as test-oracle.
+- **Net:** the *renderer* consolidation (U0/U1) is nearly free; the real remaining value is the **data-model
+  unification** — **U2** (schema→codegen for the wire/JSON/caps contract) and **U3** (fold the OLEDs onto
+  the shared view models). Prioritise U2/U3.
+
 ### Execution order (each a branch → PR → green CI → merge)
-- **U0 — cleanup:** delete the superseded `esp32s3-touch` env + dead `LCD_BANDS`; document canvas as
-  host-test-oracle. Generate `LcdTheme.h` + `tokens.css` from `design/tokens.json` (+ sync test).
+- **U0 — retire the superseded canvas env:** delete the `esp32s3-touch`/`-live`/`-bench`/`-ota` env family
+  (all extend the ⛔ superseded stock-platform base; the live S3 build is the `esp32s3-pio` family) + the
+  now-orphaned on-device canvas path (`LcdDisplay`, `LCD_BANDS`) once nothing ships it; keep
+  `LcdUi.h`/`LcdCanvas.h` as the **host-test oracle** and document them as such. (Token-gen already done.)
 - **U1 — one interaction model:** LVGL defers to the pure `lcdHandleTap()` (or generates hit-regions from
   the shared layout constants); delete the duplicated per-callback nav/action logic.
 - **U2 — schema → codegen (the big one, = R2 widened):** `ui-schema/` + generator → `Proto.h` vectors +

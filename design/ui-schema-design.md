@@ -46,7 +46,7 @@ validated C++ but is **pinned to the schema** by the shared golden vectors.
 ## The schema format
 
 A single language-neutral **`ui-schema/bridge.json`** (data, not code), consumed by a Python generator
-(`code/scripts/gen_bridge.py`, mirroring the existing `gen_spa_header` idiom → Python is already the CI
+(`code/scripts/gen_bridge.py`, mirroring the existing **`design/gen_tokens.py`** marker-block + `--check` idiom → Python is already the CI
 tooling language). Field **offsets are auto-computed** from declaration order (byte 0 is always the
 `PROTO_VER` const), so a reorder is a one-line schema edit, not a hand re-count across four files.
 
