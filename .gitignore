@@ -50,3 +50,7 @@ htmlcov/
 # Browser-flash factory image — a 1.2 MB build artifact, produced by
 # code/scripts/build_factory_bin.py at deploy time (not committed). See firmware/webflash/README.md.
 firmware/webflash/firmware-factory.bin
+
+# graphify skill output/cache — generated knowledge-graph artifacts (AST cache, chunks,
+# GRAPH_REPORT.md, .gf_*.py scratch). Regenerated on demand; not source. (~10 MB, 186 files.)
+graphify-out/

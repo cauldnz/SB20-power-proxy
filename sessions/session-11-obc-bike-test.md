@@ -135,7 +135,13 @@ link drops when the OBC peripheral + WiFi are also up — that's the single-core
   "actions":[1,2,5,1,2,6]}`; `POST` (with `Content-Type: application/json`) of `[6,5,4,3,2,1]` persisted
   and read back; restored to default. `/stats`: **free_heap 119288, min_free_heap 112828**, reset_reason
   `sw` (the OTA reboot). **The config path works on real hardware — start the session at G1.**
-- **G1 Devmode → obc_reader:** …
+- **G1 Devmode → obc_reader:** ✅ **PASS (2026-07-08).** `POST /obc/devmode/on` → board rebooted
+  (`reset_reason sw`, ~5 s), `/obc` = `devmode: ON (advertising as OBC-SB20)`. First laptop run of
+  `obc_reader.py` crashed `ModuleNotFoundError: bleak` (self-test doesn't import bleak, so it hid this) →
+  `pip install bleak` (3.0.2, winrt backend, Python 3.14) fixed it. Reader then: `found 'OBC-SB20' @
+  38:44:BE:45:E9:A6 → connected → subscribing to OBC Button-State`. Virtual presses all decoded in order,
+  <1 s each: `0x30 → ERG Up` (06:42:47), `0x01 → Shift Up` (06:42:52), `0x35 → Lap` (06:42:55). Heap at
+  G1 baseline: **free 120332, min 113908**. **OBC transmit+decode proven on air, no SB20.**
 - **G2 SB20 shifter → OBC (+ coex/heap):** …
 - **G3 web-config round-trip:** …
 - **Stretch (qz / nRF):** …
