@@ -3025,3 +3025,25 @@ is fine, so it survives as a display-only/bench spare. BOARDS.md row marked ⛔.
 true / OLED shows the SSID" does NOT mean the AP beacons — an A/B against a known-good board is the fast
 firmware-vs-hardware discriminator, and a 2.4 GHz-only device (a watch) cleanly confirms hotspot band when
 iPhones (5 GHz-preferring) can't.
+
+## 2026-07-13 — nRF ANT+ track UNBLOCKED: S340 SoftDevice + ANT+ network key provisioned
+The owner registered as an **ANT+ Adopter** (thisisant.com) and dropped the licensed material into
+`firmware-nrf/vendor/softdevice/` (the whole dir is gitignored except its README, so **none of it is
+committed** — which the Adopter agreement requires: "do not publish the ANT+ Network Key"):
+- **`ANT_s340_nrf52840_6.1.1.hex`** — the S340 SoftDevice binary (flashable). **Version 6.1.1 matches the
+  P3 pin** (`fwid 0x00B9`, app FLASH origin `0x31000`) — no version reconciliation needed.
+- **`ANT_s340_nrf52840_6.1.1.API/include/`** — the full S340 API headers (`ant_interface.h`,
+  `ant_parameters.h`, `ant_error.h`, `nrf_sdm.h`, `nrf_soc.h`, `ble.h`, …) — the P4 ANT channel code
+  compiles against these.
+- **`ant_network_key.h`** — `#define ANT_PLUS_NETWORK_KEY { 0xB9,0xA5,0x21,0xFB,0xBD,0x72,0xC3,0x45 }`
+  (the public 64-bit ANT+ key; a fixed protocol constant, not a per-user secret, but gitignored per the
+  license).
+- Plus `ble_ant_app_hrm_SDK14` (concurrent ANT+BLE reference app), **SimulANT+ 3.0.0.0** (desk ANT
+  simulator — lets P4 be tested without a 2nd radio), and the protocol/profile PDFs (ANT Message Protocol
+  5.1, Bicycle Power 5.1, Common Pages 3.1, Shifting, Fitness Equipment).
+
+**This clears owner-action gate 1** (`nrf-roadmap.md`) — the external blocker for the *entire* nRF ANT
+track. Remaining is **dev/hardware work, not a download**: P3 (S340 swap — board json + linker origin
+`0x31000` + bootloader rebuild, brick-risk, dongle-first per run-sheet R1) and P4 (write the ANT
+slave/master channel layer against the now-present S340 headers, guarded to compile in when the key is
+present). Good next-session target now that the parts are on the machine.

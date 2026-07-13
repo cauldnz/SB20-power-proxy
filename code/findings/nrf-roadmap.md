@@ -7,8 +7,8 @@ incoming **generic nRF boards** (Seeed XIAO now → **Adafruit-Feather clones as
 **Decisions taken:** (1) **port the SB20 crank spoof to the nRF** (as a mode, not a replacement); (2)
 Seeed now, Feather clones primary; (3) do **P1–P5**. Constraint while the owner is away skiing (≤1 wk):
 **no hardware on the home dev box** → everything here is built host-tested / compile-first; the on-air
-and brick-risk steps are staged as run-sheets below. Owner **has the thisisant login** — S340 + key
-coming.
+and brick-risk steps are staged as run-sheets below. **S340 + ANT+ key PROVISIONED 2026-07-13**
+(local, gitignored) — see gate 1.
 
 ## Where the nRF stands (code-verified 2026-07-08, three Explore agents)
 
@@ -33,9 +33,15 @@ Garmin Connect IQ in-ride remote (builds Edge540/Epix2; record proven, erg/shift
   in GATT.md).
 
 ## Owner-action gates (login-only, out-of-repo — do when convenient)
-1. **S340 / ANT** — thisisant.com adopter → download **S340 SoftDevice** + the **8-byte ANT+ network
-   key** → drop into `firmware-nrf/vendor/softdevice/` (see its README). Unblocks all ANT *radio* work.
-   The firmware is wired so the ANT seam **compiles in automatically when `ant_network_key.h` appears**.
+1. **S340 / ANT** — ✅ **DONE 2026-07-13.** Owner registered as an ANT+ Adopter and provisioned
+   `firmware-nrf/vendor/softdevice/` (all gitignored): **`ANT_s340_nrf52840_6.1.1.hex`** + the full
+   **`ANT_s340_nrf52840_6.1.1.API/include/`** headers (`ant_interface.h`, `ant_parameters.h`, `nrf_sdm.h`,
+   `ble.h`, …), **`ant_network_key.h`** (the 64-bit ANT+ key), the `ble_ant_app_hrm_SDK14` reference app,
+   SimulANT+ 3.0.0.0, and the protocol/profile PDFs (ANT Message Protocol 5.1, Bicycle Power 5.1, Common
+   Pages 3.1, Shifting, Fitness Equipment). Version **6.1.1 matches the P3 pin** (`fwid 0x00B9`). This
+   removes the external blocker for **all ANT radio work (P3, P4, P5, the ANT+ Stages spoof, R1d's ANT
+   tie-in)** — remaining is desk/hardware dev, not a download. The firmware is wired so the ANT seam
+   **compiles in automatically when `ant_network_key.h` is present** (P4 is where that code gets written).
 2. **Garmin CIQ SDK** — Garmin developer login + a local signing key, only if iterating the Connect IQ
    app. Independent of ANT.
 
