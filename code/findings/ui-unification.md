@@ -1,6 +1,7 @@
 # UI unification (the "U-series") — plan & living checklist
 
-**Status:** IN PROGRESS (U0 ✅, U3 ✅ — in review; U1 reframed → U5; U2/U4 need scoping). Born from the
+**Status:** IN PROGRESS (U0 ✅, U3 ✅, **U5 ✅ shipped** — all merged; U1 reframed as a parity test, now
+UNBLOCKED by U5; U2/U4 need scoping). Born from the
 task-#11 review ("unify UI across Web + all ESP32 boards", 2026-07). This doc is the plan's home — it was
 previously only a set of one-line labels in a task list, which is why "what is U1" was unanswerable. The
 structural sibling of [`architecture-remediation.md`](architecture-remediation.md) (the R-series): tick
@@ -63,8 +64,8 @@ boxes here as slices ship.
 |---|---|---|---|---|
 | **U0** | LVGL palette → token codegen (`LcdTheme.h`) | ✅ **done** (PR #263) | S | — |
 | **U3** | Fold the OLED onto the shared view-model | ✅ **done** (PR #265) | S–M | — |
-| **U5** | **Host LVGL test harness** (headless, in-memory) | 🆕 **proposed** | M | — |
-| **U1** | One interaction model (reframed → *parity test*) | 🔄 **reframed** | S | U5 |
+| **U5** | **Host LVGL test harness** (headless, in-memory) | ✅ **done** (PR #267) | M | — |
+| **U1** | One interaction model (reframed → *parity test*) | 🔄 **reframed — now unblocked** | S | U5 ✅ |
 | **U2** | Schema→codegen for the remaining wire/data mirrors (= R2 widened) | 📋 needs scoping | M | — |
 | **U4** | Unify onboarding/portal across panels | 📋 needs scoping | M | (U3) |
 
@@ -80,9 +81,16 @@ Done. `RideView`/`ProvisionView` moved to a shared `lib/proxy/UiModel.h` (compil
 **Deliberately out of scope:** merging the *builder* (`buildLcdViews`) — it would drag workout/cal/meter deps
 into the lean OLED build. Left as a possible follow-up.
 
-### U5 — Host LVGL test harness 🆕 (proposed; replaces the literal U1)
-**Goal:** run `LvglUi.cpp` headless on the dev machine / in CI and assert on what it renders + what taps do —
-so the *code that actually ships on the ride boards* gets desk-test coverage (today it has none).
+### U5 — Host LVGL test harness ✅ (shipped 2026-07-13, PR #267; replaces the literal U1)
+**SHIPPED.** `pio test -e native-lvgl` compiles the real `src/ui/LvglUi.cpp` on the host and renders it into
+an in-memory RGB565 framebuffer via the `LvglDriverHooks{flushArea, readTouch}` seam — with a ~40-line host
+`<Arduino.h>` shim (`firmware/test/lvgl_shim/`) and `test_build_src=yes`. 3 tests green (Ride renders, nav
+tap switches screens, view-model reaches pixels); runs in CI. **Gotcha:** `pio test` skips `src/` unless
+`test_build_src=yes` — else `build_src_filter` never runs (see decisions.md 2026-07-13). More screen/
+interaction tests are cheap from here.
+
+**(Original goal, for the record):** run `LvglUi.cpp` headless on the dev machine / in CI and assert on what
+it renders + what taps do — so the *code that actually ships on the ride boards* gets desk-test coverage.
 **Feasibility (researched 2026-07-13):** solid. LVGL v9 renders fully in-memory (no SDL/X11); the existing
 `LvglDriverHooks{flushArea, readTouch}` seam is the capture/inject point. Recommended shape: a dedicated
 `pio test -e native-lvgl` env that compiles `LvglUi.cpp` against a memory-buffer flush hook + a scripted
@@ -133,27 +141,27 @@ presentation only. **Open question** below.
 ## 5. Sequencing
 
 ```
-   U0 ✅ ─── U3 ✅            (both shipped, independent)
-                 │
-   U5 (harness) ─┴─> U1 (parity test)      ── and unblocks safe canvas retirement
+   U0 ✅ ─── U3 ✅ ─── U5 ✅        (all shipped + merged)
+                          │
+                          └─> U1 (parity test — now unblocked, cheap) + safe canvas retirement
    U2 (wire codegen)   ] independent, need scoping
    U4 (onboarding)     ]
 ```
 
-- **U0, U3:** shipped (PRs #263, #265 — in review).
-- **U5 next** if we want to close the interaction-coverage gap; **U1** follows it.
+- **U0, U3, U5:** shipped + merged (PRs #263, #265, #267).
+- **U1** (parity test) is now unblocked and cheap; do it whenever, or close as satisfied.
 - **U2, U4** are independent tracks; each needs a scoping pass before code.
 
 ## 6. Open decisions for the owner (please weigh in)
 
-1. **U1/U5:** Agree to *replace literal U1 with U5 (build the harness) → U1-as-parity-test*? Or leave LVGL
-   input untested for now and close U1 as "already satisfied by shared `UiAction`/`lcdExecute`"?
-2. **Canvas renderer:** keep indefinitely as the host-test reference (current decision), or retire it *once
-   U5 lands* (then LVGL is the only renderer and it's directly tested)?
+1. **U1:** U5 shipped, so LVGL is now testable. Do the small U1 parity test (assert `lcdHandleTap` and the
+   LVGL callbacks emit the same `UiAction` per control), or close U1 as satisfied by the shared
+   `UiAction`/`lcdExecute` layer?
+2. **Canvas renderer:** keep indefinitely as the host-test reference (current decision), or now that U5 has
+   landed (LVGL directly tested), retire it in a future pass?
 3. **U2 priority:** is the ESP↔web JSON drift risk (WebJson.h) worth a schema+golden-vector pass now, or
    parked until a concrete drift bite? (No incident yet — this is preventative.)
 4. **U4 priority:** unify onboarding now, or is the per-panel portal "good enough" post-U3 (the data is
    already shared)?
-5. **Ordering:** if we proceed, my suggested order is **U5 → U1 → (U2 | U4)**. Agree, or reprioritise?
 
-*Nothing below U0/U3 is started — this doc is for review first.*
+*U0/U3/U5 shipped. U1/U2/U4 remain owner decisions.*
