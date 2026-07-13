@@ -69,6 +69,14 @@ jobs:
       - name: Test (native)
         run: pio test -e native
 
+      # Host LVGL UI tests: compile the REAL src/ui/LvglUi.cpp headless (against a tiny Arduino shim
+      # + a memory-buffer flush hook) and assert on rendered pixels + tap->screen changes — so the
+      # LVGL head-unit UI that ships on the CYD + S3 ride boards has desk-test coverage, not just the
+      # canvas reference renderer. lvgl renders fully in-memory; no display/SDL. See
+      # findings/ui-unification.md §U5.
+      - name: Test (native LVGL UI harness)
+        run: pio test -e native-lvgl
+
       # Link a real proxy ESP32 env so a multiple-definition / src_filter break (e.g. the FTMS
       # mains colliding with main.cpp, fixed in PR #73) can't reach main: the native env excludes
       # src/ entirely, so it never catches a proxy-link regression. esp32c3-supermini is the

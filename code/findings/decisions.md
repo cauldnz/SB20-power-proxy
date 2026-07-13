@@ -2971,3 +2971,21 @@ is blocked on the same WiFi access.
   (`design/gen_tokens.py` → generated `firmware/src/ui/LcdTheme.h`), killing the 4th hand-maintained copy
   of `design/tokens.json`. The `tokens.css` in the original U0 title is moot: the web SPA consumes tokens
   as an inline `:root{}` (generated), not a separate stylesheet. **U0 is complete.**
+
+## 2026-07-13 — U5 SHIPPED: the LVGL head-unit UI is now host-testable (headless, in CI)
+- **The LVGL UI that ships on the ride boards (CYD, S3) now has desk-test coverage** — previously it had
+  none (only the superseded canvas renderer was host-tested). New env `pio test -e native-lvgl` compiles
+  the **real** `src/ui/LvglUi.cpp` on the host and renders it into an in-memory RGB565 framebuffer, with
+  taps injected through the existing `LvglDriverHooks{flushArea, readTouch}` seam. **No board, no SDL/X11
+  — LVGL renders fully in memory.**
+- **How:** a ~40-line host `<Arduino.h>` shim (`firmware/test/lvgl_shim/`: `millis`/no-op `Serial`/
+  `psramFound`/`heap_caps_malloc`→`malloc`) + `test_build_src=yes` + `build_src_filter` pulling in
+  `LvglUi.cpp` + the baked Inter fonts. The test (`firmware/test/test_lvglui/`) supplies a `flushArea`
+  hook that composites into a `std::vector<uint16_t>` and a scripted `readTouch` hook; the fake clock
+  (`lvglShimAdvanceMs`) makes it deterministic. **3 tests green:** Ride renders content, a nav-bar tap
+  switches screens (touch→widget-event→navTo), and the view-model reaches pixels.
+- **Gotcha logged:** `pio test` does **not** compile the project `src/` by default (only test files +
+  libs) — you must set **`test_build_src = yes`**, else `build_src_filter` never runs and you get link
+  errors for the UI symbols. Wired into CI (`.github/workflows/tests.yml`, the `firmware` job).
+- **Unblocks:** U1-as-parity-test (assert LVGL callbacks and `lcdHandleTap` emit the same UiAction), and
+  makes retiring the canvas renderer safe (LVGL is now directly tested). See `ui-unification.md`.
