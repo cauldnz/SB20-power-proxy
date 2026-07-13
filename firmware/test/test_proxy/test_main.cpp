@@ -36,6 +36,7 @@
 #include "Status.h"
 #include "StatusLed.h"
 #include "OledScreen.h"
+#include "Onboarding.h"
 #include "WebApp.h"
 #include "LcdCanvas.h"
 #include "LcdUi.h"
@@ -1789,6 +1790,22 @@ void test_oled_scalar_adapter_matches_struct() {
     for (int i = 0; i < 4; ++i) TEST_ASSERT_EQUAL_STRING(c2[i].c_str(), s2[i].c_str());
 }
 
+// --- onboarding (U4): the shared WiFi setup-AP QR payload ---------------------
+
+void test_wifi_qr_payload_basic() {
+    // The exact "WIFI:" string LvglUi feeds the on-panel QR — a phone camera scans it to join.
+    TEST_ASSERT_EQUAL_STRING("WIFI:T:WPA;S:Setup-A6E9;P:12345678;;",
+                             wifiQrPayload("Setup-A6E9", "12345678").c_str());
+}
+
+void test_wifi_qr_payload_escapes_special_chars() {
+    // ';' ':' ',' '\\' '"' in the SSID/PIN must be backslash-escaped or the QR truncates/corrupts
+    // (the old inline snprintf did NOT escape — a latent break if a PIN ever had a special char).
+    TEST_ASSERT_EQUAL_STRING("WIFI:T:WPA;S:my\\;net;P:a\\:b\\,c;;",
+                             wifiQrPayload("my;net", "a:b,c").c_str());
+    TEST_ASSERT_EQUAL_STRING("x\\\\y", wifiQrEscape("x\\y").c_str());
+}
+
 // --- saved page ---------------------------------------------------------------
 
 void test_saved_page_has_ssid_and_hints() {
@@ -2795,6 +2812,8 @@ int runUnityTests() {
     RUN_TEST(test_oled_connected_shows_rssi);
     RUN_TEST(test_oled_struct_overload_projects_ride_view);
     RUN_TEST(test_oled_scalar_adapter_matches_struct);
+    RUN_TEST(test_wifi_qr_payload_basic);
+    RUN_TEST(test_wifi_qr_payload_escapes_special_chars);
     RUN_TEST(test_saved_page_has_ssid_and_hints);
     RUN_TEST(test_saved_page_escapes_ssid);
     RUN_TEST(test_app_page_essentials);

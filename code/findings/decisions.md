@@ -2990,6 +2990,22 @@ is blocked on the same WiFi access.
 - **Unblocks:** U1-as-parity-test (assert LVGL callbacks and `lcdHandleTap` emit the same UiAction), and
   makes retiring the canvas renderer safe (LVGL is now directly tested). See `ui-unification.md`.
 
+## 2026-07-13 — U2 + U4 shipped (web-JSON parity guard; shared+escaped WiFi QR payload)
+- **U2 (schema-parity for the web-JSON mirror):** `ui-schema/web-json.json` is now the single source of the
+  ESP↔web JSON field names for `/scan` `/config` `/curve`. `code/scripts/gen_webjson.py --check` fails if
+  (1) `firmware/lib/proxy/WebJson.h` emits keys ≠ the schema, (2) `web/index.html` doesn't reference every
+  field, or (3) the generated `ui-schema/web-json.md` is stale. Guarded by `code/tests/test_webjson_sync.py`
+  + the CI `bridge-parity` job. This *widens R2* (the bridge parity idea) to the web-JSON mirror. Chosen as a
+  **contract linter** (no rewrite of the hand-written serializers) — safe with concurrent sessions; full
+  serializer codegen is a possible future step.
+- **U4 (onboarding):** the onboarding *data* was already shared by U3 (`ProvisionView`). Closed the last gap:
+  the **`WIFI:` setup-AP QR payload** — previously an inline, **un-escaped** `snprintf` in `LvglUi.cpp` — is
+  now pure, host-tested `lib/proxy/Onboarding.h::wifiQrPayload()` with correct `WIFI:`-grammar escaping of
+  `;`/`:`/`,`/`\`/`"` (a latent QR-corruption bug if an SSID/PIN ever held a special char; our
+  `Setup-XXXX` + numeric PINs don't today). A deeper onboarding state machine was judged unnecessary.
+- Both on branch `feat/u2-u4-wire-and-onboarding` (PR — NOT merged; multiple sessions live). Verified: 458
+  pytest + ruff clean; 208 native host tests; native-lvgl 3/3 (compiles the LvglUi change).
+
 ## 2026-07-13 — C3 0.96" board (10:B4:1D:BA:C9:0C) has a DEAD WiFi radio (hardware) — not firmware
 The new 0.96" C3+OLED never worked on WiFi. Its **setup AP is invisible** on every device (2 phones +
 laptop, inches away), yet the firmware reports the softAP fully up. Exhaustive elimination (all via the
