@@ -3047,3 +3047,29 @@ track. Remaining is **dev/hardware work, not a download**: P3 (S340 swap — boa
 `0x31000` + bootloader rebuild, brick-risk, dongle-first per run-sheet R1) and P4 (write the ANT
 slave/master channel layer against the now-present S340 headers, guarded to compile in when the key is
 present). Good next-session target now that the parts are on the machine.
+
+## 2026-07-14 — nRF S340 + ANT+ Bike Power master COMPILES + LINKS (P3/P4 build done; on-air next)
+Built overnight against the just-provisioned S340 SoftDevice. New `[env:xiao-sense-s340]` compiles + links
+the full Bridge firmware + an ANT+ Bike Power master at app origin **0x31000** (verified: `nm` shows
+`g_antMaster`/`AntMasterChannel`/`AntMasterScheduler`; `.text @ 0x31000`, the S340 map). **Additive** — the
+S140 default build is **byte-identical** (no regression), and CI compiles the ANT out (guarded by `S340` +
+the gitignored `ant_network_key.h`).
+- **Pure `AntMasterScheduler`** (`lib/bridge`, host-tested — 4 new tests, 40/40 native green): the page
+  schedule (cal-response > identity-commons burst > power page 0x10; commons every 121; lead with commons),
+  mirroring Python `StagesAntTarget._next_page`. **`AntMasterChannel`** (`src/ant`): `sd_ant_*` channel
+  setup (net-key/assign/id/freq/period/open) + the EVENT_TX broadcast pump; broadcasts a mock 150 W.
+- **Gotchas found + fixed (all real, would bite again):**
+  1. **`${PROJECT_DIR}` mangles backslashes** in `build_flags` `-I` on Windows (came out
+     `...\builder\reposcauldnzSB20...` — separators eaten, made relative to the platform builder dir) →
+     **use relative forward-slash `-I`** (`-Ivendor/softdevice/...`).
+  2. S340 `nrf_sdm.h` hard-`#error`s without **`ANT_LICENSE_KEY`** — the **evaluation key** (non-commercial
+     use, which this is) ships commented-out in the header; uncommented in the gitignored copy. Re-provisioning
+     must redo this (noted in `vendor/softdevice/README.md`).
+  3. An inline `; comment` on a `build_flags` continuation line is passed **literally to gcc** (silently
+     breaks that flag — this is what hid gotcha #1 for two builds: the ANT code compiled out unnoticed
+     because the binary size looked "stable").
+- **NOT proven — hardware, run-sheet `sessions/nrf-s340-ant-bringup.md`:** the SD actually enabling under
+  the Bluefruit core (BLE still up); the ANT license passed at **runtime** (`sd_softdevice_enable`'s 3rd
+  arg — Bluefruit may pass NULL → a core patch may be needed); the app **RAM base** (0x20006000 may need
+  bumping on `NO_MEM`); the **flash mechanism** (S340 SD swap via UF2/DFU vs SWD, brick-risk, dongle/UF2
+  recovery). **"It links" ≠ "the SD runs"** — that gap is exactly this session's job.

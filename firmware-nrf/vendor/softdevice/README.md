@@ -22,3 +22,19 @@ gitignored except this README).
 
 The firmware builds BLE-only until these exist; the ANT radio seam compiles itself in when the
 key header is present.
+
+## Building the S340 firmware (`pio run -e xiao-sense-s340`)
+
+Once the files above are in place, two extra provisioning steps (both LOCAL, on gitignored files):
+
+1. **Extract the S340 zip** here so the env's `-I` paths resolve:
+   `firmware-nrf/vendor/softdevice/ANT_s340_nrf52840_6.1.1/…` (the env expects
+   `ANT_s340_nrf52840_6.1.1.API/include/` + the `ANT_s340_nrf52840_6.1.1.hex` under that dir).
+2. **Enable the ANT license key** — the S340 `nrf_sdm.h` hard-`#error`s without `ANT_LICENSE_KEY`. For
+   **non-commercial use** (this project), *uncomment* the `//#define ANT_LICENSE_KEY "…"` **evaluation-key**
+   line just above that `#error` (~line 191). It's the header's own documented mechanism. (Commercial use
+   requires a purchased key from ANT Wireless.)
+
+Then `pio run -e xiao-sense-s340` links the app at 0x31000 (S340 map). The env is **local-only** — CI never
+builds it (these files are gitignored). Flashing it is a SoftDevice swap — see
+`sessions/nrf-s340-ant-bringup.md`.
