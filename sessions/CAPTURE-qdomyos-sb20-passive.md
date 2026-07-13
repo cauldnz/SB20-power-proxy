@@ -175,3 +175,29 @@ address → reopen qdomyos → capture the connection setup + a resistance nudge
 **rotating private addresses** (consistent with the `75:eb:46:xx` initiator seen twice under different
 addresses). So the recovery sniff must follow the **bike-side peripheral** qdomyos names in its UI —
 never the phone, whose MAC won't stay put.
+
+## Retro
+
+- **Went well:** the opportunistic model itself — the rider rode their *own* workout while the agent ran
+  every capture; zero rider-time cost beyond waking the bike + narrating. Pre-flight with slack before
+  clip-in caught **two** env breaks (wiped extcap; missing openant/libusb) with time to fix. The executing
+  session re-read `nrf-sniffer.md` before §2 and caught the run-sheet''s wrong "start it right after
+  qdomyos connects" (must be BEFORE) — doc-first discipline paid. Timestamped rider annotations in chat →
+  the doc made the capture correlatable. Asking bike-state instead of assuming (bike was asleep) avoided a
+  dead first window.
+- **Went wrong (+ root cause):** the ⭐ §2 sniff followed `E4:AA:5A` for 30 min while qdomyos talked to a
+  different device — root cause: **"the SB20" is ≥3 BLE personalities** and the run-sheet (this doc, as
+  authored) said "the SB20''s MAC" as if that were one thing; compounded by **no in-flight positive check** —
+  the sniffer''s climbing packet counter *looked* healthy but was pure adverts. The 1-minute check ("did the
+  followed device''s adverts stop once the app connected?") existed in no doc; it does now.
+- **Also wrong:** §3 assumed `16_scan_ant.py` records a data stream; it is a **discovery scanner** (IDs
+  only). Verify what a named tool actually records at plan time.
+- **Planned vs actual:** pre-flight ~2 min planned → **~8 min** (two env fixes); §1 as planned (90 s);
+  §2 armed 07:42, ride 07:44–08:09, stopped 08:12 (window sized right); wrap-up extended by main being
+  CI-red (unrelated lint, fixed as #241).
+- **Changes made before next session:** `nrf-sniffer.md` — extcap-wipe row + the follow-the-right-device /
+  adverts-must-stop live check; PLAYBOOK §Passive BLE sniffing + §Capture discipline updated (same lessons);
+  this doc''s §2 corrected by the Actual above. Recovery run-sheet is the explicit next gate.
+- **Next gate + desk work first:** identify qdomyos''s actual target (its UI name + qdomyos source reading,
+  clean-room) → 5-min recovery sniff on that address. Desk-first: index the pcap to SQLite, mine "SB20
+  Bridge" advert payloads, analyze the FTMS dump.

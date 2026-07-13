@@ -273,6 +273,18 @@ don't re-learn each one on the rider's time. Citations are in *(parens)*.
   after the SB20 was already connected → ~4979 frames of pure advertising, zero connection data, and the
   crank-CPS reconcile was lost. It was **not** encryption.)* ⟹ **power-cycle the SB20 / toggle the pairing as
   the sniff goes live**, then connect — and confirm non-zero ATT (a `CONNECT_IND`) before trusting the capture.
+- **Follow the RIGHT device — and demand a positive in-flight signal, not a healthy-looking process.** A
+  "connected fitness device" is often SEVERAL BLE personalities (the SB20 is ≥3: the bike's FTMS at
+  `E4:AA:5A:D6:0E:D4`, the crank addresses "Stages 62144", an **"SB20 Bridge"** `de:f2:ed:c4:f3:fd`), and a
+  controller app may connect to a different one than the docs assume. Target by **address**, never by name
+  substring (`--name SB20` would have matched "SB20 Bridge"). Then verify DURING the capture: **within ~1 min
+  of the app connecting, the followed device's adverts must STOP** (a connected peripheral goes quiet) — a
+  climbing packet counter is NOT evidence of capturing the conversation; adverts alone climb just as happily.
+  Generalize this: every long capture needs a defined **"the interesting data is actually flowing" check**
+  (adverts stop / ATT frames appear / the JSONL grows past discovery), run in the first minute while
+  re-targeting is still cheap. *(2026-07-06 qdomyos ride: a 30-min follow of `E4:AA:5A` looked healthy at
+  20k packets — all adverts; qdomyos drove resistance over a different link the whole time. The 1-minute
+  adverts-stopped check would have caught it at 07:45. `decisions.md` 2026-07-06.)*
 - **Capture headless with `code/scripts/sniff_ble.py` — NOT Wireshark/Npcap.** It drives Nordic's `SnifferAPI`
   straight over the dongle's serial port (sniffer firmware, USB PID `522A`) → pcap; **no Npcap, no tshark**
   (those are only the interactive GUI alternative). `tools/doctor.ps1` gates the rig (dongle on sniffer fw +
@@ -280,7 +292,10 @@ don't re-learn each one on the rider's time. Citations are in *(parens)*.
   [`code/findings/nrf-sniffer.md`](../code/findings/nrf-sniffer.md) before touching any of this** — and note the
   `SnifferAPI` extcap can go **un-staged between sessions** (it did, 06-21 → 06-26), silently killing the path.
   *(Session 9: the morning "nRF not ready → install Npcap" call was the WRONG path — the real blockers were the
-  un-staged extcap + missing pyserial, which doctor.ps1 now catches. `decisions.md` 2026-06-26.)*
+  un-staged extcap + missing pyserial, which doctor.ps1 now catches. `decisions.md` 2026-06-26.)* **Root cause
+  now known (2026-07-06): a Wireshark upgrade WIPES `%APPDATA%\Wireshark\extcap`** — so "verified N days ago"
+  means nothing across an upgrade. The durable copy lives in the makerdiary checkout; the no-restage fallback is
+  `--extcap-dir C:\repos\nrf52840-mdk-usb-dongle\tools\ble_sniffer\extcap`.
 - **Parse pcaps with `tshark`, never by hand.** Wireshark's CLI natively dissects the `LINKTYPE_NORDIC_BLE`
   pcaps down to ATT/GATT; `analysis/pcap_sqlite.py` shells out to it → SQLite (and `fit_sqlite.py` does the
   Garmin FITs → the same index, so a reconcile is a JOIN). A pure-Python Nordic-BLE parser is a tar-pit — a
@@ -398,6 +413,18 @@ don't re-learn each one on the rider's time. Citations are in *(parens)*.
   literal to-do list for PR #5 (`fe02 = bfda1853` constant token, `0x10`/`0x04`/`0x05` CP ops,
   re-advertise). Run the dump through `sb20proxy.logparse.parse_log` for a clean spec. *(decisions.md
   2026-06-18; `code/findings/shifter-ble-protocol.md`.)*
+- **At plan time, verify what a named capture script actually RECORDS — don't infer from its filename.**
+  A run-sheet step is only as good as its tool's real output: read the script's output schema or smoke-run
+  it and look at what lands in the file. *(2026-07-06: the run-sheet used `16_scan_ant.py --output` as the
+  ride-long "ANT+ capture", but it's a **discovery scanner** — device IDs only, no data stream; a ride
+  wanting ANT+ payloads needs `01_capture_stages.py`/`07_capture_multi.py`. Caught mid-ride when the JSONL
+  stopped growing after discovery.)*
+- **When a run-sheet and a tool's canonical findings doc disagree, the canonical doc wins — re-read it at
+  execution time.** Run-sheets are written ahead and drift or simply err; the executing session must re-open
+  the canonical doc for each tool it's about to run (the CLAUDE.md find-the-doc invariant, applied at the
+  moment of use, not just at planning). *(2026-07-06: the run-sheet said start the sniffer "right after
+  qdomyos connects"; `nrf-sniffer.md` says the sniffer must witness the `CONNECT_IND` — start BEFORE.
+  Re-reading the doc pre-§2 caught it; obeying the run-sheet would have lost even the advert timelines.)*
 
 ### Time / patience savers
 
@@ -462,6 +489,14 @@ don't re-learn each one on the rider's time. Citations are in *(parens)*.
 - **Front-loading the highest-information gate.** Proving power-acceptance first (session 2) meant
   everything after it was upside; a fail there would have ended the session cheaply rather than after an
   hour of protocol poking. *(decisions.md 2026-06-18.)*
+- **The opportunistic passive-ride session.** When the rider is doing a real workout anyway (their own app,
+  their own plan), a run-sheet of strictly-passive captures turns the ride into free protocol data at
+  near-zero rider cost: pre-flight + wake-the-bike + timestamped narration ("pairing now", "stopping now",
+  "a second rider's meter is on air") is all that's asked of them. Sequence the connection-order-sensitive
+  pieces around *their* ride (uncontended GATT dump before their app connects; sniffer armed before they
+  pair), and hold every physical step for the explicit at-the-bike cue. Even with the 2026-07-06 sniff
+  missing its prize, the ride still banked the FTMS dump, the ANT inventory, a topology negative-result,
+  and two env fixes — for ~3 minutes of rider attention. *(CAPTURE-qdomyos-sb20-passive.md.)*
 - **The clean isolation proof (both batteries out).** See Capture discipline — it's also a "what worked":
   it converted "the SB20 shows power" into "the SB20 shows power *that can only be the Assioma*". *(decisions.md
   2026-06-18.)*
