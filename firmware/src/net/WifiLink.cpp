@@ -23,7 +23,9 @@
 #include "Config.h"            // SETUP_PIN_SECRET (the setup-AP PIN derivation key)
 #include "HttpSecurity.h"      // pure same-origin (CSRF) check for state-changing routes (host-tested)
 #include "Provisioning.h"      // pure page render + form parse + validation (host-tested)
-#include "SetupPin.h"          // pure per-device setup-AP PIN derivation (host-tested)
+#include "SetupPin.h"          // pure per-device setup-AP PIN derivation + SSID suffix (host-tested)
+
+#include <esp_mac.h>           // esp_read_mac — the efuse MAC, valid before any WiFi init
 #include "DiagReport.h"        // pure tester /diag report (config + status + raw meter frames)
 #include "WebApp.h"            // static streaming dashboard served at GET /ui (renders in the phone)
 #include "WorkoutPresets.h"    // built-in workouts (presetJson) for the /workout/preset route
@@ -58,7 +60,8 @@ using namespace sb20proxy;
 #define WIFI_HEALTH_DEADLINE_MS 35000  // reset if not healthy (WiFi + HTTP up) within this
 #endif
 #ifndef WIFI_AP_SSID
-#define WIFI_AP_SSID "SB20-Setup"  // the open SoftAP raised for provisioning
+#define WIFI_AP_SSID "Setup"  // base for the SoftAP raised for provisioning; per-device suffix added
+                             // at runtime (apSsid() -> "Setup-A6E9") so multiple boards don't collide
 #endif
 
 static const char* kPortalUrl = Config::SETUP_PORTAL_URL;
@@ -192,6 +195,111 @@ void WifiLink::addLogRoutes_() {
     });
 }
 
+// OpenBikeControl (OBC) Devmode bring-up routes — a firmware-only test source for the OBC listener (qz).
+// Devmode advertises the board as an "OBC-…" controller (BleCrankPeripheral::setObcDevmode) so a listener
+// discovers + connects to it; /obc/press then fires virtual button presses through the OBC characteristic
+// with no shifter hardware. See code/findings/obc-protocol.md.
+void WifiLink::addObcRoute_() {
+    // GET /obc — status + curl usage (plain text; the bring-up cheat-sheet).
+    server_->on("/obc", HTTP_GET, [this]() {
+        const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        std::string s = "OpenBikeControl (OBC)\n";
+        s += std::string("devmode: ") + (cfg.obcDevmode ? "ON (advertising as OBC-SB20)\n" : "off\n");
+        s += std::string("sink SB20 shifter: ") + (cfg.obcSinkShifter ? "ON\n" : "off\n");
+        s += "\nSink the SB20's own shifter buttons -> OBC (the bike add-on; persists + reboots):\n";
+        s += "  curl -X POST http://sb20proxy.local/obc/shifter/on\n";
+        s += "  curl -X POST http://sb20proxy.local/obc/shifter/off\n";
+        s += "\nDevmode: advertise as OBC-SB20 for a listener test (persists + reboots):\n";
+        s += "  curl -X POST http://sb20proxy.local/obc/devmode/on\n";
+        s += "  curl -X POST http://sb20proxy.local/obc/devmode/off\n";
+        s += "\nFire a virtual button press (OBC id, hex or dec; optional &state=, default 1):\n";
+        s += "  curl 'http://sb20proxy.local/obc/press?id=0x30'   # ERG Up\n";
+        s += "  curl 'http://sb20proxy.local/obc/press?id=0x01'   # Shift Up\n";
+        s += "  ids: 0x01 ShiftUp  0x02 ShiftDown  0x30 ErgUp  0x31 ErgDown  0x35 Lap\n";
+        s += "\nBind each SB20 button to an action in the web app (http://sb20proxy.local/app),\n";
+        s += "or over the API: GET/POST http://sb20proxy.local/obc/buttons.json {enabled,actions[6]}\n";
+        server_->send(200, "text/plain", s.c_str());
+    });
+    // GET/POST /obc/buttons.json — the SB20-button binding + sink-enable for the shared web SPA's
+    // HttpTransport (same action-option indices as the nRF Bridge GATT Buttons char). The SPA served at
+    // /app owns the UI; there is no ESP-served HTML page for it.
+    server_->on("/obc/buttons.json", HTTP_GET, [this]() {
+        const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        server_->send(200, "application/json",
+                      buttonsToJson(cfg.obcSinkShifter, cfg.obcButtons).c_str());
+    });
+    server_->on("/obc/buttons.json", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        bool enabled = false;
+        Sb20ButtonMap m;
+        if (!buttonsFromJson(formBody(server_), enabled, m)) {
+            server_->send(400, "application/json", "{\"error\":\"expected {enabled,actions[6]}\"}");
+            return;
+        }
+        if (obcButtons_) obcButtons_(enabled, m);  // persist to NVS + apply live
+        server_->send(200, "application/json", buttonsToJson(enabled, m).c_str());
+    });
+    // GET /obc/press?id=0xNN[&state=N] — fire one virtual OBC button press (default state=1 pressed).
+    // GET (not POST) is intentional: it's a transient, harmless bring-up action meant to be curl-driven.
+    server_->on("/obc/press", HTTP_GET, [this]() {
+        if (!server_->hasArg("id")) {
+            server_->send(400, "text/plain", "missing ?id= (OBC button id, e.g. 0x30). See /obc\n");
+            return;
+        }
+        const long id = strtol(server_->arg("id").c_str(), nullptr, 0);  // base 0: accepts 0x30 or 48
+        const long st = server_->hasArg("state") ? strtol(server_->arg("state").c_str(), nullptr, 0) : 1;
+        if (id < 0 || id > 255 || st < 0 || st > 255) {
+            server_->send(400, "text/plain", "id/state out of range [0,255]\n");
+            return;
+        }
+        if (obcPress_) obcPress_((uint8_t)id, (uint8_t)st);
+        char msg[64];
+        std::snprintf(msg, sizeof(msg), "OBC press id=0x%02lX state=%ld sent\n", id & 0xFF, st);
+        server_->send(200, "text/plain", msg);
+    });
+    // POST /obc/devmode/{on,off} — toggle the OBC-controller advertising identity; persists + reboots
+    // (mirrors /setup/save). CSRF-guarded like the other state-changing config routes.
+    server_->on("/obc/devmode/on", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        cfg.obcDevmode = true;
+        cfg.obcEnabled = true;  // Devmode implies the OBC service is present
+        if (configSave_) configSave_(cfg);
+        server_->send(200, "text/plain", "OBC Devmode ON - advertising as OBC-SB20, restarting.\n");
+        delay(400);
+        esp_restart();
+    });
+    server_->on("/obc/devmode/off", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        cfg.obcDevmode = false;
+        if (configSave_) configSave_(cfg);
+        server_->send(200, "text/plain", "OBC Devmode off - restarting with the normal identity.\n");
+        delay(400);
+        esp_restart();
+    });
+    // POST /obc/shifter/{on,off} — sink the SB20's own shifter buttons and re-broadcast them as OBC
+    // (the bike add-on); persists + reboots (a central to the SB20 comes up only on the next boot).
+    server_->on("/obc/shifter/on", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        cfg.obcSinkShifter = true;
+        if (configSave_) configSave_(cfg);
+        server_->send(200, "text/plain", "OBC sink-shifter ON - will read the SB20 buttons, restarting.\n");
+        delay(400);
+        esp_restart();
+    });
+    server_->on("/obc/shifter/off", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        cfg.obcSinkShifter = false;
+        if (configSave_) configSave_(cfg);
+        server_->send(200, "text/plain", "OBC sink-shifter off - restarting.\n");
+        delay(400);
+        esp_restart();
+    });
+}
+
 // Drain-aware HTML page send. Arduino's WebServer::send() writes the body with WiFiClient::write
 // and IGNORES short writes — under lwIP memory pressure (the no-PSRAM CYD idles ~30 KB free with
 // WiFi+BLE+LVGL up) multi-KB pages get silently TRUNCATED mid-stream (2026-07-04). This streams
@@ -320,6 +428,7 @@ void WifiLink::startStationServer_() {
     addRideModeRoute_();  // GET/POST /wifi/off — turn WiFi off for a BLE-only ride
     addWorkoutRoutes_();  // GET /workout (+ /state) + POST /workout/{load,preset,controls}
     addLogRoutes_();
+    addObcRoute_();  // GET /obc + /obc/press + POST /obc/devmode/{on,off} — OBC listener bring-up test
     server_->begin();
 }
 
@@ -406,12 +515,11 @@ void WifiLink::addConfigRoutes_() {
     server_->on("/setup/save", HTTP_POST, [this]() {
         if (!csrfOk_()) return;
         const std::string body = formBody(server_);
-        RuntimeConfig cfg = parseConfigForm(body);
-        // A body WITHOUT the trainer field (an old cached page, or a curl that predates it) must
-        // PRESERVE the stored trainer; present-but-empty is the explicit "erg off" clear.
-        if (!formHasField(body, "trainer") && configProvider_) {
-            cfg.trainerNameFilter = configProvider_().trainerNameFilter;
-        }
+        // Merge onto the STORED config so this page — which owns only the source, spoof identity, and
+        // trainer — can't wipe the broadcast mode, fitted curve, or reference meter that the SPA /
+        // calibration wizard set (mergeSetupForm also handles the trainer absent=preserve rule).
+        const RuntimeConfig cur = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        RuntimeConfig cfg = mergeSetupForm(cur, body);
         const char* err = configValidationError(cfg);
         if (err) {
             const std::vector<SourceCandidate> srcs =
@@ -448,6 +556,25 @@ void WifiLink::addConfigRoutes_() {
     server_->on("/config", HTTP_GET, [this]() {
         const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
         server_->send(200, "application/json", renderConfigJson(cfg).c_str());
+    });
+    // POST /config -> the shared SPA's "Correction & identity" Apply (incl. the spoof/corrector mode
+    // selector). Unlike /setup/save it MERGES onto the current config (mergeSpaConfigForm), so it never
+    // wipes the fitted curve / reference meter / trainer. Persists + reboots to apply the identity (the
+    // crank DIS/services are built at boot, like /setup/save). Same-origin CSRF guard as the others.
+    server_->on("/config", HTTP_POST, [this]() {
+        if (!csrfOk_()) return;
+        const RuntimeConfig cur = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
+        RuntimeConfig cfg = mergeSpaConfigForm(cur, formBody(server_));
+        const char* err = configValidationError(cfg);
+        if (err) {
+            server_->send(400, "application/json",
+                          (std::string("{\"error\":\"") + err + "\"}").c_str());
+            return;
+        }
+        if (configSave_) configSave_(cfg);  // persist to NVS
+        server_->send(200, "application/json", "{\"ok\":true,\"reboot\":true}");
+        delay(400);
+        esp_restart();  // reboot to apply the mode/identity/source (mirrors /setup/save)
     });
     // GET/POST /curve: export/import a portable correction curve (a calibration profile fitted on the
     // OTHER device, or the desk tooling). GET returns the breakpoints; POST loads a curve LIVE (no
@@ -578,7 +705,17 @@ bool WifiLink::collectScan_() {
     return false;  // idle or failed (-2): nothing in flight
 }
 
-const char* WifiLink::apSsid() { return WIFI_AP_SSID; }
+// Per-device setup-AP SSID: WIFI_AP_SSID + a MAC-derived hex suffix (e.g. "Setup-A6E9"), so
+// two boards in setup mode at once don't raise identically-named APs that collide on 2.4 GHz.
+// Computed once from the efuse MAC (esp_read_mac works before WiFi is initialised) and cached.
+const char* WifiLink::apSsid() {
+    static const std::string ssid = [] {
+        uint8_t mac[6] = {0};
+        esp_read_mac(mac, ESP_MAC_WIFI_STA);
+        return setupApSsid(WIFI_AP_SSID, mac, sizeof(mac));
+    }();
+    return ssid.c_str();
+}
 
 void WifiLink::startPortal_() {
     portal_ = true;
@@ -587,6 +724,16 @@ void WifiLink::startPortal_() {
     disarmBootGuard();
 
     WiFi.mode(WIFI_AP_STA);  // AP for the portal; STA enabled so we can scan for networks
+    // Halt the STA side before raising the AP. After a failed join (the join-fail portal) the STA
+    // keeps auto-reconnecting to the absent stored network in the background, and on the ESP32-C3
+    // that thrashes the single shared 2.4 GHz radio: the SoftAP never holds a channel long enough to
+    // beacon (the AP is "up" but invisible/unconnectable) and even the picker scan comes back "0
+    // networks" (confirmed on hardware 2026-07-11 — the boot log showed the portal up but 0 scanned).
+    // A fresh onboarding portal has no stored creds so it never thrashes — which is why fresh worked
+    // and the join-fail recovery didn't. Keep the radio on (AP + the one-shot scan below still need
+    // it) and keep the stored creds (a Save reboots to apply); just stop the background retry.
+    WiFi.setAutoReconnect(false);
+    WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/false);
     // The setup AP is WPA2-protected (closes the cleartext-PSK window when the user types their home
     // WiFi password into the portal). OLED builds use a per-device 8-digit PIN shown on the screen;
     // screenless builds fall back to a known default passphrase the user can type (Config).
@@ -610,7 +757,7 @@ void WifiLink::startPortal_() {
     const IPAddress apAddr(Config::SETUP_AP_IP[0], Config::SETUP_AP_IP[1],
                            Config::SETUP_AP_IP[2], Config::SETUP_AP_IP[3]);
     WiFi.softAPConfig(apAddr, apAddr, IPAddress(255, 255, 255, 0));
-    WiFi.softAP(WIFI_AP_SSID, setupPin_.c_str());
+    WiFi.softAP(apSsid(), setupPin_.c_str());  // per-device SSID so multiple boards don't collide
     IPAddress apIP = WiFi.softAPIP();
 
     // Wildcard DNS: every lookup resolves to us, which triggers the OS captive-portal popup.
@@ -678,9 +825,9 @@ void WifiLink::startPortal_() {
     server_->onNotFound(redirect);
     server_->begin();
 
-    logf("[wifi] setup portal up: AP '%s' (WPA2; %d networks scanned)", WIFI_AP_SSID,
+    logf("[wifi] setup portal up: AP '%s' (WPA2; %d networks scanned)", apSsid(),
          (int)networks_.size());
-    display_->showPortal(WIFI_AP_SSID, kPortalUrl, setupPin_.c_str());
+    display_->showPortal(apSsid(), kPortalUrl, setupPin_.c_str());
 }
 
 void WifiLink::handle() {

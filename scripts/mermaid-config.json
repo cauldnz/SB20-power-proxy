@@ -1,0 +1,7 @@
+{
+  "theme": "neutral",
+  "flowchart": { "curve": "basis", "htmlLabels": true },
+  "themeVariables": {
+    "fontFamily": "ui-sans-serif, system-ui, Segoe UI, Roboto, sans-serif"
+  }
+}

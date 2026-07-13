@@ -15,6 +15,10 @@
 #include "Cps.h"
 #include "DiagReport.h"
 #include "Ftms.h"
+#include "Obc.h"
+#include "ObcSb20Map.h"
+#include "ObcShifterSource.h"
+#include "Sb20ButtonMap.h"
 #include "HttpSecurity.h"
 #include "MeterMatch.h"
 #include "OtaManifest.h"
@@ -32,6 +36,7 @@
 #include "Status.h"
 #include "StatusLed.h"
 #include "OledScreen.h"
+#include "Onboarding.h"
 #include "WebApp.h"
 #include "LcdCanvas.h"
 #include "LcdUi.h"
@@ -669,6 +674,233 @@ void test_curve_string_roundtrip() {
 
 // --- SB20 shifter decode + debounce (the C++ mirror of shifter_erg.py) --------
 
+// ---- OpenBikeControl (OBC) ButtonState codec — golden vectors straight from the MIT spec ----
+void test_obc_encode_button_single() {
+    using namespace sb20proxy;
+    uint8_t out[OBC_MAX_MSG];
+    size_t n = encodeButtonPress(OBC_BTN_SHIFT_UP, OBC_STATE_PRESSED, out, sizeof(out));
+    const uint8_t want[] = {0x01, 0x01, 0x01};  // [msg-type, Shift Up, pressed]
+    TEST_ASSERT_EQUAL_INT(3, (int)n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(want, out, 3);
+}
+
+void test_obc_encode_button_multi_action() {
+    using namespace sb20proxy;
+    // One physical press -> Shift Up + ERG Up, so it works in shifting AND erg apps (spec §multi-action).
+    ObcAction acts[] = {{OBC_BTN_SHIFT_UP, OBC_STATE_PRESSED}, {OBC_BTN_ERG_UP, OBC_STATE_PRESSED}};
+    uint8_t out[OBC_MAX_MSG];
+    size_t n = encodeButtonState(acts, 2, out, sizeof(out));
+    const uint8_t want[] = {0x01, 0x01, 0x01, 0x30, 0x01};
+    TEST_ASSERT_EQUAL_INT(5, (int)n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(want, out, 5);
+}
+
+void test_obc_encode_button_press_and_release() {
+    using namespace sb20proxy;
+    ObcAction acts[] = {{OBC_BTN_SHIFT_UP, OBC_STATE_PRESSED}, {OBC_BTN_SHIFT_DOWN, OBC_STATE_RELEASED}};
+    uint8_t out[OBC_MAX_MSG];
+    size_t n = encodeButtonState(acts, 2, out, sizeof(out));
+    const uint8_t want[] = {0x01, 0x01, 0x01, 0x02, 0x00};  // spec example: 0x01 pressed, 0x02 released
+    TEST_ASSERT_EQUAL_INT(5, (int)n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(want, out, 5);
+}
+
+void test_obc_encode_analog_and_device_status() {
+    using namespace sb20proxy;
+    uint8_t out[OBC_MAX_MSG];
+    size_t n = encodeButtonPress(OBC_BTN_NAV_UP, 0x80, out, sizeof(out));  // analog nav-up @ 50%
+    const uint8_t wantA[] = {0x01, 0x10, 0x80};
+    TEST_ASSERT_EQUAL_INT(3, (int)n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantA, out, 3);
+    n = encodeDeviceStatus(0x55, true, out, sizeof(out));                 // 85% battery, connected
+    const uint8_t wantS[] = {0x02, 0x55, 0x01};
+    TEST_ASSERT_EQUAL_INT(3, (int)n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantS, out, 3);
+}
+
+void test_obc_encode_rejects_small_buffer_and_empty() {
+    using namespace sb20proxy;
+    uint8_t small[2];
+    TEST_ASSERT_EQUAL_INT(0, (int)encodeButtonPress(OBC_BTN_LAP, OBC_STATE_PRESSED, small, sizeof(small)));
+    uint8_t out[OBC_MAX_MSG];
+    TEST_ASSERT_EQUAL_INT(0, (int)encodeButtonState(nullptr, 0, out, sizeof(out)));
+}
+
+// ---- M2: SB20 -> OBC default button mapping (pure) ----
+void test_obc_sb20_default_map() {
+    using namespace sb20proxy;
+    uint8_t ids[2];
+    TEST_ASSERT_EQUAL_INT(2, (int)defaultSb20ObcButtonIds(ShifterButton::LeftUp, ids, 2));
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_SHIFT_UP, ids[0]);
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_ERG_UP, ids[1]);
+    TEST_ASSERT_EQUAL_INT(2, (int)defaultSb20ObcButtonIds(ShifterButton::RightDown, ids, 2));
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_SHIFT_DOWN, ids[0]);
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_ERG_DOWN, ids[1]);
+    TEST_ASSERT_EQUAL_INT(1, (int)defaultSb20ObcButtonIds(ShifterButton::Left3, ids, 2));
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_LAP, ids[0]);
+    TEST_ASSERT_EQUAL_INT(0, (int)defaultSb20ObcButtonIds(ShifterButton::None, ids, 2));
+}
+
+void test_obc_sb20_encode_button_state() {
+    using namespace sb20proxy;
+    uint8_t out[OBC_MAX_MSG];
+    size_t n = encodeSb20ButtonState(ShifterButton::LeftUp, OBC_STATE_PRESSED, out, sizeof(out));
+    const uint8_t want[] = {0x01, 0x01, 0x01, 0x30, 0x01};  // ShiftUp + ERGUp, both pressed
+    TEST_ASSERT_EQUAL_INT(5, (int)n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(want, out, 5);
+    n = encodeSb20ButtonState(ShifterButton::LeftUp, OBC_STATE_RELEASED, out, sizeof(out));
+    const uint8_t wantR[] = {0x01, 0x01, 0x00, 0x30, 0x00};  // the release half of the click
+    TEST_ASSERT_EQUAL_INT(5, (int)n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantR, out, 5);
+    TEST_ASSERT_EQUAL_INT(0, (int)encodeSb20ButtonState(ShifterButton::None, OBC_STATE_PRESSED, out, sizeof(out)));
+}
+
+void test_sb20_button_map_default_serialize_resolve() {
+    using namespace sb20proxy;
+    Sb20ButtonMap m = Sb20ButtonMap::defaults();
+    TEST_ASSERT_EQUAL_STRING("shift_up,shift_down,lap,shift_up,shift_down,menu", m.toString().c_str());
+    // resolve the default bindings to their action specs
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_SHIFT_UP, m.resolve(ShifterButton::LeftUp).obcId);
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_LAP, m.resolve(ShifterButton::Left3).obcId);
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_MENU, m.resolve(ShifterButton::Right3).obcId);
+    // round-trip a custom binding; a short/partial string keeps defaults for the missing slots
+    Sb20ButtonMap c = Sb20ButtonMap::fromString("bias_up,none,erg_up");
+    TEST_ASSERT_EQUAL_INT((int)Sb20ActionKind::ErgBias, (int)c.resolve(ShifterButton::LeftUp).kind);
+    TEST_ASSERT_EQUAL_INT(10, (int)c.resolve(ShifterButton::LeftUp).ergDelta);
+    TEST_ASSERT_EQUAL_INT((int)Sb20ActionKind::None, (int)c.resolve(ShifterButton::LeftDown).kind);
+    TEST_ASSERT_EQUAL_UINT8(OBC_BTN_ERG_UP, c.resolve(ShifterButton::Left3).obcId);
+    TEST_ASSERT_EQUAL_STRING("shift_up", c.token[3].c_str());  // slot 3 kept its default
+    // an unknown token resolves to None (never acts on garbage)
+    TEST_ASSERT_EQUAL_INT((int)Sb20ActionKind::None,
+                          (int)sb20SpecForToken("bogus").kind);
+
+    // index <-> token (the compact Bridge GATT wire form): "none" is index 0; round-trips.
+    TEST_ASSERT_EQUAL_INT(0, sb20IndexForToken("none"));
+    TEST_ASSERT_EQUAL_STRING("none", sb20TokenForIndex(0));
+    TEST_ASSERT_EQUAL_INT(0, sb20IndexForToken("bogus"));  // unknown -> 0 (none)
+    TEST_ASSERT_EQUAL_STRING("none", sb20TokenForIndex(999));  // OOB -> none
+    const int biasIdx = sb20IndexForToken("bias_up");
+    TEST_ASSERT_TRUE(biasIdx > 0);
+    TEST_ASSERT_EQUAL_STRING("bias_up", sb20TokenForIndex((size_t)biasIdx));
+
+    // to/fromIndices round-trips a map through its wire indices
+    Sb20ButtonMap orig = Sb20ButtonMap::fromString("bias_up,none,lap,erg_up,shift_down,menu");
+    uint8_t idx[6];
+    orig.toIndices(idx);
+    Sb20ButtonMap back = Sb20ButtonMap::fromIndices(idx);
+    TEST_ASSERT_EQUAL_STRING(orig.toString().c_str(), back.toString().c_str());
+
+    // JSON round-trip for the ESP32 HttpTransport ({"enabled":..,"actions":[..]}).
+    const std::string js = buttonsToJson(true, orig);
+    TEST_ASSERT_TRUE(js.find("\"enabled\":true") != std::string::npos);
+    bool en = false;
+    Sb20ButtonMap parsed;
+    TEST_ASSERT_TRUE(buttonsFromJson(js, en, parsed));
+    TEST_ASSERT_TRUE(en);
+    TEST_ASSERT_EQUAL_STRING(orig.toString().c_str(), parsed.toString().c_str());
+    // whitespace + disabled + a short/garbage body
+    bool en2 = true;
+    Sb20ButtonMap p2;
+    TEST_ASSERT_TRUE(buttonsFromJson("{ \"enabled\" : false , \"actions\" : [8,9,0,1,2,3] }", en2, p2));
+    TEST_ASSERT_FALSE(en2);
+    TEST_ASSERT_EQUAL_STRING("bias_up", p2.token[0].c_str());  // index 8
+    TEST_ASSERT_FALSE(buttonsFromJson("{}", en2, p2));  // missing keys -> false
+}
+
+void test_obc_shifter_source_click_and_debounce() {
+    using namespace sb20proxy;
+    ObcShifterSource src;  // default bindings
+    std::vector<std::vector<uint8_t>> msgs;
+    int ergSum = 0;
+    auto emit = [&](const uint8_t* d, size_t n) { msgs.emplace_back(d, d + n); };
+    auto onErg = [&](int8_t d) { ergSum += d; };
+
+    // LEFT up held frame (real session-3 capture: 01 00 01 00), default-bound to OBC Shift Up (0x01)
+    // -> ONE momentary click: PRESSED then RELEASED. No erg action.
+    const uint8_t leftUp[] = {0x01, 0x00, 0x01, 0x00};
+    src.feed(leftUp, sizeof(leftUp), emit, onErg);
+    TEST_ASSERT_EQUAL_INT(2, (int)msgs.size());
+    const uint8_t wantP[] = {0x01, 0x01, 0x01};
+    const uint8_t wantR[] = {0x01, 0x01, 0x00};
+    TEST_ASSERT_EQUAL_INT(3, (int)msgs[0].size());
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantP, msgs[0].data(), 3);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(wantR, msgs[1].data(), 3);
+    TEST_ASSERT_EQUAL_INT(0, ergSum);
+
+    // Streamed repeats of the SAME held button are debounced away (the SB20 streams ~10-20x per press).
+    src.feed(leftUp, sizeof(leftUp), emit, onErg);
+    src.feed(leftUp, sizeof(leftUp), emit, onErg);
+    TEST_ASSERT_EQUAL_INT(2, (int)msgs.size());
+
+    // A terminator frame (type 0x04) ends the press; the next held frame is a fresh press again.
+    const uint8_t term[] = {0x04, 0x00, 0x01, 0x00};
+    src.feed(term, sizeof(term), emit, onErg);
+    TEST_ASSERT_EQUAL_INT(2, (int)msgs.size());  // boundary emits nothing
+    src.feed(leftUp, sizeof(leftUp), emit, onErg);
+    TEST_ASSERT_EQUAL_INT(4, (int)msgs.size());  // press fires again after the boundary
+
+    // LEFT 3rd is default-bound to OBC Lap (0x35): click = [01 35 01] then [01 35 00].
+    msgs.clear();
+    const uint8_t left3[] = {0x01, 0x00, 0x04, 0x00};
+    src.feed(left3, sizeof(left3), emit, onErg);
+    TEST_ASSERT_EQUAL_INT(2, (int)msgs.size());
+    const uint8_t lapP[] = {0x01, 0x35, 0x01};
+    const uint8_t lapR[] = {0x01, 0x35, 0x00};
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(lapP, msgs[0].data(), 3);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(lapR, msgs[1].data(), 3);
+
+    // Re-bind: LEFT up -> local erg bias +10 (onErg, no OBC); RIGHT up -> none (nothing at all).
+    Sb20ButtonMap cfg = Sb20ButtonMap::fromString("bias_up,shift_down,lap,none,shift_down,menu");
+    src.setBindings(cfg);
+    src.reset();
+    msgs.clear();
+    ergSum = 0;
+    src.feed(leftUp, sizeof(leftUp), emit, onErg);
+    TEST_ASSERT_EQUAL_INT(0, (int)msgs.size());  // erg-bias emits no OBC
+    TEST_ASSERT_EQUAL_INT(10, ergSum);           // ... it nudges erg instead
+    const uint8_t rightUp[] = {0x01, 0x00, 0x08, 0x00};  // bit3 = RIGHT up, now bound to none
+    src.feed(rightUp, sizeof(rightUp), emit, onErg);
+    TEST_ASSERT_EQUAL_INT(0, (int)msgs.size());
+    TEST_ASSERT_EQUAL_INT(10, ergSum);  // unchanged — none does nothing
+
+    // A short/garbage frame is ignored (no emit, no crash).
+    const uint8_t shortF[] = {0x01, 0x00};
+    msgs.clear();
+    src.feed(shortF, sizeof(shortF), emit, onErg);
+    TEST_ASSERT_EQUAL_INT(0, (int)msgs.size());
+}
+
+void test_runtime_config_obc_roundtrip() {
+    using namespace sb20proxy;
+    RuntimeConfig c = RuntimeConfig::defaults();
+    c.obcEnabled = true;
+    c.obcPort = 21587;
+    c.obcDevmode = true;
+    c.obcSinkShifter = true;
+    c.obcButtons = Sb20ButtonMap::fromString("bias_up,bias_down,lap,erg_up,erg_down,none");
+    RuntimeConfig r = RuntimeConfig::fromLine(c.toLine());
+    TEST_ASSERT_TRUE(r.obcEnabled);
+    TEST_ASSERT_EQUAL_INT(21587, (int)r.obcPort);
+    TEST_ASSERT_TRUE(r.obcDevmode);
+    TEST_ASSERT_TRUE(r.obcSinkShifter);
+    TEST_ASSERT_EQUAL_STRING("bias_up,bias_down,lap,erg_up,erg_down,none", r.obcButtons.toString().c_str());
+    // backward-compat: a pre-OBC line (no obc fields) -> OBC disabled, default port, devmode off, no wedge
+    RuntimeConfig old = RuntimeConfig::fromLine("addr|ASSIOMA|0|Stages 62144|SER|0|||");
+    TEST_ASSERT_FALSE(old.obcEnabled);
+    TEST_ASSERT_EQUAL_INT(21587, (int)old.obcPort);
+    TEST_ASSERT_FALSE(old.obcDevmode);
+    // a line with obc fields but NO devmode field (pre-devmode) -> devmode off (backward-compat).
+    // 13 fields: …|refAddr|refFilter|curve|calibrating|trainer|obcEnabled=1|obcPort=21587 (no field 13).
+    RuntimeConfig preDev = RuntimeConfig::fromLine("addr|ASSIOMA|0|Stages 62144|SER|0||||||1|21587");
+    TEST_ASSERT_TRUE(preDev.obcEnabled);
+    TEST_ASSERT_EQUAL_INT(21587, (int)preDev.obcPort);
+    TEST_ASSERT_FALSE(preDev.obcDevmode);
+    TEST_ASSERT_FALSE(preDev.obcSinkShifter);
+    // a line with no button-map field keeps the sensible default binding (not all-none)
+    TEST_ASSERT_EQUAL_STRING("shift_up,shift_down,lap,shift_up,shift_down,menu",
+                             preDev.obcButtons.toString().c_str());
+}
+
 void test_shifter_decode_golden_buttons() {
     // the real session-3 `01`-frames, one per button (shifter-ble-protocol.md): `01 00 <bit LE>`
     const uint8_t l_up[4] = {0x01, 0x00, 0x01, 0x00};
@@ -1190,8 +1422,65 @@ void test_config_json_maps_fields() {
     TEST_ASSERT_TRUE(j.find("\"out_name\":\"Stages 62144\"") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"scale\":1.0") != std::string::npos);       // baseline (curve is the real model)
     TEST_ASSERT_TRUE(j.find("\"has_curve\":false") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"mode\":\"spoof\"") != std::string::npos);  // defaults() is spoof
     c.curve.add(200.0f, 1.1f);
     TEST_ASSERT_TRUE(renderConfigJson(c).find("\"has_curve\":true") != std::string::npos);
+    c.mode = ProxyMode::Corrector;
+    TEST_ASSERT_TRUE(renderConfigJson(c).find("\"mode\":\"corrector\"") != std::string::npos);
+}
+
+// The SPA's POST /config MERGES onto the current config: it flips mode + touches single/src/out_name,
+// but must PRESERVE the fitted curve, reference meter, trainer, and spoof serial the SPA never sends.
+void test_merge_spa_config_form() {
+    RuntimeConfig cur = RuntimeConfig::defaults();  // mode = Spoof
+    cur.curve.add(200.0f, 1.15f);                   // a fitted correction the SPA must not wipe
+    cur.refMeterNameFilter = "ASSIOMA";
+    cur.trainerNameFilter = "SB20-FTMS";
+    cur.spoofSerial = "9999";
+    cur.meterAddress = "e3:25:39:38:92:71";
+    // Flip to corrector, change source + identity name, clear single-sided.
+    RuntimeConfig c = mergeSpaConfigForm(cur, "single=0&src_filter=XCADEY&out_name=SB20+Corrector&mode=corrector");
+    TEST_ASSERT_TRUE(c.mode == ProxyMode::Corrector);
+    TEST_ASSERT_FALSE(c.singleSidedDouble);
+    TEST_ASSERT_EQUAL_STRING("XCADEY", c.meterNameFilter.c_str());
+    TEST_ASSERT_EQUAL_STRING("SB20 Corrector", c.spoofName.c_str());
+    // preserved (never sent by the SPA):
+    TEST_ASSERT_EQUAL_UINT(1, c.curve.points.size());
+    TEST_ASSERT_EQUAL_STRING("ASSIOMA", c.refMeterNameFilter.c_str());
+    TEST_ASSERT_EQUAL_STRING("SB20-FTMS", c.trainerNameFilter.c_str());
+    TEST_ASSERT_EQUAL_STRING("9999", c.spoofSerial.c_str());
+    TEST_ASSERT_EQUAL_STRING("e3:25:39:38:92:71", c.meterAddress.c_str());
+    // Spoof back on; single on; a blank out_name falls back to the default (never nameless).
+    RuntimeConfig d = mergeSpaConfigForm(c, "single=1&out_name=&mode=spoof");
+    TEST_ASSERT_TRUE(d.mode == ProxyMode::Spoof);
+    TEST_ASSERT_TRUE(d.singleSidedDouble);
+    TEST_ASSERT_EQUAL_STRING(Config::SPOOF_NAME, d.spoofName.c_str());
+    TEST_ASSERT_EQUAL_STRING("XCADEY", d.meterNameFilter.c_str());  // absent key = unchanged
+}
+
+// The on-device /setup page owns only source/identity/trainer; saving it must NOT wipe the mode,
+// fitted curve, or reference meter (the old /setup/save bug: it rebuilt a fresh config). mergeSetupForm
+// merges onto current. Its own fields keep the fresh /setup semantics (checkbox absent = off).
+void test_merge_setup_form_preserves_mode_curve_ref() {
+    RuntimeConfig cur = RuntimeConfig::defaults();
+    cur.mode = ProxyMode::Corrector;   // set by the calibrate wizard
+    cur.curve.add(200.0f, 1.15f);      // a fitted correction
+    cur.refMeterNameFilter = "ASSIOMA";
+    cur.trainerNameFilter = "SB20-FTMS";
+    // A normal /setup save: change the source, single-sided on. (Old code would revert to spoof + wipe curve.)
+    RuntimeConfig c = mergeSetupForm(cur, "addr=&name=XCADEY&single=1&spoof_name=Stages+62144&spoof_serial=11821518");
+    TEST_ASSERT_EQUAL_STRING("XCADEY", c.meterNameFilter.c_str());  // /setup-owned: updated
+    TEST_ASSERT_TRUE(c.singleSidedDouble);
+    TEST_ASSERT_TRUE(c.mode == ProxyMode::Corrector);              // preserved
+    TEST_ASSERT_EQUAL_UINT(1, c.curve.points.size());              // preserved
+    TEST_ASSERT_EQUAL_STRING("ASSIOMA", c.refMeterNameFilter.c_str());  // preserved
+    TEST_ASSERT_EQUAL_STRING("SB20-FTMS", c.trainerNameFilter.c_str()); // absent trainer key = preserved
+    // Checkbox semantics kept: `single` absent = off (an unchecked HTML checkbox isn't submitted).
+    RuntimeConfig d = mergeSetupForm(c, "addr=&name=XCADEY");
+    TEST_ASSERT_FALSE(d.singleSidedDouble);
+    // Present-but-empty trainer is an explicit clear.
+    RuntimeConfig e = mergeSetupForm(cur, "addr=&name=XCADEY&trainer=");
+    TEST_ASSERT_EQUAL_STRING("", e.trainerNameFilter.c_str());
 }
 
 void test_curve_json_export_and_roundtrip() {
@@ -1432,8 +1721,8 @@ void test_status_led_searching_blinks_faster_than_connected() {
 
 void test_oled_portal_lines() {
     auto l = formatOledLines(OledMode::Portal, std::string(), 0, 0);
-    TEST_ASSERT_EQUAL_STRING("SB20 SETUP", l[0].c_str());
-    TEST_ASSERT_EQUAL_STRING("SB20-Setup", l[2].c_str());
+    TEST_ASSERT_EQUAL_STRING("SB20 SETUP", l[0].c_str());  // heading text (not the SSID)
+    TEST_ASSERT_EQUAL_STRING("Setup", l[2].c_str());       // SSID row (default base; MAC-suffixed at runtime)
     TEST_ASSERT_EQUAL_STRING(Config::SETUP_PORTAL_HOST, l[3].c_str());
 }
 
@@ -1467,6 +1756,54 @@ void test_oled_connected_shows_rssi() {
     TEST_ASSERT_EQUAL_STRING("230W 85rpm", l[2].c_str());    // power+cadence still share the row
     auto plain = formatOledLines(OledMode::Connected, "192.168.1.82", 230, 85);  // no rssi
     TEST_ASSERT_EQUAL_STRING("SB20 PROXY", plain[0].c_str());
+}
+
+void test_oled_struct_overload_projects_ride_view() {
+    // The shared-view-model entry (U3): the OLED projects directly from a RideView/ProvisionView —
+    // the same structs buildLcdViews fills for the LCD boards — not a bespoke scalar list.
+    ProvisionView prov;  // not in portal
+    RideView ride;
+    ride.watts = 217;
+    ride.cadence = 92;
+    ride.wifiRssi = -55;
+    auto l = formatOledLines(prov, ride, /*wifiUp=*/true, "192.168.1.7");
+    TEST_ASSERT_EQUAL_STRING("WiFi -55", l[0].c_str());
+    TEST_ASSERT_EQUAL_STRING("192.168.1.7", l[1].c_str());
+    TEST_ASSERT_EQUAL_STRING("217W 92rpm", l[2].c_str());
+}
+
+void test_oled_scalar_adapter_matches_struct() {
+    // The scalar adapter must be a faithful shim over the struct projection: identical output for
+    // the same data, via either entry point. Portal-with-PIN + Connecting.
+    ProvisionView prov;
+    prov.portal = true;
+    prov.apSsid = "Setup-A6E9";
+    prov.pin = "12345678";
+    RideView ride;
+    auto viaStruct = formatOledLines(prov, ride, /*wifiUp=*/false, std::string());
+    auto viaScalar = formatOledLines(OledMode::Portal, "", 0, -1, 0, -1, "12345678", "Setup-A6E9");
+    for (int i = 0; i < 4; ++i) TEST_ASSERT_EQUAL_STRING(viaScalar[i].c_str(), viaStruct[i].c_str());
+    ProvisionView p2;
+    RideView r2;
+    auto s2 = formatOledLines(p2, r2, /*wifiUp=*/false, "");
+    auto c2 = formatOledLines(OledMode::Connecting, "", 0, 0);
+    for (int i = 0; i < 4; ++i) TEST_ASSERT_EQUAL_STRING(c2[i].c_str(), s2[i].c_str());
+}
+
+// --- onboarding (U4): the shared WiFi setup-AP QR payload ---------------------
+
+void test_wifi_qr_payload_basic() {
+    // The exact "WIFI:" string LvglUi feeds the on-panel QR — a phone camera scans it to join.
+    TEST_ASSERT_EQUAL_STRING("WIFI:T:WPA;S:Setup-A6E9;P:12345678;;",
+                             wifiQrPayload("Setup-A6E9", "12345678").c_str());
+}
+
+void test_wifi_qr_payload_escapes_special_chars() {
+    // ';' ':' ',' '\\' '"' in the SSID/PIN must be backslash-escaped or the QR truncates/corrupts
+    // (the old inline snprintf did NOT escape — a latent break if a PIN ever had a special char).
+    TEST_ASSERT_EQUAL_STRING("WIFI:T:WPA;S:my\\;net;P:a\\:b\\,c;;",
+                             wifiQrPayload("my;net", "a:b,c").c_str());
+    TEST_ASSERT_EQUAL_STRING("x\\\\y", wifiQrEscape("x\\y").c_str());
 }
 
 // --- saved page ---------------------------------------------------------------
@@ -2313,12 +2650,34 @@ void test_setup_pin_deterministic_and_sensitive() {
     TEST_ASSERT_TRUE(deriveSetupPin(mac, 6, "secret") != deriveSetupPin(mac, 6, "other"));   // per-secret
 }
 
+void test_setup_ap_ssid_has_unique_mac_suffix() {
+    const uint8_t mac[6] = {0xAA, 0xBB, 0xCC, 0x11, 0xA6, 0xE9};
+    const uint8_t mac2[6] = {0xAA, 0xBB, 0xCC, 0x11, 0xB7, 0x33};  // differs in the last 2 bytes
+    // base + "-" + last 2 MAC bytes, uppercase hex (short enough for the 0.42" OLED row)
+    TEST_ASSERT_EQUAL_STRING("Setup-A6E9", setupApSsid("Setup", mac, 6).c_str());
+    // deterministic + distinct per board (so two boards in setup mode don't collide)
+    TEST_ASSERT_EQUAL_STRING(setupApSsid("Setup", mac, 6).c_str(),
+                             setupApSsid("Setup", mac, 6).c_str());
+    TEST_ASSERT_TRUE(setupApSsid("Setup", mac, 6) != setupApSsid("Setup", mac2, 6));
+    TEST_ASSERT_TRUE(setupApSsid("Setup", mac, 6).size() <= 14);  // fits the OLED detail row
+    TEST_ASSERT_EQUAL_STRING("Setup", setupApSsid("Setup", mac, 1).c_str());  // short-mac fallback
+}
+
 void test_oled_portal_shows_pin_when_present() {
     auto withPin = formatOledLines(OledMode::Portal, "", 0, -1, 0, -1, "12345678");
-    TEST_ASSERT_EQUAL_STRING("SB20-Setup", withPin[1].c_str());
+    TEST_ASSERT_EQUAL_STRING("Setup", withPin[1].c_str());  // default base (no MAC threaded here)
     TEST_ASSERT_EQUAL_STRING("PIN 12345678", withPin[2].c_str());
     auto noPin = formatOledLines(OledMode::Portal, "", 0, -1, 0, -1, "");  // open-AP fallback layout
     TEST_ASSERT_EQUAL_STRING("join wifi:", noPin[1].c_str());
+}
+
+void test_oled_portal_shows_per_device_ssid() {
+    // The per-device SSID must appear on the screen so it matches the broadcast AP (and fits the row).
+    auto withPin = formatOledLines(OledMode::Portal, "", 0, -1, 0, -1, "12345678", "Setup-A6E9");
+    TEST_ASSERT_EQUAL_STRING("Setup-A6E9", withPin[1].c_str());
+    TEST_ASSERT_TRUE(withPin[1].size() <= 14);  // stays within the 0.42" OLED 5x7 row budget
+    auto noPin = formatOledLines(OledMode::Portal, "", 0, -1, 0, -1, "", "Setup-A6E9");
+    TEST_ASSERT_EQUAL_STRING("Setup-A6E9", noPin[2].c_str());
 }
 
 // --- runner -------------------------------------------------------------------
@@ -2327,6 +2686,8 @@ int runUnityTests() {
     UNITY_BEGIN();
     RUN_TEST(test_setup_pin_is_eight_digits);
     RUN_TEST(test_setup_pin_deterministic_and_sensitive);
+    RUN_TEST(test_setup_ap_ssid_has_unique_mac_suffix);
+    RUN_TEST(test_oled_portal_shows_per_device_ssid);
     RUN_TEST(test_oled_portal_shows_pin_when_present);
     RUN_TEST(test_request_authority_extracts_host);
     RUN_TEST(test_same_origin_allows_tools_and_self);
@@ -2416,6 +2777,8 @@ int runUnityTests() {
     RUN_TEST(test_scan_json_shape_and_flags);
     RUN_TEST(test_scan_json_empty);
     RUN_TEST(test_config_json_maps_fields);
+    RUN_TEST(test_merge_spa_config_form);
+    RUN_TEST(test_merge_setup_form_preserves_mode_curve_ref);
     RUN_TEST(test_curve_json_export_and_roundtrip);
     RUN_TEST(test_diag_report_has_firmware_version);
     RUN_TEST(test_firmware_version_feeds_ota_decision);
@@ -2447,6 +2810,10 @@ int runUnityTests() {
     RUN_TEST(test_oled_connected_shows_balance_compact);
     RUN_TEST(test_oled_connected_unknown_cadence_omitted);
     RUN_TEST(test_oled_connected_shows_rssi);
+    RUN_TEST(test_oled_struct_overload_projects_ride_view);
+    RUN_TEST(test_oled_scalar_adapter_matches_struct);
+    RUN_TEST(test_wifi_qr_payload_basic);
+    RUN_TEST(test_wifi_qr_payload_escapes_special_chars);
     RUN_TEST(test_saved_page_has_ssid_and_hints);
     RUN_TEST(test_saved_page_escapes_ssid);
     RUN_TEST(test_app_page_essentials);
@@ -2501,6 +2868,16 @@ int runUnityTests() {
     RUN_TEST(test_curve_string_roundtrip);
     RUN_TEST(test_shifter_decode_golden_buttons);
     RUN_TEST(test_shifter_debounce_one_event_per_press);
+    RUN_TEST(test_obc_encode_button_single);
+    RUN_TEST(test_obc_encode_button_multi_action);
+    RUN_TEST(test_obc_encode_button_press_and_release);
+    RUN_TEST(test_obc_encode_analog_and_device_status);
+    RUN_TEST(test_obc_encode_rejects_small_buffer_and_empty);
+    RUN_TEST(test_obc_sb20_default_map);
+    RUN_TEST(test_obc_sb20_encode_button_state);
+    RUN_TEST(test_sb20_button_map_default_serialize_resolve);
+    RUN_TEST(test_obc_shifter_source_click_and_debounce);
+    RUN_TEST(test_runtime_config_obc_roundtrip);
     RUN_TEST(test_calibration_session_lifecycle_and_fit);
     RUN_TEST(test_calibration_session_finish_needs_enough_pairs);
     RUN_TEST(test_calibration_session_cancel_resets);

@@ -7,6 +7,7 @@
 #include "CalibrationPage.h"  // CalWizardView (the wizard's shared view model)
 #include "LcdCanvas.h"
 #include "SourceCandidate.h"
+#include "UiModel.h"          // RideView + ProvisionView — shared with the OLED builds
 #include "WorkoutEngine.h"
 #include "WorkoutPresets.h"
 
@@ -48,29 +49,7 @@ struct UiAction {
 };
 
 // ---------- view models (filled by main.cpp each frame) ------------------------------------
-struct RideView {
-    std::string srcName;      // "ASSIOMA17039L" or "searching…"
-    std::string outName;      // the identity we advertise ("Stages 62144")
-    bool srcOn = false;
-    bool outOn = true;
-    int16_t watts = 0;        // broadcast power (the hero)
-    int16_t srcWatts = 0;     // received power (details)
-    int16_t cadence = -1;
-    int16_t balancePct = -1;  // left %
-    const int16_t* hist = nullptr;  // power history ring, oldest first
-    int nHist = 0;
-    int16_t histMax = 300;
-    // details panel extras
-    int32_t wifiRssi = 0;
-    uint32_t uptimeMs = 0;
-    uint32_t freeHeap = 0;
-    std::string version;
-    // live workout strip
-    bool wkRunning = false;
-    bool wkPaused = false;
-    int16_t wkTarget = -1;
-    long wkRemainS = 0;
-};
+// RideView + ProvisionView are shared with the OLED builds — they live in UiModel.h (included above).
 
 struct WorkoutView {
     bool loaded = false;
@@ -105,14 +84,7 @@ struct MoreView {
     uint8_t brightness = 100;
 };
 
-// WiFi onboarding (the captive setup portal): when active, the LCD boards replace the normal UI
-// with a join-this-AP screen (QR + SSID/PIN); the C3's OLED shows the same facts as text.
-struct ProvisionView {
-    bool portal = false;
-    std::string apSsid;   // "SB20-Setup"
-    std::string pin;      // the AP's WPA2 password (per-device PIN on OLED builds)
-    std::string url;      // where the portal lives (Config::SETUP_PORTAL_URL)
-};
+// (ProvisionView moved to UiModel.h — shared with the OLED builds.)
 
 struct LcdViews {
     RideView ride;

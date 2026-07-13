@@ -1,3 +1,6 @@
 # Capture JSONL is the canonical lossless record — never convert line endings.
 code/findings/captures/*.jsonl -text
 *.jsonl -text
+
+# Shell scripts must stay LF so they run on the machines that render diagrams.
+*.sh text eol=lf

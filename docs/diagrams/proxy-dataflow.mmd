@@ -1,0 +1,23 @@
+%% The live read → correct → rebroadcast spine, and the control surface.
+sequenceDiagram
+    autonumber
+    participant M as Power meter
+    participant C as BleMeterClient<br/>(central)
+    participant P as ProxyCore + Correction
+    participant K as BleCrankPeripheral<br/>(peripheral)
+    participant S as SB20 bike
+    participant U as Phone / Garmin
+
+    Note over M,S: Live loop (~1–4 Hz)
+    M->>C: CPS measurement (power, crank revs)
+    C->>P: PowerReading (raw watts)
+    P->>P: apply correction (curve wins, else scale/offset)
+    P->>K: corrected watts + crank passthrough
+    K->>S: Stages 0x2F frame (as its own crank)
+    K->>U: CPS notify / status
+
+    Note over S,U: Calibrate / control (on demand)
+    S->>K: Control Point 0x10 (enhanced offset)
+    K-->>S: reply with Stages company id 442 + mfg data
+    U->>K: config write (spoof/corrector, curve, source)
+    K-->>U: read-back (persisted to NVS/LittleFS)

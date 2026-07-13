@@ -1,0 +1,46 @@
+{
+  "_comment": "Single source for the ESP32 <-> web SPA JSON contract: the field names each endpoint emits/reads. firmware/lib/proxy/WebJson.h EMITS these; web/index.html READS them. `python code/scripts/gen_webjson.py --check` fails if either side drifts from this schema (CI: the bridge-parity job). Regenerate the human reference table with `python code/scripts/gen_webjson.py`. This widens the R2 schema-parity idea (ui-schema/bridge.json) to the web-JSON mirror. See web/HTTP-API.md.",
+  "endpoints": [
+    {
+      "path": "/scan",
+      "method": "GET",
+      "serializer": "renderScanJson",
+      "doc": "Nearby meters/trainers for the source picker.",
+      "wrapper": "devices",
+      "fields": [
+        {"name": "name", "type": "string", "doc": "advertised device name"},
+        {"name": "rssi", "type": "int", "doc": "signal strength (dBm)"},
+        {"name": "cps", "type": "bool", "doc": "advertises Cycling Power Service (a meter)"},
+        {"name": "ftms", "type": "bool", "doc": "advertises FTMS (a trainer)"},
+        {"name": "crank", "type": "bool", "doc": "is a Stages crank"}
+      ]
+    },
+    {
+      "path": "/config",
+      "method": "GET",
+      "serializer": "renderConfigJson",
+      "doc": "The device's identity/correction config for the SPA to display.",
+      "wrapper": null,
+      "fields": [
+        {"name": "scale", "type": "number", "doc": "linear scale baseline (1.0; the ESP uses a curve)"},
+        {"name": "offset", "type": "number", "doc": "linear offset baseline (0.0)"},
+        {"name": "single_sided", "type": "bool", "doc": "double a single-sided meter"},
+        {"name": "src_filter", "type": "string", "doc": "meter name filter"},
+        {"name": "out_name", "type": "string", "doc": "advertised spoof identity"},
+        {"name": "mode", "type": "string", "doc": "\"spoof\" | \"corrector\""},
+        {"name": "has_curve", "type": "bool", "doc": "a fitted correction curve is active"}
+      ]
+    },
+    {
+      "path": "/curve",
+      "method": "GET",
+      "serializer": "renderCurveJson",
+      "doc": "The correction curve as portable [power_w, factor] breakpoints.",
+      "wrapper": null,
+      "fields": [
+        {"name": "has_curve", "type": "bool", "doc": "a fitted curve is active"},
+        {"name": "curve", "type": "array", "doc": "[[power_w, factor], ...] breakpoints"}
+      ]
+    }
+  ]
+}

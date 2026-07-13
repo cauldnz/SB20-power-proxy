@@ -55,6 +55,10 @@ struct ConfigPacket {
     bool srcIsAnt = false;
     bool outIsAnt = false;
     bool singleSided = false;  // double a single-sided (R-only) source before correcting
+    bool spoof = false;        // product mode: false = corrector (honest CPS identity, the default),
+                               // true = SB20 Stages-crank spoof (0x2F frames + the Stages identity).
+                               // The advertised services/DIS/feature are boot-time, so a mode change
+                               // needs a reboot to re-present the identity (the framing switches live).
     uint16_t scaleMilli = 1000;
     int16_t offsetDeciW = 0;
     char srcFilter[CFG_NAME_LEN + 1] = {0};  // NUL-terminated in the struct, NUL-padded on the wire
@@ -64,7 +68,8 @@ constexpr size_t CONFIG_LEN = 44;
 
 inline size_t packConfig(const ConfigPacket& c, uint8_t out[CONFIG_LEN]) {
     out[0] = PROTO_VER;
-    out[1] = (uint8_t)((c.srcIsAnt ? 1 : 0) | (c.outIsAnt ? 2 : 0) | (c.singleSided ? 4 : 0));
+    out[1] = (uint8_t)((c.srcIsAnt ? 1 : 0) | (c.outIsAnt ? 2 : 0) | (c.singleSided ? 4 : 0) |
+                       (c.spoof ? 8 : 0));
     packU16(out + 2, c.scaleMilli);
     packU16(out + 4, (uint16_t)c.offsetDeciW);
     memset(out + 6, 0, CFG_NAME_LEN);
@@ -81,6 +86,7 @@ inline bool unpackConfig(const uint8_t* p, size_t len, ConfigPacket& c) {
     n.srcIsAnt = (p[1] & 1) != 0;
     n.outIsAnt = (p[1] & 2) != 0;
     n.singleSided = (p[1] & 4) != 0;
+    n.spoof = (p[1] & 8) != 0;  // old configs have bit 3 clear -> corrector (unchanged default)
     n.scaleMilli = unpackU16(p + 2);
     n.offsetDeciW = (int16_t)unpackU16(p + 4);
     memcpy(n.srcFilter, p + 6, CFG_NAME_LEN);
@@ -91,6 +97,31 @@ inline bool unpackConfig(const uint8_t* p, size_t len, ConfigPacket& c) {
     if (n.scaleMilli < 500 || n.scaleMilli > 2000) return false;
     if (n.offsetDeciW < -1000 || n.offsetDeciW > 1000) return false;
     c = n;
+    return true;
+}
+
+// ---- Buttons (read/write, 8 bytes) — the SB20-shifter -> action binding + sink enable --------
+// [ver, enabled, act0..act5] where actN is an action-option INDEX (the shared Sb20ButtonMap option
+// order; the JS + firmware both map index<->token). `enabled` sinks the SB20's own buttons (a
+// separate central to the SB20) and re-broadcasts them per the binding. See GATT.md + the pure
+// firmware/lib/proxy/Sb20ButtonMap.h. Persisted to LittleFS; applies live.
+constexpr size_t BUTTONS_LEN = 8;
+struct ButtonsPacket {
+    bool enabled = false;
+    uint8_t act[6] = {0, 0, 0, 0, 0, 0};  // action-option indices (0 = none)
+};
+inline size_t packButtons(const ButtonsPacket& b, uint8_t out[BUTTONS_LEN]) {
+    out[0] = PROTO_VER;
+    out[1] = b.enabled ? 1 : 0;
+    for (int i = 0; i < 6; ++i) out[2 + i] = b.act[i];
+    return BUTTONS_LEN;
+}
+inline bool unpackButtons(const uint8_t* p, size_t len, ButtonsPacket& b) {
+    if (len < BUTTONS_LEN || p[0] != PROTO_VER) return false;
+    ButtonsPacket n;
+    n.enabled = p[1] != 0;
+    for (int i = 0; i < 6; ++i) n.act[i] = p[2 + i];
+    b = n;
     return true;
 }
 

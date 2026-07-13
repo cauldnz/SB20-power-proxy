@@ -82,9 +82,9 @@ pio device monitor                                  # Ctrl-C to exit
 
 # b) WiFi captive portal (no wifi_secret.h needed), first flash over USB
 pio run -e esp32c3-wifi -t upload                   # use esp32c3-oled if your board has the OLED
-pio device monitor                                  # prints: join 'SB20-Setup' -> http://192.168.4.1/
+pio device monitor                                  # prints: join 'Setup-XXXX' -> http://172.29.4.1/
 ```
-Phone: join the WPA2 AP **`SB20-Setup`** (OLED boards show an 8-digit **PIN** on screen; screenless
+Phone: join the WPA2 AP **`Setup-XXXX`** (per-device, XXXX = last 2 MAC bytes, shown on the OLED/LCD; OLED boards show an 8-digit **PIN** on screen; screenless
 boards use the default password **`sb20setup`**) → setup page auto-pops (else `http://192.168.4.1/`)
 → pick your 2.4 GHz network → saves to NVS, reboots onto WiFi. Then:
 ```bash

@@ -15,6 +15,8 @@
 #include "LSM6DS3.h"
 #include "Wire.h"
 
+#include "board.h"  // board LED/IMU capability seam (XIAO Sense default; -DBOARD_FEATHER for generic)
+
 // The Adafruit nRF core's Arduino.h defines abs/round/min/max as MACROS, which break the
 // std::round / std::min<> inside the shared pure headers (CalibrationFit et al). Undo them
 // before those includes — the pure code wants the real std functions, not the Arduino macros.
@@ -25,6 +27,7 @@
 #undef constrain
 #include "CalibrationSession.h"  // pure on-device DUT->reference calibration (shared with ESP32)
 #include "Correction.h"    // pure (shared with the ESP32 builds via lib_extra_dirs)
+#include "ObcShifterSource.h"  // pure: SB20 shifter notification -> OBC ButtonState (shared w/ ESP32)
 #include "Cps.h"           // pure CPS codec — the same bytes as the ESP32 + Python twins
 #include "Ftms.h"          // pure FTMS codec (erg control point) — shared with ESP32 (P4)
 #include "IPowerSource.h"  // PowerReading
@@ -34,12 +37,17 @@
 #include "WorkoutPresets.h"  // built-in workouts (presetJson) — pure (P4)
 #include "WorkoutRuntime.h"  // pure structured-workout clock (shared with ESP32) (P4)
 
+#include "BridgeConfigStore.h"  // the LittleFS persistence seam (config/curve/trainer/buttons)
+#include "BridgeService.h"      // the Bridge GATT service seam (UUIDs + chars + begin() wiring)
+
 using namespace sb20proxy;
 using namespace nrfbridge;
 using namespace Adafruit_LittleFS_Namespace;
 
-// ================= config (persisted to internal LittleFS) ====================================
-static const char* kCfgPath = "/bridge.cfg";
+// ================= config (persisted to internal LittleFS via BridgeConfigStore) ==============
+// The globals + the "apply to running state" policy live here; the flash I/O is the seam
+// (BridgeConfigStore.h). The cfg/curve/trainer wrappers keep their names so every call site is
+// unchanged — they just delegate to bridgestore::.
 static ConfigPacket g_cfg;  // defaults: scale 1.0, offset 0, any-CPS source, name below
 static Correction g_corr;
 static char g_trainerFilter[20] = {0};  // FTMS trainer name filter ("" = erg off) — declared here
@@ -52,89 +60,17 @@ static void applyCorrectionFromCfg() {
     // Correction::apply — so a fitted curve keeps applying regardless of the scalar fields.
 }
 
-// ---- correction curve (persisted separately from the scalar config) --------------------------
-static const char* kCurvePath = "/curve.bin";
-static void curveSave() {
-    InternalFS.remove(kCurvePath);
-    if (g_corr.curve.empty()) return;
-    File f(InternalFS);
-    if (f.open(kCurvePath, FILE_O_WRITE)) {
-        const uint8_t n = (uint8_t)g_corr.curve.points.size();
-        uint8_t buf[2 + CURVE_MAX_POINTS * 4];
-        CurvePoint pts[CURVE_MAX_POINTS];
-        for (uint8_t i = 0; i < n && i < CURVE_MAX_POINTS; ++i) {
-            pts[i].powerW = (uint16_t)g_corr.curve.points[i].power_w;
-            pts[i].factorMilli = (uint16_t)(g_corr.curve.points[i].factor * 1000.0f + 0.5f);
-        }
-        f.write(buf, packCurve(pts, n, buf));
-        f.close();
-    }
-}
-static void curveLoad() {
-    File f(InternalFS);
-    if (!f.open(kCurvePath, FILE_O_READ)) return;
-    uint8_t buf[2 + CURVE_MAX_POINTS * 4];
-    int rd = f.read(buf, sizeof(buf));
-    f.close();
-    CurvePoint pts[CURVE_MAX_POINTS];
-    int n = (rd >= 2) ? unpackCurve(buf, rd, pts) : -1;
-    if (n > 0) {
-        g_corr.curve = CorrectionCurve{};
-        for (int i = 0; i < n; ++i) g_corr.curve.add(pts[i].powerW, pts[i].factorMilli / 1000.0f);
-        Serial.printf("[bridge] correction curve loaded (%d points)\n", n);
-    }
-}
+static void curveSave() { bridgestore::saveCurve(g_corr.curve); }
+static void curveLoad() { bridgestore::loadCurve(g_corr.curve); }
+static void trainerSave() { bridgestore::saveTrainer(g_trainerFilter); }
+static void trainerLoad() { bridgestore::loadTrainer(g_trainerFilter, sizeof(g_trainerFilter)); }
 
-// ---- trainer name (erg) persistence, separate from the scalar config -------------------------
-static const char* kTrainerPath = "/trainer.txt";
-static void trainerSave() {
-    InternalFS.remove(kTrainerPath);
-    if (!g_trainerFilter[0]) return;
-    File f(InternalFS);
-    if (f.open(kTrainerPath, FILE_O_WRITE)) { f.write((uint8_t*)g_trainerFilter, strlen(g_trainerFilter)); f.close(); }
-}
-static void trainerLoad() {
-    File f(InternalFS);
-    if (!f.open(kTrainerPath, FILE_O_READ)) return;
-    int n = f.read((uint8_t*)g_trainerFilter, sizeof(g_trainerFilter) - 1);
-    f.close();
-    if (n > 0) { g_trainerFilter[n] = 0; Serial.printf("[erg] trainer configured: '%s'\n", g_trainerFilter); }
-}
+// ---- Status LED — routed through the board seam so single-LED/Feather boards also build (board.h).
+// Track use: glanceable link state (RGB on the XIAO; on/off on a single-LED board).
+static void setLed(bool r, bool g, bool b) { boardLed(r, g, b); }
 
-// ---- RGB status LED (active-low; pins from the probe). Track use: glanceable link state. ------
-static void setLed(bool r, bool g, bool b) {
-    digitalWrite(LED_RED, r ? LOW : HIGH);
-    digitalWrite(LED_GREEN, g ? LOW : HIGH);
-    digitalWrite(LED_BLUE, b ? LOW : HIGH);
-}
-
-static void cfgLoad() {
-    strcpy(g_cfg.outName, "SB20 Bridge");
-    File f(InternalFS);
-    if (f.open(kCfgPath, FILE_O_READ)) {
-        uint8_t buf[CONFIG_LEN];
-        if (f.read(buf, sizeof(buf)) == (int)sizeof(buf)) {
-            ConfigPacket c;
-            if (unpackConfig(buf, sizeof(buf), c)) g_cfg = c;
-        }
-        f.close();
-        Serial.println("[bridge] config loaded from flash");
-    } else {
-        Serial.println("[bridge] no stored config - defaults (dev flashes wipe LittleFS)");
-    }
-    applyCorrectionFromCfg();
-}
-
-static void cfgSave() {
-    uint8_t buf[CONFIG_LEN];
-    packConfig(g_cfg, buf);
-    InternalFS.remove(kCfgPath);
-    File f(InternalFS);
-    if (f.open(kCfgPath, FILE_O_WRITE)) {
-        f.write(buf, sizeof(buf));
-        f.close();
-    }
-}
+static void cfgLoad() { g_cfg = bridgestore::loadConfig(); applyCorrectionFromCfg(); }
+static void cfgSave() { bridgestore::saveConfig(g_cfg); }
 
 // ================= source side: BLE central reading a CPS meter ===============================
 static BLEClientService clientCps(UUID16_SVC_CYCLING_POWER);
@@ -157,6 +93,48 @@ static int16_t g_ergDesired = 0, g_ergLastSent = 0;
 static bool g_ergHaveSent = false;
 static FtmsPowerRange g_ergRange;  // set to a sane 0..1000 fallback in setup(); the trainer's
                                    // real range overwrites it on connect
+
+// ---- sink the SB20's own shifter buttons -> re-broadcast as OBC (the bike add-on) ----------------
+// A 4th central connects to the SB20 and subscribes to its vendor button char (0c46be60, service
+// 0c46be5f — code/findings/shifter-ble-protocol.md); each press feeds the pure ObcShifterSource, which
+// emits OBC ButtonState straight to our chObcButton (notifyClients). Build-flag gated (the nRF has no
+// web UI for a runtime toggle — enable with `-D OBC_SINK_SHIFTER=1`); the ESP32 keeps its NVS toggle.
+// 128-bit UUIDs stored little-endian (like the OBC UUIDs above).
+static const uint8_t kUuidSb20Svc[16] = {0xe5, 0xf4, 0xa2, 0xe1, 0xea, 0xc6, 0x0e, 0xae,
+                                         0xff, 0x48, 0x22, 0x9c, 0x5f, 0xbe, 0x46, 0x0c};
+static const uint8_t kUuidSb20Button[16] = {0xe5, 0xf4, 0xa2, 0xe1, 0xea, 0xc6, 0x0e, 0xae,
+                                            0xff, 0x48, 0x22, 0x9c, 0x60, 0xbe, 0x46, 0x0c};
+static BLEClientService sb20VendorSvc(kUuidSb20Svc);
+static BLEClientCharacteristic sb20Button(kUuidSb20Button);
+static uint16_t g_sb20ConnHandle = BLE_CONN_HANDLE_INVALID;
+static volatile bool g_sb20Connected = false;
+#ifndef OBC_SINK_SHIFTER
+#define OBC_SINK_SHIFTER 0
+#endif
+static bool g_sinkShifter = (OBC_SINK_SHIFTER != 0);  // read the SB20 shifter + re-broadcast as OBC
+static ObcShifterSource g_shifterSrc;                 // pure decode/debounce/map/encode
+
+// The Buttons GATT characteristic (0009): the web app writes the binding + enable over Web Bluetooth;
+// it applies live to g_sinkShifter + g_shifterSrc and survives reboot (persistence in BridgeConfigStore).
+static ButtonsPacket currentButtons() {
+    ButtonsPacket b;
+    b.enabled = g_sinkShifter;
+    g_shifterSrc.bindings().toIndices(b.act);
+    return b;
+}
+static void applyButtons(const ButtonsPacket& b) {
+    g_sinkShifter = b.enabled;
+    g_shifterSrc.setBindings(Sb20ButtonMap::fromIndices(b.act));
+}
+static void buttonsSave() { bridgestore::saveButtons(currentButtons()); }
+static void buttonsLoad() {
+    ButtonsPacket b;
+    if (bridgestore::loadButtons(b)) {
+        applyButtons(b);
+        Serial.printf("[shifter] buttons loaded (sink=%d)\n", (int)b.enabled);
+    }
+}
+// buttonsWriteCb is defined after the chButtons characteristic (it reads it back) — see below.
 
 // ---- structured workout (pure WorkoutRuntime, shared with the ESP32) --------------------------
 static WorkoutRuntime g_wk;
@@ -187,29 +165,52 @@ static BLEDfu bledfu;   // BLE OTA (Adafruit buttonless DFU) — flash over Blue
 static uint16_t g_crankLenHalfMm = 345;  // 172.5 mm
 
 // ================= the Bridge service (GATT.md) ================================================
-// 53423230-XXXX-4bd9-a4ae-1b4e2c633a1d, little-endian; bytes [10],[11] carry XXXX.
-#define BRIDGE_UUID(id)                                                                       \
-    {0x1d, 0x3a, 0x63, 0x2c, 0x4e, 0x1b, 0xae, 0xa4, 0xd9, 0x4b, (uint8_t)(id), \
-     (uint8_t)((id) >> 8), 0x30, 0x32, 0x42, 0x53}
-static const uint8_t kUuidBridgeSvc[16] = BRIDGE_UUID(0x0000);
-static const uint8_t kUuidStatus[16] = BRIDGE_UUID(0x0001);
-static const uint8_t kUuidConfig[16] = BRIDGE_UUID(0x0002);
-static const uint8_t kUuidRecCtl[16] = BRIDGE_UUID(0x0003);
-static const uint8_t kUuidRecData[16] = BRIDGE_UUID(0x0004);
-static const uint8_t kUuidCurve[16] = BRIDGE_UUID(0x0005);
-static const uint8_t kUuidCal[16] = BRIDGE_UUID(0x0006);
-static const uint8_t kUuidScan[16] = BRIDGE_UUID(0x0007);
-static const uint8_t kUuidWk[16] = BRIDGE_UUID(0x0008);
+// The GATT table (UUIDs + characteristic objects + the begin() wiring) is the BridgeService seam;
+// the write-callback bodies + notify/publish helpers stay here and reach the chars via g_bridge.
+static BridgeService g_bridge;
 
-static BLEService bridgeSvc(kUuidBridgeSvc);
-static BLECharacteristic chStatus(kUuidStatus);
-static BLECharacteristic chConfig(kUuidConfig);
-static BLECharacteristic chRecCtl(kUuidRecCtl);
-static BLECharacteristic chRecData(kUuidRecData);
-static BLECharacteristic chCurve(kUuidCurve);   // correction-curve write/read (P1)
-static BLECharacteristic chCal(kUuidCal);       // calibration control + state (P2)
-static BLECharacteristic chScan(kUuidScan);     // scanned-source list for the web picker (P3)
-static BLECharacteristic chWk(kUuidWk);         // workout + erg control + state (P4)
+// The Buttons (0009) write handler — applies the binding + enable live, persists, reads back, and
+// starts/stops the SB20 central in place. Defined here (after chButtons) since it reads it back.
+static void buttonsWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t* data, uint16_t len) {
+    ButtonsPacket b;
+    if (!unpackButtons(data, len, b)) { Serial.println("[shifter] buttons write REJECTED"); return; }
+    const bool was = g_sinkShifter;
+    applyButtons(b);
+    buttonsSave();
+    uint8_t buf[BUTTONS_LEN];
+    packButtons(currentButtons(), buf);
+    g_bridge.chButtons.write(buf, sizeof(buf));  // read-back reflects what stuck
+    if (g_sinkShifter && !was && !Bluefruit.Scanner.isRunning())
+        Bluefruit.Scanner.start(0);  // start hunting the SB20 now
+    if (!g_sinkShifter && g_sb20Connected && g_sb20ConnHandle != BLE_CONN_HANDLE_INVALID)
+        Bluefruit.disconnect(g_sb20ConnHandle);  // drop the SB20 when disabled
+    Serial.printf("[shifter] buttons set (sink=%d)\n", (int)g_sinkShifter);
+}
+
+// OpenBikeControl (OBC) — a Button-State notify char so the SB20's re-presented handlebar buttons drive
+// OBC-speaking apps over BLE (firmware/lib/proxy/Obc.h). 128-bit UUIDs stored little-endian:
+// d273f680-d548-419d-b9d1-fa0472345229 (service) / ...681 (button state).
+static const uint8_t kUuidObcSvc[16] =
+    {0x29, 0x52, 0x34, 0x72, 0x04, 0xfa, 0xd1, 0xb9, 0x9d, 0x41, 0x48, 0xd5, 0x80, 0xf6, 0x73, 0xd2};
+static const uint8_t kUuidObcButton[16] =
+    {0x29, 0x52, 0x34, 0x72, 0x04, 0xfa, 0xd1, 0xb9, 0x9d, 0x41, 0x48, 0xd5, 0x81, 0xf6, 0x73, 0xd2};
+static BLEService obcSvc(kUuidObcSvc);
+static BLECharacteristic chObcButton(kUuidObcButton);
+
+// Stages proprietary service — SPOOF mode only. The real Stages crank advertises + exposes this and
+// the SB20 checks for it to confirm a genuine crank; contents are opaque (presence is the point). It
+// mirrors the ESP32 BleCrankPeripheral. 128-bit UUIDs stored little-endian (full byte reverse of the
+// string): d445fe0X-d139-9a5d-6707-1cc6a58b6303 -> byte [12] carries the 0X sub-id.
+#define STAGES_UUID(sub)                                                                         \
+    {0x03, 0x63, 0x8b, 0xa5, 0xc6, 0x1c, 0x07, 0x67, 0x5d, 0x9a, 0x39, 0xd1, (uint8_t)(sub),     \
+     0xfe, 0x45, 0xd4}
+static const uint8_t kUuidStagesSvc[16] = STAGES_UUID(0x01);
+static const uint8_t kUuidStagesCtrl[16] = STAGES_UUID(0x02);  // notify + write
+static const uint8_t kUuidStagesData[16] = STAGES_UUID(0x03);  // notify
+static BLEService stagesSvc(kUuidStagesSvc);
+static BLECharacteristic chStagesCtrl(kUuidStagesCtrl);
+static BLECharacteristic chStagesData(kUuidStagesData);
+static BLEBas blebas;  // Battery Service (180F/2A19) — a real crank exposes it; spoof-only
 
 // Discovered nearby CPS/FTMS devices (the web source picker). The scan callback records every
 // advertiser; the list is deduped/capped by the pure addCandidate.
@@ -300,6 +301,13 @@ static void scanCb(ble_gap_evt_adv_report_t* report) {
         Bluefruit.Central.connect(report);
         return;
     }
+    // Sink the SB20's own shifter buttons -> OBC: grab the SB20 (its own central) when enabled.
+    if (g_sinkShifter && !g_sb20Connected && haveName &&
+        strstr((const char*)nameBuf, "Stages Bike") != nullptr) {
+        Serial.printf("[shifter] SB20 match '%s' - connecting\n", nameBuf);
+        Bluefruit.Central.connect(report);
+        return;
+    }
     if (g_srcConnected) { Bluefruit.Scanner.resume(); return; }  // source already up; keep scanning for ref
     if (g_cfg.srcFilter[0] != '\0') {
         if (haveName) {
@@ -313,6 +321,14 @@ static void scanCb(ble_gap_evt_adv_report_t* report) {
     if (take) Bluefruit.Central.connect(report);
     else Bluefruit.Scanner.resume();
 }
+
+// Stages-spoof (0x2F) accumulated-torque state + the previous source crank sample it integrates
+// against. Reset on a source disconnect so a new meter's cumulative-rev baseline can't inject a
+// bogus delta. Only touched in SPOOF mode (measNotifyCb below).
+static uint16_t g_spoofAccumTorque = 0;
+static uint16_t g_spoofPrevRevs = 0;
+static uint16_t g_spoofPrevEvt = 0;
+static bool g_spoofHavePrev = false;
 
 static void measNotifyCb(BLEClientCharacteristic* /*chr*/, uint8_t* data, uint16_t len) {
     // Decode the meter's frame with the shared pure codec, correct it, and relay: the output
@@ -337,7 +353,38 @@ static void measNotifyCb(BLEClientCharacteristic* /*chr*/, uint8_t* data, uint16
     g_lastOut = out;
 
     std::vector<uint8_t> frame;
-    if (flags & CPM_CRANK_REV_DATA_PRESENT) {
+    if (g_cfg.spoof) {
+        // SB20 crank spoof: re-frame as the Stages 0x2F measurement (pedal balance + accumulated
+        // torque + crank rev), byte-identical to the ESP32 BleCrankPeripheral. The crank-rev fields
+        // pass through from the SOURCE meter (its real cadence); accumulated torque is integrated per
+        // completed crank revolution from the corrected power, exactly like the ESP publishPower.
+        uint16_t curRevs = 0, curEvt = 0;
+        if (flags & CPM_CRANK_REV_DATA_PRESENT) {
+            const CpsCrankData cd = decodeCrankData(data, len);
+            curRevs = cd.cumulativeRevs;
+            curEvt = cd.lastEventTime;
+            if (g_spoofHavePrev && out.power_w > 0) {
+                const uint16_t dRevs = (uint16_t)(curRevs - g_spoofPrevRevs);
+                const uint16_t dTicks = (uint16_t)(curEvt - g_spoofPrevEvt);
+                if (dRevs > 0 && dTicks > 0) {
+                    // Cadence (rpm) from the source crank delta (1/1024 s ticks), then accumulated
+                    // torque in 1/32 Nm units per rev: T = P·60 / (2·pi·rpm).
+                    const float rpm = (float)dRevs * 1024.0f * 60.0f / (float)dTicks;
+                    const float torqueNm = (float)out.power_w * 60.0f / (6.2831853f * rpm);
+                    g_spoofAccumTorque = (uint16_t)(g_spoofAccumTorque +
+                        (uint16_t)((float)dRevs * torqueNm * 32.0f + 0.5f));
+                }
+            }
+            g_spoofPrevRevs = curRevs;
+            g_spoofPrevEvt = curEvt;
+            g_spoofHavePrev = true;
+        }
+        // Forward the source's real left-referenced L/R split; 100 (=50 %) when it carries none.
+        const uint8_t balanceOut =
+            (r.balance_half_pct >= 0) ? (uint8_t)r.balance_half_pct : (uint8_t)100;
+        frame = encodeStagesCpsMeasurement(out.power_w, balanceOut, g_spoofAccumTorque, curRevs,
+                                           curEvt);
+    } else if (flags & CPM_CRANK_REV_DATA_PRESENT) {
         const CpsCrankData cd = decodeCrankData(data, len);
         frame = encodeCpsMeasurement(out.power_w, cd.cumulativeRevs, cd.lastEventTime);
     } else {
@@ -402,6 +449,18 @@ static void ergStep() {
     }
 }
 
+// SB20 shifter button notification (char 0c46be60): feed the pure source, which emits an OBC click
+// (PRESSED then RELEASED, across every mapped id) straight to our chObcButton.
+static void sb20ButtonNotifyCb(BLEClientCharacteristic* /*chr*/, uint8_t* data, uint16_t len) {
+    g_shifterSrc.feed(
+        data, len,
+        [](const uint8_t* buf, size_t n) { notifyClients(chObcButton, buf, (uint16_t)n); },  // OBC
+        [](int8_t deltaW) {                                                                    // local erg
+            int v = g_ergBias + deltaW;
+            g_ergBias = (int16_t)(v < -200 ? -200 : (v > 200 ? 200 : v));
+        });
+}
+
 static void centralConnectCb(uint16_t connHandle) {
     // Which meter is this? During calibration the REFERENCE (its name matches g_refFilter) uses
     // the 2nd central + its own client instances; everything else is the source/DUT.
@@ -428,6 +487,23 @@ static void centralConnectCb(uint16_t connHandle) {
         g_refConnHandle = connHandle;
         g_refConnected = true;
         Serial.printf("[cal] reference connected: '%s'\n", peer);
+        if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
+        return;
+    }
+    // The SB20 (sink shifter -> OBC): discover its vendor button service on this link + subscribe.
+    const bool isSb20 = g_sinkShifter && !g_sb20Connected && strstr(peer, "Stages Bike") != nullptr &&
+                        connHandle != g_srcConnHandle;
+    if (isSb20) {
+        if (!sb20VendorSvc.discover(connHandle) || !sb20Button.discover()) {
+            Bluefruit.disconnect(connHandle);  // not the SB20 vendor GATT after all
+            return;
+        }
+        sb20Button.setNotifyCallback(sb20ButtonNotifyCb);
+        sb20Button.enableNotify();
+        g_sb20ConnHandle = connHandle;
+        g_sb20Connected = true;
+        g_shifterSrc.reset();
+        Serial.printf("[shifter] SB20 connected: '%s' (buttons -> OBC)\n", peer);
         if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
         return;
     }
@@ -463,10 +539,16 @@ static void centralDisconnectCb(uint16_t connHandle, uint8_t reason) {
         g_refConnected = false;
         g_refConnHandle = BLE_CONN_HANDLE_INVALID;
         Serial.printf("[cal] reference dropped (0x%02X)\n", reason);
+    } else if (connHandle == g_sb20ConnHandle) {  // the SB20 shifter source dropped
+        g_sb20Connected = false;
+        g_sb20ConnHandle = BLE_CONN_HANDLE_INVALID;
+        g_shifterSrc.reset();  // drop any in-flight press so the next one fires cleanly on reconnect
+        Serial.printf("[shifter] SB20 dropped (0x%02X)\n", reason);
     } else {
         g_srcConnected = false;
         g_srcConnHandle = BLE_CONN_HANDLE_INVALID;
         g_srcName[0] = 0;
+        g_spoofHavePrev = false;  // a new source restarts the spoof torque integration cleanly
         Serial.printf("[bridge] source dropped (0x%02X); rescanning\n", reason);
     }
     Bluefruit.Scanner.start(0);
@@ -490,7 +572,19 @@ static void cpWriteCb(uint16_t connHandle, BLECharacteristic* /*chr*/, uint8_t* 
     // The pure handler answers offset-comp / crank-length ops; when the head unit asks for a
     // zero-reset (0x0C/0x10) we ALSO forward a real zero to the source meter — flagged here,
     // written from loop() (never a re-entrant central op inside this callback).
-    CpResult res = handleControlPoint(data, len, g_crankLenHalfMm, /*calOffset=*/0);
+    // SPOOF answers the Stages app's ENHANCED offset-comp (0x10) with the real crank's company id
+    // (442 = Stages) + captured mfg data; without it the app's calibrate spins (session 8 G2). The BLE
+    // zero-reset offset is 0 in both modes (SPOOF_CAL_OFFSET; captured over BLE, not the ANT+ 903).
+    // Copy the Config bytes via literal-index constant reads (Config.h is the source of truth) — NOT
+    // pointer arithmetic, which would ODR-use the class-static constexpr array and need an out-of-line
+    // definition the shared header can't give at the nRF core's gnu++11.
+    static_assert(sizeof(Config::SPOOF_MFG_DATA) == 5, "SPOOF_MFG_DATA length changed — update below");
+    static const std::vector<uint8_t> kSpoofMfgData = {
+        Config::SPOOF_MFG_DATA[0], Config::SPOOF_MFG_DATA[1], Config::SPOOF_MFG_DATA[2],
+        Config::SPOOF_MFG_DATA[3], Config::SPOOF_MFG_DATA[4]};
+    CpResult res = handleControlPoint(data, len, g_crankLenHalfMm, /*calOffset=*/0,
+                                      g_cfg.spoof ? Config::SPOOF_MFG_COMPANY_ID : 0,
+                                      g_cfg.spoof ? kSpoofMfgData : std::vector<uint8_t>{});
     if (res.crankLengthChanged) g_crankLenHalfMm = res.crankLengthHalfMm;
     if (res.requestSourceZero) g_pendSourceZero = true;
     if (!res.response.empty()) outCp.indicate(connHandle, res.response.data(), res.response.size());
@@ -500,7 +594,7 @@ static void cpWriteCb(uint16_t connHandle, BLECharacteristic* /*chr*/, uint8_t* 
 static void notifyRecState() {
     uint8_t buf[RECSTATE_LEN];
     packRecState(g_recState, g_cap.rateHz(), g_cap.count(), g_cap.capacity(), buf);
-    notifyClients(chRecCtl, buf, sizeof(buf));
+    notifyClients(g_bridge.chRecCtl, buf, sizeof(buf));
 }
 
 static void configWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t* data,
@@ -517,16 +611,24 @@ static void configWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t
     const bool wasSingle = g_cfg.singleSided;
     const bool nameChanged = strncmp(c.outName, g_cfg.outName, CFG_NAME_LEN) != 0;
     const bool filterChanged = strncmp(c.srcFilter, g_cfg.srcFilter, CFG_NAME_LEN) != 0;
+    const bool spoofChanged = c.spoof != g_cfg.spoof;
     g_cfg = c;
     applyCorrectionFromCfg();
     cfgSave();
     uint8_t buf[CONFIG_LEN];
     packConfig(g_cfg, buf);
-    chConfig.write(buf, sizeof(buf));  // read-back reflects what stuck
-    if (nameChanged) {
+    g_bridge.chConfig.write(buf, sizeof(buf));  // read-back reflects what stuck
+    if (nameChanged && !g_cfg.spoof) {  // SPOOF's advertised name is fixed to the Stages crank
         Bluefruit.setName(g_cfg.outName);
         Bluefruit.Advertising.stop();
         Bluefruit.Advertising.start(0);
+    }
+    if (spoofChanged) {
+        // The 0x2F measurement framing switches live (measNotifyCb reads g_cfg.spoof each frame), but
+        // the advertised services / DIS / CP-Feature / sensor-location are built once at boot — so the
+        // crank IDENTITY only changes after a reboot. The web UI surfaces this to the user.
+        Serial.printf("[bridge] mode -> %s; REBOOT to re-present the crank identity\n",
+                      g_cfg.spoof ? "SPOOF (Stages crank)" : "CORRECTOR");
     }
     if (filterChanged) {
         // re-pick the source under the new filter (drop the CENTRAL link, not the web app's)
@@ -557,8 +659,8 @@ static void publishScanList() {
     }
     uint8_t buf[2 + SCAN_MAX * SCAN_SLOT];
     size_t len = packScanList(e, n, buf);
-    chScan.write(buf, len);
-    notifyClients(chScan, buf, len);
+    g_bridge.chScan.write(buf, len);
+    notifyClients(g_bridge.chScan, buf, len);
 }
 
 // Publish the active curve to the Curve characteristic for read-back.
@@ -570,7 +672,7 @@ static void publishCurve() {
         pts[i].powerW = (uint16_t)g_corr.curve.points[i].power_w;
         pts[i].factorMilli = (uint16_t)(g_corr.curve.points[i].factor * 1000.0f + 0.5f);
     }
-    chCurve.write(buf, packCurve(pts, n, buf));
+    g_bridge.chCurve.write(buf, packCurve(pts, n, buf));
 }
 
 // Curve write: replace the correction curve (empty clears it -> back to scale/offset). Persisted.
@@ -601,7 +703,7 @@ static void notifyCalState() {
     uint8_t buf[CALSTATE_LEN];
     packCalState(st, (uint16_t)g_cal.pairCount(), (uint16_t)g_cal.minPairs(),
                  (int16_t)(g_cal.residualW() * 10.0f), cov6, g_cal.enoughToFit(), buf);
-    notifyClients(chCal, buf, sizeof(buf));
+    notifyClients(g_bridge.chCal, buf, sizeof(buf));
 }
 
 // Apply a fitted Correction (curve or linear) as the live correction + persist it.
@@ -728,7 +830,7 @@ static void notifyWkState() {
                 (uint8_t)g_wk.workout.segments.size(),
                 (uint16_t)(s.segRemainingS > 0 ? s.segRemainingS : 0), g_ergLastSent,
                 (uint16_t)(s.totalElapsedS > 0 ? s.totalElapsedS : 0), g_ergBias, buf);
-    notifyClients(chWk, buf, sizeof(buf));
+    notifyClients(g_bridge.chWk, buf, sizeof(buf));
 }
 
 static void wkWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t* data, uint16_t len) {
@@ -786,11 +888,10 @@ void setup() {
     cfgLoad();
     curveLoad();
     trainerLoad();
+    buttonsLoad();  // the SB20-shifter -> action binding + sink enable (before the char's initial write)
 
-    // RGB status LED (active-low)
-    pinMode(LED_RED, OUTPUT);
-    pinMode(LED_GREEN, OUTPUT);
-    pinMode(LED_BLUE, OUTPUT);
+    // Status LED (board seam — RGB on the XIAO, single LED on a Feather/generic board)
+    boardLedBegin();
     setLed(false, false, false);
 
     // IMU (power-gated on the Sense)
@@ -812,13 +913,33 @@ void setup() {
     // negotiate MTU 247 on the peripheral link; pumpDownload sizes frames per-client anyway.
     // TWO peripheral links (head unit + web app/Garmin) and THREE central links (source/DUT +
     // reference meter during calibration + the FTMS trainer for erg). 5 links total; S140 default 20.
+    //
+    // Raise the vendor-specific (128-bit) UUID slot count BEFORE begin(). Our custom UUIDs
+    // (53423230-XXXX-… Bridge, d273f680-… OBC, the Stages proprietary base) carry their varying
+    // 16-bit id at bytes [10][11], but the SoftDevice's VS-UUID aliasing keys on bytes [12][13]
+    // (constant 0x30,0x32 here) — so it treats EVERY Bridge characteristic as a distinct base and
+    // burns one of the default 10 slots each. DFU(1) + Bridge service 0000 + chars 0001..0008 = 10
+    // slots, exhausted by the time chWk(0008) registers; chButtons(0009) and the OBC service then get
+    // no slot, sd_ble_uuid_vs_add fails, and characteristic_add/service_add return INVALID_PARAM (7),
+    // so they never appear on air. Found on hardware 2026-07-11 (a GATT dump ended at char 0008, no OBC;
+    // on-device begin() returned 7 for chButtons/obcSvc/chObcButton). Bump the count so every base fits.
+    Bluefruit.configUuid128Count(24);
     Bluefruit.begin(/*peripheral*/ 2, /*central*/ 3);
     Bluefruit.setTxPower(4);
-    Bluefruit.setName(g_cfg.outName);
+    // SPOOF advertises as the real Stages crank; CORRECTOR advertises our own configurable name.
+    Bluefruit.setName(g_cfg.spoof ? Config::SPOOF_NAME : g_cfg.outName);
 
-    // --- output: standard CPS peripheral (a head unit pairs to this) ---
-    bledis.setManufacturer("SB20 Proxy");
-    bledis.setModel("nRF Bridge");
+    // --- output: CPS peripheral. SPOOF presents the real Stages SPM2 identity (the SB20 only accepts
+    //     its own crank); CORRECTOR presents our own honest identity (any head unit takes a plain CPS). ---
+    if (g_cfg.spoof) {
+        bledis.setManufacturer(Config::SPOOF_MANUFACTURER);
+        bledis.setModel(Config::SPOOF_MODEL);
+        bledis.setFirmwareRev(Config::SPOOF_FW);
+        bledis.setSerialNum(Config::SPOOF_SERIAL);
+    } else {
+        bledis.setManufacturer("SB20 Proxy");
+        bledis.setModel("nRF Bridge");
+    }
     bledis.begin();
     bledfu.begin();  // buttonless DFU: a DFU write reboots into the bootloader's BLE-OTA mode so
                      // `adafruit-nrfutil dfu ble` can push new firmware — no USB reflash needed
@@ -831,63 +952,54 @@ void setup() {
     outFeature.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
     outFeature.setFixedLen(4);
     outFeature.begin();
-    const uint32_t feat = CP_FEATURE_CRANK_REV_SUPPORTED;
+    // SPOOF reports the exact CP Feature the real crank does (0x0008030B); CORRECTOR just crank-rev.
+    const uint32_t feat = g_cfg.spoof ? CP_FEATURE_STAGES : CP_FEATURE_CRANK_REV_SUPPORTED;
     outFeature.write32(feat);
     outSensorLoc.setProperties(CHR_PROPS_READ);
     outSensorLoc.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
     outSensorLoc.setFixedLen(1);
     outSensorLoc.begin();
-    outSensorLoc.write8(5);  // left crank
+    // The real Stages crank reports Sensor Location 0 ("other"), NOT 5 (left crank); match it in spoof.
+    outSensorLoc.write8(g_cfg.spoof ? SENSOR_LOCATION_OTHER : 5);
     outCp.setProperties(CHR_PROPS_WRITE | CHR_PROPS_INDICATE);
     outCp.setPermission(SECMODE_OPEN, SECMODE_OPEN);
     outCp.setWriteCallback(cpWriteCb);
     outCp.begin();
 
-    // --- the Bridge control/telemetry service (GATT.md) ---
-    bridgeSvc.begin();
-    chStatus.setProperties(CHR_PROPS_NOTIFY | CHR_PROPS_READ);
-    chStatus.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
-    chStatus.setFixedLen(STATUS_LEN);
-    chStatus.begin();
-    chConfig.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
-    chConfig.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    chConfig.setFixedLen(CONFIG_LEN);
-    chConfig.setWriteCallback(configWriteCb);
-    chConfig.begin();
+    // --- the Bridge control/telemetry service (GATT.md) — the BridgeService seam owns the table +
+    //     wiring; the write-callback bodies stay here and are passed in (registration order faithful). ---
+    g_bridge.begin(configWriteCb, recCtlWriteCb, curveWriteCb, calWriteCb, wkWriteCb, buttonsWriteCb);
     {
         uint8_t buf[CONFIG_LEN];
         packConfig(g_cfg, buf);
-        chConfig.write(buf, sizeof(buf));
+        g_bridge.chConfig.write(buf, sizeof(buf));  // Config read-back reflects the loaded config
     }
-    chRecCtl.setProperties(CHR_PROPS_WRITE | CHR_PROPS_NOTIFY);
-    chRecCtl.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    chRecCtl.setMaxLen(RECSTATE_LEN);  // the NOTIFY needs 12 (maxLen 4 truncated it - bench)
-    chRecCtl.setWriteCallback(recCtlWriteCb);
-    chRecCtl.begin();
-    chRecData.setProperties(CHR_PROPS_NOTIFY);
-    chRecData.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
-    chRecData.setMaxLen(180);
-    chRecData.begin();
-    chCurve.setProperties(CHR_PROPS_READ | CHR_PROPS_WRITE);
-    chCurve.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    chCurve.setMaxLen(2 + CURVE_MAX_POINTS * 4);
-    chCurve.setWriteCallback(curveWriteCb);
-    chCurve.begin();
-    publishCurve();  // read-back reflects the loaded curve
-    chCal.setProperties(CHR_PROPS_WRITE | CHR_PROPS_NOTIFY);
-    chCal.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    chCal.setMaxLen(2 + 19);  // write: [ver, cmd, refFilter...]
-    chCal.setWriteCallback(calWriteCb);
-    chCal.begin();
-    chScan.setProperties(CHR_PROPS_READ | CHR_PROPS_NOTIFY);
-    chScan.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
-    chScan.setMaxLen(2 + SCAN_MAX * SCAN_SLOT);
-    chScan.begin();
-    chWk.setProperties(CHR_PROPS_WRITE | CHR_PROPS_NOTIFY);
-    chWk.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-    chWk.setMaxLen(2 + 19);  // write: [ver, cmd, arg...]
-    chWk.setWriteCallback(wkWriteCb);
-    chWk.begin();
+    publishCurve();  // Curve read-back reflects the loaded curve
+    { uint8_t bb[BUTTONS_LEN]; packButtons(currentButtons(), bb); g_bridge.chButtons.write(bb, sizeof(bb)); }
+
+    // OpenBikeControl button-state service (re-present the SB20 handlebar buttons to OBC apps over BLE).
+    obcSvc.begin();
+    chObcButton.setProperties(CHR_PROPS_NOTIFY | CHR_PROPS_READ);
+    chObcButton.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+    chObcButton.setMaxLen(20);
+    chObcButton.begin();
+
+    // --- Stages proprietary service + battery: SPOOF only. The real crank exposes both; the SB20
+    //     checks for the proprietary service to confirm a genuine crank. Contents opaque (the ESP32
+    //     BleCrankPeripheral does the same). CORRECTOR omits them — a plain CPS meter. ---
+    if (g_cfg.spoof) {
+        stagesSvc.begin();
+        chStagesCtrl.setProperties(CHR_PROPS_NOTIFY | CHR_PROPS_WRITE);
+        chStagesCtrl.setPermission(SECMODE_OPEN, SECMODE_OPEN);
+        chStagesCtrl.setMaxLen(20);
+        chStagesCtrl.begin();
+        chStagesData.setProperties(CHR_PROPS_NOTIFY);
+        chStagesData.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+        chStagesData.setMaxLen(20);
+        chStagesData.begin();
+        blebas.begin();
+        blebas.write(90);  // a healthy spoofed crank battery level
+    }
 
     // --- source: central scanning for a CPS meter (+ the reference during calibration) ---
     clientCps.begin();
@@ -916,7 +1028,15 @@ void setup() {
     Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
     Bluefruit.Advertising.addTxPower();
     Bluefruit.Advertising.addService(outCps);
-    Bluefruit.ScanResponse.addName();
+    if (g_cfg.spoof) {
+        // Mirror the real crank's advert: name + CPS(0x1818) in the PRIMARY packet, the 128-bit Stages
+        // proprietary UUID in the SCAN RESPONSE (a 128-bit UUID in the primary would crowd out the
+        // name in the 31-byte budget — exactly what the ESP32 BleCrankPeripheral does).
+        Bluefruit.Advertising.addName();
+        Bluefruit.ScanResponse.addService(stagesSvc);
+    } else {
+        Bluefruit.ScanResponse.addName();
+    }
     Bluefruit.Advertising.restartOnDisconnect(true);
     Bluefruit.Advertising.setInterval(32, 244);
     Bluefruit.Advertising.setFastTimeout(30);
@@ -931,7 +1051,7 @@ static void pumpDownload() {
     if (!g_dlHeaderSent) {
         uint8_t hdr[12];
         packRecHeader(g_cap.rateHz(), g_cap.count(), g_cap.startMs(), hdr);
-        if (!notifyClients(chRecData, hdr, sizeof(hdr))) return;  // buffers full: retry next loop
+        if (!notifyClients(g_bridge.chRecData, hdr, sizeof(hdr))) return;  // buffers full: retry next loop
         g_dlHeaderSent = true;
     }
     // Size frames to the smallest subscriber MTU (notify payload = MTU-3; 4-byte frame header;
@@ -939,7 +1059,7 @@ static void pumpDownload() {
     uint16_t mtu = 247;
     for (uint16_t h = 0; h < 8; ++h) {
         BLEConnection* conn = Bluefruit.Connection(h);
-        if (conn && conn->connected() && chRecData.notifyEnabled(h)) {
+        if (conn && conn->connected() && g_bridge.chRecData.notifyEnabled(h)) {
             mtu = min(mtu, conn->getMtu());
         }
     }
@@ -950,14 +1070,14 @@ static void pumpDownload() {
         const size_t n = min(perFrame, (size_t)(g_cap.count() - g_dlNext));
         uint8_t frame[DATA_FRAME_OVERHEAD + DATA_SAMPLES_PER_FRAME * SAMPLE_LEN];
         const size_t len = packRecDataFrame(g_dlSeq, g_cap.sample(g_dlNext), n, frame);
-        if (!notifyClients(chRecData, frame, len)) return;
+        if (!notifyClients(g_bridge.chRecData, frame, len)) return;
         g_dlNext += n;
         ++g_dlSeq;
     }
     if (g_dlNext >= g_cap.count()) {
         uint8_t tail[6];
         packRecTrailer(g_cap.crc32(), tail);
-        if (!notifyClients(chRecData, tail, sizeof(tail))) return;
+        if (!notifyClients(g_bridge.chRecData, tail, sizeof(tail))) return;
         g_recState = RecState::Idle;
         notifyRecState();
         Serial.println("[rec] download complete");
@@ -1025,7 +1145,8 @@ void loop() {
 
     // Serial self-test commands (USB CDC) — desk diagnostics, bench-verify the correction logic
     // without a BLE client (the desktop Windows GATT cache fights repeated reflashes):
-    //   IMUTEST · SINGLE1/SINGLE0 (single-sided x2) · CURVE (200W->1.25 test curve) · LINEAR
+    //   IMUTEST · SINGLE1/SINGLE0 (single-sided x2) · SPOOF1/SPOOF0 (SB20 Stages-crank spoof mode;
+    //   framing is live, identity applies on reboot) · CURVE (200W->1.25 test curve) · LINEAR
     //   (clear curve) · ZERO (trigger source zero-forward) · SHOW (print correction state).
     static char cmd[16];
     static uint8_t ci = 0;
@@ -1036,6 +1157,8 @@ void loop() {
             if (strcmp(cmd, "IMUTEST") == 0) imuSelfTest();
             else if (strcmp(cmd, "SINGLE1") == 0) { g_cfg.singleSided = true; cfgSave(); Serial.println("[test] single-sided x2 ON"); }
             else if (strcmp(cmd, "SINGLE0") == 0) { g_cfg.singleSided = false; cfgSave(); Serial.println("[test] single-sided OFF"); }
+            else if (strcmp(cmd, "SPOOF1") == 0) { g_cfg.spoof = true; cfgSave(); Serial.println("[test] SPOOF ON (Stages crank) - framing live now; REBOOT to advertise the identity"); }
+            else if (strcmp(cmd, "SPOOF0") == 0) { g_cfg.spoof = false; cfgSave(); Serial.println("[test] SPOOF OFF (corrector) - framing live now; REBOOT to advertise the identity"); }
             else if (strcmp(cmd, "CURVE") == 0) {
                 g_corr.curve = CorrectionCurve{};
                 g_corr.curve.add(100, 1.0f); g_corr.curve.add(200, 1.25f); g_corr.curve.add(300, 1.25f);
@@ -1203,7 +1326,7 @@ void loop() {
             if (conn) {
                 Serial.printf("[hb]   link h=%u conn=%d role=%d statusSub=%d recSub=%d mtu=%u\n",
                               h, (int)conn->connected(), (int)conn->getRole(),
-                              (int)chStatus.notifyEnabled(h), (int)chRecData.notifyEnabled(h),
+                              (int)g_bridge.chStatus.notifyEnabled(h), (int)g_bridge.chRecData.notifyEnabled(h),
                               conn->getMtu());
             }
         }
@@ -1232,8 +1355,8 @@ void loop() {
         st.uptimeS = (uint16_t)(now / 1000);
         uint8_t buf[STATUS_LEN];
         packStatus(st, buf);
-        chStatus.write(buf, STATUS_LEN);  // readable snapshot
-        notifyClients(chStatus, buf, STATUS_LEN);
+        g_bridge.chStatus.write(buf, STATUS_LEN);  // readable snapshot
+        notifyClients(g_bridge.chStatus, buf, STATUS_LEN);
         static uint8_t recTick = 0;
         if (st.recording && (++recTick & 1)) notifyRecState();
     }

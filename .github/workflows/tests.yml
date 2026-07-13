@@ -69,6 +69,14 @@ jobs:
       - name: Test (native)
         run: pio test -e native
 
+      # Host LVGL UI tests: compile the REAL src/ui/LvglUi.cpp headless (against a tiny Arduino shim
+      # + a memory-buffer flush hook) and assert on rendered pixels + tap->screen changes — so the
+      # LVGL head-unit UI that ships on the CYD + S3 ride boards has desk-test coverage, not just the
+      # canvas reference renderer. lvgl renders fully in-memory; no display/SDL. See
+      # findings/ui-unification.md §U5.
+      - name: Test (native LVGL UI harness)
+        run: pio test -e native-lvgl
+
       # Link a real proxy ESP32 env so a multiple-definition / src_filter break (e.g. the FTMS
       # mains colliding with main.cpp, fixed in PR #73) can't reach main: the native env excludes
       # src/ entirely, so it never catches a proxy-link regression. esp32c3-supermini is the
@@ -90,3 +98,33 @@ jobs:
       - name: Test nRF bridge wire-format core (native)
         working-directory: firmware-nrf
         run: pio test -e native
+
+  bridge-parity:
+    # The Bridge wire contract has one source (ui-schema/bridge.json). This job proves the generated
+    # mirrors are in sync (gen_bridge.py --check) and that the JS codec (web/bridge-codec.js) round-trips
+    # the golden vectors (Node). The C++ side (Proto.h == golden) is locked by the firmware-nrf native
+    # test above (test_golden_*). See design/ui-schema-design.md.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Bridge mirrors in sync with the schema
+        run: python code/scripts/gen_bridge.py --check
+
+      - name: JS codec parity vs golden vectors
+        run: node web/test/bridge-codec.test.mjs
+
+      # The web-JSON mirror (/scan /config /curve): WebJson.h (C++) + web/index.html (JS) must not drift
+      # from ui-schema/web-json.json. See findings/ui-unification.md §U2.
+      - name: Web JSON contract in sync (WebJson.h <-> web SPA)
+        run: python code/scripts/gen_webjson.py --check

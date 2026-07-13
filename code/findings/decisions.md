@@ -2518,3 +2518,510 @@ literally the same file.
 - **Recovery plan (small, anytime):** read the connected-device name off the qdomyos UI → arm
   `sniff_ble.py` on that address → reopen qdomyos → catch the connection setup + a resistance nudge.
   ~5 min of rider time.
+
+## 2026-07-06 (desk analysis) — SB20 FTMS surface DECODED from the pre-ride GATT dump: fully erg-capable, real bytes.
+Analysed `QDZ-sb20-ftms-gatt-20260706-0739.jsonl` (149 events, clean passive connect to the bike's FTMS
+device `E4:AA:5A:D6:0E:D4`). This is the **real-capture validation** of the spec-built FTMS codec — the
+bike's control surface, with exact bytes. **Headline: the SB20's own FTMS declares power-target (erg)
+support + a writable Control Point + a 0–4000 W range — i.e. our on-device `FtmsErgClient` (Request
+Control → Start → Set Target Power) can drive the real bike directly.**
+
+- **Device (DIS):** mfr **"Stages Cycling"**, model **"SB20"**, serial **"H0512210105"**, fw **1.1**,
+  hw **0.0**, sw **1.12.4+3792**. Advertises **unnamed** (name filter `--name SB20` would NOT match it —
+  use the address; this is why the ride's sniff followed the right FTMS device but the run-sheet's name
+  advice was wrong).
+- **GATT services on E4:** GAP, GATT, DIS, **Fitness Machine 0x1826** (7 chars), **CSC 0x1816** (Cycling
+  Speed & Cadence — NOT CPS 0x1818), two unknown Stages services **0xbe5f / 0xbeaf** (2 chars each,
+  proprietary), and **Nordic DFU 0xfe59** (buttonless). The FTMS chars: Indoor Bike Data `0x2AD2`
+  (notify), Fitness Machine Status `0x2ADA` (notify), **Control Point `0x2AD9` (write + indicate)** ✓,
+  Feature `0x2ACC` (read), Supported Power Range `0x2AD8`, Supported Resistance Level Range `0x2AD6`,
+  Supported Inclination Range `0x2AD5`. (No Training Status `0x2AD3` on this device, unlike the
+  spec-built table — the codec must not assume it.)
+- **Feature `0x2ACC` = `8a4000000e200000`** (two u32 LE):
+  - Machine Features `0x0000408a` → **Cadence** (b1), **Inclination** (b3), **Resistance Level** (b7),
+    **Power Measurement** (b14).
+  - Target Setting Features `0x0000200e` → **Inclination Target** (b1), **Resistance Target** (b2),
+    **POWER TARGET / erg** (b3), **Indoor Bike Simulation** (b13). ⇒ both erg (Set Target Power) AND
+    sim (Set Indoor Bike Simulation) AND direct resistance are advertised-supported.
+- **Supported Power Range `0x2AD8` = `0000a00f0100`** → **0…4000 W, 1 W increment** (s16 min, s16 max,
+  u16 inc). This is the clamp `FtmsPowerRange` should read on the real bike (the sim uses 0…1000).
+- **Supported Resistance Level Range `0x2AD6` = `0000ff000100`** → 0…255, step 1.
+- **Supported Inclination Range `0x2AD5` = `18fce8030100`** → −100.0…+100.0 %, 0.1 % step (wide placeholder).
+- **Indoor Bike Data `0x2AD2` is MULTI-FRAME** (the bike emits three distinct notification shapes, not one
+  combined frame — our reader must dispatch on flags per-frame, not assume a fixed layout):
+  - flags `0x00c5` (b0 no-speed, b2 cadence, b6 inst-power, b7 avg-power), 8 B: `c500 <cad u16 ×0.5>
+    <power s16> <avgpower s16>` — e.g. `c5005a00bd000000` → 45 rpm, 189 W (avg-power field present but 0).
+  - flags `0x0000` (b0 clear ⇒ inst-speed present), 4 B: `0000 <speed u16 ×0.01 km/h>`.
+  - flags `0x0011` (b0 no-speed, b4 total-distance), distance updates.
+  - Ride values observed: power 0–391 W, cadence 0–66 rpm (easy warm-up window). Validates the **bit0
+    inversion** (speed present when More-Data=0) already documented in ftms-protocol.md.
+- **Consistency:** matches ftms-protocol.md's spec-built claims — Target-Setting **bit3 = Power Target**
+  is set, Machine bit1 cadence + bit14 power-measurement set, Power Range is s16/s16/u16. The spec codec
+  was right; this pins it to real bytes. `ftms-protocol.md` updated: passive surface now **validated on
+  air**; only the **`--erg` write round-trip** (does the bike's resistance actually track a Set Target
+  Power we send) remains uncaptured — qdomyos did NOT answer it (it never used E4; see the ride entry),
+  so it stays the §14-phase-5 / recovery-capture gate.
+
+## 2026-07-06 (desk analysis) — the ride pcap + qdomyos clean-room: the control channel was NOT captured, but the strategic answer is clear (our FTMS approach targets the right surface; qz's does not).
+Mined `QDZ-sniff-qdomyos-sb20-20260706-0742.pcap` (22,036 frames) with tshark, and read the qdomyos-zwift
+`stagesbike` driver clean-room (GPL — read to understand, **never copy**). Two threads, one conclusion.
+
+**Advert inventory (who was on air, and what they advertise):**
+- `E4:AA:5A:D6:0E:D4` **"Stages Bike 0105"** → **FTMS 0x1826 + CSC 0x1816** — the real bike (the task-1
+  GATT device). **13,509 ADV_INDs, advertised continuously all ride ⇒ NEVER connected.**
+- `e3:25:39:38:92:71` **"Stages 4963"** → **CPS 0x1818** — a Stages crank (R, a power meter, not a control surface).
+- `e8:cf:d8:d9:3a:20` **"Stages 62144"** → CPS 0x1818 — the L crank. Assiomas (17039L/22428R + the
+  daughter's 26807R/29064L) → CPS 0x1818 + battery 0x180f.
+- `de:f2:ed:c4:f3:fd` **"SB20 Bridge" = OUR OWN nRF52840 bridge board** (`firmware-nrf` sets
+  `outName="SB20 Bridge"`) — advertised only 7× at the very start, then went silent (= connected).
+- **The devices that got connected at capture start were ALL OURS:** the nRF "SB20 Bridge", the S3's
+  spoofed crank (`a4:cb:8f:da:e9:cd` = S3 base+1) and the C3's spoofed crank (`38:44:be:45:e9:a6` =
+  C3 base+2). The desk was saturated with our own boards — a **polluted capture environment**. Only
+  2 CONNECT_INDs were on air and **both CRC-bad**, so no ATT/GATT was recoverable regardless.
+
+**qdomyos `stagesbike` driver (clean-room facts — src/devices/stagesbike/stagesbike.cpp, master):**
+- Reads power/cadence from **Cycling Power Measurement (CPS 0x1818)**.
+- On discovering **FTMS 0x1826** it does NOT control through it — it stores `ftms_bike=<name>` and toasts
+  *"FTMS bike found, restart the app to apply"* (i.e. it defers control to a separate FTMS driver).
+- **Every resistance/inclination/power control write goes to an ELITE proprietary service**
+  `347b0001-7635-408b-8918-8ff3949ce592` (write chars `347b0010` / `347b0018`), via setBrakeLevel /
+  setSimulationMode / setTargetPower. Comment in-source: *"this bike doesn't have the concept of
+  resistance"* → it converts resistance to inclination/sim. **It never writes the FTMS Control Point
+  `0x2AD9`.**
+- **The SB20 does NOT expose the Elite 347b service** (task-1 GATT of E4: FTMS + CSC + Stages `0xbe5f`/
+  `0xbeaf` + Nordic DFU only). ⇒ qdomyos's `stagesbike` driver **structurally cannot drive the SB20's
+  resistance** — which is exactly the unresolved **pinned bug #1649 "Stages SB20 Resistance control not
+  working"** (open since 2023; power/rpm read fine, resistance never moves).
+
+**Conclusion + strategic takeaway (the value of this ride, despite the miss):**
+- The pcap did **not** capture a working control channel: the real SB20 FTMS was never connected, the
+  connections seen were our own spoof boards, and qz's iOS host used rotating RPAs (`75:eb:46:xx`) we
+  couldn't follow. So the *"how does a controller drive the SB20"* question is **still open on the wire**.
+- **BUT** task-1 (the SB20's FTMS is fully erg-capable: Power-Target + writable Control Point `0x2AD9` +
+  0–4000 W) **plus** this clean-room result gives a strong answer by other means: **our `FtmsErgClient`
+  writes the standard FTMS Control Point — the SB20's REAL control surface — whereas qdomyos writes to a
+  nonexistent Elite service.** So §14-phase-5 targets the correct, spec-compliant path and has a *good*
+  prior to succeed **where qdomyos is documented-broken**. (What we still must prove on the bike: that
+  the SB20 actually *moves resistance* in response to a Set Target Power we send — the `--erg` round-trip.)
+- **ANT+ inventory** (`QDZ-ant-20260706-0742.jsonl`, discovery-only) as expected: Stages `#62144`, power
+  meters `#17039`/`#29064` (one = daughter's stray Assioma, much lower power — not an anomaly), unknown
+  type-35 `#7092`, FE-C `#105` = the bike. No control data (iOS qz is BLE-only; ANT never carries its control).
+- **Recovery capture design change:** the environment must be **de-polluted** — power down ALL our spoof
+  boards (C3/CYD/S3 cranks) and the nRF "SB20 Bridge" so the only devices on air are the real SB20 + the
+  qz host; then follow the exact device qz connects to (read its name off the qz UI). See the run-sheet.
+
+## 2026-07-06 (correction) — RETRACT the "qz structurally can't control the SB20 / our FTMS approach wins where qz is broken" overclaim
+
+Decision: **Downgrade the strong conclusion in the entry above.** The SB20 **is** erg-controllable; *how*
+a controller must talk to it is **not yet pinned**; and whether qz can control it is **version-dependent**,
+not the flat "documented-broken" I wrote. Only the byte-level GATT facts (0x2AD9 present, no 347b on the
+SB20) survive unqualified.
+
+Context: The **owner — a daily qz user on the real SB20 — flagged the over-reach directly:** *"I have been
+using QZ for months and it works fine for me."* That is first-hand lived-experience data; per our
+real-data-wins discipline it beats a single clean-room read of **one** driver file. The owner also asked
+us not to jump to a *new* conclusion before we actually diagnose — so this entry lowers certainty rather
+than swapping one verdict for another. Re-reading the **actual** issue #1649 (not inferring it) sharpens it.
+
+What the entry above overstated:
+- ❌ "qz **structurally cannot** drive the SB20's resistance." Refuted — the owner does it in qz. The
+  `stagesbike`→347b analysis covered **one** driver; it was never confirmed that `stagesbike` (vs qz's
+  FTMS driver `ftmsbike`) is what a **current** qz binds to the SB20. The report is old (qz **.15.4**,
+  Sept 2023) and may be fixed since.
+- ❌ "…where qdomyos is **documented-broken**." That elevates one stale 2023 bug report to a standing fact.
+
+What issue #1649 actually says (read 2026-07-06; still OPEN, 28 comments; ElmarMuc, iPhone/iPad iOS 16,
+qz .15.4, Sept 2023):
+- qz reads power/rpm fine; **resistance control did not work** in that version for the reporter.
+- Resistance control **does** work with **Zwift and MyWhoosh** → the SB20 is genuinely erg-controllable.
+- Maintainer's key clue on the SB20: **"it doesn't answer at all to my requests … we need to understand
+  how zwift communicates with it."**
+
+What still holds (unchanged, evidence-backed):
+- ✅ SB20 FTMS peripheral ("Stages Bike 0105" / `E4:AA:5A:D6:0E:D4`) exposes standard FTMS `0x1826` incl.
+  Control Point `0x2AD9` + power-target (task-1 GATT); **re-verified: no Elite `347b` service in the dump.**
+- ✅ SB20 is erg-controllable (Zwift / MyWhoosh / owner-in-qz all move resistance).
+
+New, better-graded status:
+- ⚠️ **OPEN question, now flagged as a real risk to OUR OWN erg drive:** does the SB20 *answer* a naïve
+  FTMS `Set Target Power`? The maintainer's "doesn't answer at all" warns the control handshake may be
+  non-obvious (Zwift does something specific). Our `--erg` write could hit the same wall. This **raises**
+  the value of §14-phase-5, it doesn't lower it.
+- 🔁 **Reframe the recovery capture:** sniffing how a **working** controller drives the SB20 is now **high**
+  value (the owner *has* one — qz on their phone — plus Zwift/MyWhoosh as references). The earlier
+  "sniffing qz is low-value because qz can't control it" was wrong.
+
+Will revisit if: the `--erg` round-trip shows the SB20 answers standard FTMS control (→ our path is clean,
+and *then* there's an evidence-backed thing to offer qz) OR shows "no answer" (→ the real deliverable is
+mining how Zwift / a current qz actually talks to it — the handshake, not just the characteristic).
+
+## 2026-07-10 — nRF gains a BLE SB20 crank-spoof MODE (ported from the ESP32); host-tested + compiles, on-SB20 gated (R3)
+
+Decision: the nRF52840 bridge is no longer corrector-only. A **runtime `spoof|corrector` mode** (default
+corrector — the honest track-bike identity is unchanged) now lets the Seeed XIAO / Feather present as the
+**real Stages SPM2 crank**, so it can drive a real SB20's erg loop — the capability the ESP32-C3 already
+had, now on the ANT-capable board. Executes the owner's "port it" decision + `nrf-roadmap.md` "BLE Stages
+spoof" bullet. Built **host-tested/compile-first** (no hardware on the dev box); the on-SB20 pairing +
+calibrate handshake is run-sheet **R3**.
+
+What shipped (branch `feat/nrf-ant-spoof`, on the OBC stack):
+- **Wire contract:** `ConfigPacket.spoof` = flags **bit 3** (`Proto.h`), backward-compatible — a pre-spoof
+  config (bit 3 clear) decodes as corrector, exactly today's behaviour. Host test
+  `test_config_spoof_mode_bit` (nRF native **28/28**).
+- **Measurement:** in spoof, `measNotifyCb` emits the **Stages 0x2F** frame (`encodeStagesCpsMeasurement`,
+  shared `Cps.h`) — pedal balance + accumulated torque + crank rev. Crank-rev fields **pass through from
+  the source meter** (its real cadence); accumulated torque is integrated per completed rev from the
+  corrected power (T = P·60/(2π·rpm), 1/32 Nm units) — the ESP32 `publishPower` math, but driven off the
+  source's own crank delta rather than a regenerated stream. Reset on source disconnect.
+- **Identity (boot-time):** DIS = Stages SPM2 (manuf/model/fw/serial), CP Feature = `0x0008030B`
+  (`CP_FEATURE_STAGES`), Sensor Location = **0 "other"** (the real crank, not 5 left), name = `Stages
+  62144`, the **Stages proprietary service** (`d445fe01…`, opaque) in the scan response, + a Battery
+  Service — all mirroring `BleCrankPeripheral`. Corrector path unchanged (plain CPS, own name).
+- **Calibration handshake:** `cpWriteCb` now passes the **442 company id + captured mfg data** into the
+  0x10 enhanced-offset reply when spoof (the session-8 fix that stopped the Stages app's calibrate
+  spinning); BLE zero-reset offset stays **0** in both modes (the BLE value, not the ANT+ 903).
+- **Mode change:** framing switches **live**; the advertised services/DIS/feature are boot-time, so the
+  crank **identity needs a reboot** (logged; the web UI will surface it). Serial console `SPOOF1`/`SPOOF0`
+  for bench toggling.
+
+Numbers/toolchain notes for future work:
+- The nRF core builds at **gnu++11** (the ESP32 firmware overrides to gnu++17; `firmware-nrf` does not).
+  Consequence hit here: ODR-using a class-static `constexpr` array (`Config::SPOOF_MFG_DATA`) via pointer
+  arithmetic would need an out-of-line definition the header-only shared `Config.h` can't give → link
+  error. Worked around with literal-index constant reads (+ a `static_assert` on length). `Shifter.h`'s
+  `inline constexpr` also warns at gnu++11 (accepted as an extension). **Follow-up candidate:** align
+  `firmware-nrf` to gnu++17 to match the shared headers' authored standard and kill this class of risk.
+- Both envs compile: **xiao-sense** Flash 23.4% / RAM 48.6%; **feather-nrf52840** green.
+
+Open (untested): does a real SB20 accept the nRF as its crank over BLE (pair + power shows + calibrate
+completes)? That's **R3** — the session 8–9 criteria, now on the nRF. The ANT+ Stages-spoof path (P4,
+S340-gated) remains the other, potentially-more-faithful route.
+
+## 2026-07-10 — spoof/corrector is now a first-class UI control in the shared SPA, coherent across every platform + both radios
+
+Decision: surface the spoof↔corrector **mode** in the one shared web SPA (`web/index.html`) so it reads
+the same on every board, and make it actually *work* on the ESP32 (its whole SPA config-write path was
+missing). Requested by the owner ("make the spoof setup UI make sense across all platforms and for both
+BLE and ANT+"). The model settled on: **mode** (Corrector | Spoof) is the identity axis, shown everywhere;
+**spoof radio** (BLE | ANT+) is the transport axis, shown only on ANT-capable hardware (the nRF) with
+ANT+ disabled until the S340 lands; the ESP32 is BLE-only so no radio picker appears. In spoof the
+broadcast name is fixed to `Stages 62144` (the identity the SB20 keys on) and the field is disabled;
+corrector keeps an editable name.
+
+What the exploration turned up (three Explore agents, code-verified) — the honest starting state was worse
+than "just add a toggle":
+- The SPA had **no** mode concept at all.
+- The **ESP32 could not write ANY config from the SPA** — `POST /config` was never implemented (the
+  deferred "U4"), so the "Apply" button was a silent no-op on the ESP32; the only mode switch was the
+  one-way calibrate wizard (SPOOF→CORRECTOR). Latent data-loss too: `/setup/save` rebuilds config from a
+  fresh `RuntimeConfig` (default Spoof, empty curve), so saving the source picker while in corrector mode
+  reverted to spoof and **wiped the fitted curve**.
+- nRF: `spoof` (Config bit 3) already accepted by firmware; ANT bits (`outIsAnt`) still reject-until-S340;
+  the Config char read-back — **not** Status — is authoritative for mode (Status never even populates
+  srcIsAnt/outIsAnt).
+
+Shipped (branch `feat/nrf-ant-spoof`, stacked on the OBC base):
+- **SPA** (`web/index.html`): a "Broadcast mode" selector + a conditional "Spoof radio" select
+  (`caps.antCapable` gates it — true on BLE/nRF with ANT+ disabled, false on HTTP/ESP32) + per-mode help,
+  a reboot hint, and the fixed-name behaviour. Normalized `Config` gains `spoof`. BLE codec reads/writes
+  flags bit 3 (combined with single-sided, ANT bits left 0). HTTP `getConfig` reads `mode`; `setConfig`
+  POSTs urlencoded fields (`single/src_filter/out_name/mode`) — the ESP32 has no JSON parser.
+- **ESP32**: `renderConfigJson` now emits `"mode"`; new **`POST /config`** (`WifiLink`) that **merges**
+  onto the stored config via the new pure `mergeSpaConfigForm` (ConfigPage.h) — preserving the curve /
+  reference meter / trainer / serial (so it can't repeat the `/setup/save` wipe) — persists, and reboots
+  to apply (identity is boot-time; mirrors `/setup/save`). Same-origin CSRF guard as the other routes.
+- **Reboot model (coherent, not identical):** on both platforms the crank identity is built at boot, so a
+  mode change needs a reboot to re-advertise. The nRF applies framing/scale live and *hints* the reboot
+  (no remote-reboot channel yet); the ESP32 auto-reboots on save. The SPA messages each path.
+
+Verification (all desk/host — no hardware needed): ESP32 native **201/201** (incl. `mode` in
+`renderConfigJson` + `mergeSpaConfigForm` preserve/merge), SPA sync+XSS **3/3**, `WebSpa.h` regenerated in
+sync, ESP32-C3 compile green. A rendered mockup of all four states is in `design/spoof-ui-mockup.png`.
+**Untested (hardware-gated):** the ESP32's SPA-over-HTTP path end-to-end (the whole HttpTransport is still
+"unverified until U4" — this *is* part of U4, but the on-device round-trip needs an ESP32 on WiFi).
+**Follow-ups:** a remote-reboot affordance (both platforms) so a mode change applies without a power
+cycle; wiring `outIsAnt` + enabling the ANT+ radio option once the S340 capability is detectable.
+
+## 2026-07-10 — Architecture audit (3-agent survey): "one codec, many deployments" is enforced only C++↔C++; language boundaries were a claim. Closed the cheap gaps; ranked the structural ones.
+
+A grounded architecture pass (three Explore agents: codec-drift, main.cpp cohesion, config/correction
+model) produced an evidence-backed map. The central finding: the project's core bet — one wire format,
+deployed many times — is **genuinely enforced in exactly one place** (the nRF compiles the *same*
+`firmware/lib/proxy/*.h` as the ESP32 via `lib_extra_dirs`, so CPS/FTMS/OBC are one C++ source compiled
+twice, not mirrors) and is **unenforced at every language boundary** (Python, the SPA's JS, the Garmin
+Monkey C each hand-copy vectors; no test cross-checks `cpp_encode(x) == other_encode(x)`). The team
+already has the fix idiom (`test_calibration_parity.py`, `test_ota_sign.py`, `test_workout_engine_parity.py`)
+— it just was never pointed at the BLE/ANT wire formats.
+
+**Shipped this pass (safe, host-tested):**
+- **`code/tests/test_wire_format_parity.py`** (new home for the invariant): asserts `pages.py` produces
+  the *exact* bytes the C++ `AntBikePower.h` golden vectors assert (power-only, calibration
+  response+request, manufacturer) — cross-checking the ANT port I wrote 2026-07-10 against the
+  3,209-record-grounded Python codec — and that the SPA's `OBC_ACTIONS` order == firmware
+  `sb20ActionOptions` (a reorder would silently remap the Buttons-char index to the wrong action). 5/5 pass.
+- **OBC label drift fixed:** the SPA used `"−10W"` (U+2212) vs the firmware's `"-10W"` (ASCII) — now
+  identical, and the parity test locks it.
+- **SPA scale/offset "lying control" fixed** (a real correctness defect, not just fragmentation): the SPA
+  offered editable Scale/Offset on the ESP32/HTTP transport, but `setConfig` silently dropped them (the
+  ESP32 correction is a fitted *curve*, no scalar field — `WebJson.h:33`) while the local echo made the UI
+  look like the edit took. Added `caps.scalarCorrection` (BLE true / HTTP false); the scalar inputs now
+  hide on curve-only devices, replaced by a "correction is the Calibrate wizard's curve" note.
+
+**Deferred — structural, owner to steer (ranked):**
+1. **nRF `main.cpp` is a god-object** (1495 lines, *zero* seam classes; re-implements inline the four
+   seams the ESP32 has as classes — `BleCrankPeripheral`/`BleMeterClient`/`FtmsErgClient`/`BleShifterClient`
+   — and bypasses `ProxyCore`). The ESP32 by contrast is a disciplined wiring file with one fat tenant
+   (the ~590-line LCD head-unit controller). Best ROI order for the nRF: extract `BridgeConfigStore` →
+   `BridgeService` (the ~350-line GATT service) → `ImuRecorder` → the `IRadioSource/Sink` seam last
+   (biggest win, riskiest — the 4-way central multiplex). Extracting the first three removes ~700 lines and
+   would let the nRF finally adopt the shared `ProxyCore`. This is the real liability under the active nRF
+   spoof/ANT work.
+2. **Bridge GATT JS + Monkey-C mirrors are unpinned** (highest silent-drift blast radius — the JS is the
+   primary user control surface; a `Proto.h` offset change corrupts it with zero CI signal, `test_spa_sync`
+   only checks copy-drift). Needs a decision: extract the SPA's Bridge codec into a testable JS module
+   (+ Node in CI) so it *can* be byte-checked against shared golden vectors.
+3. **`|`-line `RuntimeConfig`** is positional, **untagged (no version byte, unlike the nRF's `PROTO_VER`)**,
+   append-only-by-convention, and delimiter-injectable (mitigated only by the easily-forgotten
+   `stripConfigDelims`). Contained (one production round-trip, `ConfigStore`) but a real trap; a middle
+   insert or a missed strip corrupts silently. Candidate: a tagged/versioned line.
+4. **Config field-name vocabulary diverges 3 ways** (`meterNameFilter`/`srcFilter`/`src_filter`;
+   `spoofName`/`outName`/`out_name`; mode as enum/bool/string). Accidental, not essential — a shared
+   field-name vocabulary would remove the translation layer + reader friction. (The three *serializers*/
+   storage backends and the scalar-vs-curve *model* are justified by transport and left alone.)
+
+## 2026-07-11 — ESP32-C3 setup-portal AP was up but invisible: root-caused to STA-reconnect thrash (+ per-device SSID, BLE-off)
+
+Owner reported the C3 "in setup mode" (OLED shows the portal) but the `SB20-Setup` AP never appeared on
+a phone — a **regression**. Diagnosed + fixed on hardware. Three distinct issues, three fixes; verified
+end-to-end (AP beacons, associates, DHCP, and the portal page loads).
+
+**Symptom chain (what the boot log finally showed).** The C3-OLED build logs to `/log` over HTTP, not
+USB-CDC, so COM5 is silent on a passive read; a reset-and-capture of the boot log (control-line reset,
+reopen after the native-USB re-enumerates — `scratchpad/reset_capture_c3.py`) was the key instrument. It
+printed: `setup portal up: AP 'Setup-E9A4' (WPA2; 0 networks scanned)`. **"0 networks scanned"** was the
+tell — the board's own STA scan found nothing while the laptop saw 5 APs, i.e. the C3 WiFi radio was
+wedged.
+
+**Root cause (the real one).** After the 15 s join failure (the board had stored home creds; away from
+home they don't match), it falls to the **join-fail portal** but the STA side keeps **auto-reconnecting to
+the absent stored network in the background**. On the ESP32-C3's single shared 2.4 GHz radio that thrash
+means the SoftAP never holds a channel long enough to **beacon** (AP "up" but invisible/unconnectable) and
+the picker scan returns 0. A **fresh** onboarding portal has no stored creds → no thrash → it works —
+which is exactly why fresh worked and the join-fail recovery didn't. **Fix:** in `startPortal_()`, after
+`WiFi.mode(WIFI_AP_STA)`, `WiFi.setAutoReconnect(false)` + `WiFi.disconnect(false,false)` (keep the radio
+on for the AP + one-shot scan, keep stored creds — a Save reboots to apply). After the fix the boot log
+showed **`4 networks scanned`** and the `Setup-E9A4` AP appeared in a laptop scan; joining it (DHCP →
+`172.29.4.2`) and `GET http://172.29.4.1/` returned the full setup page with a live network picker.
+
+**Two more portal fixes shipped alongside (same branch `feat/unique-setup-ap-ssid`):**
+- **Per-device AP SSID** — `WIFI_AP_SSID` base changed `SB20-Setup` → **`Setup`**, and a new pure
+  host-tested `setupApSsid()` (`SetupPin.h`) appends the last 2 MAC bytes → **`Setup-A6E9`**. Two boards in
+  setup mode at once were raising identically-named `SB20-Setup` APs that collide on 2.4 GHz; the suffix
+  disambiguates. Short "Setup" base keeps it inside the 0.42" OLED's ~14-char row. Threaded through
+  `softAP()`, the OLED portal rows (`formatOledLines` now takes the SSID), the CYD QR, and the boot log.
+- **BLE held off during ANY portal** (not just fresh onboarding) — `main.cpp` gate `!wifi.inPortal() ||
+  wifi.portalAfterJoinFail()` → `!wifi.inPortal()`. Active BLE (crank adv + the OBC/shifter scan) starves
+  the SoftAP data path on the CYD and adds radio load on the C3; the join-fail portal used to keep BLE on
+  "so a ride isn't bricked", but a portal you can't reach is worse. NimBLE **init** (no adv/scan) is fine —
+  only advertising/scanning is gated. (Owner picked this over an NVS-erase recovery.) **Follow-up:** the
+  `/wifi/off` ride-mode route drops WiFi but does **not** start BLE, so the ride-away-from-home path now
+  needs a "start BLE" escape in the portal — logged as a follow-up (that path was already broken while the
+  AP was starved).
+
+Native host tests 204/204 (added `setupApSsid` + OLED-SSID coverage). Verified on the C3 hardware.
+
+**OPERATIONAL LESSON — never take the dev host's WiFi down.** The hardware machine's **only** internet is
+WiFi, so `netsh wlan disconnect` (to force a clean scan) or joining an ESP board's AP from the host drops
+the host's internet and **cuts Claude Code's own API connection**. Verify an ESP AP via the **serial boot
+log**, not by scanning from the host; to reach a board over HTTP, put it on the **same LAN** (owner
+provisions it to the local WiFi) and hit it over the shared network. (Memory: `host-wifi-is-only-internet`.)
+
+## 2026-07-11 — ESP32 SPA-over-HTTP path verified on hardware (HANDOFF §4 item 2) — PASS
+
+Once the portal fix let a board join the LAN (an ESP32 at `192.168.0.92`, mode `spoof`, `src_filter`
+`ASSIOMA`, `has_curve:true`), the "unverified until U4" SPA/HTTP path was exercised end-to-end over the
+shared network (no host-WiFi juggling). All three checks pass:
+- **(a) spoof/corrector toggle persists via `POST /config` + the merge.** `POST /config` with only
+  `mode=corrector` returned `{"ok":true,"reboot":true}`; after the reboot `GET /config` read
+  `mode:corrector` **and** preserved every unsent field (`src_filter:ASSIOMA`, `out_name:Stages 62145`,
+  `has_curve:true`) — the partial-update merge (`mergeSpaConfigForm`) works, no CSRF friction with
+  same-origin headers.
+- **(b) Scale/Offset hidden on the ESP32.** The served `/app` carries two capability sets — BLE
+  `scalarCorrection:true` vs HTTP/ESP32 `scalarCorrection:false` ("the ESP32's correction is a fitted
+  curve, not editable scale/offset") — and gates the inputs with `const scalar = t.caps.scalarCorrection
+  !== false`. The `d58426e` "lying control" fix is live on-device.
+- **(c) `/setup/save` preserves mode + curve.** `POST /setup/save name=FAVERO` (a source change) rebooted
+  and came back `src_filter:FAVERO` but `mode:corrector` + `has_curve:true` intact — the `e84d189`
+  `mergeSetupForm` fix holds (pre-fix it rebuilt fresh, wiping mode→default + the curve).
+
+Board restored to its original config afterward (`mode:spoof, src_filter:ASSIOMA, out_name:Stages 62145,
+has_curve:true`). This closes the last hardware-gated §4 verification.
+
+## 2026-07-11 — Hardware verification session (nRF on the hardware box): R1a + spoof PASS; a real VS-UUID bug found & fixed
+
+First session on the machine that actually has the nRF/ESP32/ANT hardware, so the compile-only
+verifications from 2026-07-10 (HANDOFF §4) could finally run on-air. Toolchain provisioned + doctor'd;
+`pytest` 451 passed / 3 skipped, `ruff` clean; ESP32 native 202/202, nRF native 28/28; all sanity builds
+(`esp32c3-oled-live-ota`, `xiao-sense`, `feather-nrf52840`) green. XIAO on COM9, ESP32-C3 on COM5, ANT
+stick + nRF sniffer dongle present.
+
+**R1a persistence round-trip (nRF) — PASS.** Wrote a distinctive config over the Bridge GATT (Config
+`0002`: `flags=0x04` single-sided, `scale=1.234`, `offset=-5.0`, `src='CAULD'`, `out='RT-TEST'`) + a
+3-point curve (Curve `0005`: `[100W:1.0, 200W:1.25, 300W:1.5]`), reflashed the app (LittleFS survives a
+flash, so the boot-time load exercises the persistence path — per HANDOFF §6), and re-read: **every field
+survived byte-for-byte** and the board advertised its persisted `out='RT-TEST'` name. The `BridgeConfigStore`
+LittleFS glue R1a extracted works on hardware.
+
+**nRF BLE Stages-crank spoof identity — PASS (static + control-point; no SB20 needed).** In spoof mode
+(`spoof=1`, reboot) the XIAO advertises as **`Stages 62144`** with the Stages proprietary service
+(`d445fe01-…`) in the scan response; DIS reads **Stages Cycling / SPM2 / 1.8.2 / 11821518**; CP-Feature =
+**`0x0008030B`**; the Battery service is present. The enhanced offset-comp (`0x10`) control-point answer is
+**`2010010000ba01048503b703`** = resp `0x20`, req `0x10`, success, offset `0`, company id **442 (`0x01BA`)**,
+then the 5-byte `SPOOF_MFG_DATA` `04 85 03 B7 03` — exactly the captured real-crank reply. The live **0x2F**
+measurement needs a source meter (measNotifyCb only fires on source data); it stays host-verified
+byte-for-byte (`test_bridge` golden vectors + the shared `encodeStagesCpsMeasurement`) and is deferred to a
+real source. (The WinRT `fake_meter` peripheral wasn't a reliable source here — the known 2026-06-22 WinRT
+`advertising=False` quirk + a triple-role-on-one-adapter contention; not worth chasing when the on-bike
+session provides a real Assioma.) **Full R3 still needs the SB20 bike.**
+
+**BUG FOUND + FIXED — the nRF only exposed Bridge chars `0001`–`0008`; the Buttons char `0009` AND the
+whole OBC button-state service were silently missing over the air.** This is the *first on-air GATT
+enumeration* of the nRF (compile/host tests can't see it), and it exposed a real defect. Diagnosis chain:
+- A bleak GATT dump (uncached) showed the Bridge service ending at char `0008`, no OBC service. Not a
+  Windows cache artifact (a spoof-mode reflash correctly surfaced the new Battery/Stages services, and the
+  corrector-mode dump correctly *lacked* them — so uncached discovery reflects the live table).
+- First hypothesis (attribute-table overflow, default `BLE_GATTS_ATTR_TAB_SIZE_DEFAULT = 0x580 = 1408 B`)
+  was **wrong**: `Bluefruit.configAttrTableSize(0x1000)` changed nothing, and `begin()` succeeding for
+  `0001`–`0008` proves the table config applied.
+- Ground truth via a temporary on-device `DBG` serial command printing the `.begin()` return codes:
+  `chButtons.begin()=7`, `obcSvc.begin()=7`, `chObcButton.begin()=7`. **`7 = NRF_ERROR_INVALID_PARAM`**
+  (not `NO_MEM=4`), which `sd_ble_gatts_characteristic_add`/`service_add` return when the attribute's
+  vendor-specific UUID base was never registered (`sd_ble_uuid_vs_add` failed → UUID type stays UNKNOWN).
+- **Root cause: vendor-specific (128-bit) UUID slot exhaustion.** Our custom UUIDs
+  (`53423230-XXXX-…` Bridge, `d273f680-…` OBC, the Stages base) put their varying 16-bit id at bytes
+  **[10][11]**, but the SoftDevice's VS-UUID aliasing keys on bytes **[12][13]** (constant `0x30,0x32`
+  here). So the SoftDevice treats **every Bridge characteristic as its own distinct base** and consumes one
+  of the **default 10** VS-UUID slots each: DFU (1) + Bridge service `0000` + chars `0001`–`0008` = 10
+  slots, all gone by the time `chWk` (`0008`) registers. `chButtons` (`0009`) and the OBC service are the
+  11th/12th → no slot → `INVALID_PARAM` → absent on air. (Also why only the *last-registered* attributes
+  drop, and why it's `INVALID_PARAM` not `NO_MEM`.)
+- **Fix (1 line):** `Bluefruit.configUuid128Count(24);` before `Bluefruit.begin()` in
+  `firmware-nrf/src/main.cpp`. **Verified on-air:** after the fix, `DBG` shows all three `begin()=0`, a
+  fresh GATT dump lists Bridge `0001`–**`0009`** plus the OBC service `d273f680`/char `d273f681`, and a
+  Buttons `0009` write round-trip works (wrote `[6,5,4,3,2,1]`, read back identical). Both nRF envs compile,
+  native 28/28. Shipping on branch `fix/nrf-attr-table-size`. **Impact:** the SB20-shifter web-config
+  binding and the OBC re-broadcast were shipped-but-dead on the nRF; this restores them. (The ESP32 build is
+  a separate codebase and unaffected.) *Note the WinRT read cache: a `read_gatt_char` immediately after a
+  `write_gatt_char` in the same bleak connection returns the pre-write value; a fresh connection shows the
+  truth — cost a couple of false "write rejected" reads before this was recognised.*
+
+**ESP32-C3 WiFi setup-AP not appearing (owner-reported regression) — diagnosed, not yet resolved (needs
+the desk).** The owner reported the C3 "in setup mode" but no `SB20-Setup` AP visible on their iPhone, and
+called it a **regression** (it used to work). Established remotely: (a) the laptop's own WiFi scan sees 5
+neighbouring APs but **no `SB20-Setup`** (so the scan is healthy and the AP genuinely isn't broadcasting);
+(b) `sb20proxy.local` doesn't resolve and `192.168.4.1` is unreachable (not connected to a portal AP);
+(c) the board **is alive on BLE** — it advertises `OBC-SB20` (MAC `38:44:BE:45:E9:A6`, the session-11 OBC
+devmode identity from `POST /obc/devmode/on`, which persists+reboots). C3-OLED routes logs to `/log` (HTTP)
+not USB CDC, so COM5 is silent; the definitive next step (OLED readout or a boot-log capture) needs the
+owner at the desk. Working theory to check first: OBC **devmode** persisted on + away from home WiFi → the
+stored creds fail here → the board should fall to the portal after the 15 s join timeout, but the AP isn't
+coming up (candidate causes: a boot-guard reset loop, or the C3 WiFi/BLE-coex softAP not beaconing while
+BLE advertises). **Since `obcDevmode` is a station-server-only toggle and it's persisted, the cleanest
+recovery when back at the desk is to power it near home WiFi (or clear creds via the portal/`/forget`) so
+it rejoins, then turn devmode off.** Filed as an open task; ESP32 SPA-over-HTTP verification (HANDOFF §4)
+is blocked on the same WiFi access.
+
+## 2026-07-13 — new C3 + 0.96" OLED: I2C pins CONFIRMED 5/6 @ 0x3C (50 kHz + NVS read-back, fully autonomous)
+- **The 0.96" board's OLED is on SDA=5 / SCL=6 @ 0x3C** — the same pins as the 0.42" board. Confirmed with
+  **no eyes on the board and no readable serial**, so the method is worth recording:
+  1. The earlier `c3-oled-probe` scanned I2C at the Arduino **default ~100 kHz and found nothing** on any
+     candidate pair. That was a **false negative**: these boards' weak on-board pull-ups only ACK reliably
+     at **50 kHz** (the exact lesson raedian-probe hit on the 0.42" panel). Fix: `Wire.setClock(50000)`
+     before the address probe.
+  2. This board's **USB-Serial-JTAG delivers no `Serial` to the host** (esptool flashes fine; app prints
+     are silent), and I had no eyes on it (owner travelling). So the probe **writes its result to NVS**
+     (`Preferences`, namespace `oledprobe`, key `res`, value `"OLEDPROBE SDA=05 SCL=06 ADDR=3C"`), and the
+     host reads it back with `esptool ... read-flash 0x9000 0x5000 nvs.bin` then greps the ASCII marker
+     `OLEDPROBE`. **This "board writes NVS → host reads flash" channel is the reliable answer path for any
+     eyes-free / serial-dead C3 bring-up** — reuse it.
+- **Open (needs eyes): SSD1306 vs SH1106 controller.** The SSD1306 build (`esp32c3-oled96-live`) on the now
+  *correct* pins still drew **blank**, which points at the controller (many 0.96" AliExpress panels are
+  **SH1106**, not SSD1306 — indistinguishable over I2C, both ACK 0x3C). The probe now **sweeps** SSD1306↔SH1106
+  on the panel (4 s each, labelled) so one glance names it. Both production builds are ready and compile:
+  `esp32c3-oled96-live` (SSD1306) and the new `esp32c3-oled96sh-live` (SH1106, `-DOLED_SH1106=1`);
+  `OledDisplay.h` selects the U8g2 controller on that flag. Branch `feat/c3-oled96`.
+
+## 2026-07-13 (later) — C3 0.96" OLED: controller CONFIRMED SH1106 (panel renders the UI)
+- Flashed `esp32c3-oled96sh-live` (`-DOLED_SH1106`, pins 5/6 @ 0x3C) and the owner confirmed the panel
+  **renders the WiFi-setup UI**. So the 0.96" AliExpress C3+OLED is an **SH1106**, not SSD1306 — which is
+  why the SSD1306 build drew blank on the (correct) pins. The deductive chain held: pins electrically
+  confirmed → SSD1306 build boots/stable but blank → not SSD1306 → SH1106. **Canonical build for this
+  board: `esp32c3-oled96sh-live`.** BOARDS.md updated (SH1106 CONFIRMED).
+
+## 2026-07-13 — U0 decision: KEEP the canvas renderer (it is the host-test rendering reference)
+- U0 (the UI-unification cleanup) proposed deleting the superseded `esp32s3-touch*` **canvas** envs and the
+  now-dead `LCD_BANDS` banding machinery. **Decision: do NOT delete them.** Rationale surfaced while
+  scoping: the canvas renderer (`lib/proxy/LcdCanvas.h` + `LcdUi.h`) is the **only host-unit-testable
+  rendering path** — it rasterizes to an in-memory RGB565 buffer that `pio test -e native` asserts on
+  (e.g. `test_lcd_banded_render_matches_full`). The LVGL renderer that ships on the live boards has **no**
+  desk-test coverage. Deleting canvas would remove all host-testable rendering, violating the project's
+  "test the desk-testable in the same commit" invariant. So canvas stays as the render reference/harness
+  **until** an equivalent host-side LVGL test harness exists (being researched — LVGL v9 headless/snapshot).
+- **What U0 actually shipped:** only pt.1 — folding the LVGL palette into the token codegen
+  (`design/gen_tokens.py` → generated `firmware/src/ui/LcdTheme.h`), killing the 4th hand-maintained copy
+  of `design/tokens.json`. The `tokens.css` in the original U0 title is moot: the web SPA consumes tokens
+  as an inline `:root{}` (generated), not a separate stylesheet. **U0 is complete.**
+
+## 2026-07-13 — U5 SHIPPED: the LVGL head-unit UI is now host-testable (headless, in CI)
+- **The LVGL UI that ships on the ride boards (CYD, S3) now has desk-test coverage** — previously it had
+  none (only the superseded canvas renderer was host-tested). New env `pio test -e native-lvgl` compiles
+  the **real** `src/ui/LvglUi.cpp` on the host and renders it into an in-memory RGB565 framebuffer, with
+  taps injected through the existing `LvglDriverHooks{flushArea, readTouch}` seam. **No board, no SDL/X11
+  — LVGL renders fully in memory.**
+- **How:** a ~40-line host `<Arduino.h>` shim (`firmware/test/lvgl_shim/`: `millis`/no-op `Serial`/
+  `psramFound`/`heap_caps_malloc`→`malloc`) + `test_build_src=yes` + `build_src_filter` pulling in
+  `LvglUi.cpp` + the baked Inter fonts. The test (`firmware/test/test_lvglui/`) supplies a `flushArea`
+  hook that composites into a `std::vector<uint16_t>` and a scripted `readTouch` hook; the fake clock
+  (`lvglShimAdvanceMs`) makes it deterministic. **3 tests green:** Ride renders content, a nav-bar tap
+  switches screens (touch→widget-event→navTo), and the view-model reaches pixels.
+- **Gotcha logged:** `pio test` does **not** compile the project `src/` by default (only test files +
+  libs) — you must set **`test_build_src = yes`**, else `build_src_filter` never runs and you get link
+  errors for the UI symbols. Wired into CI (`.github/workflows/tests.yml`, the `firmware` job).
+- **Unblocks:** U1-as-parity-test (assert LVGL callbacks and `lcdHandleTap` emit the same UiAction), and
+  makes retiring the canvas renderer safe (LVGL is now directly tested). See `ui-unification.md`.
+
+## 2026-07-13 — U2 + U4 shipped (web-JSON parity guard; shared+escaped WiFi QR payload)
+- **U2 (schema-parity for the web-JSON mirror):** `ui-schema/web-json.json` is now the single source of the
+  ESP↔web JSON field names for `/scan` `/config` `/curve`. `code/scripts/gen_webjson.py --check` fails if
+  (1) `firmware/lib/proxy/WebJson.h` emits keys ≠ the schema, (2) `web/index.html` doesn't reference every
+  field, or (3) the generated `ui-schema/web-json.md` is stale. Guarded by `code/tests/test_webjson_sync.py`
+  + the CI `bridge-parity` job. This *widens R2* (the bridge parity idea) to the web-JSON mirror. Chosen as a
+  **contract linter** (no rewrite of the hand-written serializers) — safe with concurrent sessions; full
+  serializer codegen is a possible future step.
+- **U4 (onboarding):** the onboarding *data* was already shared by U3 (`ProvisionView`). Closed the last gap:
+  the **`WIFI:` setup-AP QR payload** — previously an inline, **un-escaped** `snprintf` in `LvglUi.cpp` — is
+  now pure, host-tested `lib/proxy/Onboarding.h::wifiQrPayload()` with correct `WIFI:`-grammar escaping of
+  `;`/`:`/`,`/`\`/`"` (a latent QR-corruption bug if an SSID/PIN ever held a special char; our
+  `Setup-XXXX` + numeric PINs don't today). A deeper onboarding state machine was judged unnecessary.
+- Both on branch `feat/u2-u4-wire-and-onboarding` (PR — NOT merged; multiple sessions live). Verified: 458
+  pytest + ruff clean; 208 native host tests; native-lvgl 3/3 (compiles the LvglUi change).
+
+## 2026-07-13 — C3 0.96" board (10:B4:1D:BA:C9:0C) has a DEAD WiFi radio (hardware) — not firmware
+The new 0.96" C3+OLED never worked on WiFi. Its **setup AP is invisible** on every device (2 phones +
+laptop, inches away), yet the firmware reports the softAP fully up. Exhaustive elimination (all via the
+NVS-breadcrumb channel, since serial is dead on this board — write a `Preferences` string in `WifiLink`,
+read back with `esptool read-flash 0x9000 0x5000`):
+- `softAP()` **succeeds**: `ap=1 ip=172.29.4.1 ch=1 psk=8 mode=2(AP-only) tx=78(=19.5dBm max)` — every
+  firmware signal green.
+- **RX works** (scan finds 2–5 nearby networks) but **can't see a 2.4 GHz hotspot a Garmin Epix (2.4-only)
+  sees inches away** → degraded RX too.
+- **Client-mode join** to that hotspot: `WIFICLIENT status=1` (WL_NO_SSID_AVAIL) — never associates.
+- **Firmware is good:** the *identical* build on the 0.42" C3 (`esp32c3-oled-live`) beacons a **visible**
+  AP. Same `WifiLink` code, different result → the variable is the board.
+- **Not calibration:** full `esptool erase-flash` (wipes RF-cal/NVS → forces re-cal) — no change.
+- **Not power:** different USB port + cable — no change.
+**Verdict: defective RF front end (TX effectively dead, RX degraded) — RMA the board.** The OLED (SH1106)
+is fine, so it survives as a display-only/bench spare. BOARDS.md row marked ⛔. **Lesson:** "softAP returned
+true / OLED shows the SSID" does NOT mean the AP beacons — an A/B against a known-good board is the fast
+firmware-vs-hardware discriminator, and a 2.4 GHz-only device (a watch) cleanly confirms hotspot band when
+iPhones (5 GHz-preferring) can't.

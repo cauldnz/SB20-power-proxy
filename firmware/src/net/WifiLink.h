@@ -107,6 +107,16 @@ public:
     using CurveSetHook = std::function<void(const CorrectionCurve&)>;
     void setCurveHandler(CurveSetHook set) { curveSet_ = set; }
 
+    // OBC Devmode test hook: fire a virtual button press (id, state) — the seam encodes it (Obc.h) and
+    // notifies the OBC characteristic. Drives the GET /obc/press bring-up route for the qz listener test.
+    using ObcPressHook = std::function<void(uint8_t id, uint8_t state)>;
+    void setObcPressHook(ObcPressHook h) { obcPress_ = h; }
+
+    // Save the SB20 sink-enable + per-button action binding (from the shared SPA's /obc/buttons.json):
+    // the seam persists both to NVS and applies them live to the running shifter (no reboot).
+    using ObcButtonsHook = std::function<void(bool enabled, const Sb20ButtonMap&)>;
+    void setObcButtonsHook(ObcButtonsHook h) { obcButtons_ = h; }
+
     // Call from loop(): services HTTP + OTA (station) or the captive DNS + portal (setup), and
     // promotes to healthy (which cancels the boot-guard and validates the running OTA image).
     void handle();
@@ -133,6 +143,7 @@ private:
     void addWorkoutRoutes_();    // GET /workout (+ /state) + POST /workout/{load,preset,controls}
     void startPortal_();         // SoftAP + captive DNS + setup routes
     void addLogRoutes_();        // GET /log + /log/on + /log/off (shared by both modes)
+    void addObcRoute_();         // GET /obc + /obc/press + POST /obc/devmode/{on,off} (OBC Devmode test)
     void addForgetRoute_(const char* msg);  // POST /forget: clear creds + reboot (shared by both modes)
     void collectCsrfHeaders_();  // retain Origin/Referer on a server so csrfOk_() can read them
     bool csrfOk_();              // same-origin (CSRF) guard for state-changing routes; sends 403 on fail
@@ -148,6 +159,8 @@ private:
     SourcesProvider sourcesProvider_;
     ConfigSaveHook configSave_;
     CurveSetHook curveSet_;
+    ObcPressHook obcPress_;
+    ObcButtonsHook obcButtons_;
     ScanHook configScan_;
     DiagFramesProvider diagFrames_;
     CalViewProvider calView_;

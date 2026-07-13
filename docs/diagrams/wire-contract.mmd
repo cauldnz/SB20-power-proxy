@@ -1,0 +1,19 @@
+%% One schema, many language mirrors — locked together by committed golden vectors (U2 / R2).
+flowchart TB
+  schema["ui-schema/bridge.json<br/>(single source: packet layouts, enums, caps)"]
+  gen["code/scripts/gen_bridge.py<br/>generator (--check in CI)"]
+  schema --> gen
+
+  gen --> golden["ui-schema/bridge-golden.json<br/>(canonical byte vectors — the oracle)"]
+  gen --> js["web/bridge-codec.js<br/>(SPA parse/pack)"]
+  gen --> cpp["firmware-nrf lib/bridge/Proto.h<br/>(C++ pack/unpack, hand-tuned + validated)"]
+  gen --> hdr["firmware WebJson.h fields<br/>(ESP32 HTTP JSON)"]
+
+  js --> spa["Shared Web SPA<br/>(Web Bluetooth + HTTP)"]
+  cpp --> nrf["nRF Bridge GATT<br/>+ ESP32 crank"]
+  hdr --> http["ESP32 /config · /scan · /curve"]
+
+  golden -. "asserted by" .-> ctest["C++ golden test (native)"]
+  golden -. "asserted by" .-> ntest["Node parity test"]
+  ctest --- ci["CI: bridge-parity job"]
+  ntest --- ci

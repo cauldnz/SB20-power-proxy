@@ -86,15 +86,42 @@ inline const char* webSpaHtml() { return R"SB20SPA(
 
   <div class="card">
     <h2>Correction & identity</h2>
-    <label>Scale (×)</label><input id="cfgScale" type="number" step="0.001" min="0.5" max="2" value="1.000">
-    <label>Offset (W)</label><input id="cfgOffset" type="number" step="0.1" min="-100" max="100" value="0">
+    <label>Broadcast mode</label>
+    <select id="cfgMode">
+      <option value="corrector">Corrector — broadcast under our own name</option>
+      <option value="spoof">Spoof Stages crank — drive an SB20</option>
+    </select>
+    <div class="note" id="cfgModeHelp"></div>
+    <div id="cfgRadioRow" style="display:none">
+      <label>Spoof radio</label>
+      <select id="cfgRadio">
+        <option value="ble">Bluetooth (BLE) — pair the SB20 to us as its crank</option>
+        <option value="ant" disabled>ANT+ — the SB20's internal radio (needs the S340 SoftDevice — coming)</option>
+      </select>
+    </div>
+    <div id="cfgScalarRow">
+      <label>Scale (×)</label><input id="cfgScale" type="number" step="0.001" min="0.5" max="2" value="1.000">
+      <label>Offset (W)</label><input id="cfgOffset" type="number" step="0.1" min="-100" max="100" value="0">
+    </div>
+    <div class="note" id="cfgCurveNote" style="display:none">Correction on this device is set by the Calibrate wizard below (a fitted curve), not a scale/offset.</div>
     <label style="display:flex;align-items:center;gap:8px;font-weight:400"><input id="cfgSingle" type="checkbox" style="width:auto"> Single-sided ×2 (double an R-only crank)</label>
     <label>Source name filter (blank = any power meter)</label><input id="cfgSrc" maxlength="19" placeholder="e.g. ASSIOMA">
     <div class="note" style="margin-top:6px">Nearby (tap to use as source):</div>
     <div id="scanList" style="display:flex;flex-direction:column;gap:4px;margin-top:4px"><span class="note">scanning…</span></div>
     <label>Broadcast name</label><input id="cfgOut" maxlength="19" value="SB20 Bridge">
+    <div class="note" id="cfgRebootHint" style="display:none;color:var(--accent)">Mode change — Apply, then reboot the device to re-advertise the new identity.</div>
     <div class="row" style="margin-top:10px">
       <button id="btnApply" disabled>Apply to bridge</button>
+    </div>
+  </div>
+
+  <div class="card" id="buttonsCard">
+    <h2>SB20 handlebar buttons</h2>
+    <div class="note" style="margin-bottom:8px">Read the SB20's own shifter buttons and re-broadcast each press as the action you pick &mdash; an OpenBikeControl id (to a training app) or a local erg nudge. Applies live.</div>
+    <label style="display:flex;align-items:center;gap:8px;font-weight:400"><input id="btnSink" type="checkbox" style="width:auto"> Sink SB20 buttons (read the shifter)</label>
+    <div id="btnRows" style="margin-top:8px"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="btnButtonsApply" disabled>Apply to bridge</button>
     </div>
   </div>
 
@@ -188,7 +215,9 @@ inline const char* webSpaHtml() { return R"SB20SPA(
 // BleTransport (Web Bluetooth, GitHub Pages host) and HttpTransport (fetch, ESP32 host) — both
 // translate to/from the SAME normalized objects the view renders, so a UI change lands on both:
 //   Status {srcConnected,recording,srcW,outW,cad,bal,scale,offset,recN,uptime}
-//   Config {scale,offset,singleSided,srcFilter,outName}
+//   Config {scale,offset,singleSided,spoof,srcFilter,outName}   spoof=true => impersonate the Stages
+//          crank (drive an SB20); false => corrector (own identity). caps.antCapable gates the ANT+
+//          spoof-radio option (nRF only; ESP32 is BLE-only).
 //   Scan   [{name,rssi,isCps,isFtms,isCrank}]
 //   Cal    {state(0/1/2),pairs,minPairs,resid,coverage[6],enough}
 //   Wk     {loaded,running,paused,ergConnected,ergControlled,target,segIndex,nSeg,segRemain,elapsed,bias}
@@ -204,14 +233,16 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;"
 
 // ================= BleTransport (Web Bluetooth) =================
 const SVC = "53423230-0000-4bd9-a4ae-1b4e2c633a1d";
-const CH = { stat:"0001", cfg:"0002", rctl:"0003", rdat:"0004", curv:"0005", cal:"0006", scan:"0007", wk:"0008" };
+const CH = { stat:"0001", cfg:"0002", rctl:"0003", rdat:"0004", curv:"0005", cal:"0006", scan:"0007", wk:"0008", btn:"0009" };
 const uuid = s => `53423230-${s}-4bd9-a4ae-1b4e2c633a1d`;
 const dec = b => new TextDecoder().decode(b).replace(/\0+$/, "");
 
 class BleTransport {
   constructor() {
     this.kind = "ble"; this.autoConnect = false;
-    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:true };
+    // antCapable: the nRF52840 (this transport's only device) is ANT-capable silicon, so the spoof
+    // radio can be BLE or ANT+ (ANT+ still gated on the S340 SoftDevice — the UI shows it disabled).
+    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:true, buttons:true, antCapable:true, scalarCorrection:true };
     this.dev = null; this.ch = {}; this.dl = null;
     this.onStatus = this.onScan = this.onCal = this.onWk = this.onRec = this.onRecDone =
       this.onConn = this.onLog = () => {};
@@ -234,6 +265,7 @@ class BleTransport {
       catch (e) { this.ch[key] = null; this.onLog(`${key} not available (older firmware)`); }
     }
     try { await get("curv"); } catch (e) { this.ch.curv = null; }  // read/write, no notify
+    try { await get("btn"); } catch (e) { this.ch.btn = null; }    // SB20 buttons (read/write, no notify)
     if (this.ch.scan) { try { this.onScan(parseScan(await this.ch.scan.readValue())); } catch (e) {} }
     this.onConn(true, this.dev.name || "");
     this.onLog(`connected to ${this.dev.name}`);
@@ -266,6 +298,22 @@ class BleTransport {
       v.setUint16(4 + i * 4, Math.max(250, Math.min(4000, Math.round(f * 1000))), true);  // 0.25–4.0×
     });
     await this.ch.curv.writeValueWithResponse(b);
+  }
+  // Buttons char (0x0009): [ver, enabled, act0..act5] — actN is an action-option INDEX (Sb20ButtonMap
+  // order; OBC_ACTIONS below mirrors it). The SB20-shifter -> action binding + sink enable.
+  async getButtons() {
+    if (!this.ch.btn) return { enabled: false, actions: [0, 0, 0, 0, 0, 0] };
+    const d = await this.ch.btn.readValue();
+    if (d.byteLength < 8 || d.getUint8(0) !== VER) return { enabled: false, actions: [0, 0, 0, 0, 0, 0] };
+    const a = []; for (let i = 0; i < 6; i++) a.push(d.getUint8(2 + i));
+    return { enabled: d.getUint8(1) !== 0, actions: a };
+  }
+  async setButtons(b) {
+    if (!this.ch.btn) throw new Error("this device has no buttons characteristic");
+    const w = new Uint8Array(8); w[0] = VER; w[1] = b.enabled ? 1 : 0;
+    for (let i = 0; i < 6; i++) w[2 + i] = (b.actions[i] || 0) & 0xff;
+    await this.ch.btn.writeValueWithResponse(w);
+    return this.getButtons();
   }
   async scan() {}  // the bridge scans autonomously; ScanList pushes updates
   calStart(ref) { return this._wstr("cal", 1, ref); }
@@ -305,12 +353,15 @@ function parseStatus(d) {
     recN: d.getUint32(14, true), uptime: d.getUint16(18, true) };
 }
 function parseConfig(d) {
+  // flags byte (offset 1): b0 srcIsAnt · b1 outIsAnt · b2 singleSided · b3 spoof (Proto.h).
   return { scale: d.getUint16(2, true) / 1000, offset: d.getInt16(4, true) / 10, singleSided: !!(d.getUint8(1) & 4),
+    spoof: !!(d.getUint8(1) & 8),
     srcFilter: dec(new Uint8Array(d.buffer, d.byteOffset + 6, 19)), outName: dec(new Uint8Array(d.buffer, d.byteOffset + 25, 19)) };
 }
 function packConfig(c) {
   const b = new Uint8Array(44), v = new DataView(b.buffer);
-  b[0] = VER; b[1] = c.singleSided ? 4 : 0;
+  // Combine the flag bits (we leave srcIsAnt/outIsAnt 0 — ANT routing is firmware-gated on the S340).
+  b[0] = VER; b[1] = (c.singleSided ? 4 : 0) | (c.spoof ? 8 : 0);
   v.setUint16(2, Math.round((c.scale || 1) * 1000), true);
   v.setInt16(4, Math.round((c.offset || 0) * 10), true);
   new TextEncoder().encodeInto((c.srcFilter || "").slice(0, 19), b.subarray(6, 25));
@@ -367,7 +418,10 @@ function assembleImu(dl, devCrc) {
 class HttpTransport {
   constructor() {
     this.kind = "http"; this.autoConnect = true;
-    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:false };
+    // antCapable:false — the ESP32 has no ANT radio, so spoof is BLE-only (no radio picker shown).
+    // scalarCorrection:false — the ESP32's correction is a fitted curve, not editable scale/offset, so
+    // the SPA hides the scalar inputs here (setConfig would otherwise silently drop them, WebJson.h:33).
+    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:false, buttons:true, antCapable:false, scalarCorrection:false };
     this.cfg = { scale: 1, offset: 0 }; this.timer = null;
     this.onStatus = this.onScan = this.onCal = this.onWk = this.onRec = this.onRecDone =
       this.onConn = this.onLog = () => {};
@@ -398,17 +452,28 @@ class HttpTransport {
   disconnect() { if (this.timer) clearInterval(this.timer); this.onConn(false, ""); }
   async getConfig() {
     const j = await this._get("/config");
-    this.cfg = { scale: j.scale, offset: j.offset, singleSided: !!j.single_sided, srcFilter: j.src_filter || "", outName: j.out_name || "" };
+    // mode "corrector" | "spoof" (default absent => spoof, the ESP32's default). The ESP32's
+    // correction is a fitted curve, so scale/offset report the 1.0/0 baseline (has_curve flags a fit).
+    this.cfg = { scale: j.scale, offset: j.offset, singleSided: !!j.single_sided, spoof: j.mode !== "corrector",
+      srcFilter: j.src_filter || "", outName: j.out_name || "" };
     return this.cfg;
   }
   async setConfig(c) {
-    await this._post("/config", JSON.stringify({ scale: c.scale, offset: c.offset, single_sided: c.singleSided, src_filter: c.srcFilter, out_name: c.outName }));
-    return this.getConfig();
+    // POST /config as urlencoded form fields (the ESP32 has no JSON parser). It persists + REBOOTS to
+    // apply the identity, so don't re-GET (the device is restarting) — return the intended config.
+    const body = new URLSearchParams({ single: c.singleSided ? "1" : "0", src_filter: c.srcFilter || "",
+      out_name: c.outName || "", mode: c.spoof ? "spoof" : "corrector" }).toString();
+    await this._post("/config", body);
+    this.cfg = { ...this.cfg, ...c };
+    return this.cfg;
   }
   // /curve: GET returns breakpoints; POST takes the compact "power:factor,.." form (the ESP32 parses
   // it with curveFromString — no JSON parser on-device). Same portable profile as the BLE Curve char.
   async getCurve() { try { const j = await this._get("/curve"); return { hasCurve: !!j.has_curve, breakpoints: j.curve || [] }; } catch (e) { return { hasCurve: false, breakpoints: [] }; } }
   setCurve(bp) { return this._post("/curve", bp.map(([p, f]) => `${(+p).toFixed(1)}:${(+f).toFixed(4)}`).join(",")); }
+  // /obc/buttons.json: {enabled, actions:[i0..i5]} — same action-option indices as the BLE Buttons char.
+  async getButtons() { try { const j = await this._get("/obc/buttons.json"); return { enabled: !!j.enabled, actions: (j.actions || [0,0,0,0,0,0]).slice(0, 6) }; } catch (e) { return { enabled: false, actions: [0,0,0,0,0,0] }; } }
+  setButtons(b) { return this._post("/obc/buttons.json", JSON.stringify({ enabled: !!b.enabled, actions: b.actions })); }
   scan() { return this._post("/setup/scan"); }
   calStart(ref) { return this._post("/calibrate/start", "ref=" + encodeURIComponent(ref)); }
   calCancel() { return this._post("/calibrate/cancel"); }
@@ -443,7 +508,7 @@ PRESETS.forEach((p, i) => { const o = document.createElement("option"); o.value 
 
 function setConnected(on) {
   $("connDot").classList.toggle("on", on);
-  ["btnApply","btnRec","btnStop","btnDownload","btnErase","btnCalStart","btnWkSetTrainer","btnWkLoad","btnWkStart","btnCurveExport","btnCurveImport"].forEach(id => $(id).disabled = !on);
+  ["btnApply","btnButtonsApply","btnRec","btnStop","btnDownload","btnErase","btnCalStart","btnWkSetTrainer","btnWkLoad","btnWkStart","btnCurveExport","btnCurveImport"].forEach(id => $(id).disabled = !on);
   if (!on) ["btnWkPause","btnWkStop","btnBiasDown","btnBiasUp"].forEach(id => $(id).disabled = true);
   $("btnDisconnect").disabled = !on; $("btnConnect").disabled = on;
   if (!on) $("devName").textContent = "";
@@ -528,15 +593,63 @@ function wire(t) {
   T = t;
   t.onStatus = renderStatus; t.onScan = renderScan; t.onCal = renderCal; t.onWk = renderWk;
   t.onRec = renderRec; t.onRecDone = onRecDone; t.onLog = log;
-  t.onConn = (on, name) => { setConnected(on); if (on) { $("devName").textContent = name; loadConfig(); refreshCurve(); } log(on ? "connected" : "disconnected"); };
+  t.onConn = (on, name) => { setConnected(on); if (on) { $("devName").textContent = name; loadConfig(); refreshCurve(); loadButtons(); } log(on ? "connected" : "disconnected"); };
   if (!t.caps.recording) $("recCard").style.display = "none";
+  if (!t.caps.buttons) $("buttonsCard").style.display = "none";
+  // Scalar scale/offset is real on the nRF (packConfig writes it) but a no-op on the ESP32 (curve-only);
+  // hide the inputs where they'd be silently dropped, and point at the curve instead.
+  const scalar = t.caps.scalarCorrection !== false;
+  $("cfgScalarRow").style.display = scalar ? "" : "none";
+  $("cfgCurveNote").style.display = scalar ? "none" : "";
   if (t.kind === "ble" && !navigator.bluetooth) $("unsupported").style.display = "block";
 }
+// Broadcast-mode (spoof/corrector) UI. Spoof impersonates the Stages crank the SB20 expects, so its
+// advertised name is fixed to "Stages 62144" (editing it would stop the SB20 recognising us); corrector
+// broadcasts under our own editable name. The ANT+ spoof radio shows only on ANT-capable hardware
+// (the nRF) and stays disabled until the S340 SoftDevice lands — the ESP32 is BLE-only.
+const SPOOF_CRANK_NAME = "Stages 62144";
+let loadedSpoof = false, loadedOutName = "";
+function applyModeUi() {
+  const spoof = $("cfgMode").value === "spoof";
+  $("cfgModeHelp").textContent = spoof
+    ? "Impersonate the SB20's own Stages crank so the SB20 accepts our corrected power and runs erg — pair the SB20 to us as its crank."
+    : "Re-broadcast the corrected meter under our own name; any head unit (Garmin, Zwift) pairs to it. For meter-to-meter correction.";
+  $("cfgRadioRow").style.display = (spoof && T && T.caps.antCapable) ? "" : "none";
+  const out = $("cfgOut");
+  if (spoof) { out.value = SPOOF_CRANK_NAME; out.disabled = true; }
+  else { out.disabled = false; if (out.value === SPOOF_CRANK_NAME) out.value = loadedOutName || "SB20 Corrector"; }
+  $("cfgRebootHint").style.display = (spoof !== loadedSpoof) ? "" : "none";
+}
+$("cfgMode").onchange = applyModeUi;
 async function loadConfig() {
   try {
     const c = await T.getConfig();
     $("cfgScale").value = c.scale.toFixed(3); $("cfgOffset").value = c.offset.toFixed(1);
     $("cfgSingle").checked = !!c.singleSided; $("cfgSrc").value = c.srcFilter; $("cfgOut").value = c.outName;
+    $("cfgMode").value = c.spoof ? "spoof" : "corrector"; loadedSpoof = !!c.spoof; loadedOutName = c.outName || "";
+    applyModeUi();
+  } catch (e) {}
+}
+// ---- SB20 buttons: bind each handlebar button to an action ----
+// OBC_ACTIONS mirrors firmware/lib/proxy/Sb20ButtonMap.h sb20ActionOptions ORDER — the wire form is a
+// u8 index into this list, so the JS and firmware must agree byte-for-byte (index 0 = none).
+const OBC_ACTIONS = ["None", "OBC Shift Up", "OBC Shift Down", "OBC ERG Up", "OBC ERG Down", "OBC Lap",
+  "OBC Menu", "OBC Pause", "Erg target +10W (local)", "Erg target -10W (local)"];
+const SB20_BUTTONS = ["LEFT up", "LEFT down", "LEFT 3rd", "RIGHT up", "RIGHT down", "RIGHT 3rd"];
+function buildButtonRows() {
+  if ($("btnRows").children.length) return;  // once
+  const opts = OBC_ACTIONS.map((label, i) => `<option value="${i}">${label}</option>`).join("");
+  $("btnRows").innerHTML = SB20_BUTTONS.map((name, i) =>
+    `<label style="font-weight:600;font-size:.9rem">${name}</label>` +
+    `<select id="btnAct${i}" style="width:100%;margin:4px 0 10px">${opts}</select>`).join("");
+}
+async function loadButtons() {
+  if (!T.caps.buttons) return;
+  buildButtonRows();
+  try {
+    const b = await T.getButtons();
+    $("btnSink").checked = !!b.enabled;
+    for (let i = 0; i < 6; i++) $("btnAct" + i).value = String(b.actions[i] ?? 0);
   } catch (e) {}
 }
 // ---- Calibration profile (portable curve; format = the desk-tooling CalibrationProfile) ----
@@ -570,11 +683,28 @@ $("btnConnect").onclick = async () => { try { await T.connect(); } catch (e) { l
 $("btnDisconnect").onclick = () => T.disconnect();
 $("btnApply").onclick = async () => {
   try {
+    const spoof = $("cfgMode").value === "spoof";
+    const modeChanged = spoof !== loadedSpoof;
     const c = await T.setConfig({ scale: parseFloat($("cfgScale").value || "1"), offset: parseFloat($("cfgOffset").value || "0"),
-      singleSided: $("cfgSingle").checked, srcFilter: $("cfgSrc").value, outName: $("cfgOut").value });
+      singleSided: $("cfgSingle").checked, spoof, srcFilter: $("cfgSrc").value,
+      outName: spoof ? SPOOF_CRANK_NAME : $("cfgOut").value });
     $("cfgScale").value = c.scale.toFixed(3); $("cfgOffset").value = c.offset.toFixed(1); $("cfgSingle").checked = !!c.singleSided;
-    $("cfgSrc").value = c.srcFilter; $("cfgOut").value = c.outName; log("config applied");
+    $("cfgSrc").value = c.srcFilter; loadedSpoof = !!c.spoof; loadedOutName = c.spoof ? loadedOutName : c.outName;
+    $("cfgMode").value = c.spoof ? "spoof" : "corrector"; applyModeUi();
+    // Identity is set at boot on both platforms: the ESP32 persists + reboots; the nRF applies the
+    // framing live but needs a reboot to re-advertise the new identity/services.
+    log(T.kind === "http" ? "config saved — device restarting to apply"
+        : modeChanged ? `mode set to ${c.spoof ? "SPOOF (Stages crank)" : "CORRECTOR"} — reboot to re-advertise the identity`
+        : "config applied");
   } catch (e) { log(`config failed: ${e.message}`); }
+};
+$("btnButtonsApply").onclick = async () => {
+  try {
+    const actions = []; for (let i = 0; i < 6; i++) actions.push(parseInt($("btnAct" + i).value, 10) || 0);
+    const b = await T.setButtons({ enabled: $("btnSink").checked, actions });
+    if (b) { $("btnSink").checked = !!b.enabled; for (let i = 0; i < 6; i++) $("btnAct" + i).value = String(b.actions[i] ?? 0); }
+    log("button actions applied");
+  } catch (e) { log(`buttons failed: ${e.message}`); }
 };
 $("btnRec").onclick = async () => { await T.recSetRate(+$("recRate").value); await T.recStart(); };
 $("btnStop").onclick = () => T.recStop();

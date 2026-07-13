@@ -161,3 +161,21 @@ Any session touching hardware we can't drive from the desk (bike, flash/pair, on
 - **Promote durable findings** to `findings/decisions.md` (append-only) + commit captures to `findings/captures/` — those are canonical; the session doc is the narrative.
 - **No detritus / one open session at a time.** New docs live in `sessions/`; completed ones stay (marked DONE) and are linked from the ledger — no ad-hoc `NEXT-`/`READY-` variants. Don't draft session N+1 until N is DONE. (Legacy `BIKE-SESSION-*.md` stay at root because append-only `decisions.md` links them.)
 - **Improve the playbook after every session** — fold the retro's lessons back into `PLAYBOOK.md`; it's a living, compounding doc. A session whose lessons never reach the playbook is only half-closed.
+
+## Diagrams
+
+Diagrams are **Mermaid text, rendered locally.** Source is authoritative; the image is derived.
+
+- **Source + output live together:** `docs/diagrams/<name>.mmd` → `docs/diagrams/<name>.svg`
+  (commit both; reference as `![...](diagrams/<name>.svg)`). Author `.mmd` from the templates in
+  the POS `diagrams` skill (flowchart / sequenceDiagram / stateDiagram-v2 / erDiagram).
+- **Render offline, never via a cloud service:**
+  ```bash
+  scripts/render.sh docs/diagrams/<name>.mmd        # -> .svg   (add -f png for PNG)
+  ```
+  Requires once: `npm i -g @mermaid-js/mermaid-cli && npx puppeteer browsers install chrome-headless-shell`.
+- **Privacy:** do **not** send diagram source naming hosts/topology/secrets to `mermaid.ink`,
+  `mermaid.live`, or a hosted render MCP. Those are for generic sketches only. When unsure, render locally.
+- **GitHub ` ```mermaid ` fenced blocks** are fine inline in Markdown (rendered by GitHub, in-repo).
+
+Canonical convention & shared helper: `cauldnz/cauldnz-pos` → `skills/diagrams/`.
