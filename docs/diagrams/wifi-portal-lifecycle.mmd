@@ -1,0 +1,24 @@
+%% ESP32 WiFi bring-up + setup-portal lifecycle (WifiLink) — incl. the 2026-07 portal fixes.
+stateDiagram-v2
+    [*] --> LoadCreds: boot
+
+    LoadCreds --> Joining: stored creds present
+    LoadCreds --> FreshPortal: no creds
+
+    Joining --> Connected: joined < 15 s
+    Joining --> JoinFailPortal: 15 s timeout
+
+    state "Fresh onboarding portal" as FreshPortal {
+        [*] --> APup
+        APup: BLE held OFF · STA quiesced · softAP beacons
+        APup: SSID Setup-XXXX (per-device MAC suffix)
+    }
+    state "Join-fail recovery portal" as JoinFailPortal {
+        [*] --> APup2
+        APup2: BLE held OFF · setAutoReconnect(false) so the softAP can beacon
+    }
+
+    Connected --> [*]: serve /app, /status, OTA; BLE proxy runs
+    FreshPortal --> Saved: user picks network (POST /save)
+    JoinFailPortal --> Saved: re-provision
+    Saved --> [*]: esp_restart → rejoin

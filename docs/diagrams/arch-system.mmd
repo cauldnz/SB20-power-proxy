@@ -1,0 +1,35 @@
+%% System overview — read a power meter, correct it, re-broadcast it so a consumer accepts it as its own.
+flowchart LR
+  meter["Power meter<br/>Favero Assioma / XCadey<br/>(BLE CPS 0x1818)"]
+
+  subgraph fw["On-bike firmware — the product (ESP32-C3 / nRF52840)"]
+    direction TB
+    subgraph core["Pure core — lib/proxy/ (host-tested, no radio)"]
+      pc["ProxyCore<br/>read → correct → rebroadcast"]
+      corr["Correction<br/>scale/offset or fitted curve"]
+      pc --- corr
+    end
+    subgraph seam["Hardware seam — src/ (only place that needs a board)"]
+      mc["BleMeterClient<br/>central"]
+      cp["BleCrankPeripheral<br/>peripheral + control point"]
+      wifi["WifiLink<br/>portal · HTTP · OTA"]
+      disp["disp/ + ui/<br/>OLED · LVGL head-units"]
+    end
+    mc --> pc --> cp
+    pc --> disp
+  end
+
+  sb20["Stages SB20 smart bike<br/>(accepts only its own crank)"]
+  phone["Phone / browser"]
+  garmin["Garmin head unit<br/>(Connect IQ)"]
+
+  meter -->|BLE notify| mc
+  cp -->|"spoofed Stages 0x2F crank"| sb20
+  wifi <-->|"HTTP + shared Web SPA"| phone
+  cp <-->|"Bridge GATT / Web Bluetooth"| garmin
+
+  subgraph desk["Desk tooling — code/ (Python)"]
+    py["sb20proxy: the SAME ProxyCore over ANT+<br/>capture · fit · replay · ride dashboard"]
+  end
+  meter -.->|"ANT+ / committed captures"| py
+  py -.->|"fitted correction profile"| corr
