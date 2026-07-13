@@ -39,6 +39,7 @@
 
 #include "BridgeConfigStore.h"  // the LittleFS persistence seam (config/curve/trainer/buttons)
 #include "BridgeService.h"      // the Bridge GATT service seam (UUIDs + chars + begin() wiring)
+#include "ant/AntMasterChannel.h"  // S340 ANT+ Bike Power master (INERT unless S340 + key present)
 
 using namespace sb20proxy;
 using namespace nrfbridge;
@@ -877,6 +878,10 @@ static void wkWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t* da
 }
 
 // ================= setup ======================================================================
+#ifdef NRF_HAS_ANT
+static nrfant::AntMasterChannel g_antMaster;  // ANT+ Bike Power master (S340 builds only)
+#endif
+
 void setup() {
     Serial.begin(115200);
     uint32_t t0 = millis();
@@ -1044,6 +1049,17 @@ void setup() {
 
     Serial.printf("[bridge] up: out='%s' src-filter='%s' scale=%.3f offset=%.1f\n", g_cfg.outName,
                   g_cfg.srcFilter, (double)g_corr.scale, (double)g_corr.offset);
+
+#ifdef NRF_HAS_ANT
+    // ANT+ Bike Power master (S340). Bring-up: broadcast a fixed mock power so a Garmin/SimulANT+ sees
+    // a power meter; the BLE source feeds real readings via setReading() once the radio seam lands.
+    // Runs after the SoftDevice is enabled (Bluefruit.begin, above).
+    g_antMaster.setReading(/*W*/ 150, /*rpm*/ 90, /*balance*/ -1);
+    uint32_t antErr = g_antMaster.begin();
+    Serial.printf("[ant] master %s (err=0x%08lX)\n",
+                  antErr ? "FAILED" : "up (dev 62144 / BikePower / RF57 / period 8182)",
+                  (unsigned long)antErr);
+#endif
 }
 
 // ================= loop =======================================================================
@@ -1142,6 +1158,10 @@ static void imuSelfTest() {
 
 void loop() {
     const uint32_t now = millis();
+
+#ifdef NRF_HAS_ANT
+    g_antMaster.poll();  // drain the ANT event queue: rebroadcast the next page on each EVENT_TX
+#endif
 
     // Serial self-test commands (USB CDC) — desk diagnostics, bench-verify the correction logic
     // without a BLE client (the desktop Windows GATT cache fights repeated reflashes):
