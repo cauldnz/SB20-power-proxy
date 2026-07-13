@@ -13,6 +13,7 @@
 #include "WorkoutEngine.h"   // segmentTargetW for the interval profile
 #include "WorkoutPresets.h"  // preset labels for the picker
 #include "LcdTheme.h"        // generated LVGL palette (design/tokens.json) — C_BG()/C_CARD()/...
+#include "Onboarding.h"      // shared wifiQrPayload() for the setup-AP QR (U4)
 
 // Inter, baked by lv_font_conv (src/ui/fonts/, inputs in design/fonts/inter)
 LV_FONT_DECLARE(lv_inter_12);
@@ -574,10 +575,8 @@ void buildProvision() {
 void provisionSync(const ProvisionView& v) {
     if (v.portal) {
         if (!g_provShown) {
-            char qrtxt[112];
-            snprintf(qrtxt, sizeof(qrtxt), "WIFI:T:WPA;S:%s;P:%s;;", v.apSsid.c_str(),
-                     v.pin.c_str());
-            lv_qrcode_update(PV.qr, qrtxt, (uint32_t)strlen(qrtxt));
+            const std::string qrtxt = wifiQrPayload(v.apSsid, v.pin);  // shared + escaped (U4)
+            lv_qrcode_update(PV.qr, qrtxt.c_str(), (uint32_t)qrtxt.size());
             char buf[64];
             snprintf(buf, sizeof(buf), "Wi-Fi: %s", v.apSsid.c_str());
             lv_label_set_text(PV.ssid, buf);

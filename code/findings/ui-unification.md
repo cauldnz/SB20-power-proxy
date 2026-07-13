@@ -1,7 +1,7 @@
 # UI unification (the "U-series") — plan & living checklist
 
-**Status:** IN PROGRESS (U0 ✅, U3 ✅, **U5 ✅ shipped** — all merged; U1 reframed as a parity test, now
-UNBLOCKED by U5; U2/U4 need scoping). Born from the
+**Status:** IN PROGRESS (U0 ✅, U3 ✅, U5 ✅ merged; **U2 ✅, U4 ✅ in PR #268**; U1 reframed as a parity
+test — unblocked by U5 and optional). Born from the
 task-#11 review ("unify UI across Web + all ESP32 boards", 2026-07). This doc is the plan's home — it was
 previously only a set of one-line labels in a task list, which is why "what is U1" was unanswerable. The
 structural sibling of [`architecture-remediation.md`](architecture-remediation.md) (the R-series): tick
@@ -66,8 +66,8 @@ boxes here as slices ship.
 | **U3** | Fold the OLED onto the shared view-model | ✅ **done** (PR #265) | S–M | — |
 | **U5** | **Host LVGL test harness** (headless, in-memory) | ✅ **done** (PR #267) | M | — |
 | **U1** | One interaction model (reframed → *parity test*) | 🔄 **reframed — now unblocked** | S | U5 ✅ |
-| **U2** | Schema→codegen for the remaining wire/data mirrors (= R2 widened) | 📋 needs scoping | M | — |
-| **U4** | Unify onboarding/portal across panels | 📋 needs scoping | M | (U3) |
+| **U2** | Schema→codegen for the remaining wire/data mirrors (= R2 widened) | ✅ **done** (PR #268) | M | — |
+| **U4** | Unify onboarding/portal across panels | ✅ **done** (PR #268) | S | (U3) |
 
 ### U0 — LVGL palette → token codegen ✅
 Done. `design/gen_tokens.py` now generates `firmware/src/ui/LcdTheme.h` (`lv_color_hex` accessors) as a 4th
@@ -119,49 +119,45 @@ the LVGL callbacks emit the *same `UiAction` for the same control on each screen
 paths can never silently diverge. *(Or, once LVGL is directly tested, make `lcdHandleTap` explicitly
 canvas-only and the question dissolves.)*
 
-### U2 — Schema→codegen for the remaining wire/data mirrors 📋 (needs scoping)
-**Goal:** extend the Bridge-style **schema → codegen + golden vectors + CI parity** (R2:
-`ui-schema/bridge.json` → `Proto.h`/`bridge-codec.js`) to the **other** hand-maintained ESP↔web mirrors that
-can still drift — chiefly **`firmware/lib/proxy/WebJson.h`** (the ESP32 status/config JSON that `web/index.html`
-parses). Today that JSON contract is hand-written on both ends. **Scoping needed:** inventory every
-hand-maintained wire/data mirror (WebJson.h status, config compact-string, `/scan`,`/config` payloads),
-decide which get a schema + golden vectors, and whether this rides `gen_bridge.py` or a sibling generator.
-**Open question for the owner** below.
+### U2 — Schema→parity for the web-JSON mirror ✅ (PR #268)
+Done — the R2 schema-parity idea, widened to the ESP↔web JSON contract. **`ui-schema/web-json.json`** is the
+one source of the `/scan` `/config` `/curve` field names; **`code/scripts/gen_webjson.py --check`** fails if
+either side drifts from it — (1) `firmware/lib/proxy/WebJson.h` must emit exactly the schema's keys, (2)
+`web/index.html` must reference every field, (3) the generated `ui-schema/web-json.md` reference stays in
+sync. Guarded by `code/tests/test_webjson_sync.py` + the CI `bridge-parity` job. **Scope note:** this is the
+*contract linter* (safe, no rewrite of the serializers); generating the serializer bodies themselves is a
+possible future step. `/status` isn't in the schema yet (Status.h) — add if it earns it.
 
-### U4 — Unify onboarding/portal across panels 📋 (needs scoping)
-**Goal:** one onboarding *model + flow* across all panels. U3 already made `ProvisionView` shared (the
-*data*). What remains is presentation + flow: LCD shows a QR + SSID/PIN screen, the OLED shows the same as
-text, the web/captive portal has its own; and the join-fail / `obcDevmode` / "hold BLE off in the portal"
-handling was patched per-panel (task #10). **Scoping needed:** define the shared onboarding state machine
-(states: fresh → AP-up → joining → joined/failed) as pure code both renderers project, then per-panel
-presentation only. **Open question** below.
+### U4 — Unify onboarding/portal across panels ✅ (PR #268)
+Largely delivered by **U3** (the onboarding *data* — `ProvisionView`: apSsid/pin/url — is already shared, and
+per-panel *presentation* rightly differs). This PR closes the last gap: the one un-shared, un-tested
+onboarding primitive — the **`WIFI:` QR payload** a phone scans to join the setup AP — is now
+**`lib/proxy/Onboarding.h::wifiQrPayload()`**, pure + host-tested, with **proper `WIFI:`-grammar escaping**
+(the old inline `snprintf` didn't escape `;`/`:`/`,`/`\`/`"` — a latent QR-corruption bug if an SSID/PIN ever
+held one). LvglUi consumes it. A deeper onboarding *state machine* was considered unnecessary — the state is
+just `portal` + `wifiUp`, already cleanly derived per panel.
 
 ---
 
 ## 5. Sequencing
 
 ```
-   U0 ✅ ─── U3 ✅ ─── U5 ✅        (all shipped + merged)
+   U0 ✅ ─── U3 ✅ ─── U5 ✅        (merged)
                           │
-                          └─> U1 (parity test — now unblocked, cheap) + safe canvas retirement
-   U2 (wire codegen)   ] independent, need scoping
-   U4 (onboarding)     ]
+                          └─> U1 (parity test — unblocked, cheap) + safe canvas retirement
+   U2 ✅  U4 ✅  (PR #268)
 ```
 
 - **U0, U3, U5:** shipped + merged (PRs #263, #265, #267).
-- **U1** (parity test) is now unblocked and cheap; do it whenever, or close as satisfied.
-- **U2, U4** are independent tracks; each needs a scoping pass before code.
+- **U2, U4:** in PR #268 (this branch).
+- **U1** (parity test) is the only remaining item; do it whenever, or close as satisfied.
 
 ## 6. Open decisions for the owner (please weigh in)
 
-1. **U1:** U5 shipped, so LVGL is now testable. Do the small U1 parity test (assert `lcdHandleTap` and the
-   LVGL callbacks emit the same `UiAction` per control), or close U1 as satisfied by the shared
-   `UiAction`/`lcdExecute` layer?
+1. **U1:** the only U-series item left. U5 made LVGL testable, so the small U1 parity test (assert
+   `lcdHandleTap` and the LVGL callbacks emit the same `UiAction` per control) is now cheap — do it, or
+   close U1 as satisfied by the shared `UiAction`/`lcdExecute` layer?
 2. **Canvas renderer:** keep indefinitely as the host-test reference (current decision), or now that U5 has
    landed (LVGL directly tested), retire it in a future pass?
-3. **U2 priority:** is the ESP↔web JSON drift risk (WebJson.h) worth a schema+golden-vector pass now, or
-   parked until a concrete drift bite? (No incident yet — this is preventative.)
-4. **U4 priority:** unify onboarding now, or is the per-panel portal "good enough" post-U3 (the data is
-   already shared)?
 
-*U0/U3/U5 shipped. U1/U2/U4 remain owner decisions.*
+*U0/U3/U5 merged; U2/U4 in PR #268. Only U1 remains an owner decision.*

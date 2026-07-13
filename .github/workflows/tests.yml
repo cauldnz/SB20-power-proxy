@@ -123,3 +123,8 @@ jobs:
 
       - name: JS codec parity vs golden vectors
         run: node web/test/bridge-codec.test.mjs
+
+      # The web-JSON mirror (/scan /config /curve): WebJson.h (C++) + web/index.html (JS) must not drift
+      # from ui-schema/web-json.json. See findings/ui-unification.md §U2.
+      - name: Web JSON contract in sync (WebJson.h <-> web SPA)
+        run: python code/scripts/gen_webjson.py --check
