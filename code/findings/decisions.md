@@ -3073,3 +3073,25 @@ the gitignored `ant_network_key.h`).
   arg — Bluefruit may pass NULL → a core patch may be needed); the app **RAM base** (0x20006000 may need
   bumping on `NO_MEM`); the **flash mechanism** (S340 SD swap via UF2/DFU vs SWD, brick-risk, dongle/UF2
   recovery). **"It links" ≠ "the SD runs"** — that gap is exactly this session's job.
+
+## 2026-07-14 — nRF S340 on-hardware: SD-swap needs SWD (stock bootloader can't serial-DFU an ANT SoftDevice)
+Worked `sessions/nrf-s340-ant-bringup.md` on the XIAO (COM9). **The build is proven; getting the S340
+SoftDevice onto the chip is the blocker.**
+- **S0 ✅** flash/recover loop (S140 app upload → boots → `SHOW`/`[hb]` respond). Recovery is reliable.
+- **S1 ✅** PlatformIO's DFU zip is **app-only** (manifest `softdevice_req 0x123` = S140, from the board
+  JSON) — can't swap the SD. Built a proper **combined SD+app** DFU package:
+  `adafruit-nrfutil dfu genpkg --dev-type 0x0052 --sd-req 0x0123 --softdevice <S340.hex> --application <app.hex>`.
+  (The bundled `adafruit-nrfutil.exe` is a frozen exe blocked by Windows Application Control — `pip install
+  adafruit-nrfutil` into the venv and use that; PlatformIO uses the `.py` via python.)
+- **S2a ❌ the stock (S140) Adafruit/Seeed bootloader cannot serial-DFU the S340 SoftDevice.** `dfu serial
+  --singlebank` opens, starts the SoftDevice image, and dies on **packet 1**: `WriteFile failed
+  (PermissionError 13 "device does not recognize the command")` — the bootloader **resets when it begins
+  the SD update, dropping the USB CDC** mid-transfer. Deterministic. This is the roadmap's *"bootloader
+  rebuilt against S340"* caveat, confirmed empirically.
+- **Recovery ✅** the SD write failed before erasing, so the S140 SD survived — re-flashing the S140 app
+  booted straight back. **The board was never at risk** (bootloader is a separate protected region).
+- **Verdict:** the DFU-swap path is a dead end on the stock bootloader; **flash the S340 SD via SWD** (probe
+  on order) — `ANT_s340_nrf52840_6.1.1.hex` then `.pio/build/xiao-sense-s340/firmware.hex`, bypassing the
+  bootloader. UF2 for the SD is unlikely (region-protected). Everything else (compile, the ANT master, the
+  combined package) is ready and waiting on the probe. Updated `nrf-roadmap.md` R1/P3 should note: **stock
+  bootloader = no ANT-SD over serial DFU; SWD or a rebuilt bootloader required.**

@@ -1,6 +1,8 @@
 # Session: nRF S340 + ANT+ bring-up (flash the S340 build, prove ANT on air)
 
-**Status:** PLANNED (built overnight 2026-07-13 → 07-14; flash + on-air is this session).
+**Status:** ⛔ BLOCKED on a debug probe (2026-07-14). Build ✅, flash/recover loop ✅, but the S340
+**SoftDevice can't be flashed over serial DFU** on the stock S140 bootloader — needs **SWD** (probe on
+order). Board is safe on S140. Full actuals at the bottom.
 **Prereq:** ✅ done — S340 provisioned (`vendor/softdevice/`), the `xiao-sense-s340` firmware **compiles +
 links** (`.pio/build/xiao-sense-s340/firmware.hex`), broadcasting a mock **150 W** ANT+ Bike Power master.
 
@@ -81,3 +83,41 @@ links** (`.pio/build/xiao-sense-s340/firmware.hex`), broadcasting a mock **150 W
 - If ANT is proven on air: next is P4b — feed **real** BLE-source readings into `setReading()` (the
   `IRadioSource`/`IRadioSink` seam) + the ANT **slave** source, and the **Stages spoof** identity vs a real
   SB20 (run-sheet R3).
+
+---
+
+## Actual — 2026-07-14
+
+- **S0 ✅** — `pio run -e xiao-sense -t upload --upload-port COM9` programmed; board boots the app, `SHOW`
+  + `[hb]` heartbeat respond. **Flash/recover loop proven.** (XIAO app = `2886:8045`; bootloader = `2886:0065`
+  on a *different* COM + a UF2 mass-storage drive.)
+- **S1 ✅** — the PlatformIO DFU zip is **app-only** and its manifest mislabels `softdevice_req: 0x123`
+  (S140, from the board JSON) → uploading it as-is can't swap the SD. Built a proper **combined SD+app**
+  package with `adafruit-nrfutil dfu genpkg --dev-type 0x0052 --sd-req 0x0123 --softdevice <S340.hex>
+  --application <app.hex>` (both images present, softdevice_req 0x123 so the bootloader accepts it).
+  - Tooling gotcha: the bundled `adafruit-nrfutil.exe` is a frozen exe **blocked by Application Control**
+    (`python38.dll` load blocked). Fix: `pip install adafruit-nrfutil` into the venv and use that console
+    script (PlatformIO itself uses the `.py` via python, which is why S0's upload worked).
+- **S2a ❌ — serial DFU cannot flash the S340 SoftDevice on the stock (S140) bootloader.** `--touch 1200`
+  resets to the bootloader on a *new* COM (COM9→COM11), then `dfu serial -p COM11 --singlebank` **opens,
+  begins sending the SoftDevice image, and dies on the first packet:** `WriteFile failed
+  (PermissionError 13 'The device does not recognize the command')` — the bootloader resets when it starts
+  the SD update, dropping the USB CDC mid-transfer. This is exactly the roadmap's *"bootloader rebuilt
+  against S340"* caveat, hit empirically.
+- **Recovery ✅** — the SD write failed on packet 1 (before erasing), so the S140 SD survived: re-flashing
+  the **S140 app** to the bootloader (`dfu serial -p COM11 -pkg xiao-sense/firmware.zip`) booted straight
+  back to a working Bridge. **The board is fine.**
+
+### Verdict + next step
+The **build is done and proven** (compiles/links, no S140 regression); the blocker is purely **getting the
+S340 SoftDevice onto the chip**. The stock Adafruit/Seeed bootloader won't serial-DFU an ANT SoftDevice
+(USB drops on the SD reset). Paths:
+1. **SWD (ordered a probe) — the clean fix (S2b):** flash the S340 hex + app hex directly, bypassing the
+   bootloader. `nrfjprog`/`pyocd`/OpenOCD + the XIAO SWD pads. **Do this when the probe arrives.**
+2. UF2 mass-storage for the SD is unlikely (the bootloader typically protects the SD region) — not worth
+   the risk vs waiting for the probe.
+3. (Bigger) rebuild the Adafruit bootloader against S340 — itself brick-risk; a probe makes it moot.
+
+**When the probe lands:** `combined_s340.zip` + the raw hexes are already built in
+`.pio/build/xiao-sense-s340/`; SWD-flash `ANT_s340_nrf52840_6.1.1.hex` then `firmware.hex`, then watch the
+serial for `[bridge] up` + `[ant] master up` and scan from a Garmin/SimulANT+ for a ~150 W meter (dev 62144).
