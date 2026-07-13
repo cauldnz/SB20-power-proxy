@@ -1,87 +1,113 @@
-// c3_oled_probe_main.cpp — throwaway I2C pin scanner to find a C3 board's 0.96" OLED wiring.
+// c3_oled_probe_main.cpp — find a C3 board's OLED I2C wiring, autonomously.
 //
-// AliExpress "ESP32-C3 + 0.96 OLED" boards vary in which GPIOs the SSD1306/SH1106 sits on. This
-// probe sweeps the common (SDA,SCL) candidate pairs, does a full I2C address scan on each, and
-// flags 0x3C/0x3D (the OLED). Run it to learn the pins, then wire a real board variant (U3).
+// Hard-won lessons from the 0.42" board (raedian-probe recipe):
+//   * These boards' I2C only answers reliably at ~50 kHz (weak pull-ups) — a scan at the Arduino
+//     default 100 kHz throws FALSE NEGATIVES ("no device"). So we Wire.setClock(50000) before scanning.
+//   * Serial (USB-Serial-JTAG) is often unreadable on the host, and we may have no eyes on the board.
+//     So the PRIMARY result channel is NVS: we write the found pins to flash; the host reads them back
+//     with `esptool read-flash` of the NVS partition. Secondary channels: the OLED itself + the LED.
 //
-// Guarded by -DC3_OLED_PROBE so the file is INERT in every normal env (it compiles to nothing when
-// the flag is absent — no setup()/loop() — so it can't clash with main.cpp). The `c3-oled-probe`
-// env in platformio.ini sets the flag and excludes main.cpp. Flash with:
+// Guarded by -DC3_OLED_PROBE so the file is INERT in every normal env. Flash with:
 //   python code/scripts/flash_c3.py --env c3-oled-probe --port COMxx
+// Then read the result back (no eyes/serial needed):
+//   esptool --chip esp32c3 --port COMxx read-flash 0x9000 0x5000 nvs.bin
+//   (grep nvs.bin for the ASCII marker "OLEDPROBE ...")
 #ifdef C3_OLED_PROBE
 #include <Arduino.h>
 #include <Wire.h>
 #include <U8g2lib.h>
+#include <Preferences.h>
 
-// Common SDA,SCL pairs seen on C3 OLED boards (0.42" peff74 uses 5/6; many 0.96" use 8/9 or 5/6;
-// some route to other low GPIOs). Both orders tried since silkscreens/listings disagree.
-static const int8_t PAIRS[][2] = {
-    {5, 6},  {6, 5},  {8, 9},  {9, 8},  {4, 5},  {5, 4},  {7, 6},  {6, 7},
-    {18, 19},{19, 18},{0, 1},  {1, 0},  {2, 3},  {3, 2},  {20, 21},{21, 20}, {10, 8},
-};
+// Candidate GPIOs for the I2C bus (C3 usable pins, minus 11–17 = SPI flash). USB pins 18/19 are LAST
+// because probing them briefly repurposes the USB D-/D+ lines. We try every ordered (SDA,SCL) pair.
+static const uint8_t PINS[] = {5, 6, 4, 7, 8, 9, 10, 3, 2, 1, 0, 20, 21, 18, 19};
+static const uint8_t N = sizeof(PINS);
+#define LED_PIN 8  // typical C3 onboard LED (active-low); a blink is a bonus "alive" channel
 
-// Some C3 boards (this 0.96") don't deliver Serial to the host over USB-Serial-JTAG, so ALSO report
-// the answer ON the OLED itself: the first pair that has a device at 0x3C/0x3D gets a 128x64 SSD1306
-// inited on it, showing the pins. If it lights up, read SDA/SCL off the screen.
 static int found_sda = -1, found_scl = -1;
 static uint8_t found_addr = 0;
 
-static bool scanPair(int sda, int scl) {
+// Does an OLED (0x3C or 0x3D) ACK on this pin pair at 50 kHz?
+static uint8_t probePair(uint8_t sda, uint8_t scl) {
     Wire.end();
-    delay(5);
-    if (!Wire.begin(sda, scl)) {
-        Serial.printf("  SDA=%2d SCL=%2d -> Wire.begin failed\n", sda, scl);
-        return false;
-    }
-    delay(5);
-    bool oledHere = false;
-    for (uint8_t a = 1; a < 127; ++a) {
+    delay(2);
+    if (!Wire.begin(sda, scl)) return 0;
+    Wire.setClock(50000);   // THE FIX — marginal bus needs 50 kHz to ACK (else false negatives)
+    Wire.setTimeOut(30);
+    delay(2);
+    for (uint8_t a = 0x3C; a <= 0x3D; ++a) {
         Wire.beginTransmission(a);
-        if (Wire.endTransmission() == 0) {
-            const bool oled = (a == 0x3C || a == 0x3D);
-            Serial.printf("  SDA=%2d SCL=%2d -> 0x%02X%s\n", sda, scl, a,
-                          oled ? "   <-- SSD1306/SH1106 OLED" : "");
-            if (oled && found_sda < 0) { found_sda = sda; found_scl = scl; found_addr = a; oledHere = true; }
-        }
+        if (Wire.endTransmission() == 0) return a;
     }
-    if (found_sda < 0 && !oledHere) Serial.printf("  SDA=%2d SCL=%2d -> (nothing)\n", sda, scl);
-    return oledHere;
+    return 0;
+}
+
+static void writeResult(const char* s) {
+    Preferences p;
+    p.begin("oledprobe", false);
+    p.putString("res", s);   // ASCII, greppable in an NVS flash dump: marker "OLEDPROBE"
+    p.end();
 }
 
 void setup() {
     Serial.begin(115200);
-    delay(3000);  // let the USB-CDC host attach before the first burst
-    Serial.println("\n=== C3 0.96\" OLED I2C pin scan ===");
-    Serial.println("(a device at 0x3C or 0x3D on some pair = the OLED's SDA/SCL)");
-    for (auto& p : PAIRS) { if (scanPair(p[0], p[1])) break; }
-    Serial.println("=== scan done ===");
+    Serial.setTxTimeoutMs(0);   // never block on serial if the host isn't reading (recipe)
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, HIGH); // off (active-low)
+    delay(1500);
+    writeResult("OLEDPROBE SCANNING");
 
-    if (found_sda >= 0) {
-        Serial.printf(">>> OLED at 0x%02X on SDA=%d SCL=%d — showing on the panel\n",
-                      found_addr, found_sda, found_scl);
-        // U8g2 HW-I2C ctor: (rotation, reset, clock=SCL, data=SDA), pins are runtime.
-        static U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled(
-            U8G2_R0, U8X8_PIN_NONE, (uint8_t)found_scl, (uint8_t)found_sda);
-        oled.setBusClock(50000);
-        oled.begin();
-        oled.setContrast(255);
-        oled.clearBuffer();
-        oled.setFont(u8g2_font_8x13B_tf);
-        oled.drawStr(0, 12, "OLED FOUND");
-        char b[24];
-        oled.setFont(u8g2_font_7x13_tf);
-        snprintf(b, sizeof(b), "addr 0x%02X", found_addr); oled.drawStr(0, 31, b);
-        snprintf(b, sizeof(b), "SDA=%d", found_sda);       oled.drawStr(0, 47, b);
-        snprintf(b, sizeof(b), "SCL=%d", found_scl);       oled.drawStr(0, 63, b);
-        oled.sendBuffer();
+    for (uint8_t i = 0; i < N && found_sda < 0; ++i) {
+        for (uint8_t j = 0; j < N; ++j) {
+            if (i == j) continue;
+            uint8_t addr = probePair(PINS[i], PINS[j]);
+            if (addr) { found_sda = PINS[i]; found_scl = PINS[j]; found_addr = addr; break; }
+        }
     }
+
+    char msg[48];
+    if (found_sda >= 0)
+        snprintf(msg, sizeof(msg), "OLEDPROBE SDA=%02d SCL=%02d ADDR=%02X", found_sda, found_scl, found_addr);
+    else
+        snprintf(msg, sizeof(msg), "OLEDPROBE NONE (0x3C/0x3D on no pin pair @50kHz)");
+    writeResult(msg);
+
+}
+
+// Two candidate controllers on the CONFIRMED pins — one of them will render legibly; the other stays
+// blank/garbled. Whichever shows readable text names the controller for the production build.
+static U8G2_SSD1306_128X64_NONAME_F_HW_I2C g_ssd(U8G2_R0, U8X8_PIN_NONE, 6, 5);  // pins patched in loop
+static U8G2_SH1106_128X64_NONAME_F_HW_I2C  g_sh (U8G2_R0, U8X8_PIN_NONE, 6, 5);
+
+template <typename T>
+static void drawLabel(T& u, const char* ctrl) {
+    u.setBusClock(50000);
+    u.begin();
+    u.setContrast(255);
+    u.clearBuffer();
+    u.setFont(u8g2_font_8x13B_tf);
+    u.drawStr(0, 13, ctrl);                 // "SSD1306" or "SH1106" — read whichever is legible
+    u.setFont(u8g2_font_7x13_tf);
+    char b[24];
+    snprintf(b, sizeof(b), "SDA=%d SCL=%d", found_sda, found_scl); u.drawStr(0, 34, b);
+    snprintf(b, sizeof(b), "addr 0x%02X", found_addr);            u.drawStr(0, 50, b);
+    u.drawStr(0, 63, "which is legible?");
+    u.sendBuffer();
 }
 
 void loop() {
-    delay(8000);
-    if (found_sda >= 0)
-        Serial.printf("(OLED @ 0x%02X SDA=%d SCL=%d — on the panel)\n", found_addr, found_sda, found_scl);
-    else
-        Serial.println("(no OLED found at 0x3C/0x3D on any candidate pair — tap RESET to rescan)");
+    static bool led = false;
+    led = !led;
+    digitalWrite(LED_PIN, led ? LOW : HIGH);   // blink = alive
+
+    if (found_sda < 0) { delay(120); return; } // nothing found — just blink fast
+
+    // Controller sweep: SSD1306 for 4 s, then SH1106 for 4 s, forever. The panel renders under
+    // exactly one of them; a single glance names it.
+    static uint8_t phase = 0;
+    if (phase == 0) drawLabel(g_ssd, "SSD1306");
+    else            drawLabel(g_sh,  "SH1106");
+    phase ^= 1;
+    for (int i = 0; i < 8; ++i) { digitalWrite(LED_PIN, i & 1 ? LOW : HIGH); delay(500); }  // ~4 s
 }
 #endif  // C3_OLED_PROBE

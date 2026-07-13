@@ -2930,3 +2930,23 @@ BLE advertises). **Since `obcDevmode` is a station-server-only toggle and it's p
 recovery when back at the desk is to power it near home WiFi (or clear creds via the portal/`/forget`) so
 it rejoins, then turn devmode off.** Filed as an open task; ESP32 SPA-over-HTTP verification (HANDOFF §4)
 is blocked on the same WiFi access.
+
+## 2026-07-13 — new C3 + 0.96" OLED: I2C pins CONFIRMED 5/6 @ 0x3C (50 kHz + NVS read-back, fully autonomous)
+- **The 0.96" board's OLED is on SDA=5 / SCL=6 @ 0x3C** — the same pins as the 0.42" board. Confirmed with
+  **no eyes on the board and no readable serial**, so the method is worth recording:
+  1. The earlier `c3-oled-probe` scanned I2C at the Arduino **default ~100 kHz and found nothing** on any
+     candidate pair. That was a **false negative**: these boards' weak on-board pull-ups only ACK reliably
+     at **50 kHz** (the exact lesson raedian-probe hit on the 0.42" panel). Fix: `Wire.setClock(50000)`
+     before the address probe.
+  2. This board's **USB-Serial-JTAG delivers no `Serial` to the host** (esptool flashes fine; app prints
+     are silent), and I had no eyes on it (owner travelling). So the probe **writes its result to NVS**
+     (`Preferences`, namespace `oledprobe`, key `res`, value `"OLEDPROBE SDA=05 SCL=06 ADDR=3C"`), and the
+     host reads it back with `esptool ... read-flash 0x9000 0x5000 nvs.bin` then greps the ASCII marker
+     `OLEDPROBE`. **This "board writes NVS → host reads flash" channel is the reliable answer path for any
+     eyes-free / serial-dead C3 bring-up** — reuse it.
+- **Open (needs eyes): SSD1306 vs SH1106 controller.** The SSD1306 build (`esp32c3-oled96-live`) on the now
+  *correct* pins still drew **blank**, which points at the controller (many 0.96" AliExpress panels are
+  **SH1106**, not SSD1306 — indistinguishable over I2C, both ACK 0x3C). The probe now **sweeps** SSD1306↔SH1106
+  on the panel (4 s each, labelled) so one glance names it. Both production builds are ready and compile:
+  `esp32c3-oled96-live` (SSD1306) and the new `esp32c3-oled96sh-live` (SH1106, `-DOLED_SH1106=1`);
+  `OledDisplay.h` selects the U8g2 controller on that flag. Branch `feat/c3-oled96`.

@@ -1,9 +1,13 @@
 #pragma once
-// SSD1306 OLED hardware seam for the ESP32-C3 OLED boards. Two panels are supported via build flags:
+// SSD1306/SH1106 OLED hardware seam for the ESP32-C3 OLED boards. Panels via build flags:
 //   - default: the 0.42" 72x40 (peff74 board) — the exact recipe raedian-probe proved stable.
 //   - -DOLED_128X64=1: the 0.96" 128x64 (AliExpress C3+OLED board) — bigger fonts, more spacing.
-// I2C pins default to SCL=6 / SDA=5 (both boards seen so far) and are overridable with
-// -DOLED_SCL_PIN / -DOLED_SDA_PIN (confirm with the c3-oled-probe env if a board differs).
+//     Controller: SSD1306 by default; add -DOLED_SH1106=1 for the SH1106 variant (132-col RAM, +2px
+//     column offset — U8g2's SH1106 ctor handles the offset). Which one a given 0.96" panel uses is a
+//     needs-eyes fact: flash the c3-oled-probe env — it sweeps both controllers on the confirmed pins.
+// I2C pins default to SCL=6 / SDA=5 (both boards seen so far; the 0.96" AliExpress board CONFIRMED
+// 5/6 @ 0x3C via the 50 kHz probe + NVS read-back) and are overridable with -DOLED_SCL_PIN /
+// -DOLED_SDA_PIN (confirm with the c3-oled-probe env if a board differs).
 // Compiled only when USE_OLED=1. The pure row layout lives in lib/proxy/OledScreen.h (host-tested);
 // this file is the hardware seam (U8g2 + Wire), exercised only on the bench like the BLE radio.
 #if defined(USE_OLED) && USE_OLED
@@ -68,7 +72,11 @@ public:
 
 private:
 #if defined(OLED_128X64) && OLED_128X64
-    U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled_;
+#  if defined(OLED_SH1106) && OLED_SH1106
+    U8G2_SH1106_128X64_NONAME_F_HW_I2C oled_;   // 0.96" panels that use an SH1106 controller
+#  else
+    U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled_;  // 0.96" panels that use an SSD1306 controller
+#  endif
 #else
     U8G2_SSD1306_72X40_ER_F_HW_I2C oled_;
 #endif
