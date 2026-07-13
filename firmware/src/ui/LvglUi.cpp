@@ -12,6 +12,7 @@
 #include "TouchCal.h"        // crosshair targets for the touch-cal ritual screen
 #include "WorkoutEngine.h"   // segmentTargetW for the interval profile
 #include "WorkoutPresets.h"  // preset labels for the picker
+#include "LcdTheme.h"        // generated LVGL palette (design/tokens.json) — C_BG()/C_CARD()/...
 
 // Inter, baked by lv_font_conv (src/ui/fonts/, inputs in design/fonts/inter)
 LV_FONT_DECLARE(lv_inter_12);
@@ -23,16 +24,10 @@ LV_FONT_DECLARE(lv_inter_sb_64);
 namespace sb20proxy {
 namespace {
 
-// ---- design tokens (design/sb20-lcd-*.html :root) ------------------------------------------
-inline lv_color_t C_BG()     { return lv_color_hex(0x0f1320); }
-inline lv_color_t C_CARD()   { return lv_color_hex(0x1a2030); }
-inline lv_color_t C_TITLE()  { return lv_color_hex(0x151d2e); }
-inline lv_color_t C_FG()     { return lv_color_hex(0xe8ecf4); }
-inline lv_color_t C_MUT()    { return lv_color_hex(0x8b93a7); }
-inline lv_color_t C_ACCENT() { return lv_color_hex(0x3b82f6); }
-inline lv_color_t C_OK()     { return lv_color_hex(0x22c55e); }
-inline lv_color_t C_BAD()    { return lv_color_hex(0xef4444); }
-inline lv_color_t C_LINE()   { return lv_color_hex(0x1c2334); }
+// ---- design tokens: the palette C_BG()/C_CARD()/... is GENERATED into LcdTheme.h from
+// design/tokens.json (the single source shared with the web SPA + LcdCanvas; CI test_tokens_sync
+// guards drift). Bring the theme:: accessors into scope so existing C_*() call sites resolve.
+using namespace theme;
 
 LvglDriverHooks g_hooks{};
 int g_hor = 240, g_ver = 320;

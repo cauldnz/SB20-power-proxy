@@ -2930,3 +2930,17 @@ BLE advertises). **Since `obcDevmode` is a station-server-only toggle and it's p
 recovery when back at the desk is to power it near home WiFi (or clear creds via the portal/`/forget`) so
 it rejoins, then turn devmode off.** Filed as an open task; ESP32 SPA-over-HTTP verification (HANDOFF §4)
 is blocked on the same WiFi access.
+
+## 2026-07-13 — U0 decision: KEEP the canvas renderer (it is the host-test rendering reference)
+- U0 (the UI-unification cleanup) proposed deleting the superseded `esp32s3-touch*` **canvas** envs and the
+  now-dead `LCD_BANDS` banding machinery. **Decision: do NOT delete them.** Rationale surfaced while
+  scoping: the canvas renderer (`lib/proxy/LcdCanvas.h` + `LcdUi.h`) is the **only host-unit-testable
+  rendering path** — it rasterizes to an in-memory RGB565 buffer that `pio test -e native` asserts on
+  (e.g. `test_lcd_banded_render_matches_full`). The LVGL renderer that ships on the live boards has **no**
+  desk-test coverage. Deleting canvas would remove all host-testable rendering, violating the project's
+  "test the desk-testable in the same commit" invariant. So canvas stays as the render reference/harness
+  **until** an equivalent host-side LVGL test harness exists (being researched — LVGL v9 headless/snapshot).
+- **What U0 actually shipped:** only pt.1 — folding the LVGL palette into the token codegen
+  (`design/gen_tokens.py` → generated `firmware/src/ui/LcdTheme.h`), killing the 4th hand-maintained copy
+  of `design/tokens.json`. The `tokens.css` in the original U0 title is moot: the web SPA consumes tokens
+  as an inline `:root{}` (generated), not a separate stylesheet. **U0 is complete.**

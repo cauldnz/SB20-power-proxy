@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Propagate the single-source UI palette (design/tokens.json) into every frontend.
 
-The same colours are consumed three ways — the shared web SPA (CSS `:root`), the ESP32 web CSS
-(a `:root` string literal in C++), and the LVGL on-device UI (RGB565 constants). Hand-maintaining
-three copies drifts; this generator makes `design/tokens.json` the one source and rewrites the
-`TOKENS-GEN` block in each consumer to match.
+The same colours are consumed four ways — the shared web SPA (CSS `:root`), the ESP32 web CSS
+(a `:root` string literal in C++), the LcdCanvas renderer (RGB565 constants), and the LVGL on-device
+UI (lv_color_hex accessors in LcdTheme.h). Hand-maintaining four copies drifts; this generator makes
+`design/tokens.json` the one source and rewrites the `TOKENS-GEN` block in each consumer to match.
 
     python design/gen_tokens.py           # rewrite the blocks in place
     python design/gen_tokens.py --check    # verify they're in sync (CI); exit 1 on drift
@@ -27,10 +27,16 @@ TOKENS_JSON = ROOT / "design" / "tokens.json"
 START = "TOKENS-GEN:START"
 END = "TOKENS-GEN:END"
 
-# token name -> LVGL constant suffix (LcdCanvas.h uses LCD_<SUFFIX>)
+# token name -> LcdCanvas constant suffix (LcdCanvas.h uses LCD_<SUFFIX>)
 LCD_NAMES = {
     "bg": "BG", "card": "CARD", "fg": "FG", "mut": "MUT", "ok": "OK",
     "accent": "ACCENT", "bad": "BAD", "line": "LINE", "chip2": "CHIP", "title": "TITLE",
+}
+
+# token name -> LVGL accessor suffix (LcdTheme.h / LvglUi.cpp use C_<SUFFIX>())
+LVGL_NAMES = {
+    "bg": "BG", "card": "CARD", "fg": "FG", "mut": "MUT", "ok": "OK",
+    "accent": "ACCENT", "bad": "BAD", "line": "LINE", "chip2": "CHIP2", "title": "TITLE",
 }
 
 
@@ -66,11 +72,22 @@ def render_lcd_rgb565(tokens: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+def render_lvgl_theme(tokens: dict[str, str]) -> str:
+    """The LVGL on-device palette as lv_color_hex accessors (firmware/src/ui/LcdTheme.h)."""
+    lines = []
+    for k, suffix in LVGL_NAMES.items():
+        h = tokens[k].lstrip("#")
+        name = f"C_{suffix}()".ljust(11)
+        lines.append(f"inline lv_color_t {name} {{ return lv_color_hex(0x{h}); }}  // --{k}")
+    return "\n".join(lines)
+
+
 # path relative to ROOT -> renderer
 CONSUMERS = [
     ("web/index.html", render_css_root),
     ("firmware/lib/proxy/WebUi.h", render_cpp_css_root),
     ("firmware/lib/proxy/LcdCanvas.h", render_lcd_rgb565),
+    ("firmware/src/ui/LcdTheme.h", render_lvgl_theme),
 ]
 
 
