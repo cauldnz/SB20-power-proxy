@@ -77,7 +77,9 @@ the scalar scale/offset because its correction is a curve).
 The Bridge packet layouts + capability flags + button-action order are one logical contract that used to
 be hand-copied into four languages (C++ `Proto.h`, the SPA's JS, Garmin Monkey-C, the ESP32 JSON). A single
 **`ui-schema/bridge.json`** now generates the drift-prone mirrors, and everyone is **locked together by
-committed golden vectors** that both a C++ test and a Node test assert against in CI:
+committed golden vectors** that both a C++ test and a Node test assert against in CI. A sibling
+**`ui-schema/web-json.json`** does the same for the ESP32↔SPA status/config JSON (`WebJson.h`), guarded as a
+contract linter so the on-device serializers can't drift from the web UI:
 
 ![Shared wire contract → codegen](diagrams/wire-contract.svg)
 
@@ -94,7 +96,12 @@ the numbered `scripts/` are the capture/fit/replay/proxy entry points.
 
 - **Real-data-first:** fixtures come from real committed captures, never invented bytes.
 - **Test the desk-testable in the same commit:** codecs, correction, `ProxyCore` wiring, calibration, and
-  the wire formats ship with `pytest` / `pio test -e native` in the same change. CI runs ESP32 native
-  (204), nRF native (36), the Python suite, and the `bridge-parity` (schema↔C++↔JS golden) job.
+  the wire formats ship with `pytest` / `pio test -e native` in the same change. CI runs the ESP32 native
+  core suite, the nRF native wire-format suite, the Python suite, and the `bridge-parity` (schema↔C++↔JS
+  golden) job.
+- **Even the on-device UI is host-tested:** `pio test -e native-lvgl` compiles the real `src/ui/LvglUi.cpp`
+  on the host and renders it into an in-memory framebuffer through the `LvglDriverHooks` seam — asserting
+  both pixels *and* tap→`UiAction` — so the LVGL head-unit UI that ships on the ride boards has desk
+  coverage, not just the canvas reference renderer.
 - **Hardware behind a seam:** an injectable radio / `FakeRadio` unit-tests the logic; only the final
   on-air / pairing check is manual. Nothing replaces hardware testing against a real SB20.
