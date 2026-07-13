@@ -36,6 +36,7 @@
 #include "Status.h"
 #include "StatusLed.h"
 #include "OledScreen.h"
+#include "Onboarding.h"
 #include "WebApp.h"
 #include "LcdCanvas.h"
 #include "LcdUi.h"
@@ -1757,6 +1758,54 @@ void test_oled_connected_shows_rssi() {
     TEST_ASSERT_EQUAL_STRING("SB20 PROXY", plain[0].c_str());
 }
 
+void test_oled_struct_overload_projects_ride_view() {
+    // The shared-view-model entry (U3): the OLED projects directly from a RideView/ProvisionView —
+    // the same structs buildLcdViews fills for the LCD boards — not a bespoke scalar list.
+    ProvisionView prov;  // not in portal
+    RideView ride;
+    ride.watts = 217;
+    ride.cadence = 92;
+    ride.wifiRssi = -55;
+    auto l = formatOledLines(prov, ride, /*wifiUp=*/true, "192.168.1.7");
+    TEST_ASSERT_EQUAL_STRING("WiFi -55", l[0].c_str());
+    TEST_ASSERT_EQUAL_STRING("192.168.1.7", l[1].c_str());
+    TEST_ASSERT_EQUAL_STRING("217W 92rpm", l[2].c_str());
+}
+
+void test_oled_scalar_adapter_matches_struct() {
+    // The scalar adapter must be a faithful shim over the struct projection: identical output for
+    // the same data, via either entry point. Portal-with-PIN + Connecting.
+    ProvisionView prov;
+    prov.portal = true;
+    prov.apSsid = "Setup-A6E9";
+    prov.pin = "12345678";
+    RideView ride;
+    auto viaStruct = formatOledLines(prov, ride, /*wifiUp=*/false, std::string());
+    auto viaScalar = formatOledLines(OledMode::Portal, "", 0, -1, 0, -1, "12345678", "Setup-A6E9");
+    for (int i = 0; i < 4; ++i) TEST_ASSERT_EQUAL_STRING(viaScalar[i].c_str(), viaStruct[i].c_str());
+    ProvisionView p2;
+    RideView r2;
+    auto s2 = formatOledLines(p2, r2, /*wifiUp=*/false, "");
+    auto c2 = formatOledLines(OledMode::Connecting, "", 0, 0);
+    for (int i = 0; i < 4; ++i) TEST_ASSERT_EQUAL_STRING(c2[i].c_str(), s2[i].c_str());
+}
+
+// --- onboarding (U4): the shared WiFi setup-AP QR payload ---------------------
+
+void test_wifi_qr_payload_basic() {
+    // The exact "WIFI:" string LvglUi feeds the on-panel QR — a phone camera scans it to join.
+    TEST_ASSERT_EQUAL_STRING("WIFI:T:WPA;S:Setup-A6E9;P:12345678;;",
+                             wifiQrPayload("Setup-A6E9", "12345678").c_str());
+}
+
+void test_wifi_qr_payload_escapes_special_chars() {
+    // ';' ':' ',' '\\' '"' in the SSID/PIN must be backslash-escaped or the QR truncates/corrupts
+    // (the old inline snprintf did NOT escape — a latent break if a PIN ever had a special char).
+    TEST_ASSERT_EQUAL_STRING("WIFI:T:WPA;S:my\\;net;P:a\\:b\\,c;;",
+                             wifiQrPayload("my;net", "a:b,c").c_str());
+    TEST_ASSERT_EQUAL_STRING("x\\\\y", wifiQrEscape("x\\y").c_str());
+}
+
 // --- saved page ---------------------------------------------------------------
 
 void test_saved_page_has_ssid_and_hints() {
@@ -2761,6 +2810,10 @@ int runUnityTests() {
     RUN_TEST(test_oled_connected_shows_balance_compact);
     RUN_TEST(test_oled_connected_unknown_cadence_omitted);
     RUN_TEST(test_oled_connected_shows_rssi);
+    RUN_TEST(test_oled_struct_overload_projects_ride_view);
+    RUN_TEST(test_oled_scalar_adapter_matches_struct);
+    RUN_TEST(test_wifi_qr_payload_basic);
+    RUN_TEST(test_wifi_qr_payload_escapes_special_chars);
     RUN_TEST(test_saved_page_has_ssid_and_hints);
     RUN_TEST(test_saved_page_escapes_ssid);
     RUN_TEST(test_app_page_essentials);

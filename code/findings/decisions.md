@@ -2930,3 +2930,98 @@ BLE advertises). **Since `obcDevmode` is a station-server-only toggle and it's p
 recovery when back at the desk is to power it near home WiFi (or clear creds via the portal/`/forget`) so
 it rejoins, then turn devmode off.** Filed as an open task; ESP32 SPA-over-HTTP verification (HANDOFF §4)
 is blocked on the same WiFi access.
+
+## 2026-07-13 — new C3 + 0.96" OLED: I2C pins CONFIRMED 5/6 @ 0x3C (50 kHz + NVS read-back, fully autonomous)
+- **The 0.96" board's OLED is on SDA=5 / SCL=6 @ 0x3C** — the same pins as the 0.42" board. Confirmed with
+  **no eyes on the board and no readable serial**, so the method is worth recording:
+  1. The earlier `c3-oled-probe` scanned I2C at the Arduino **default ~100 kHz and found nothing** on any
+     candidate pair. That was a **false negative**: these boards' weak on-board pull-ups only ACK reliably
+     at **50 kHz** (the exact lesson raedian-probe hit on the 0.42" panel). Fix: `Wire.setClock(50000)`
+     before the address probe.
+  2. This board's **USB-Serial-JTAG delivers no `Serial` to the host** (esptool flashes fine; app prints
+     are silent), and I had no eyes on it (owner travelling). So the probe **writes its result to NVS**
+     (`Preferences`, namespace `oledprobe`, key `res`, value `"OLEDPROBE SDA=05 SCL=06 ADDR=3C"`), and the
+     host reads it back with `esptool ... read-flash 0x9000 0x5000 nvs.bin` then greps the ASCII marker
+     `OLEDPROBE`. **This "board writes NVS → host reads flash" channel is the reliable answer path for any
+     eyes-free / serial-dead C3 bring-up** — reuse it.
+- **Open (needs eyes): SSD1306 vs SH1106 controller.** The SSD1306 build (`esp32c3-oled96-live`) on the now
+  *correct* pins still drew **blank**, which points at the controller (many 0.96" AliExpress panels are
+  **SH1106**, not SSD1306 — indistinguishable over I2C, both ACK 0x3C). The probe now **sweeps** SSD1306↔SH1106
+  on the panel (4 s each, labelled) so one glance names it. Both production builds are ready and compile:
+  `esp32c3-oled96-live` (SSD1306) and the new `esp32c3-oled96sh-live` (SH1106, `-DOLED_SH1106=1`);
+  `OledDisplay.h` selects the U8g2 controller on that flag. Branch `feat/c3-oled96`.
+
+## 2026-07-13 (later) — C3 0.96" OLED: controller CONFIRMED SH1106 (panel renders the UI)
+- Flashed `esp32c3-oled96sh-live` (`-DOLED_SH1106`, pins 5/6 @ 0x3C) and the owner confirmed the panel
+  **renders the WiFi-setup UI**. So the 0.96" AliExpress C3+OLED is an **SH1106**, not SSD1306 — which is
+  why the SSD1306 build drew blank on the (correct) pins. The deductive chain held: pins electrically
+  confirmed → SSD1306 build boots/stable but blank → not SSD1306 → SH1106. **Canonical build for this
+  board: `esp32c3-oled96sh-live`.** BOARDS.md updated (SH1106 CONFIRMED).
+
+## 2026-07-13 — U0 decision: KEEP the canvas renderer (it is the host-test rendering reference)
+- U0 (the UI-unification cleanup) proposed deleting the superseded `esp32s3-touch*` **canvas** envs and the
+  now-dead `LCD_BANDS` banding machinery. **Decision: do NOT delete them.** Rationale surfaced while
+  scoping: the canvas renderer (`lib/proxy/LcdCanvas.h` + `LcdUi.h`) is the **only host-unit-testable
+  rendering path** — it rasterizes to an in-memory RGB565 buffer that `pio test -e native` asserts on
+  (e.g. `test_lcd_banded_render_matches_full`). The LVGL renderer that ships on the live boards has **no**
+  desk-test coverage. Deleting canvas would remove all host-testable rendering, violating the project's
+  "test the desk-testable in the same commit" invariant. So canvas stays as the render reference/harness
+  **until** an equivalent host-side LVGL test harness exists (being researched — LVGL v9 headless/snapshot).
+- **What U0 actually shipped:** only pt.1 — folding the LVGL palette into the token codegen
+  (`design/gen_tokens.py` → generated `firmware/src/ui/LcdTheme.h`), killing the 4th hand-maintained copy
+  of `design/tokens.json`. The `tokens.css` in the original U0 title is moot: the web SPA consumes tokens
+  as an inline `:root{}` (generated), not a separate stylesheet. **U0 is complete.**
+
+## 2026-07-13 — U5 SHIPPED: the LVGL head-unit UI is now host-testable (headless, in CI)
+- **The LVGL UI that ships on the ride boards (CYD, S3) now has desk-test coverage** — previously it had
+  none (only the superseded canvas renderer was host-tested). New env `pio test -e native-lvgl` compiles
+  the **real** `src/ui/LvglUi.cpp` on the host and renders it into an in-memory RGB565 framebuffer, with
+  taps injected through the existing `LvglDriverHooks{flushArea, readTouch}` seam. **No board, no SDL/X11
+  — LVGL renders fully in memory.**
+- **How:** a ~40-line host `<Arduino.h>` shim (`firmware/test/lvgl_shim/`: `millis`/no-op `Serial`/
+  `psramFound`/`heap_caps_malloc`→`malloc`) + `test_build_src=yes` + `build_src_filter` pulling in
+  `LvglUi.cpp` + the baked Inter fonts. The test (`firmware/test/test_lvglui/`) supplies a `flushArea`
+  hook that composites into a `std::vector<uint16_t>` and a scripted `readTouch` hook; the fake clock
+  (`lvglShimAdvanceMs`) makes it deterministic. **3 tests green:** Ride renders content, a nav-bar tap
+  switches screens (touch→widget-event→navTo), and the view-model reaches pixels.
+- **Gotcha logged:** `pio test` does **not** compile the project `src/` by default (only test files +
+  libs) — you must set **`test_build_src = yes`**, else `build_src_filter` never runs and you get link
+  errors for the UI symbols. Wired into CI (`.github/workflows/tests.yml`, the `firmware` job).
+- **Unblocks:** U1-as-parity-test (assert LVGL callbacks and `lcdHandleTap` emit the same UiAction), and
+  makes retiring the canvas renderer safe (LVGL is now directly tested). See `ui-unification.md`.
+
+## 2026-07-13 — U2 + U4 shipped (web-JSON parity guard; shared+escaped WiFi QR payload)
+- **U2 (schema-parity for the web-JSON mirror):** `ui-schema/web-json.json` is now the single source of the
+  ESP↔web JSON field names for `/scan` `/config` `/curve`. `code/scripts/gen_webjson.py --check` fails if
+  (1) `firmware/lib/proxy/WebJson.h` emits keys ≠ the schema, (2) `web/index.html` doesn't reference every
+  field, or (3) the generated `ui-schema/web-json.md` is stale. Guarded by `code/tests/test_webjson_sync.py`
+  + the CI `bridge-parity` job. This *widens R2* (the bridge parity idea) to the web-JSON mirror. Chosen as a
+  **contract linter** (no rewrite of the hand-written serializers) — safe with concurrent sessions; full
+  serializer codegen is a possible future step.
+- **U4 (onboarding):** the onboarding *data* was already shared by U3 (`ProvisionView`). Closed the last gap:
+  the **`WIFI:` setup-AP QR payload** — previously an inline, **un-escaped** `snprintf` in `LvglUi.cpp` — is
+  now pure, host-tested `lib/proxy/Onboarding.h::wifiQrPayload()` with correct `WIFI:`-grammar escaping of
+  `;`/`:`/`,`/`\`/`"` (a latent QR-corruption bug if an SSID/PIN ever held a special char; our
+  `Setup-XXXX` + numeric PINs don't today). A deeper onboarding state machine was judged unnecessary.
+- Both on branch `feat/u2-u4-wire-and-onboarding` (PR — NOT merged; multiple sessions live). Verified: 458
+  pytest + ruff clean; 208 native host tests; native-lvgl 3/3 (compiles the LvglUi change).
+
+## 2026-07-13 — C3 0.96" board (10:B4:1D:BA:C9:0C) has a DEAD WiFi radio (hardware) — not firmware
+The new 0.96" C3+OLED never worked on WiFi. Its **setup AP is invisible** on every device (2 phones +
+laptop, inches away), yet the firmware reports the softAP fully up. Exhaustive elimination (all via the
+NVS-breadcrumb channel, since serial is dead on this board — write a `Preferences` string in `WifiLink`,
+read back with `esptool read-flash 0x9000 0x5000`):
+- `softAP()` **succeeds**: `ap=1 ip=172.29.4.1 ch=1 psk=8 mode=2(AP-only) tx=78(=19.5dBm max)` — every
+  firmware signal green.
+- **RX works** (scan finds 2–5 nearby networks) but **can't see a 2.4 GHz hotspot a Garmin Epix (2.4-only)
+  sees inches away** → degraded RX too.
+- **Client-mode join** to that hotspot: `WIFICLIENT status=1` (WL_NO_SSID_AVAIL) — never associates.
+- **Firmware is good:** the *identical* build on the 0.42" C3 (`esp32c3-oled-live`) beacons a **visible**
+  AP. Same `WifiLink` code, different result → the variable is the board.
+- **Not calibration:** full `esptool erase-flash` (wipes RF-cal/NVS → forces re-cal) — no change.
+- **Not power:** different USB port + cable — no change.
+**Verdict: defective RF front end (TX effectively dead, RX degraded) — RMA the board.** The OLED (SH1106)
+is fine, so it survives as a display-only/bench spare. BOARDS.md row marked ⛔. **Lesson:** "softAP returned
+true / OLED shows the SSID" does NOT mean the AP beacons — an A/B against a known-good board is the fast
+firmware-vs-hardware discriminator, and a 2.4 GHz-only device (a watch) cleanly confirms hotspot band when
+iPhones (5 GHz-preferring) can't.
