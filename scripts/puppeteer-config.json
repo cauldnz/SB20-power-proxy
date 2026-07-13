@@ -1,0 +1,4 @@
+{
+  "headless": "shell",
+  "args": ["--no-sandbox", "--disable-gpu"]
+}
