@@ -2989,3 +2989,23 @@ is blocked on the same WiFi access.
   errors for the UI symbols. Wired into CI (`.github/workflows/tests.yml`, the `firmware` job).
 - **Unblocks:** U1-as-parity-test (assert LVGL callbacks and `lcdHandleTap` emit the same UiAction), and
   makes retiring the canvas renderer safe (LVGL is now directly tested). See `ui-unification.md`.
+
+## 2026-07-13 — C3 0.96" board (10:B4:1D:BA:C9:0C) has a DEAD WiFi radio (hardware) — not firmware
+The new 0.96" C3+OLED never worked on WiFi. Its **setup AP is invisible** on every device (2 phones +
+laptop, inches away), yet the firmware reports the softAP fully up. Exhaustive elimination (all via the
+NVS-breadcrumb channel, since serial is dead on this board — write a `Preferences` string in `WifiLink`,
+read back with `esptool read-flash 0x9000 0x5000`):
+- `softAP()` **succeeds**: `ap=1 ip=172.29.4.1 ch=1 psk=8 mode=2(AP-only) tx=78(=19.5dBm max)` — every
+  firmware signal green.
+- **RX works** (scan finds 2–5 nearby networks) but **can't see a 2.4 GHz hotspot a Garmin Epix (2.4-only)
+  sees inches away** → degraded RX too.
+- **Client-mode join** to that hotspot: `WIFICLIENT status=1` (WL_NO_SSID_AVAIL) — never associates.
+- **Firmware is good:** the *identical* build on the 0.42" C3 (`esp32c3-oled-live`) beacons a **visible**
+  AP. Same `WifiLink` code, different result → the variable is the board.
+- **Not calibration:** full `esptool erase-flash` (wipes RF-cal/NVS → forces re-cal) — no change.
+- **Not power:** different USB port + cable — no change.
+**Verdict: defective RF front end (TX effectively dead, RX degraded) — RMA the board.** The OLED (SH1106)
+is fine, so it survives as a display-only/bench spare. BOARDS.md row marked ⛔. **Lesson:** "softAP returned
+true / OLED shows the SSID" does NOT mean the AP beacons — an A/B against a known-good board is the fast
+firmware-vs-hardware discriminator, and a 2.4 GHz-only device (a watch) cleanly confirms hotspot band when
+iPhones (5 GHz-preferring) can't.
