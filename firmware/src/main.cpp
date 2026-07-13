@@ -213,22 +213,27 @@ static void stallWatchdogCb(void*) {
 static void oledTask(void*) {
     std::array<std::string, 4> last = {};
     for (;;) {
-        OledMode mode = OledMode::Connected;
+        // Fill the SHARED view-model (the same RideView/ProvisionView the LCD boards fill) and
+        // project it to the 4 OLED rows — one model feeds both panel families (U3).
+        RideView ride;
+        ride.watts = proxy.lastOutput().power_w;
+        ride.cadence = proxy.lastOutput().cadence_rpm;
+        ride.balancePct = proxy.lastSource().balance_half_pct >= 0
+                              ? proxy.lastSource().balance_half_pct / 2 : -1;  // left %, -1 = none
+        ProvisionView prov;
         std::string ip;
-        std::string setupPin;
-        int rssi = 0;
+        bool wifiUp = true;  // no-WiFi build: treat as connected (show power/cadence)
 #if USE_WIFI
-        mode = wifi.inPortal() ? OledMode::Portal
-             : (wifi.isUp() ? OledMode::Connected : OledMode::Connecting);
-        ip = std::string(WiFi.localIP().toString().c_str());
-        rssi = wifi.isUp() ? WiFi.RSSI() : 0;
-        if (mode == OledMode::Portal) setupPin = wifi.setupPin();  // shown so the rider can join the AP
+        wifiUp = wifi.isUp();
+        prov.portal = wifi.inPortal();
+        if (prov.portal) {
+            prov.apSsid = WifiLink::apSsid();
+            prov.pin = wifi.setupPin();       // shown so the rider can join the AP
+        }
+        ip = wifiUp ? std::string(WiFi.localIP().toString().c_str()) : std::string();
+        ride.wifiRssi = wifiUp ? WiFi.RSSI() : 0;
 #endif
-        const int balPct = proxy.lastSource().balance_half_pct >= 0
-                               ? proxy.lastSource().balance_half_pct / 2 : -1;  // left %, -1 = none
-        auto lines = formatOledLines(mode, ip, proxy.lastOutput().power_w,
-                                     proxy.lastOutput().cadence_rpm, rssi, balPct, setupPin,
-                                     WifiLink::apSsid());
+        auto lines = formatOledLines(prov, ride, wifiUp, ip);
         if (lines != last) {
             oled.drawLines(lines);
             last = lines;
