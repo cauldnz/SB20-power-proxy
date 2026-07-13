@@ -2950,3 +2950,10 @@ is blocked on the same WiFi access.
   on the panel (4 s each, labelled) so one glance names it. Both production builds are ready and compile:
   `esp32c3-oled96-live` (SSD1306) and the new `esp32c3-oled96sh-live` (SH1106, `-DOLED_SH1106=1`);
   `OledDisplay.h` selects the U8g2 controller on that flag. Branch `feat/c3-oled96`.
+
+## 2026-07-13 (later) — C3 0.96" OLED: controller CONFIRMED SH1106 (panel renders the UI)
+- Flashed `esp32c3-oled96sh-live` (`-DOLED_SH1106`, pins 5/6 @ 0x3C) and the owner confirmed the panel
+  **renders the WiFi-setup UI**. So the 0.96" AliExpress C3+OLED is an **SH1106**, not SSD1306 — which is
+  why the SSD1306 build drew blank on the (correct) pins. The deductive chain held: pins electrically
+  confirmed → SSD1306 build boots/stable but blank → not SSD1306 → SH1106. **Canonical build for this
+  board: `esp32c3-oled96sh-live`.** BOARDS.md updated (SH1106 CONFIRMED).
