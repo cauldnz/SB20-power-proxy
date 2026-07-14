@@ -3095,3 +3095,30 @@ SoftDevice onto the chip is the blocker.**
   bootloader. UF2 for the SD is unlikely (region-protected). Everything else (compile, the ANT master, the
   combined package) is ready and waiting on the probe. Updated `nrf-roadmap.md` R1/P3 should note: **stock
   bootloader = no ANT-SD over serial DFU; SWD or a rebuilt bootloader required.**
+
+## 2026-07-14 (later) — nRF S340 ANT+ master CONFIRMED TRANSMITTING on hardware — NO probe needed (supersedes above)
+**The "need an SWD probe" verdict above was premature** (RTFM guardrail: a first-attempt DFU failure ≠
+impossible). Reading `Adafruit_nRF52_Bootloader` showed it has **first-class ANT support built in** and is
+itself **DFU-updatable** — so the S340 goes on via a **rebuilt bootloader that bundles the SD**, no probe.
+- **Flashed with NO probe.** Rebuilt the Adafruit bootloader in WSL bundling S340 (`make … SD_NAME=s340
+  SD_VERSION=6.1.1 ANT_LICENSE_KEY="3831-521d-…"` — the eval key so `main.c`'s `sd_softdevice_enable(…,
+  ANT_LICENSE_KEY)` licenses ANT **at runtime**; verified the string is in `main.o`). DFU-flashed
+  **bootloader+SD** then the **app** (`--sd-req 0x00B9`). Board boots the S340 app, BLE + heartbeat alive.
+  Full reusable recipe + flash budget now in `nrf52-sense.md §ANT` (the general-nRF reference).
+- **On-air transmit CONFIRMED via a new `ANT` serial diagnostic** (added to `AntMasterChannel` + the USB
+  command handler; guarded by `NRF_HAS_ANT` so the default S140/BLE build is byte-identical):
+  `[ant] beginErr=0x00000000 step=0 opened=1 events=189 tx=189 rx=0 lastEvt=0x03 lastTxErr=0x00000000`.
+  → `sd_ant_*` channel bring-up (net-key → assign → id → freq → period → open) **all returned SUCCESS**;
+  `EVENT_TX` (0x03) fires and `tx` climbs ~**4/sec** (matches period 8182 = 4.06 Hz); every
+  `sd_ant_broadcast_message_tx` returns 0. **The Bike Power master (dev 62144 / type 0x0B / RF57) is
+  broadcasting pages on air.** Since the ANT logic was unchanged (only counters added), it was
+  transmitting during the morning Garmin scan too — the scan just didn't complete (rider heading out).
+- **RTFM ruled out all three suspects by *reading*, not flashing:** (1) missing `sd_ant_enable()` is a
+  **non-bug** — `ant_interface.h` line 916: the ANT stack *defaults* to 1 channel + 64 B TX burst when
+  it's not called, which is exactly our config; (2) ANT **license** is fine — the eval key string is in
+  the bootloader's `main.o`; (3) **RAM** is fine — `sd_ble_enable` (BLE scanning) *and* `sd_ant_*` both
+  succeeded at RAM origin `0x20006000`, no bump needed. App region only 23.3 % full.
+- **Still pending: Garmin/head-unit *reception*.** Can't self-verify RX on the dev box — the only USB
+  radio here is the nRF52840 **BLE** sniffer (COM8); no Garmin ANT+ stick (VID 0x0FCF) is attached. So the
+  transmit side is proven end-to-end in firmware; the on-air *pair* is a rider-with-Garmin step (a proper,
+  unhurried scan for a Bike Power sensor, dev 62144, ~150 W). `nrf-roadmap.md` R1/P3 blocker is cleared.

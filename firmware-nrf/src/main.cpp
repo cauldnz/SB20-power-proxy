@@ -1217,6 +1217,20 @@ void loop() {
                 Serial.printf("[test] scale=%.3f offset=%.1f single2x=%d curve=%upts src=%dW->out=%dW\n",
                     (double)g_corr.scale, (double)g_corr.offset, g_cfg.singleSided,
                     (unsigned)g_corr.curve.points.size(), (int)g_lastSrc.power_w, (int)g_lastOut.power_w);
+            else if (strcmp(cmd, "ANT") == 0) {
+                // ANT master diagnostics (S340 builds). beginErr!=0 -> channel-open failed at beginStep
+                // (decode the SD error); beginErr==0 but tx stuck at 0 -> opened yet never transmitting.
+#ifdef NRF_HAS_ANT
+                Serial.printf("[ant] beginErr=0x%08lX step=%u opened=%d events=%lu tx=%lu rx=%lu "
+                              "lastEvt=0x%02X lastTxErr=0x%08lX\n",
+                              (unsigned long)g_antMaster.beginErr(), g_antMaster.beginStep(),
+                              (int)g_antMaster.opened(), (unsigned long)g_antMaster.eventCount(),
+                              (unsigned long)g_antMaster.txCount(), (unsigned long)g_antMaster.rxCount(),
+                              g_antMaster.lastEvent(), (unsigned long)g_antMaster.lastTxErr());
+#else
+                Serial.println("[ant] not built (no S340 SoftDevice in this env)");
+#endif
+            }
             else if (strcmp(cmd, "WKTEST") == 0) {
                 // Verify the FTMS erg encoders + a workout parse, no trainer needed.
                 auto rc = encodeRequestControl(); auto st = encodeStart(); auto tp = encodeSetTargetPower(250);

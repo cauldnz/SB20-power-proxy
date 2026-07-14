@@ -1,8 +1,10 @@
 # Session: nRF S340 + ANT+ bring-up (flash the S340 build, prove ANT on air)
 
-**Status:** ⛔ BLOCKED on a debug probe (2026-07-14). Build ✅, flash/recover loop ✅, but the S340
-**SoftDevice can't be flashed over serial DFU** on the stock S140 bootloader — needs **SWD** (probe on
-order). Board is safe on S140. Full actuals at the bottom.
+**Status:** ✅ **TRANSMIT PROVEN (2026-07-14)** — S340 flashed with **NO probe** (rebuilt S340-bundled
+bootloader, DFU) and the ANT+ Bike Power master is **confirmed broadcasting on air** (`beginErr=0`, TX
+climbing ~4 Hz). The earlier "needs SWD" status was premature (see the RTFM turnaround in the actuals).
+**Only remaining:** a rider-with-Garmin *reception* check (no ANT+ RX stick on the dev box to self-verify).
+Full actuals at the bottom.
 **Prereq:** ✅ done — S340 provisioned (`vendor/softdevice/`), the `xiao-sense-s340` firmware **compiles +
 links** (`.pio/build/xiao-sense-s340/firmware.hex`), broadcasting a mock **150 W** ANT+ Bike Power master.
 
@@ -121,3 +123,31 @@ S340 SoftDevice onto the chip**. The stock Adafruit/Seeed bootloader won't seria
 **When the probe lands:** `combined_s340.zip` + the raw hexes are already built in
 `.pio/build/xiao-sense-s340/`; SWD-flash `ANT_s340_nrf52840_6.1.1.hex` then `firmware.hex`, then watch the
 serial for `[bridge] up` + `[ant] master up` and scan from a Garmin/SimulANT+ for a ~150 W meter (dev 62144).
+
+---
+
+## Actual — 2026-07-14 (later): flashed WITHOUT a probe; ANT transmit CONFIRMED ✅
+
+The "needs SWD" verdict above was **wrong / premature** (RTFM guardrail — a failed first attempt ≠
+impossible). Reading the `Adafruit_nRF52_Bootloader` source showed it already has **first-class ANT
+support** and is itself **DFU-updatable** — so the SWD probe was never actually required.
+
+- **Rebuilt an S340-bundled bootloader** (WSL, `arm-none-eabi-gcc`) and DFU-flashed **bootloader+SD**, then
+  the **app** (`--sd-req 0x00B9`), all over serial — **no probe**. Board boots the S340 app, BLE scanning +
+  `[hb]` alive. The runtime `ANT_LICENSE_KEY` (eval key) is baked into the bootloader's
+  `sd_softdevice_enable` call — verified the string is in `main.o`. Reusable recipe + flash budget written up
+  in `code/findings/nrf52-sense.md §ANT`.
+- **Added an `ANT` USB-serial diagnostic** (`AntMasterChannel` counters + a command in `main.cpp`, both
+  `NRF_HAS_ANT`-guarded → default build byte-identical) to read channel state headlessly, since the
+  DTR boot-log reset doesn't fire on the XIAO. Result on hardware (COM9):
+  `[ant] beginErr=0x00000000 step=0 opened=1 events=189 tx=189 rx=0 lastEvt=0x03 lastTxErr=0x00000000`
+  → all six `sd_ant_*` bring-up calls SUCCEEDED, `EVENT_TX` fires, `tx` climbs **~4/sec** (= period 8182 =
+  4.06 Hz), every broadcast returns 0. **The Bike Power master is on air.**
+- **RTFM ruled out all three roadmap "runtime unknowns" by reading, not flashing:** `sd_ant_enable()` is
+  optional (SD defaults to 1 channel + 64 B burst — exactly our config, `ant_interface.h:916`); the ANT
+  license is present (key in the bootloader `main.o`); RAM origin `0x20006000` was fine (BLE **and** ANT
+  both enabled cleanly — no NO_MEM, no bump).
+- **S4 (on-air pair) — still pending, rider-side.** No Garmin ANT+ RX stick (VID 0x0FCF) on the dev box —
+  the only USB radio here is the BLE sniffer (COM8) — so transmit is proven in firmware but *reception* needs
+  a real head unit. **Next:** an unhurried Garmin/Wahoo scan for a Bike Power sensor (dev 62144, ~150 W); or
+  plug a Garmin ANT+ stick into the dev box and decode with `openant`/SimulANT+ for a fully desk-side proof.
