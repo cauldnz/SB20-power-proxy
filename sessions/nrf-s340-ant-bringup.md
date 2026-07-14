@@ -1,10 +1,11 @@
 # Session: nRF S340 + ANT+ bring-up (flash the S340 build, prove ANT on air)
 
-**Status:** ✅ **TRANSMIT PROVEN (2026-07-14)** — S340 flashed with **NO probe** (rebuilt S340-bundled
-bootloader, DFU) and the ANT+ Bike Power master is **confirmed broadcasting on air** (`beginErr=0`, TX
-climbing ~4 Hz). The earlier "needs SWD" status was premature (see the RTFM turnaround in the actuals).
-**Only remaining:** a rider-with-Garmin *reception* check (no ANT+ RX stick on the dev box to self-verify).
-Full actuals at the bottom.
+**Status:** ✅✅ **DONE — FULL END-TO-END PROOF (2026-07-14).** S340 flashed with **NO probe** (rebuilt
+S340-bundled bootloader, DFU); the ANT+ Bike Power master transmits *and* was **received + decoded by a
+Garmin ANT USBStick2** (openant, desk-side): `device_id=62144 type=11 trans=5`, page 0x10 = **150 W / 90 rpm**
+(the exact mock). read→correct→ANT-rebroadcast is proven end-to-end; the "needs SWD" status was premature
+(RTFM turnaround in the actuals). **Next:** feed real BLE-source readings into `setReading()` (P4b). Full
+actuals at the bottom.
 **Prereq:** ✅ done — S340 provisioned (`vendor/softdevice/`), the `xiao-sense-s340` firmware **compiles +
 links** (`.pio/build/xiao-sense-s340/firmware.hex`), broadcasting a mock **150 W** ANT+ Bike Power master.
 
@@ -147,7 +148,10 @@ support** and is itself **DFU-updatable** — so the SWD probe was never actuall
   optional (SD defaults to 1 channel + 64 B burst — exactly our config, `ant_interface.h:916`); the ANT
   license is present (key in the bootloader `main.o`); RAM origin `0x20006000` was fine (BLE **and** ANT
   both enabled cleanly — no NO_MEM, no bump).
-- **S4 (on-air pair) — still pending, rider-side.** No Garmin ANT+ RX stick (VID 0x0FCF) on the dev box —
-  the only USB radio here is the BLE sniffer (COM8) — so transmit is proven in firmware but *reception* needs
-  a real head unit. **Next:** an unhurried Garmin/Wahoo scan for a Bike Power sensor (dev 62144, ~150 W); or
-  plug a Garmin ANT+ stick into the dev box and decode with `openant`/SimulANT+ for a fully desk-side proof.
+- **S4 (on-air pair) ✅ PASS — received + decoded desk-side.** Owner plugged a **Garmin ANT USBStick2**
+  (0x0FCF:0x1008) into the dev box; **openant 1.3.4** decoded the broadcast: scanner saw
+  `device_id=62144 type=11 trans=5` and the `PowerMeter` profile read **page 0x10 = 150 W, cadence 90**
+  (24 pages / 16 s, zero errors) — the exact mock. Windows gotcha: pyusb `NoBackendError` until a libusb
+  backend is wired via `libusb-package` (`pip install openant libusb-package`; recipe in `decisions.md` +
+  `nrf52-sense.md §ANT`). **This is now the desk-side ANT-out twin — no head unit needed to validate the
+  master.** Scripts: `scratchpad/ant_rx.py` + `ant_power.py`.

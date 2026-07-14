@@ -98,6 +98,24 @@ bootloader that bundles a 192 KB SD is near its ceiling, so don't add bootloader
 base `0x20006000` (conservative) left BLE **and** ANT both enabling cleanly (`sd_ble_enable` +
 `sd_ant_*` all returned success), so no RAM-origin bump was needed for one BLE + one ANT channel.
 
+### Desk-side ANT receiver — validate the master with NO head unit (2026-07-14)
+
+A **Garmin ANT USBStick2** (VID 0x0FCF / PID 0x1008) + **openant** on the dev box is the hermetic twin for
+ANT-*out* work: decode what the nRF master transmits without a rider or a Garmin. Proven E2E on 2026-07-14
+— the stick received `device_id=62144 type=11 trans=5` and decoded page 0x10 = **150 W / 90 rpm** (the mock).
+
+- `pip install openant libusb-package`. On Windows pyusb throws **`NoBackendError`** until you supply a
+  libusb backend — the fix is *not* Zadig (the stick's vendor driver was already libusb-claimable here):
+  ```python
+  import libusb_package, usb.core, usb.backend.libusb1
+  b = usb.backend.libusb1.get_backend(find_library=libusb_package.find_library)
+  _o = usb.core.find; usb.core.find = lambda *a, **k: _o(*a, **{**k, 'backend': k.get('backend', b)})
+  ```
+- Then `Node(); set_network_key(0, ANTPLUS_NETWORK_KEY)` and either `Scanner(node, 0, 0)` (find any ANT+
+  device) or `PowerMeter(node, device_id=62144)` (decode watts/cadence). `openant.devices` ships the
+  managed **ANT+ network key** — no need to hand-supply ours. Reference scripts live in the session
+  scratchpad (`ant_rx.py` scan · `ant_power.py` decode); lift them into `scripts/` when ANT-out gets a CI twin.
+
 ## Architecture (mirrors the ESP32 proxies)
 
 - Same pure core reused by reference: `firmware/lib/proxy/` (`Cps.h` codec, `Correction.h`).

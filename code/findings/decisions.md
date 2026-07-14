@@ -3122,3 +3122,22 @@ itself **DFU-updatable** — so the S340 goes on via a **rebuilt bootloader that
   radio here is the nRF52840 **BLE** sniffer (COM8); no Garmin ANT+ stick (VID 0x0FCF) is attached. So the
   transmit side is proven end-to-end in firmware; the on-air *pair* is a rider-with-Garmin step (a proper,
   unhurried scan for a Bike Power sensor, dev 62144, ~150 W). `nrf-roadmap.md` R1/P3 blocker is cleared.
+
+## 2026-07-14 (even later) — nRF S340 ANT+ master RECEIVED on air by a Garmin stick — full E2E proof ✅✅
+Owner plugged a **Garmin ANT USBStick2** (VID 0x0FCF / PID 0x1008) into the dev box; decoded the nRF's
+broadcast desk-side with **openant 1.3.4**. Two independent confirmations:
+- **Pairing:** scanner found `device_id=62144 type=11 trans=5` — the spoofed **Stages crank ID**, ANT+
+  **Bike Power** device type, captured **transmission type 5**. Exactly the configured channel identity.
+- **Payload:** the `PowerMeter` profile decoded **page 0x10 (standard_power) = 150 W, cadence 90** — the
+  exact mock `setReading(150, 90)`, ~4/sec, 24 pages in 16 s, zero decode errors. **The
+  `AntMasterScheduler` page emission is spec-valid** (an independent decoder reads it perfectly).
+- **This closes the S340/ANT bring-up: read→correct→ANT-rebroadcast is proven end-to-end** (flash without a
+  probe → channel up → on air → received + decoded). The morning "nothing on Garmin" was a cursory scan,
+  not a firmware fault. **A debug probe is NOT needed for any of this** (optional recovery insurance only).
+- **Reusable desk-side ANT receiver recipe** (Windows): `pip install openant libusb-package`; the ANT
+  USBStick2 (0x1008) needs a **libusb backend** — pyusb reports `NoBackendError` until you wire it:
+  `usb.backend.libusb1.get_backend(find_library=libusb_package.find_library)` and default `usb.core.find`
+  to it (the vendor driver was already libusb-claimable — no Zadig needed here). Then
+  `Node(); set_network_key(0, ANTPLUS_NETWORK_KEY); Scanner(...)` or `PowerMeter(node, device_id=62144)`.
+  Scripts: `scratchpad/ant_rx.py` (scan) + `ant_power.py` (decode watts). This is now the desk-side twin
+  for ANT-out work — no rider/head-unit needed to validate the master.
