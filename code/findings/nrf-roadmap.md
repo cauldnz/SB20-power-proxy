@@ -114,9 +114,10 @@ recovery). Prove BLE still works post-swap before touching ANT.
 **ANT+ Bike Power master is live on hardware:** channel opens (`beginErr=0`), transmits @4 Hz, **received +
 decoded by a Garmin stick** (dev 62144, page 0x10), and now **broadcasts the LIVE corrected reading**
 (`setReading(g_lastOut)` each loop; `SETW` bench injector; cadence from crank delta) — `decisions.md`
-2026-07-14/15. **Still open:** the **ANT slave** channel (read a meter over ANT), the full real-BLE-source→
-ANT-out loop (needs an ESP32 corrector+mock source), and replacing the `configWriteCb` ANT-reject (~639)
-with real role switching.
+2026-07-14/15. The **full real-BLE-source→ANT-out loop is now bench-proven** (2026-07-15): an
+`esp32c3-supermini` mock CPS meter → nRF reads+corrects → ANT master → Garmin stick decodes the ramping
+watts + cadence. **Still open:** the **ANT slave** channel (read a meter over ANT) and replacing the
+`configWriteCb` ANT-reject (~639) with real role switching.
 
 <details><summary>Original P4 scope</summary>
 Introduce `IRadioSource`/`IRadioSink`, refactor the BLE central/peripheral behind it (compile-verify,
