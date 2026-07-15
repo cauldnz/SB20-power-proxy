@@ -331,6 +331,12 @@ static uint16_t g_spoofPrevRevs = 0;
 static uint16_t g_spoofPrevEvt = 0;
 static bool g_spoofHavePrev = false;
 
+// General cadence tracker (both modes) — derives rpm from the source crank-rev delta so the ANT
+// master (and status) can report real cadence, not just power. Reset on a source disconnect.
+static uint16_t g_cadPrevRevs = 0;
+static uint16_t g_cadPrevEvt = 0;
+static bool g_cadHavePrev = false;
+
 static void measNotifyCb(BLEClientCharacteristic* /*chr*/, uint8_t* data, uint16_t len) {
     // Decode the meter's frame with the shared pure codec, correct it, and relay: the output
     // frame passes the source's own crank fields through unchanged (cadence is identical).
@@ -340,6 +346,22 @@ static void measNotifyCb(BLEClientCharacteristic* /*chr*/, uint8_t* data, uint16
     const CpsBalance bal = decodeCpsBalance(data, len);
     r.balance_half_pct = bal.present ? bal.halfPct : -1;
     r.t_ms = millis();
+    // Cadence (rpm) from the crank-rev delta (last-event ticks are 1/1024 s). Feeds the ANT master
+    // so it broadcasts real cadence; 0 = new sample but no new revs (coasting), -1 = no crank data.
+    if (flags & CPM_CRANK_REV_DATA_PRESENT) {
+        const CpsCrankData cd = decodeCrankData(data, len);
+        if (g_cadHavePrev) {
+            const uint16_t dRevs = (uint16_t)(cd.cumulativeRevs - g_cadPrevRevs);
+            const uint16_t dTicks = (uint16_t)(cd.lastEventTime - g_cadPrevEvt);
+            if (dRevs > 0 && dTicks > 0)
+                r.cadence_rpm = (int16_t)((float)dRevs * 1024.0f * 60.0f / (float)dTicks + 0.5f);
+            else if (dRevs == 0)
+                r.cadence_rpm = 0;  // coasting
+        }
+        g_cadPrevRevs = cd.cumulativeRevs;
+        g_cadPrevEvt = cd.lastEventTime;
+        g_cadHavePrev = true;
+    }
     // single-sided x2: a left/right-only crank reports half of total; double it BEFORE the
     // correction so the correction scale/curve operates on total power (ESP32 semantics).
     if (g_cfg.singleSided) r.power_w = (int16_t)(r.power_w * 2);
@@ -550,6 +572,7 @@ static void centralDisconnectCb(uint16_t connHandle, uint8_t reason) {
         g_srcConnHandle = BLE_CONN_HANDLE_INVALID;
         g_srcName[0] = 0;
         g_spoofHavePrev = false;  // a new source restarts the spoof torque integration cleanly
+        g_cadHavePrev = false;    // ...and the cadence delta baseline
         Serial.printf("[bridge] source dropped (0x%02X); rescanning\n", reason);
     }
     Bluefruit.Scanner.start(0);
@@ -880,6 +903,7 @@ static void wkWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t* da
 // ================= setup ======================================================================
 #ifdef NRF_HAS_ANT
 static nrfant::AntMasterChannel g_antMaster;  // ANT+ Bike Power master (S340 builds only)
+static int g_injectW = -1;  // bench: SETW injects a fixed source watts into the ANT feed (-1 = live source)
 #endif
 
 void setup() {
@@ -1051,10 +1075,10 @@ void setup() {
                   g_cfg.srcFilter, (double)g_corr.scale, (double)g_corr.offset);
 
 #ifdef NRF_HAS_ANT
-    // ANT+ Bike Power master (S340). Bring-up: broadcast a fixed mock power so a Garmin/SimulANT+ sees
-    // a power meter; the BLE source feeds real readings via setReading() once the radio seam lands.
-    // Runs after the SoftDevice is enabled (Bluefruit.begin, above).
-    g_antMaster.setReading(/*W*/ 150, /*rpm*/ 90, /*balance*/ -1);
+    // ANT+ Bike Power master (S340). Seed 0 W (no source connected at boot); the loop's @2 Hz status
+    // tick feeds the LIVE corrected reading via setReading() (P4b). Runs after the SoftDevice is
+    // enabled (Bluefruit.begin, above). (Bench tip: `scripts/fake_meter.py` provides a BLE CPS source.)
+    g_antMaster.setReading(/*W*/ 0, /*rpm*/ -1, /*balance*/ -1);
     uint32_t antErr = g_antMaster.begin();
     Serial.printf("[ant] master %s (err=0x%08lX)\n",
                   antErr ? "FAILED" : "up (dev 62144 / BikePower / RF57 / period 8182)",
@@ -1160,6 +1184,12 @@ void loop() {
     const uint32_t now = millis();
 
 #ifdef NRF_HAS_ANT
+    // Feed the ANT master the LIVE corrected reading (read→correct→ANT-rebroadcast). SETW overrides
+    // the source watts for a hermetic bench proof; cadence/balance always come from the real source.
+    {
+        const int w = (g_injectW >= 0) ? g_injectW : (int)g_lastOut.power_w;
+        g_antMaster.setReading(w, (int)g_lastOut.cadence_rpm, (int)g_lastOut.balance_half_pct);
+    }
     g_antMaster.poll();  // drain the ANT event queue: rebroadcast the next page on each EVENT_TX
 #endif
 
@@ -1227,10 +1257,21 @@ void loop() {
                               (int)g_antMaster.opened(), (unsigned long)g_antMaster.eventCount(),
                               (unsigned long)g_antMaster.txCount(), (unsigned long)g_antMaster.rxCount(),
                               g_antMaster.lastEvent(), (unsigned long)g_antMaster.lastTxErr());
+                Serial.printf("[ant] feed: injectW=%d liveOut=%dW cad=%d bal=%d\n", g_injectW,
+                              (int)g_lastOut.power_w, (int)g_lastOut.cadence_rpm,
+                              (int)g_lastOut.balance_half_pct);
 #else
                 Serial.println("[ant] not built (no S340 SoftDevice in this env)");
 #endif
             }
+#ifdef NRF_HAS_ANT
+            else if (strncmp(cmd, "SETW", 4) == 0) {
+                // Bench: inject a fixed source watts into the ANT feed ("SETW 200"); "SETW -1" = live.
+                g_injectW = atoi(cmd + 4);
+                Serial.printf("[ant] inject watts = %d (%s)\n", g_injectW,
+                              g_injectW >= 0 ? "injected" : "live source");
+            }
+#endif
             else if (strcmp(cmd, "WKTEST") == 0) {
                 // Verify the FTMS erg encoders + a workout parse, no trainer needed.
                 auto rc = encodeRequestControl(); auto st = encodeStart(); auto tp = encodeSetTargetPower(250);
@@ -1372,6 +1413,14 @@ void loop() {
         statusAt = now;
         // stale-source scrub, like the ESP32 proxy: 6 s without a frame = show disconnected data
         const bool fresh = g_srcConnected && (now - g_lastSrcMs) < 6000;
+#ifdef NRF_HAS_ANT
+        // P4b: feed the ANT+ Bike Power master the LIVE corrected reading (not the boot mock).
+        // Fresh source → broadcast the corrected watts + the source's L/R balance; stale/no source →
+        // broadcast 0 W (an honest "no power" rather than a frozen last value). Cadence is not yet
+        // re-derived here (v1: -1 = not provided; TODO fold in crank-rev cadence like the spoof path).
+        if (fresh) g_antMaster.setReading(g_lastOut.power_w, /*cadence*/ -1, g_lastSrc.balance_half_pct);
+        else       g_antMaster.setReading(0, -1, -1);
+#endif
         StatusPacket st;
         st.srcConnected = g_srcConnected;
         st.outAdvertising = true;

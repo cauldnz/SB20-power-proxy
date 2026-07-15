@@ -3141,3 +3141,22 @@ broadcast desk-side with **openant 1.3.4**. Two independent confirmations:
   `Node(); set_network_key(0, ANTPLUS_NETWORK_KEY); Scanner(...)` or `PowerMeter(node, device_id=62144)`.
   Scripts: `scratchpad/ant_rx.py` (scan) + `ant_power.py` (decode watts). This is now the desk-side twin
   for ANT-out work — no rider/head-unit needed to validate the master.
+
+## 2026-07-15 — nRF ANT master now broadcasts the LIVE corrected reading (P4b) — bench-proven
+The ANT master no longer hardcodes 150 W — `loop()` feeds it `g_lastOut` (the corrected source reading)
+each cycle: `setReading(power, cadence, balance)`. Added (all `NRF_HAS_ANT`-guarded → default build
+behaviour unchanged):
+- **General cadence tracking** in `measNotifyCb` — derives rpm from the source crank-rev delta (1/1024 s
+  ticks) and stores it in the reading (both spoof + corrector paths); reset on source disconnect. `Correction::apply`
+  passes cadence/balance through untouched (only `power_w` changes), so the corrected reading keeps them.
+- **`SETW <watts>` serial command** — injects a fixed source watts for a hermetic bench proof (`SETW -1`
+  = back to live); the `ANT` diag now also prints `feed: injectW=… liveOut=…W cad=… bal=…`.
+- **Bench proof (openant + Garmin stick):** `SETW 200` → stick decodes **200 W**; `SETW 250` → decodes
+  **250 W** (`watts seen: [200, 250]` — tracked the change live). Idle with no source now broadcasts **0 W**
+  (correct — a real meter reads 0 when not pedalling), not the old mock 150. cadence reads 0xFF (unknown)
+  with no crank source, as expected. 40/40 native green; S340 app builds clean.
+- **Not yet done:** the *full* read→correct→ANT-out loop from a **real BLE source**. A desk source needs
+  an ESP32 in **corrector+mock** mode (standard CPS, not spoof 0x2F which the nRF can't parse as a source)
+  — but COM13's board is ambiguous (three ESP32s share `303A:1001`; the C3-0.96 there has dead WiFi + no
+  host serial). Deferred as a separate bench step; the serial-injection proof already validates the
+  source→page→air plumbing end to end.
