@@ -1,8 +1,16 @@
 // Host tests for the pure MeterCompare core (pio test -e native). Feeds synthetic dual streams and
 // asserts the rolling agreement stats + per-band table + pairing window.
+#ifndef LCD_PANEL_W
+#define LCD_PANEL_W 240
+#endif
+#ifndef LCD_PANEL_H
+#define LCD_PANEL_H 320
+#endif
+
 #include <unity.h>
 
 #include "MeterCompare.h"
+#include "MeterCompareRender.h"
 
 using namespace sb20proxy;
 
@@ -73,8 +81,22 @@ static void test_low_power_guarded() {
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.0f, s.meanRatio);  // but ratio stays at the neutral default
 }
 
+static void test_render_smoke() {
+    // The Compare screen must render in-bounds for both the empty and populated cases.
+    MeterCompare mc;
+    LcdCanvas c;
+    renderMeterCompare(c, "Assioma", "SB20", mc.stats(), mc.bands());  // invalid/empty path
+    for (int i = 0; i < 20; ++i) { uint32_t t = i * 1000; mc.onA(200, t); mc.onB(222, t + 10); }
+    renderMeterCompare(c, "Assioma", "SB20", mc.stats(), mc.bands());  // populated (+11%)
+    TEST_ASSERT_EQUAL((size_t)LCD_W * LCD_H, c.px.size());
+    bool sawRed = false;                       // the "B reads HIGH" red should appear somewhere
+    for (uint16_t p : c.px) if (p == MCMP_HI) { sawRed = true; break; }
+    TEST_ASSERT_TRUE(sawRed);
+}
+
 int main() {
     UNITY_BEGIN();
+    RUN_TEST(test_render_smoke);
     RUN_TEST(test_agree);
     RUN_TEST(test_b_reads_high);
     RUN_TEST(test_pairing_window);
