@@ -110,13 +110,22 @@ S140's 0x26000), S340 API headers, a **bootloader rebuilt against S340**. **Stag
 Nordic dongle first** (Open Bootloader, button-forced DFU), then the Sense (SWD pads are the only
 recovery). Prove BLE still works post-swap before touching ANT.
 
-### P4 — Radio seam + ANT channels  🔧 (seam/scaffolding now; ANT radio gated on S340)
+### P4 — Radio seam + ANT channels  ✅🔧 ANT MASTER DONE + on-air proven (2026-07-14/15); slave + role-switch remain
+**ANT+ Bike Power master is live on hardware:** channel opens (`beginErr=0`), transmits @4 Hz, **received +
+decoded by a Garmin stick** (dev 62144, page 0x10), and now **broadcasts the LIVE corrected reading**
+(`setReading(g_lastOut)` each loop; `SETW` bench injector; cadence from crank delta) — `decisions.md`
+2026-07-14/15. **Still open:** the **ANT slave** channel (read a meter over ANT), the full real-BLE-source→
+ANT-out loop (needs an ESP32 corrector+mock source), and replacing the `configWriteCb` ANT-reject (~639)
+with real role switching.
+
+<details><summary>Original P4 scope</summary>
 Introduce `IRadioSource`/`IRadioSink`, refactor the BLE central/peripheral behind it (compile-verify,
 BLE-only). Add — guarded so it **compiles in when `ant_network_key.h` is present** — an **ANT slave**
 channel (read a power meter, mirror `sources/ant_power.py`) and an **ANT master `BIDIRECTIONAL_TRANSMIT`**
 channel (broadcast power, mirror `ant/openant_master.py`: dev# 62144, type 0x0B, tx-type 5, period 8182,
 rf 57), both using **P1's `AntBikePower.h`** codec. Replace the `configWriteCb` ANT-reject (~639) with
 real role switching. On-air twin-test dongle→Sense → run-sheet R2.
+</details>
 
 ### P5 — Third-party electronic shifters over ANT → OBC  🔧 (needs ANT + a capture; the product payoff)
 Read SRAM AXS Controls / Shimano Di2 D-Fly (ANT-only → *uniquely the nRF*) and map their buttons to OBC,

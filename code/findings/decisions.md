@@ -3047,3 +3047,116 @@ track. Remaining is **dev/hardware work, not a download**: P3 (S340 swap — boa
 `0x31000` + bootloader rebuild, brick-risk, dongle-first per run-sheet R1) and P4 (write the ANT
 slave/master channel layer against the now-present S340 headers, guarded to compile in when the key is
 present). Good next-session target now that the parts are on the machine.
+
+## 2026-07-14 — nRF S340 + ANT+ Bike Power master COMPILES + LINKS (P3/P4 build done; on-air next)
+Built overnight against the just-provisioned S340 SoftDevice. New `[env:xiao-sense-s340]` compiles + links
+the full Bridge firmware + an ANT+ Bike Power master at app origin **0x31000** (verified: `nm` shows
+`g_antMaster`/`AntMasterChannel`/`AntMasterScheduler`; `.text @ 0x31000`, the S340 map). **Additive** — the
+S140 default build is **byte-identical** (no regression), and CI compiles the ANT out (guarded by `S340` +
+the gitignored `ant_network_key.h`).
+- **Pure `AntMasterScheduler`** (`lib/bridge`, host-tested — 4 new tests, 40/40 native green): the page
+  schedule (cal-response > identity-commons burst > power page 0x10; commons every 121; lead with commons),
+  mirroring Python `StagesAntTarget._next_page`. **`AntMasterChannel`** (`src/ant`): `sd_ant_*` channel
+  setup (net-key/assign/id/freq/period/open) + the EVENT_TX broadcast pump; broadcasts a mock 150 W.
+- **Gotchas found + fixed (all real, would bite again):**
+  1. **`${PROJECT_DIR}` mangles backslashes** in `build_flags` `-I` on Windows (came out
+     `...\builder\reposcauldnzSB20...` — separators eaten, made relative to the platform builder dir) →
+     **use relative forward-slash `-I`** (`-Ivendor/softdevice/...`).
+  2. S340 `nrf_sdm.h` hard-`#error`s without **`ANT_LICENSE_KEY`** — the **evaluation key** (non-commercial
+     use, which this is) ships commented-out in the header; uncommented in the gitignored copy. Re-provisioning
+     must redo this (noted in `vendor/softdevice/README.md`).
+  3. An inline `; comment` on a `build_flags` continuation line is passed **literally to gcc** (silently
+     breaks that flag — this is what hid gotcha #1 for two builds: the ANT code compiled out unnoticed
+     because the binary size looked "stable").
+- **NOT proven — hardware, run-sheet `sessions/nrf-s340-ant-bringup.md`:** the SD actually enabling under
+  the Bluefruit core (BLE still up); the ANT license passed at **runtime** (`sd_softdevice_enable`'s 3rd
+  arg — Bluefruit may pass NULL → a core patch may be needed); the app **RAM base** (0x20006000 may need
+  bumping on `NO_MEM`); the **flash mechanism** (S340 SD swap via UF2/DFU vs SWD, brick-risk, dongle/UF2
+  recovery). **"It links" ≠ "the SD runs"** — that gap is exactly this session's job.
+
+## 2026-07-14 — nRF S340 on-hardware: SD-swap needs SWD (stock bootloader can't serial-DFU an ANT SoftDevice)
+Worked `sessions/nrf-s340-ant-bringup.md` on the XIAO (COM9). **The build is proven; getting the S340
+SoftDevice onto the chip is the blocker.**
+- **S0 ✅** flash/recover loop (S140 app upload → boots → `SHOW`/`[hb]` respond). Recovery is reliable.
+- **S1 ✅** PlatformIO's DFU zip is **app-only** (manifest `softdevice_req 0x123` = S140, from the board
+  JSON) — can't swap the SD. Built a proper **combined SD+app** DFU package:
+  `adafruit-nrfutil dfu genpkg --dev-type 0x0052 --sd-req 0x0123 --softdevice <S340.hex> --application <app.hex>`.
+  (The bundled `adafruit-nrfutil.exe` is a frozen exe blocked by Windows Application Control — `pip install
+  adafruit-nrfutil` into the venv and use that; PlatformIO uses the `.py` via python.)
+- **S2a ❌ the stock (S140) Adafruit/Seeed bootloader cannot serial-DFU the S340 SoftDevice.** `dfu serial
+  --singlebank` opens, starts the SoftDevice image, and dies on **packet 1**: `WriteFile failed
+  (PermissionError 13 "device does not recognize the command")` — the bootloader **resets when it begins
+  the SD update, dropping the USB CDC** mid-transfer. Deterministic. This is the roadmap's *"bootloader
+  rebuilt against S340"* caveat, confirmed empirically.
+- **Recovery ✅** the SD write failed before erasing, so the S140 SD survived — re-flashing the S140 app
+  booted straight back. **The board was never at risk** (bootloader is a separate protected region).
+- **Verdict:** the DFU-swap path is a dead end on the stock bootloader; **flash the S340 SD via SWD** (probe
+  on order) — `ANT_s340_nrf52840_6.1.1.hex` then `.pio/build/xiao-sense-s340/firmware.hex`, bypassing the
+  bootloader. UF2 for the SD is unlikely (region-protected). Everything else (compile, the ANT master, the
+  combined package) is ready and waiting on the probe. Updated `nrf-roadmap.md` R1/P3 should note: **stock
+  bootloader = no ANT-SD over serial DFU; SWD or a rebuilt bootloader required.**
+
+## 2026-07-14 (later) — nRF S340 ANT+ master CONFIRMED TRANSMITTING on hardware — NO probe needed (supersedes above)
+**The "need an SWD probe" verdict above was premature** (RTFM guardrail: a first-attempt DFU failure ≠
+impossible). Reading `Adafruit_nRF52_Bootloader` showed it has **first-class ANT support built in** and is
+itself **DFU-updatable** — so the S340 goes on via a **rebuilt bootloader that bundles the SD**, no probe.
+- **Flashed with NO probe.** Rebuilt the Adafruit bootloader in WSL bundling S340 (`make … SD_NAME=s340
+  SD_VERSION=6.1.1 ANT_LICENSE_KEY="3831-521d-…"` — the eval key so `main.c`'s `sd_softdevice_enable(…,
+  ANT_LICENSE_KEY)` licenses ANT **at runtime**; verified the string is in `main.o`). DFU-flashed
+  **bootloader+SD** then the **app** (`--sd-req 0x00B9`). Board boots the S340 app, BLE + heartbeat alive.
+  Full reusable recipe + flash budget now in `nrf52-sense.md §ANT` (the general-nRF reference).
+- **On-air transmit CONFIRMED via a new `ANT` serial diagnostic** (added to `AntMasterChannel` + the USB
+  command handler; guarded by `NRF_HAS_ANT` so the default S140/BLE build is byte-identical):
+  `[ant] beginErr=0x00000000 step=0 opened=1 events=189 tx=189 rx=0 lastEvt=0x03 lastTxErr=0x00000000`.
+  → `sd_ant_*` channel bring-up (net-key → assign → id → freq → period → open) **all returned SUCCESS**;
+  `EVENT_TX` (0x03) fires and `tx` climbs ~**4/sec** (matches period 8182 = 4.06 Hz); every
+  `sd_ant_broadcast_message_tx` returns 0. **The Bike Power master (dev 62144 / type 0x0B / RF57) is
+  broadcasting pages on air.** Since the ANT logic was unchanged (only counters added), it was
+  transmitting during the morning Garmin scan too — the scan just didn't complete (rider heading out).
+- **RTFM ruled out all three suspects by *reading*, not flashing:** (1) missing `sd_ant_enable()` is a
+  **non-bug** — `ant_interface.h` line 916: the ANT stack *defaults* to 1 channel + 64 B TX burst when
+  it's not called, which is exactly our config; (2) ANT **license** is fine — the eval key string is in
+  the bootloader's `main.o`; (3) **RAM** is fine — `sd_ble_enable` (BLE scanning) *and* `sd_ant_*` both
+  succeeded at RAM origin `0x20006000`, no bump needed. App region only 23.3 % full.
+- **Still pending: Garmin/head-unit *reception*.** Can't self-verify RX on the dev box — the only USB
+  radio here is the nRF52840 **BLE** sniffer (COM8); no Garmin ANT+ stick (VID 0x0FCF) is attached. So the
+  transmit side is proven end-to-end in firmware; the on-air *pair* is a rider-with-Garmin step (a proper,
+  unhurried scan for a Bike Power sensor, dev 62144, ~150 W). `nrf-roadmap.md` R1/P3 blocker is cleared.
+
+## 2026-07-14 (even later) — nRF S340 ANT+ master RECEIVED on air by a Garmin stick — full E2E proof ✅✅
+Owner plugged a **Garmin ANT USBStick2** (VID 0x0FCF / PID 0x1008) into the dev box; decoded the nRF's
+broadcast desk-side with **openant 1.3.4**. Two independent confirmations:
+- **Pairing:** scanner found `device_id=62144 type=11 trans=5` — the spoofed **Stages crank ID**, ANT+
+  **Bike Power** device type, captured **transmission type 5**. Exactly the configured channel identity.
+- **Payload:** the `PowerMeter` profile decoded **page 0x10 (standard_power) = 150 W, cadence 90** — the
+  exact mock `setReading(150, 90)`, ~4/sec, 24 pages in 16 s, zero decode errors. **The
+  `AntMasterScheduler` page emission is spec-valid** (an independent decoder reads it perfectly).
+- **This closes the S340/ANT bring-up: read→correct→ANT-rebroadcast is proven end-to-end** (flash without a
+  probe → channel up → on air → received + decoded). The morning "nothing on Garmin" was a cursory scan,
+  not a firmware fault. **A debug probe is NOT needed for any of this** (optional recovery insurance only).
+- **Reusable desk-side ANT receiver recipe** (Windows): `pip install openant libusb-package`; the ANT
+  USBStick2 (0x1008) needs a **libusb backend** — pyusb reports `NoBackendError` until you wire it:
+  `usb.backend.libusb1.get_backend(find_library=libusb_package.find_library)` and default `usb.core.find`
+  to it (the vendor driver was already libusb-claimable — no Zadig needed here). Then
+  `Node(); set_network_key(0, ANTPLUS_NETWORK_KEY); Scanner(...)` or `PowerMeter(node, device_id=62144)`.
+  Scripts: `scratchpad/ant_rx.py` (scan) + `ant_power.py` (decode watts). This is now the desk-side twin
+  for ANT-out work — no rider/head-unit needed to validate the master.
+
+## 2026-07-15 — nRF ANT master now broadcasts the LIVE corrected reading (P4b) — bench-proven
+The ANT master no longer hardcodes 150 W — `loop()` feeds it `g_lastOut` (the corrected source reading)
+each cycle: `setReading(power, cadence, balance)`. Added (all `NRF_HAS_ANT`-guarded → default build
+behaviour unchanged):
+- **General cadence tracking** in `measNotifyCb` — derives rpm from the source crank-rev delta (1/1024 s
+  ticks) and stores it in the reading (both spoof + corrector paths); reset on source disconnect. `Correction::apply`
+  passes cadence/balance through untouched (only `power_w` changes), so the corrected reading keeps them.
+- **`SETW <watts>` serial command** — injects a fixed source watts for a hermetic bench proof (`SETW -1`
+  = back to live); the `ANT` diag now also prints `feed: injectW=… liveOut=…W cad=… bal=…`.
+- **Bench proof (openant + Garmin stick):** `SETW 200` → stick decodes **200 W**; `SETW 250` → decodes
+  **250 W** (`watts seen: [200, 250]` — tracked the change live). Idle with no source now broadcasts **0 W**
+  (correct — a real meter reads 0 when not pedalling), not the old mock 150. cadence reads 0xFF (unknown)
+  with no crank source, as expected. 40/40 native green; S340 app builds clean.
+- **Not yet done:** the *full* read→correct→ANT-out loop from a **real BLE source**. A desk source needs
+  an ESP32 in **corrector+mock** mode (standard CPS, not spoof 0x2F which the nRF can't parse as a source)
+  — but COM13's board is ambiguous (three ESP32s share `303A:1001`; the C3-0.96 there has dead WiFi + no
+  host serial). Deferred as a separate bench step; the serial-injection proof already validates the
+  source→page→air plumbing end to end.

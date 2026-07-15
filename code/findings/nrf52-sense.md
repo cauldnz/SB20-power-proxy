@@ -48,6 +48,74 @@ licensed via a free thisisant.com adopter account and **not redistributable** �
   for twin tests. Only then repeat on the Sense (UF2 bootloader replacement over CDC DFU; SWD pads
   are the only recovery if it goes wrong).
 
+### PROVEN: flash an ANT SoftDevice with NO debug probe (2026-07-14)
+
+**You do not need an SWD probe to put the S340 on a XIAO/Adafruit nRF52840 board.** The stock (S140)
+bootloader genuinely *can't* serial-DFU a bare SoftDevice image (it resets the moment it starts the SD
+update and drops the USB CDC on packet 1 — see `decisions.md` 2026-07-14). But the Adafruit/Seeed
+bootloader is itself **DFU-updatable**, and `Adafruit_nRF52_Bootloader` has **first-class ANT support**
+already in-tree. So the path is: *rebuild the bootloader so it bundles the S340 SD, DFU-flash the
+**bootloader+SD together**, then DFU-flash the app.* No probe, no nRF5-SDK download.
+
+1. **Build an S340-bundled bootloader** (WSL/Linux, `arm-none-eabi-gcc` + `make`; deps are vendored in
+   the repo — `lib/sdk`, `lib/nrfx`, `lib/softdevice`, `lib/tinyusb`):
+   - `git clone https://github.com/adafruit/Adafruit_nRF52_Bootloader && git submodule update --init`
+   - Drop the S340 SD hex + `*_API/include/` under `lib/softdevice/s340_nrf52_6.1.1/` (hex named
+     `s340_nrf52_6.1.1_softdevice.hex`). Re-**comment** the eval-key line in that copy's `nrf_sdm.h`
+     (the bootloader passes the key at runtime, so its own compile must NOT `#error`).
+   - `main.c` line ~370 **already** calls `sd_softdevice_enable(&clock_cfg, fault_handler, ANT_LICENSE_KEY)`
+     when `ANT_LICENSE_KEY` is defined — so build with the eval key so ANT is *licensed at runtime*:
+     `make BOARD=xiao_nrf52840_ble_sense SD_NAME=s340 SD_VERSION=6.1.1 ANT_LICENSE_KEY="3831-521d-…"`
+     (verify it stuck: `strings _build/*/main.o | grep 3831` — the key string must be present). **This
+     runtime pass is the whole game:** without it every `sd_ant_*` call fails even though the SD is on
+     the chip.
+2. **Package + flash the bootloader+SD** (`adafruit-nrfutil`, `pip install` it — the bundled `.exe` is
+   Application-Control-blocked here):
+   - `adafruit-nrfutil dfu genpkg --dev-type 0x0052 --bootloader <bl.hex> --softdevice <s340.hex> bl_s340.zip`
+   - 1200-baud touch to enter the bootloader (it re-enumerates on a **new** COM), then
+     `adafruit-nrfutil dfu serial -pkg bl_s340.zip -p <new-COM> -b 115200 --singlebank`.
+3. **Package + flash the app** the same way, app-only, with the S340 fwid so the bootloader accepts it:
+   `--dev-type 0x0052 --sd-req 0x00B9 --application firmware.hex` → `dfu serial … --singlebank`.
+4. **Recovery** if a *bootloader* flash bricks it: double-tap-RST → UF2 drive still works for the app,
+   but a bad bootloader is SWD-only — so this is the one genuinely risky step. It worked first try here.
+
+### Flash budget — S340 vs S140 (why "flash is tight")
+
+The nRF52840 has 1 MB flash (0x100000). The S340 SD is **0x30000 = 192 KB** (S140 6.1.1 is 0x26000 =
+152 KB), so the app's `FLASH ORIGIN` moves up to **0x31000** (MBR 0x1000 + SD 0x30000) vs S140's 0x27000
+— the S340 costs the app region ~40 KB vs S140. Measured on our `xiao-sense-s340` build (2026-07-14):
+
+| region | size | our build uses |
+|---|---|---|
+| MBR | 0x1000 (4 KB) | — |
+| **S340 SoftDevice** | 0x30000 (192 KB) | fixed |
+| **App** (`0x31000` → bootloader) | ~792 KB (`811008 B`) | **189,120 B = 23.3 %**, RAM 48.7 % |
+| **Bootloader + config/MBR-params** | top ~40 KB | rebuilt bootloader ≈ 86 % full |
+
+Takeaways for these boards: the **app region is roomy** (>75 % free even with BLE+ANT+IMU+LittleFS), so
+day-to-day feature work isn't flash-bound. The **bootloader region is the tight one** — a from-source
+bootloader that bundles a 192 KB SD is near its ceiling, so don't add bootloader features casually. RAM
+base `0x20006000` (conservative) left BLE **and** ANT both enabling cleanly (`sd_ble_enable` +
+`sd_ant_*` all returned success), so no RAM-origin bump was needed for one BLE + one ANT channel.
+
+### Desk-side ANT receiver — validate the master with NO head unit (2026-07-14)
+
+A **Garmin ANT USBStick2** (VID 0x0FCF / PID 0x1008) + **openant** on the dev box is the hermetic twin for
+ANT-*out* work: decode what the nRF master transmits without a rider or a Garmin. Proven E2E on 2026-07-14
+— the stick received `device_id=62144 type=11 trans=5` and decoded page 0x10 = **150 W / 90 rpm** (the mock).
+
+- `pip install openant libusb-package`. On Windows pyusb throws **`NoBackendError`** until you supply a
+  libusb backend — the fix is *not* Zadig (the stick's vendor driver was already libusb-claimable here):
+  ```python
+  import libusb_package, usb.core, usb.backend.libusb1
+  b = usb.backend.libusb1.get_backend(find_library=libusb_package.find_library)
+  _o = usb.core.find; usb.core.find = lambda *a, **k: _o(*a, **{**k, 'backend': k.get('backend', b)})
+  ```
+- Then `Node(); set_network_key(0, ANTPLUS_NETWORK_KEY)` and either `Scanner(node, 0, 0)` (find any ANT+
+  device) or `PowerMeter(node, device_id=62144)` (decode watts/cadence). `openant.devices` ships the
+  managed **ANT+ network key** — no need to hand-supply ours. Reference scripts live in the session
+  scratchpad (`ant_rx.py` scan · `ant_power.py` decode); lift them into `scripts/` when ANT-out gets a CI twin.
+
 ## Architecture (mirrors the ESP32 proxies)
 
 - Same pure core reused by reference: `firmware/lib/proxy/` (`Cps.h` codec, `Correction.h`).
