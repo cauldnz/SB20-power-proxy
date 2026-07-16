@@ -54,7 +54,6 @@
 #if USE_LCD
   #include "LcdUi.h"              // pure head-unit UI (screens + tap routing; LCD_W x LCD_H)
   #include "MeterCompare.h"       // #10 live A/B power-meter compare (pure core)
-  #include "MeterCompareRender.h" // #10 Compare-screen render (into an LcdCanvas)
   #if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
     #include "disp/CydDisplay.h"  // ILI9341/ST7789 + XPT2046 seam (ESP32-2432S028R "CYD")
   #else
@@ -386,6 +385,26 @@ static void touchCalTick() {
 #endif  // LCD_DRIVER_CYD
 
 // Fill the view structs from live proxy/meter/workout/wifi state. Called under lock.
+// ---- #10 A/B meter compare (fed each data cycle; shown on the LVGL Compare screen) -------------
+static MeterCompare g_cmp;
+static volatile int g_cmpRatioMilli = 1110;  // simulated meter-B = A * ratio (1.110 = real SB20 vs Assioma)
+static volatile bool g_cmpShowReq = false;   // serial CMP -> jump to the Compare screen (from the LCD task)
+// Feed one A/B sample: A = the live source (a demo ramp on the bench so bands fill); B = a simulated
+// 2nd meter until a real second BLE meter feeds onB via dual-central. Call ~1-2 Hz from the LCD task.
+static void feedCompare() {
+    int a = proxy.lastSource().power_w;
+    if (a <= 0) {
+        static int demoA = 100, demoDir = 8;
+        demoA += demoDir;
+        if (demoA >= 340 || demoA <= 90) demoDir = -demoDir;
+        a = demoA;
+    }
+    int b = (int)(a * (g_cmpRatioMilli / 1000.0f) + 0.5f);
+    uint32_t t = millis();
+    g_cmp.onA(a, t);
+    g_cmp.onB(b, t);
+}
+
 static void buildLcdViews(LcdViews& v) {
     RideView& r = v.ride;
     r.outName = g_lcdIdentity;
@@ -419,6 +438,25 @@ static void buildLcdViews(LcdViews& v) {
         v.prov.url = Config::SETUP_PORTAL_URL;
     }
 #endif
+
+    // Compare (#10): project the rolling MeterCompare into the Compare screen's view-model
+    {
+        CompareView& c = v.compare;
+        c.aName = "Meter A";
+        c.bName = "Meter B";
+        const MeterCompareStats st = g_cmp.stats();
+        c.valid = st.valid;
+        c.aWatts = (int16_t)st.aWatts;
+        c.bWatts = (int16_t)st.bWatts;
+        c.deltaW = (int16_t)st.deltaW;
+        c.ratio = st.meanRatio;
+        c.biasPct = st.meanBiasPct;
+        c.nPairs = (uint16_t)st.nPairs;
+        const std::vector<MeterBand> bands = g_cmp.bands();
+        for (int i = 0; i < CompareView::NBANDS && i < (int)bands.size(); ++i)
+            c.bandBiasPct10[i] =
+                bands[i].nPairs > 0 ? (int16_t)(bands[i].meanBiasPct * 10.0f) : INT16_MIN;
+    }
 
     // Workout (from the shared runtime)
     WorkoutView& w = v.wk;
@@ -577,36 +615,6 @@ static void lvglFlushHook(int x1, int y1, int x2, int y2, const uint16_t* px) {
     lcd.blitArea(x1, y1, x2, y2, px);
 }
 
-// ---- #10 Compare screen (a takeover: render MeterCompare into an LcdCanvas + blit) --------------
-static MeterCompare g_cmp;
-static LcdCanvas g_cmpFrame;
-static volatile bool g_cmpActive = false;
-static volatile int g_cmpRatioMilli = 1110;  // simulated meter-B = A * ratio (1.110 = the real SB20 vs Assioma)
-static volatile bool g_cmpShotReq = false;
-static const char kCmpB64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-// Dump the current Compare frame over serial as framed base64 RGB565 (same framing the host grabber
-// expects), so the S3's screen can be captured to PNG without a second meter.
-static void cmpDumpFrame() {
-    Serial.printf("\nWBSHOT %d %d\n", (int)LCD_W, (int)LCD_H);
-    const uint8_t* d = (const uint8_t*)g_cmpFrame.px.data();
-    const size_t n = g_cmpFrame.px.size() * 2;
-    size_t i = 0;
-    for (; i + 3 <= n; i += 3) {
-        uint32_t v = ((uint32_t)d[i] << 16) | ((uint32_t)d[i + 1] << 8) | d[i + 2];
-        char o[4] = {kCmpB64[(v >> 18) & 63], kCmpB64[(v >> 12) & 63], kCmpB64[(v >> 6) & 63], kCmpB64[v & 63]};
-        Serial.write((const uint8_t*)o, 4);
-        if ((i & 0xFFF) == 0) Serial.flush();  // drain the CDC periodically -> no dropped bytes
-    }
-    if (i < n) {
-        int rem = (int)(n - i);
-        uint32_t v = (uint32_t)d[i] << 16;
-        if (rem == 2) v |= (uint32_t)d[i + 1] << 8;
-        char o[4] = {kCmpB64[(v >> 18) & 63], kCmpB64[(v >> 12) & 63], rem == 2 ? kCmpB64[(v >> 6) & 63] : '=', '='};
-        Serial.write((const uint8_t*)o, 4);
-    }
-    Serial.print("\nWBEND\n");
-}
-
 static void lcdTask(void*) {
     LvglDriverHooks hooks{lvglFlushHook, lvglTouchHook};
     Serial.println("[lvgl] init...");
@@ -620,33 +628,6 @@ static void lcdTask(void*) {
     uint32_t bootHeldSince = 0;
 #endif
     for (;;) {
-        // #10 Compare-screen takeover (serial CMP): feed the live source + a simulated 2nd meter
-        // into MeterCompare, render the A/B agreement, and blit it — bypassing the normal UI.
-        if (g_cmpActive) {
-            static uint32_t cmpFeed = 0, cmpDraw = 0;
-            uint32_t tnow = millis();
-            if (tnow - cmpFeed >= 500) {
-                cmpFeed = tnow;
-                int a = proxy.lastSource().power_w;   // meter A = the live source
-                if (a <= 0) {                         // bench (no live meter): sweep a demo ramp
-                    static int demoA = 100, demoDir = 8;
-                    demoA += demoDir;
-                    if (demoA >= 340 || demoA <= 90) demoDir = -demoDir;
-                    a = demoA;
-                }
-                int b = (int)(a * (g_cmpRatioMilli / 1000.0f) + 0.5f);  // simulated 2nd meter (demo)
-                g_cmp.onA(a, tnow);
-                g_cmp.onB(b, tnow);
-            }
-            if (tnow - cmpDraw >= 200) {
-                cmpDraw = tnow;
-                renderMeterCompare(g_cmpFrame, "Meter A", "Meter B", g_cmp.stats(), g_cmp.bands());
-                lcd.blit(g_cmpFrame);
-                if (g_cmpShotReq) { g_cmpShotReq = false; cmpDumpFrame(); }
-            }
-            vTaskDelay(pdMS_TO_TICKS(20));
-            continue;
-        }
 #if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
         // BOOT button held ~1s -> start the touch-cal ritual. Touch-INDEPENDENT: this is the
         // recovery path when the film is so mis-calibrated the More->Touch cal row can't be hit.
@@ -673,6 +654,7 @@ static void lcdTask(void*) {
         if (now - lastData >= 200 && !wasCal) {
             lastData = now;
             lcdLock();
+            feedCompare();          // #10: accumulate one A/B sample for the Compare screen
             buildLcdViews(views);
             lvglUiUpdate(views);
             g_lcdUi.screen = lvglUiCurrentScreen();  // keep STATE/serial in sync
@@ -689,6 +671,10 @@ static void lcdTask(void*) {
         if (g_lvglDumpReq) {  // serial SCREEN: dump from the LVGL thread (lv is not thread-safe)
             g_lvglDumpReq = false;
             lvglUiScreenDumpBegin();
+        }
+        if (g_cmpShowReq) {   // serial CMP: navigate to the Compare screen (from the LVGL thread)
+            g_cmpShowReq = false;
+            lvglUiShowScreen(LcdScreen::Compare);
         }
         lvglUiTick();
         {   // liveness heartbeat: proves this task is pumping (S3 stall diagnosis, 2026-07-03)
@@ -889,14 +875,11 @@ static void lcdSerialConsole() {
             lcdUnlock();
         }
 #if defined(USE_LVGL) && USE_LVGL
-        else if (cmd == "CMP") {                // #10: toggle the A/B compare screen takeover
-            g_cmpActive = !g_cmpActive;
-            Serial.printf("[cmp] %s\n", g_cmpActive ? "ON - live A/B meter compare" : "off");
+        else if (cmd == "CMP") {                // #10: jump to the Compare screen (then SCREEN grabs it)
+            g_cmpShowReq = true;
         } else if (cmd.rfind("CMPRATIO", 0) == 0) {  // simulated meter-B = A * ratio/1000 (demo knob)
             g_cmpRatioMilli = (cmd.size() > 8) ? atoi(cmd.substr(8).c_str()) : 1000;
             Serial.printf("[cmp] sim B ratio = %d/1000\n", g_cmpRatioMilli);
-        } else if (cmd == "CMPSHOT") {          // grab the Compare frame over serial (base64 RGB565)
-            g_cmpShotReq = true;
         }
 #endif
     }

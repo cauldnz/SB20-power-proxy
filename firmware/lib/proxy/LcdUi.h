@@ -21,7 +21,7 @@ namespace sb20proxy {
 // open from More (and from the Ride screen's live workout strip).
 
 // ---------- state + actions ----------------------------------------------------------------
-enum class LcdScreen : uint8_t { Ride, Setup, More, Workout, Calibrate };
+enum class LcdScreen : uint8_t { Ride, Setup, More, Workout, Calibrate, Compare };
 
 struct LcdUiState {
     LcdScreen screen = LcdScreen::Ride;
@@ -86,6 +86,22 @@ struct MoreView {
 
 // (ProvisionView moved to UiModel.h — shared with the OLED builds.)
 
+// #10 A/B meter compare — the Compare screen's view-model (filled from MeterCompare in main.cpp).
+// The per-band chart shows bias% per band; today by power band, re-axable to torque bands (the
+// visualization plan, code/findings/meter-compare-visualization.md) without touching the renderer.
+struct CompareView {
+    std::string aName = "Meter A";
+    std::string bName = "Meter B";
+    bool valid = false;
+    int16_t aWatts = 0, bWatts = 0, deltaW = 0;
+    float ratio = 1.0f;
+    float biasPct = 0.0f;
+    uint16_t nPairs = 0;
+    static constexpr int NBANDS = 8;    // 0..400 (50-unit bands) shown on the head-unit
+    int16_t bandBiasPct10[NBANDS];      // per-band bias, tenths of a percent; INT16_MIN = empty band
+    CompareView() { for (int i = 0; i < NBANDS; ++i) bandBiasPct10[i] = INT16_MIN; }
+};
+
 struct LcdViews {
     RideView ride;
     WorkoutView wk;
@@ -93,6 +109,7 @@ struct LcdViews {
     MoreView more;
     CalWizardView cal;
     ProvisionView prov;
+    CompareView compare;
 };
 
 // ---------- shared layout ----------------------------------------------------------------

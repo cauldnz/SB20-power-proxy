@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 #include <Arduino.h>   // the host shim (test/lvgl_shim) — millis()/Serial/heap_caps/psramFound
@@ -51,6 +53,24 @@ static void renderFull() {
     pump(30);
 }
 static uint16_t u16(uint32_t rgb) { return lv_color_to_u16(lv_color_hex(rgb)); }
+
+// If $LVGL_DUMP is set, write the current framebuffer to that path as a PPM (a pixel-accurate capture
+// of the REAL LvglUi.cpp render — the same code the S3/CYD run). No-op in CI (env unset).
+static void dumpFbIfRequested() {
+    const char* path = getenv("LVGL_DUMP");
+    if (!path) return;
+    FILE* f = fopen(path, "wb");
+    if (!f) return;
+    fprintf(f, "P6\n%d %d\n255\n", W, H);
+    for (uint16_t v : g_fb) {
+        uint8_t r = (uint8_t)(((v >> 11) & 0x1F) << 3), g = (uint8_t)(((v >> 5) & 0x3F) << 2),
+                b = (uint8_t)((v & 0x1F) << 3);
+        r |= r >> 5; g |= g >> 6; b |= b >> 5;
+        uint8_t px[3] = {r, g, b};
+        fwrite(px, 1, 3, f);
+    }
+    fclose(f);
+}
 
 static bool g_inited = false;
 void setUp() {
@@ -111,11 +131,40 @@ void test_update_changes_render() {
     TEST_ASSERT_FALSE(std::equal(first.begin(), first.end(), g_fb.begin()));
 }
 
+// 4) The #10 Compare screen renders A/B agreement content from a CompareView (the LVGL path, not the
+//    LcdCanvas takeover) — this is the coverage the standardization requires.
+void test_compare_screen_renders() {
+    lvglUiShowScreen(LcdScreen::Compare);
+    pump(5);
+    TEST_ASSERT_EQUAL(int(LcdScreen::Compare), int(lvglUiCurrentScreen()));
+    LcdViews v;
+    v.compare.valid = true;
+    v.compare.aName = "Assioma";
+    v.compare.bName = "SB20";
+    v.compare.aWatts = 250;
+    v.compare.bWatts = 278;
+    v.compare.deltaW = 28;
+    v.compare.ratio = 1.11f;
+    v.compare.biasPct = 11.0f;
+    v.compare.nPairs = 80;
+    // synthetic per-band shape: a rising bias (a torque/power-dependent error — the case the chart
+    // exists to reveal). Whether the real SB20's +11% is flat or ramps is the open question (viz plan).
+    for (int i = 0; i < CompareView::NBANDS; ++i) v.compare.bandBiasPct10[i] = (int16_t)(20 + i * 22);
+    lvglUiUpdate(v);
+    renderFull();
+    dumpFbIfRequested();   // $LVGL_DUMP -> pixel-accurate capture of the real LVGL Compare screen
+    const uint16_t bg = u16(0x0f1320);
+    size_t nonBg = std::count_if(g_fb.begin(), g_fb.end(),
+                                 [&](uint16_t p) { return p != 0 && p != bg; });
+    TEST_ASSERT_GREATER_THAN(2000, (int)nonBg);
+}
+
 int runUnityTests() {
     UNITY_BEGIN();
     RUN_TEST(test_ride_screen_renders_content);
     RUN_TEST(test_nav_tap_switches_screen);
     RUN_TEST(test_update_changes_render);
+    RUN_TEST(test_compare_screen_renders);
     return UNITY_END();
 }
 

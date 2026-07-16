@@ -42,11 +42,15 @@ takeover, not part of the UI nav, so it doesn't need LVGL theming/widgets.
   a **`native-lvgl` test** that the LVGL screen renders + reacts;
 - ❌ do **not** ship an `LcdCanvas`→`lcd.blit` takeover as the on-device renderer for a UI screen.
 
-**Known debt (2026-07-16):** the **#10 Compare screen** was built as a direct-blit takeover
-(`renderMeterCompare` → `lcd.blit(g_cmpFrame)`, serial-`CMP`-toggled) — a *game-style* shortcut, not an
-LVGL screen. Its pure `MeterCompareRender.h` is a fine **host-test reference** (keep it, like `LcdUi.h`),
-but the on-device Compare surface **owes an LVGL port**: a `buildCompare()` in `LvglUi.cpp` + `LcdScreen::
-Compare` in the nav + a `native-lvgl` test. Until then it's an out-of-standard bench demo, not shippable UI.
+**Resolved (2026-07-16):** the **#10 Compare screen** is now a proper **LVGL screen** — the debt above is
+paid. `buildCompare()` in `LvglUi.cpp` builds the cards + verdict + an `lv_chart` bias-by-band line, fed
+from a shared `CompareView` (`LcdUi.h`) filled by `buildLcdViews`; it's reached via **More → Compare**
+(`LcdScreen::Compare`), host-tested by `native-lvgl` (`test_compare_screen_renders`), and the direct-blit
+takeover + its serial `CMP`/`CMPSHOT` frame-grab were removed. `MeterCompareRender.h` stays as the pure
+**host-test reference** (mirroring how `LcdUi.h` references the other screens). Serial `CMP` now just
+navigates to the LVGL screen; `SCREEN` captures it like any other. The chart's bias axis is bins-by-power
+today, re-axable to **torque bins** per the visualization plan
+([`meter-compare-visualization.md`](meter-compare-visualization.md)) with no renderer change.
 
 ## 2. What is ALREADY shared (don't rebuild these)
 
