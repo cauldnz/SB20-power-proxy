@@ -1,0 +1,170 @@
+<!doctype html>
+<!-- #10 compare deep-dive — web-app visualization prototype (design/, remote-render recipe).
+     The star is the 2-D power×cadence heatmap: it shows WHERE in the pedalling space the A/B error
+     lives. Self-contained (no CDNs); a synthetic torque-dependent dataset stands in for the device's
+     compare payload (MeterCompare grid2d()/torqueBands over the Bridge contract). Palette = design
+     tokens. Intended home: a Compare tab in web/index.html. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meter Compare — deep dive</title>
+<style>
+  :root{
+    --bg:#0f1320; --card:#1a2030; --fg:#e8ecf4; --mut:#8b93a7; --line:#1c2334;
+    --accent:#3b82f6; --ok:#22c55e; --bad:#ef4444; --amber:#f5a524;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 -apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  .wrap{max-width:760px;margin:0 auto;padding:20px}
+  h1{font-size:20px;margin:0 0 2px} .sub{color:var(--mut);margin:0 0 18px;font-size:13px}
+  .cards{display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+  .card{background:var(--card);border-radius:12px;padding:12px 14px;flex:1;min-width:150px}
+  .card .lbl{color:var(--mut);font-size:12px} .card .big{font-size:30px;font-weight:700;letter-spacing:-.5px}
+  .card .u{color:var(--mut);font-size:14px;font-weight:400}
+  .verdict{font-size:16px;font-weight:600;margin:2px 0 18px}
+  .grid{display:grid;grid-template-columns:1fr;gap:20px}
+  @media(min-width:640px){.grid{grid-template-columns:1.3fr 1fr}}
+  .panel{background:var(--card);border-radius:12px;padding:14px}
+  .panel h2{font-size:13px;color:var(--mut);font-weight:600;margin:0 0 10px;text-transform:uppercase;letter-spacing:.4px}
+  canvas{display:block;max-width:100%}
+  .cbar{display:flex;align-items:center;gap:8px;margin-top:8px;color:var(--mut);font-size:12px}
+  .cbar .grad{height:10px;flex:1;border-radius:5px;
+    background:linear-gradient(90deg,#3b82f6,#26304a 45%,#26304a 55%,#ef4444)}
+  .note{color:var(--mut);font-size:12px;margin-top:14px;line-height:1.5}
+  .kbd{background:#0c1220;border:1px solid var(--line);border-radius:4px;padding:0 4px;color:var(--fg)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Meter Compare — deep dive</h1>
+  <p class="sub">Assioma (A, reference) vs SB20 (B) · synthetic sample — a <em>torque-dependent</em> error</p>
+
+  <div class="cards">
+    <div class="card"><div class="lbl" style="color:var(--accent)">Assioma (A)</div><div class="big" id="aW">—<span class="u"> W</span></div></div>
+    <div class="card"><div class="lbl">SB20 (B)</div><div class="big" id="bW">—<span class="u"> W</span></div></div>
+    <div class="card"><div class="lbl">mean bias</div><div class="big" id="bias">—</div></div>
+    <div class="card"><div class="lbl">ratio</div><div class="big" id="ratio">—</div></div>
+  </div>
+  <div class="verdict" id="verdict"></div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Error map — power × cadence</h2>
+      <canvas id="heat" width="440" height="300"></canvas>
+      <div class="cbar"><span>B low</span><div class="grad"></div><span>B high</span></div>
+    </div>
+    <div class="panel">
+      <h2>Bias by torque (N·m)</h2>
+      <canvas id="torq" width="300" height="300"></canvas>
+    </div>
+  </div>
+
+  <p class="note" id="note"></p>
+</div>
+
+<script>
+// ---- diverging colormap: bias% in [-cap,+cap] -> blue (low) .. dark (0) .. red (high) ----
+const CAP = 15;
+function biasColor(pct){
+  const t = Math.max(-1, Math.min(1, pct / CAP));
+  const dark = [0x26,0x30,0x4a];
+  const hot  = t >= 0 ? [0xef,0x44,0x44] : [0x3b,0x82,0xf6];
+  const a = Math.abs(t);
+  return `rgb(${dark.map((d,i)=>Math.round(d+(hot[i]-d)*a)).join(',')})`;
+}
+const torque = (w,rpm) => w / (rpm * 0.10472);   // Nm
+
+// ---- synthetic rider: many (power,cadence) samples; B error grows with TORQUE (+ a small base) ----
+function synth(){
+  const pairs=[];
+  let rng=1234567; const rand=()=>{rng=(rng*1103515245+12345)&0x7fffffff;return rng/0x7fffffff;};
+  for(let i=0;i<2600;i++){
+    // realistic-ish spread: endurance mostly, some low-cadence grinds + high-cadence spins
+    const cad = 55 + rand()*60;                 // 55..115 rpm
+    const p   = 90 + rand()*260;                // 90..350 W
+    const tq  = torque(p,cad);
+    const bias = 0.008 + 0.0044*tq + (rand()-0.5)*0.018; // small base + rises ~0.44%/Nm + noise
+    pairs.push({a:Math.round(p), b:Math.round(p*(1+bias)), cad:Math.round(cad), tq});
+  }
+  return pairs;
+}
+const pairs = synth();
+
+// ---- summary ----
+const n = pairs.length;
+const meanA = pairs.reduce((s,p)=>s+p.a,0)/n, meanB = pairs.reduce((s,p)=>s+p.b,0)/n;
+const meanBias = pairs.reduce((s,p)=>s+(p.b-p.a)/p.a,0)/n*100;
+const ratioVal = pairs.reduce((s,p)=>s+p.b/p.a,0)/n;
+aW.innerHTML = Math.round(meanA)+'<span class="u"> W</span>';
+bW.innerHTML = Math.round(meanB)+'<span class="u"> W</span>';
+bias.textContent = (meanBias>=0?'+':'')+meanBias.toFixed(1)+'%'; bias.style.color = biasColor(meanBias*3);
+ratio.textContent = '×'+ratioVal.toFixed(3);
+verdict.innerHTML = `SB20 reads <span style="color:var(--bad)">+${meanBias.toFixed(1)}% high</span> on average — but the map shows it is <b>not uniform</b>: the error climbs with torque.`;
+
+// ---- heatmap: power (Y, 60..380) × cadence (X, 50..120), colour = mean bias% per cell ----
+(function(){
+  const cv=heat, ctx=cv.getContext('2d');
+  const PAD={l:38,b:26,t:6,r:6};
+  const PW=8, CW=8;                              // power bins, cadence bins
+  const pLo=60,pHi=380, cLo=50,cHi=120;
+  const cellsB=Array.from({length:PW},()=>Array(CW).fill(0)), cellsN=Array.from({length:PW},()=>Array(CW).fill(0));
+  for(const p of pairs){
+    let pi=Math.floor((p.a-pLo)/((pHi-pLo)/PW)), ci=Math.floor((p.cad-cLo)/((cHi-cLo)/CW));
+    if(pi<0||pi>=PW||ci<0||ci>=CW) continue;
+    cellsB[pi][ci]+=(p.b-p.a)/p.a*100; cellsN[pi][ci]++;
+  }
+  const W=cv.width-PAD.l-PAD.r, H=cv.height-PAD.t-PAD.b, cw=W/CW, ch=H/PW;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  for(let pi=0;pi<PW;pi++)for(let ci=0;ci<CW;ci++){
+    const x=PAD.l+ci*cw, y=PAD.t+(PW-1-pi)*ch;   // power increases upward
+    if(cellsN[pi][ci]<3){ ctx.fillStyle='#141a28'; }
+    else { ctx.fillStyle=biasColor(cellsB[pi][ci]/cellsN[pi][ci]); }
+    ctx.fillRect(x+1,y+1,cw-2,ch-2);
+  }
+  // iso-torque line (~28 Nm) across the map: p = 28 * cad * 0.10472
+  ctx.strokeStyle='rgba(255,255,255,.28)'; ctx.setLineDash([4,3]); ctx.beginPath();
+  let first=true;
+  for(let cad=cLo;cad<=cHi;cad+=2){ const p=28*cad*0.10472; if(p<pLo||p>pHi)continue;
+    const x=PAD.l+((cad-cLo)/(cHi-cLo))*W, y=PAD.t+H-((p-pLo)/(pHi-pLo))*H;
+    if(first){ctx.moveTo(x,y);first=false;}else ctx.lineTo(x,y);}
+  ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle='rgba(255,255,255,.5)'; ctx.font='10px sans-serif'; ctx.fillText('28 N·m',PAD.l+4,PAD.t+12);
+  // axes
+  ctx.fillStyle='#8b93a7'; ctx.font='10px sans-serif';
+  ctx.fillText('cadence (rpm) →', PAD.l, cv.height-8);
+  ctx.save(); ctx.translate(11,PAD.t+H/2); ctx.rotate(-Math.PI/2); ctx.fillText('power (W) →',0,0); ctx.restore();
+  ctx.fillText(''+cLo, PAD.l, PAD.t+H+12); ctx.fillText(''+cHi, PAD.l+W-16, PAD.t+H+12);
+  ctx.fillText(''+pLo, 20, PAD.t+H); ctx.fillText(''+pHi, 20, PAD.t+8);
+})();
+
+// ---- bias-by-torque bars (5 Nm bins) — the 1-D torque slice ----
+(function(){
+  const cv=torq, ctx=cv.getContext('2d');
+  const NB=10, BW=5;                             // 0..50 Nm
+  const sB=Array(NB).fill(0), sN=Array(NB).fill(0);
+  for(const p of pairs){ const i=Math.min(NB-1,Math.floor(p.tq/BW)); sB[i]+=(p.b-p.a)/p.a*100; sN[i]++; }
+  const PAD={l:30,b:22,t:8,r:8}, W=cv.width-PAD.l-PAD.r, H=cv.height-PAD.t-PAD.b;
+  const mid=PAD.t+H/2, cap=15, bw=W/NB;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.strokeStyle='#2a3142'; ctx.beginPath(); ctx.moveTo(PAD.l,mid); ctx.lineTo(PAD.l+W,mid); ctx.stroke();
+  ctx.fillStyle='#8b93a7'; ctx.font='10px sans-serif'; ctx.fillText('0%',4,mid+3);
+  ctx.fillText('+15',4,PAD.t+8); ctx.fillText('-15',6,PAD.t+H);
+  for(let i=0;i<NB;i++){ if(sN[i]<3)continue; const v=sB[i]/sN[i];
+    const h=Math.max(-1,Math.min(1,v/cap))*(H/2); const x=PAD.l+i*bw;
+    ctx.fillStyle=biasColor(v);
+    if(h>=0)ctx.fillRect(x+2,mid-h,bw-4,h); else ctx.fillRect(x+2,mid,bw-4,-h);
+  }
+  ctx.fillStyle='#8b93a7'; ctx.fillText('torque (N·m) →',PAD.l,cv.height-6);
+  ctx.fillText('0',PAD.l,PAD.t+H+11); ctx.fillText('50',PAD.l+W-12,PAD.t+H+11);
+})();
+
+note.innerHTML = `Data flow (real): the device runs <span class="kbd">MeterCompare</span> and exposes `+
+  `<span class="kbd">grid2d()</span> + <span class="kbd">torqueBands()</span> over the Bridge wire contract; `+
+  `this page (a Compare tab in <span class="kbd">web/index.html</span>) renders them. A flat error would `+
+  `paint the map one colour; the diagonal gradient here (parallel to the 28 N·m iso-line) is the signature `+
+  `of a <b>torque-dependent</b> error — exactly what the head-unit's torque chart flags and this map localises. `+
+  `Bland–Altman (mean vs difference) is the third view, added when the device streams sample pairs.`;
+</script>
+</body>
+</html>
