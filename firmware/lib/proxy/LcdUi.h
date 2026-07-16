@@ -87,8 +87,8 @@ struct MoreView {
 // (ProvisionView moved to UiModel.h — shared with the OLED builds.)
 
 // #10 A/B meter compare — the Compare screen's view-model (filled from MeterCompare in main.cpp).
-// The per-band chart shows bias% per band; today by power band, re-axable to torque bands (the
-// visualization plan, code/findings/meter-compare-visualization.md) without touching the renderer.
+// The per-band chart is bias% by TORQUE band (0..40 N·m, from MeterCompare::torqueBands) — it reveals
+// torque-dependent error a power axis mixes away (code/findings/meter-compare-visualization.md).
 struct CompareView {
     std::string aName = "Meter A";
     std::string bName = "Meter B";

@@ -565,7 +565,7 @@ void buildCompare() {
     lv_obj_align(CMP.bW, LV_ALIGN_BOTTOM_LEFT, 0, 4);
     CMP.verdict = mkLabel(s, &lv_inter_16, C_MUT(), "waiting for both meters...");
     lv_obj_align(CMP.verdict, LV_ALIGN_TOP_MID, 0, 102);
-    lv_obj_t* cl = mkLabel(s, &lv_inter_12, C_MUT(), "bias % by power band");
+    lv_obj_t* cl = mkLabel(s, &lv_inter_12, C_MUT(), "bias % by torque (Nm)");
     lv_obj_align(cl, LV_ALIGN_TOP_LEFT, 10, 126);
     CMP.chart = lv_chart_create(s);
     lv_obj_remove_style_all(CMP.chart);

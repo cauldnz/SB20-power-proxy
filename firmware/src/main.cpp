@@ -393,16 +393,20 @@ static volatile bool g_cmpShowReq = false;   // serial CMP -> jump to the Compar
 // 2nd meter until a real second BLE meter feeds onB via dual-central. Call ~1-2 Hz from the LCD task.
 static void feedCompare() {
     int a = proxy.lastSource().power_w;
-    if (a <= 0) {
-        static int demoA = 100, demoDir = 8;
+    int cad = proxy.lastSource().cadence_rpm;
+    if (a <= 0) {   // bench demo: sweep power AND cadence so the torque bands fill across a range
+        static int demoA = 100, demoDir = 8, demoCad = 90, cadDir = 3;
         demoA += demoDir;
         if (demoA >= 340 || demoA <= 90) demoDir = -demoDir;
+        demoCad += cadDir;
+        if (demoCad >= 105 || demoCad <= 70) cadDir = -cadDir;
         a = demoA;
+        cad = demoCad;
     }
-    int b = (int)(a * (g_cmpRatioMilli / 1000.0f) + 0.5f);
-    uint32_t t = millis();
-    g_cmp.onA(a, t);
-    g_cmp.onB(b, t);
+    const int b = (int)(a * (g_cmpRatioMilli / 1000.0f) + 0.5f);
+    const uint32_t t = millis();
+    g_cmp.onA(a, t, cad);
+    g_cmp.onB(b, t, cad);   // simulated 2nd meter at the same cadence (real onB via dual-central later)
 }
 
 static void buildLcdViews(LcdViews& v) {
@@ -452,10 +456,11 @@ static void buildLcdViews(LcdViews& v) {
         c.ratio = st.meanRatio;
         c.biasPct = st.meanBiasPct;
         c.nPairs = (uint16_t)st.nPairs;
-        const std::vector<MeterBand> bands = g_cmp.bands();
-        for (int i = 0; i < CompareView::NBANDS && i < (int)bands.size(); ++i)
-            c.bandBiasPct10[i] =
-                bands[i].nPairs > 0 ? (int16_t)(bands[i].meanBiasPct * 10.0f) : INT16_MIN;
+        // The head-unit chart is TORQUE-binned (0..40 N·m) — reveals torque-dependent error that a
+        // power axis mixes away (meter-compare-visualization.md). Falls back to empty until cadence flows.
+        const std::vector<MeterBand> tb = g_cmp.torqueBands();
+        for (int i = 0; i < CompareView::NBANDS && i < (int)tb.size(); ++i)
+            c.bandBiasPct10[i] = tb[i].nPairs > 0 ? (int16_t)(tb[i].meanBiasPct * 10.0f) : INT16_MIN;
     }
 
     // Workout (from the shared runtime)

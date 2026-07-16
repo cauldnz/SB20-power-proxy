@@ -94,9 +94,80 @@ static void test_render_smoke() {
     TEST_ASSERT_TRUE(sawRed);
 }
 
+static void test_torque_flat_for_constant_scale_error() {
+    // B reads 10% high everywhere; feed a range of cadences (=> range of torques). A pure scale error
+    // is FLAT in the torque domain, so every populated torque band should read ~+10%.
+    MeterCompare mc;
+    uint32_t t = 0;
+    for (int rep = 0; rep < 4; ++rep)
+        for (int cad = 60; cad <= 100; cad += 10)
+            for (int w = 100; w <= 300; w += 50) {
+                mc.onA(w, t, cad);
+                mc.onB((int)(w * 1.10f + 0.5f), t + 10, cad);
+                t += 1000;
+            }
+    int populated = 0;
+    for (const auto& b : mc.torqueBands())
+        if (b.nPairs > 0) { ++populated; TEST_ASSERT_FLOAT_WITHIN(2.0f, 10.0f, b.meanBiasPct); }
+    TEST_ASSERT_TRUE(populated >= 3);
+}
+
+static void test_torque_reveals_what_power_hides() {
+    // Hold POWER constant (250 W) but vary cadence => vary torque, with B's error growing with torque.
+    // The POWER view collapses to ONE band (blind); the TORQUE view shows the ramp.
+    MeterCompare mc;
+    uint32_t t = 0;
+    for (int rep = 0; rep < 6; ++rep)
+        for (int cad = 50; cad <= 110; cad += 10) {
+            const int a = 250;
+            const float torque = a / (cad * 0.10472f);
+            const int b = (int)(a * (1.0f + 0.003f * torque) + 0.5f);  // error proportional to torque
+            mc.onA(a, t, cad);
+            mc.onB(b, t + 10, cad);
+            t += 1000;
+        }
+    const auto tb = mc.torqueBands();
+    int loIdx = -1, hiIdx = -1;
+    for (int i = 0; i < MeterCompare::kTorqueBands; ++i)
+        if (tb[i].nPairs > 0) { if (loIdx < 0) loIdx = i; hiIdx = i; }
+    TEST_ASSERT_TRUE(hiIdx > loIdx);
+    TEST_ASSERT_TRUE(tb[hiIdx].meanBiasPct > tb[loIdx].meanBiasPct + 1.0f);  // a clear torque ramp
+    int powerBandsUsed = 0;                                                   // power view: blind
+    for (const auto& b : mc.bands()) if (b.nPairs > 0) ++powerBandsUsed;
+    TEST_ASSERT_EQUAL(1, powerBandsUsed);
+}
+
+static void test_grid2d_and_cadence_backward_compat() {
+    MeterCompare mc;                     // no cadence -> torque/grid skip, power view still works
+    for (int i = 0; i < 5; ++i) { mc.onA(200, i * 1000); mc.onB(220, i * 1000 + 10); }
+    TEST_ASSERT_TRUE(mc.stats().valid);
+    for (const auto& b : mc.torqueBands()) TEST_ASSERT_EQUAL(0, b.nPairs);
+    MeterCompare g;                      // with cadence -> the 2-D grid populates
+    uint32_t t = 0;
+    for (int rep = 0; rep < 4; ++rep)
+        for (int cad = 60; cad <= 100; cad += 20)
+            for (int w = 100; w <= 300; w += 100) {
+                g.onA(w, t, cad);
+                g.onB((int)(w * 1.1f + 0.5f), t + 10, cad);
+                t += 1000;
+            }
+    const auto grid = g.grid2d();
+    int cells = 0;
+    for (int pi = 0; pi < MeterCompare::kGridPBins; ++pi)
+        for (int ci = 0; ci < MeterCompare::kGridCBins; ++ci)
+            if (grid.cell[pi][ci].nPairs > 0) {
+                ++cells;
+                TEST_ASSERT_FLOAT_WITHIN(2.0f, 10.0f, grid.cell[pi][ci].meanBiasPct);
+            }
+    TEST_ASSERT_TRUE(cells >= 3);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_render_smoke);
+    RUN_TEST(test_torque_flat_for_constant_scale_error);
+    RUN_TEST(test_torque_reveals_what_power_hides);
+    RUN_TEST(test_grid2d_and_cadence_backward_compat);
     RUN_TEST(test_agree);
     RUN_TEST(test_b_reads_high);
     RUN_TEST(test_pairing_window);

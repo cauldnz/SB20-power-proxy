@@ -15,10 +15,16 @@ namespace sb20proxy {
 
 // Per-power-band agreement (bands of `kBandW` watts). meanRatio ~1.0 => the meters agree in that band.
 struct MeterBand {
-    int loW = 0, hiW = 0;
+    int loW = 0, hiW = 0;     // band edges — watts, or N·m for torqueBands(), or rpm for cadenceBands()
     int nPairs = 0;
     float meanRatio = 0.0f;   // mean(b/a) in this band (0 if empty)
     float meanBiasPct = 0.0f; // mean((b-a)/a*100)
+};
+
+// One cell of the power×cadence agreement grid (the web heatmap).
+struct MeterGridCell {
+    int nPairs = 0;
+    float meanBiasPct = 0.0f;
 };
 
 struct MeterCompareStats {
@@ -39,8 +45,10 @@ public:
     explicit MeterCompare(uint32_t pairWindowMs = 700, int minWattsForRatio = 20, size_t maxPairs = 512)
         : pairWindowMs_(pairWindowMs), minW_(minWattsForRatio), maxPairs_(maxPairs) {}
 
-    void onA(int watts, uint32_t t_ms) { latestA_ = {watts, t_ms, ++seqA_}; tryPair(); }
-    void onB(int watts, uint32_t t_ms) { latestB_ = {watts, t_ms, ++seqB_}; tryPair(); }
+    // cadence (rpm) is optional: -1 = unknown (keeps power-only behaviour). It enables the torque
+    // and power×cadence views — torque is derived from meter A (the reference): Nm = W / (rpm·2π/60).
+    void onA(int watts, uint32_t t_ms, int cadence = -1) { latestA_ = {watts, t_ms, ++seqA_, cadence}; tryPair(); }
+    void onB(int watts, uint32_t t_ms, int cadence = -1) { latestB_ = {watts, t_ms, ++seqB_, cadence}; tryPair(); }
 
     void reset() {
         pairs_.clear();
@@ -94,11 +102,90 @@ public:
         return b;
     }
 
+    // --- torque / cadence views (need cadence on meter A) --------------------------------------
+    static constexpr int kTorqueBandNm = 5;   // torque-band width (N·m)
+    static constexpr int kTorqueBands = 12;   // 0..60 N·m
+    static constexpr int kGridPBins = 8;      // grid power axis: 0..400 W (50 W bins)
+    static constexpr int kGridCBins = 6;      // grid cadence axis: <cBinLo, then cBinW-rpm bins
+
+    // Bias by TORQUE band (5 N·m) — reveals torque-dependent error that power bins mix away. Torque
+    // from meter A (the reference): Nm = W / (rpm · 2π/60). Pairs with unknown cadence are skipped.
+    std::vector<MeterBand> torqueBands() const {
+        std::vector<MeterBand> b(kTorqueBands);
+        std::vector<double> sr(kTorqueBands, 0.0), sb(kTorqueBands, 0.0);
+        for (int i = 0; i < kTorqueBands; ++i) { b[i].loW = i * kTorqueBandNm; b[i].hiW = (i + 1) * kTorqueBandNm; }
+        for (const auto& p : pairs_) {
+            if (p.a < minW_ || p.aCad <= 0) continue;
+            const float torque = (float)p.a / ((float)p.aCad * 0.10471976f);
+            int idx = (int)(torque / kTorqueBandNm);
+            if (idx < 0) idx = 0;
+            if (idx >= kTorqueBands) idx = kTorqueBands - 1;   // clamp sprints to the top band
+            b[idx].nPairs++;
+            sr[idx] += (double)p.b / (double)p.a;
+            sb[idx] += (double)(p.b - p.a) / (double)p.a * 100.0;
+        }
+        for (int i = 0; i < kTorqueBands; ++i)
+            if (b[i].nPairs > 0) {
+                b[i].meanRatio = (float)(sr[i] / b[i].nPairs);
+                b[i].meanBiasPct = (float)(sb[i] / b[i].nPairs);
+            }
+        return b;
+    }
+
+    // Bias by CADENCE band (10 rpm, 40..140) — the other 1-D slice.
+    std::vector<MeterBand> cadenceBands() const {
+        constexpr int NB = 10, W = 10, LO = 40;
+        std::vector<MeterBand> b(NB);
+        std::vector<double> sr(NB, 0.0), sb(NB, 0.0);
+        for (int i = 0; i < NB; ++i) { b[i].loW = LO + i * W; b[i].hiW = LO + (i + 1) * W; }
+        for (const auto& p : pairs_) {
+            if (p.a < minW_ || p.aCad <= 0) continue;
+            int idx = (p.aCad - LO) / W;
+            if (idx < 0) idx = 0;
+            if (idx >= NB) idx = NB - 1;
+            b[idx].nPairs++;
+            sr[idx] += (double)p.b / (double)p.a;
+            sb[idx] += (double)(p.b - p.a) / (double)p.a * 100.0;
+        }
+        for (int i = 0; i < NB; ++i)
+            if (b[i].nPairs > 0) {
+                b[i].meanRatio = (float)(sr[i] / b[i].nPairs);
+                b[i].meanBiasPct = (float)(sb[i] / b[i].nPairs);
+            }
+        return b;
+    }
+
+    // The power×cadence agreement grid (the web heatmap): cell[powerBin][cadenceBin].meanBiasPct.
+    struct Grid2D {
+        MeterGridCell cell[kGridPBins][kGridCBins];
+        int pBinW = 50, cBinLo = 45, cBinW = 15;   // axes: power 0..400 W; cadence <45, then 15 rpm
+    };
+    Grid2D grid2d() const {
+        Grid2D g;
+        double sb[kGridPBins][kGridCBins] = {};
+        for (const auto& p : pairs_) {
+            if (p.a < minW_ || p.aCad <= 0) continue;
+            int pi = p.a / g.pBinW;
+            int ci = (p.aCad - g.cBinLo) / g.cBinW;
+            if (pi < 0) pi = 0;
+            if (pi >= kGridPBins) pi = kGridPBins - 1;
+            if (ci < 0) ci = 0;
+            if (ci >= kGridCBins) ci = kGridCBins - 1;
+            g.cell[pi][ci].nPairs++;
+            sb[pi][ci] += (double)(p.b - p.a) / (double)p.a * 100.0;
+        }
+        for (int pi = 0; pi < kGridPBins; ++pi)
+            for (int ci = 0; ci < kGridCBins; ++ci)
+                if (g.cell[pi][ci].nPairs > 0)
+                    g.cell[pi][ci].meanBiasPct = (float)(sb[pi][ci] / g.cell[pi][ci].nPairs);
+        return g;
+    }
+
     int pairCount() const { return (int)pairs_.size(); }
 
 private:
-    struct Sample { int w = 0; uint32_t t = 0; uint32_t seq = 0; };
-    struct Pair { int a; int b; };
+    struct Sample { int w = 0; uint32_t t = 0; uint32_t seq = 0; int cad = -1; };
+    struct Pair { int a; int b; int aCad; };
 
     void tryPair() {
         if (seqA_ == 0 || seqB_ == 0) return;                 // need at least one of each
@@ -107,7 +194,7 @@ private:
         if (latestA_.seq == pairedSeqA_ && latestB_.seq == pairedSeqB_) return;  // already paired this duo
         pairedSeqA_ = latestA_.seq;
         pairedSeqB_ = latestB_.seq;
-        pairs_.push_back({latestA_.w, latestB_.w});
+        pairs_.push_back({latestA_.w, latestB_.w, latestA_.cad});
         if (pairs_.size() > maxPairs_) pairs_.erase(pairs_.begin());
     }
 
