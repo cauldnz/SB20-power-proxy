@@ -10,6 +10,17 @@ lives — not just "B reads +11%". Governs the compare surfaces: the pure core
 [`domain-primer.md`](domain-primer.md) §2 (torque/cadence). **No code is changed by this doc** — it's the
 plan the next slice implements.
 
+> **Surfaces correction (2026-07-16).** This doc originally said "desk tool" for the rich, interactive
+> visualizations. The correct home is the **web app** ([`web/index.html`](../../web/README.md)) — the
+> standardized companion UI (shares the view-model, `design/tokens.json`, and the Bridge wire contract;
+> connects over Web Bluetooth or the ESP's HTTP). So read every "Python desk tool" / "surface D" below as
+> **the web app** (HTML `<canvas>`/SVG plots — interactive, full-colour, user-facing, no matplotlib).
+> `code/scripts/compare_meters.py` stays a **dev/debug + replay CLI only**, not a visualization surface.
+> The three surfaces are therefore: **head-unit (LVGL)** = the glanceable bias-by-band line (live, on the
+> bike); **web app** = the deep dive (Bland–Altman + 2-D power×cadence heatmap + scatter/regression);
+> **`compare_meters.py`** = a host-test/replay helper. Data flow: the device computes `MeterCompare` and
+> exposes the binned tables (+ a coarse power×cadence grid) over the Bridge contract → the web renders.
+
 ---
 
 ## 1. Why this doc exists — the power-only bin hides the interesting error
