@@ -181,6 +181,17 @@ public:
         return g;
     }
 
+    // Downsampled (a,b) pairs for a Bland-Altman scatter (every k-th pair, up to maxN).
+    struct SamplePair { int a, b; };
+    std::vector<SamplePair> samplePairs(int maxN = 120) const {
+        std::vector<SamplePair> out;
+        if (pairs_.empty() || maxN <= 0) return out;
+        int step = (int)(pairs_.size() / (size_t)maxN);
+        if (step < 1) step = 1;
+        for (size_t i = 0; i < pairs_.size(); i += (size_t)step) out.push_back({pairs_[i].a, pairs_[i].b});
+        return out;
+    }
+
     int pairCount() const { return (int)pairs_.size(); }
 
 private:

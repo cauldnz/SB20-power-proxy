@@ -45,6 +45,7 @@
   #include <Preferences.h>
   #include <WiFi.h>
   #include <esp_heap_caps.h>
+  #include "WebJson.h"            // #10: renderCompareJson for the GET /compare deep-dive payload
   #include "net/WifiLink.h"
 #endif
 
@@ -1099,6 +1100,16 @@ void setup() {
         perf.reset();
         g_perfWindowStartMs = millis();
     });
+#if USE_LCD
+    // GET /compare -> the #10 deep-dive payload (summary + torque bands + power×cadence grid + pairs)
+    // the web Compare view renders. Locked: the LCD task feeds g_cmp on its data cycle.
+    wifi.setCompare([]() {
+        lcdLock();
+        std::string j = renderCompareJson(g_cmp, "Meter A", "Meter B");
+        lcdUnlock();
+        return j;
+    });
+#endif
     // Source-setup UI (GET/POST /setup): pick the meter / surviving crank over WiFi, persist to NVS,
     // reboot to apply. Decoupled via hooks — the candidate list + rescan come from the live central;
     // a mock build has no sources to offer. (Trainer-field preservation for old form bodies lives

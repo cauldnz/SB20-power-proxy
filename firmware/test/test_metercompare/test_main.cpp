@@ -11,6 +11,7 @@
 
 #include "MeterCompare.h"
 #include "MeterCompareRender.h"
+#include "WebJson.h"
 
 using namespace sb20proxy;
 
@@ -162,9 +163,31 @@ static void test_grid2d_and_cadence_backward_compat() {
     TEST_ASSERT_TRUE(cells >= 3);
 }
 
+static void test_compare_json() {
+    MeterCompare mc;
+    uint32_t t = 0;
+    for (int rep = 0; rep < 4; ++rep)
+        for (int cad = 60; cad <= 100; cad += 10)
+            for (int w = 100; w <= 300; w += 50) {
+                mc.onA(w, t, cad);
+                mc.onB((int)(w * 1.1f + 0.5f), t + 10, cad);
+                t += 1000;
+            }
+    const std::string j = renderCompareJson(mc, "Assioma", "SB20");
+    TEST_ASSERT_TRUE(j.find("\"valid\":true") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"aName\":\"Assioma\"") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"bName\":\"SB20\"") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"biasPct\":1") != std::string::npos);        // ~+10-11%
+    TEST_ASSERT_TRUE(j.find("\"tqBias\":[") != std::string::npos);         // torque bands present
+    TEST_ASSERT_TRUE(j.find("\"grid\":{") != std::string::npos);           // heatmap grid present
+    TEST_ASSERT_TRUE(j.find("\"pairs\":[[") != std::string::npos);         // Bland-Altman pairs present
+    TEST_ASSERT_TRUE(j.back() == '}');                                     // well-formed close
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_render_smoke);
+    RUN_TEST(test_compare_json);
     RUN_TEST(test_torque_flat_for_constant_scale_error);
     RUN_TEST(test_torque_reveals_what_power_hides);
     RUN_TEST(test_grid2d_and_cadence_backward_compat);
