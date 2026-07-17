@@ -47,4 +47,22 @@ struct ProvisionView {
     std::string url;      // where the portal lives (Config::SETUP_PORTAL_URL)
 };
 
+// #10 A/B meter compare — what the Compare screen shows (filled by CompareService::fillView).
+// Lives here, not LcdUi.h, so it stays free of LcdCanvas/LCD_PANEL: CompareService (pure, and
+// compiled on WiFi-only builds for the GET /compare payload) speaks this vocabulary too.
+// The per-band chart is bias% by TORQUE band — it reveals torque-dependent error that a power
+// axis mixes away (code/findings/meter-compare-visualization.md).
+struct CompareView {
+    std::string aName = "Meter A";
+    std::string bName = "Meter B";
+    bool valid = false;
+    int16_t aWatts = 0, bWatts = 0, deltaW = 0;
+    float ratio = 1.0f;
+    float biasPct = 0.0f;
+    uint16_t nPairs = 0;
+    static constexpr int NBANDS = 8;    // 0..40 N·m (5 N·m bands) shown on the head-unit
+    int16_t bandBiasPct10[NBANDS];      // per-band bias, tenths of a percent; INT16_MIN = empty band
+    CompareView() { for (int i = 0; i < NBANDS; ++i) bandBiasPct10[i] = INT16_MIN; }
+};
+
 }  // namespace sb20proxy

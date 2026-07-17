@@ -45,7 +45,6 @@
   #include <Preferences.h>
   #include <WiFi.h>
   #include <esp_heap_caps.h>
-  #include "WebJson.h"            // #10: renderCompareJson for the GET /compare deep-dive payload
   #include "net/WifiLink.h"
 #endif
 
@@ -54,7 +53,7 @@
 #endif
 #if USE_LCD
   #include "LcdUi.h"              // pure head-unit UI (screens + tap routing; LCD_W x LCD_H)
-  #include "MeterCompare.h"       // #10 live A/B power-meter compare (pure core)
+  #include "CompareService.h"     // #10 A/B compare seam: feed -> compare -> view + /compare JSON
   #if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
     #include "disp/CydDisplay.h"  // ILI9341/ST7789 + XPT2046 seam (ESP32-2432S028R "CYD")
   #else
@@ -386,29 +385,21 @@ static void touchCalTick() {
 #endif  // LCD_DRIVER_CYD
 
 // Fill the view structs from live proxy/meter/workout/wifi state. Called under lock.
-// ---- #10 A/B meter compare (fed each data cycle; shown on the LVGL Compare screen) -------------
-static MeterCompare g_cmp;
-static volatile int g_cmpRatioMilli = 1110;  // simulated meter-B = A * ratio (1.110 = real SB20 vs Assioma)
+// ---- #10 A/B meter compare — the CompareService seam (lib/proxy/CompareService.h) --------------
+// main.cpp only picks the ADAPTERS; the service owns the lifecycle (feed -> rolling compare -> view
+// projection -> /compare JSON). Meter A = the live source, falling back to a synthetic rider so the
+// torque bands fill on a bare bench. Meter B = scaled-from-A until the real second central
+// (refMeter) is wired: going real is a ONE-LINE adapter swap here, not a change inside the service.
+static int g_cmpRatioMilli = 1110;           // bench: B reads this/1000 of A (1.110 = real SB20 vs Assioma)
 static volatile bool g_cmpShowReq = false;   // serial CMP -> jump to the Compare screen (from the LCD task)
-// Feed one A/B sample: A = the live source (a demo ramp on the bench so bands fill); B = a simulated
-// 2nd meter until a real second BLE meter feeds onB via dual-central. Call ~1-2 Hz from the LCD task.
-static void feedCompare() {
-    int a = proxy.lastSource().power_w;
-    int cad = proxy.lastSource().cadence_rpm;
-    if (a <= 0) {   // bench demo: sweep power AND cadence so the torque bands fill across a range
-        static int demoA = 100, demoDir = 8, demoCad = 90, cadDir = 3;
-        demoA += demoDir;
-        if (demoA >= 340 || demoA <= 90) demoDir = -demoDir;
-        demoCad += cadDir;
-        if (demoCad >= 105 || demoCad <= 70) cadDir = -cadDir;
-        a = demoA;
-        cad = demoCad;
-    }
-    const int b = (int)(a * (g_cmpRatioMilli / 1000.0f) + 0.5f);
-    const uint32_t t = millis();
-    g_cmp.onA(a, t, cad);
-    g_cmp.onB(b, t, cad);   // simulated 2nd meter at the same cadence (real onB via dual-central later)
-}
+static CompareService g_cmpSvc = []() {
+    CompareService::Source ramp = rampSource();
+    CompareService::Source a = [ramp](uint32_t nowMs) {
+        const PowerReading r = proxy.lastSource();
+        return r.power_w > 0 ? r : ramp(nowMs);
+    };
+    return CompareService(a, scaledSource(a, &g_cmpRatioMilli));
+}();
 
 static void buildLcdViews(LcdViews& v) {
     RideView& r = v.ride;
@@ -444,25 +435,7 @@ static void buildLcdViews(LcdViews& v) {
     }
 #endif
 
-    // Compare (#10): project the rolling MeterCompare into the Compare screen's view-model
-    {
-        CompareView& c = v.compare;
-        c.aName = "Meter A";
-        c.bName = "Meter B";
-        const MeterCompareStats st = g_cmp.stats();
-        c.valid = st.valid;
-        c.aWatts = (int16_t)st.aWatts;
-        c.bWatts = (int16_t)st.bWatts;
-        c.deltaW = (int16_t)st.deltaW;
-        c.ratio = st.meanRatio;
-        c.biasPct = st.meanBiasPct;
-        c.nPairs = (uint16_t)st.nPairs;
-        // The head-unit chart is TORQUE-binned (0..40 N·m) — reveals torque-dependent error that a
-        // power axis mixes away (meter-compare-visualization.md). Falls back to empty until cadence flows.
-        const std::vector<MeterBand> tb = g_cmp.torqueBands();
-        for (int i = 0; i < CompareView::NBANDS && i < (int)tb.size(); ++i)
-            c.bandBiasPct10[i] = tb[i].nPairs > 0 ? (int16_t)(tb[i].meanBiasPct * 10.0f) : INT16_MIN;
-    }
+    g_cmpSvc.fillView(v.compare);   // #10: the Compare screen's view-model (bias by torque band)
 
     // Workout (from the shared runtime)
     WorkoutView& w = v.wk;
@@ -660,7 +633,7 @@ static void lcdTask(void*) {
         if (now - lastData >= 200 && !wasCal) {
             lastData = now;
             lcdLock();
-            feedCompare();          // #10: accumulate one A/B sample for the Compare screen
+            g_cmpSvc.tick(now);     // #10: accumulate one A/B sample (self-throttling)
             buildLcdViews(views);
             lvglUiUpdate(views);
             g_lcdUi.screen = lvglUiCurrentScreen();  // keep STATE/serial in sync
@@ -1102,10 +1075,10 @@ void setup() {
     });
 #if USE_LCD
     // GET /compare -> the #10 deep-dive payload (summary + torque bands + power×cadence grid + pairs)
-    // the web Compare view renders. Locked: the LCD task feeds g_cmp on its data cycle.
+    // the web Compare view renders. Locked: the LCD task ticks g_cmpSvc on its data cycle.
     wifi.setCompare([]() {
         lcdLock();
-        std::string j = renderCompareJson(g_cmp, "Meter A", "Meter B");
+        std::string j = g_cmpSvc.json();
         lcdUnlock();
         return j;
     });

@@ -86,21 +86,7 @@ struct MoreView {
 
 // (ProvisionView moved to UiModel.h — shared with the OLED builds.)
 
-// #10 A/B meter compare — the Compare screen's view-model (filled from MeterCompare in main.cpp).
-// The per-band chart is bias% by TORQUE band (0..40 N·m, from MeterCompare::torqueBands) — it reveals
-// torque-dependent error a power axis mixes away (code/findings/meter-compare-visualization.md).
-struct CompareView {
-    std::string aName = "Meter A";
-    std::string bName = "Meter B";
-    bool valid = false;
-    int16_t aWatts = 0, bWatts = 0, deltaW = 0;
-    float ratio = 1.0f;
-    float biasPct = 0.0f;
-    uint16_t nPairs = 0;
-    static constexpr int NBANDS = 8;    // 0..400 (50-unit bands) shown on the head-unit
-    int16_t bandBiasPct10[NBANDS];      // per-band bias, tenths of a percent; INT16_MIN = empty band
-    CompareView() { for (int i = 0; i < NBANDS; ++i) bandBiasPct10[i] = INT16_MIN; }
-};
+// (CompareView moved to UiModel.h — pure, so CompareService + WiFi-only builds can use it too.)
 
 struct LcdViews {
     RideView ride;
