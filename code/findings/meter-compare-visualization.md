@@ -3,8 +3,10 @@
 **Status: PLANNED (2026-07-16).** A research + design plan for *how* to visualize the live/offline
 agreement between two power meters (A vs B), so we can see **where in the pedalling space** the error
 lives — not just "B reads +11%". Governs the compare surfaces: the pure core
-[`firmware/lib/proxy/MeterCompare.h`](../../firmware/lib/proxy/MeterCompare.h) + its head-unit render
-[`MeterCompareRender.h`](../../firmware/lib/proxy/MeterCompareRender.h), and the desk twin
+[`firmware/lib/proxy/MeterCompare.h`](../../firmware/lib/proxy/MeterCompare.h) + its lifecycle seam
+[`CompareService.h`](../../firmware/lib/proxy/CompareService.h), the head-unit's LVGL Compare screen
+(`buildCompare()` in [`firmware/src/ui/LvglUi.cpp`](../../firmware/src/ui/LvglUi.cpp)), the web app's
+deep-dive ([`web/index.html`](../../web/index.html), fed by `GET /compare`), and the desk twin
 [`code/scripts/compare_meters.py`](../scripts/compare_meters.py). Companion to
 [`sb20-power-topology.md`](sb20-power-topology.md) (the ~11% SB20/Stages-vs-Assioma finding) and
 [`domain-primer.md`](domain-primer.md) §2 (torque/cadence). **No code is changed by this doc** — it's the
@@ -146,8 +148,9 @@ interactive/offline).
 | 7 | **Residual-vs-torque** (scatter/binned line: bias% or ΔW vs derived torque) | The cleanest test of the §3 hypothesis: slope error = tilt, offset error = low-torque hyperbola | Directly answers "is the 11% torque-dependent?" | Scatter too dense for the panel; a *binned line* is the panel-friendly reduction (≈ #4) | ✗ (use #4) | ✅✅ |
 
 Notes:
-- On the head-unit, #4 is a **drop-in re-axis of the existing column chart** (`MeterCompareRender.h` already
-  draws a signed-bar-from-midline chart) — lowest-cost torque awareness.
+- On the head-unit, #4 is a **drop-in re-axis of the existing bias-by-band chart** (the LVGL Compare screen
+  already draws one) — lowest-cost torque awareness. *(Shipped: the chart is torque-axed, and its band count
+  derives from `MeterCompare::kTorqueBands` so it can't diverge from `GET /compare`.)*
 - A **coarse** version of #6 fits even 172×320: e.g. a 4-power × 4-cadence grid of colour blocks (16 cells,
   each ≥ ~30 px) with a tiny red/green diverging legend. Iso-torque lines run corner-to-corner, so the eye
   reads the torque gradient for free.
@@ -184,7 +187,8 @@ static float torqueNm(int watts, int cadRpm) {        // 0 if cadence unknown/ne
 // NEW tables alongside the existing per-power bands():
 static constexpr int kTorqueBandNm = 5;   // 0..~60 N·m in 5 N·m bins → 12 bands (mirror kBands)
 std::vector<MeterBand> torqueBands() const;   // bin each pair by torqueNm(a, cadA)
-std::vector<MeterBand> cadenceBands() const;  // optional companion (§4 #5)
+// (a cadenceBands() companion was prototyped and dropped — no surface consumed it; the 2-D grid
+//  below already answers "does the error move with cadence?" without a third 1-D slice)
 
 // (optional, desk-first) a coarse 2-D grid for the heatmap:
 struct MeterCell { int nPairs; float meanBiasPct; };
@@ -194,9 +198,8 @@ std::vector<MeterCell> grid(int nPowerBins, int nCadBins) const;   // #6
 Design points:
 - **Reference-meter torque.** Derive the bin from **A's** watts+cadence (A = the reference/Assioma) so a
   pair always lands in one bin regardless of B's error — the same convention the ratio math uses (`b/a`).
-- **Reuse `MeterBand`.** `torqueBands()`/`cadenceBands()` return the *same* struct as `bands()`, so
-  `MeterCompareRender.h`'s existing signed-column chart renders any of them with a label/axis swap — no new
-  render primitive.
+- **Reuse `MeterBand`.** `torqueBands()` returns the *same* struct as `bands()`, so the Compare screen's
+  existing bias-by-band chart renders either with a label/axis swap — no new render primitive.
 - **Backward-compatible & host-testable.** Cadence defaults to unknown; the existing
   `test_metercompare` golden tests keep passing, and new tests feed synthetic (watts, cadence) streams
   (e.g. a *flat 11%* stream vs a *torque-ramped* stream) to prove `torqueBands()` distinguishes them — the
@@ -213,8 +216,8 @@ Both twins move together (parity is a project invariant): mirror the same `torqu
 ## 6. Recommendation
 
 **Head-unit (glanceable, torque-aware, cheap):**
-1. **Add a per-torque-band bar chart (#4)** as the primary divergence chart — re-axis the existing
-   `MeterCompareRender.h` column chart from power bins to **5 N·m torque bins**. Same widget, torque-aware.
+1. **Add a per-torque-band bar chart (#4)** as the primary divergence chart — re-axis the Compare screen's
+   existing chart from power bins to **5 N·m torque bins**. Same widget, torque-aware.
 2. Keep the single-number verdict (`B reads +11% HIGH`) but **flag when the bias is *not* flat across torque**
    — e.g. append `(varies with torque)` / a small "▲ slope" glyph when the spread across torque bands exceeds
    a threshold. That turns the headline number honest.

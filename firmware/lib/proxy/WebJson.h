@@ -66,11 +66,16 @@ inline std::string renderCurveJson(const CorrectionCurve& curve) {
 // GET /compare -> the #10 A/B deep-dive payload the web Compare view renders: summary + per-torque-band
 // bias + the power×cadence bias grid (the heatmap) + a downsampled pair list (for Bland-Altman). Empty
 // bands/cells are `null`. Compact arrays keep it ~2-3 KB. Host-tested.
+//
+// `simulated` = meter B is fabricated from A (the bench adapter), so every number below restates that
+// fabrication rather than measuring anything. It is in the payload because only the CLIENT can stop
+// itself drawing a confident conclusion from invented data.
 inline std::string renderCompareJson(const MeterCompare& mc, const std::string& aName,
-                                     const std::string& bName) {
+                                     const std::string& bName, bool simulated = false) {
     const MeterCompareStats s = mc.stats();
     char buf[80];
     std::string j = "{\"valid\":" + std::string(s.valid ? "true" : "false");
+    j += ",\"simulated\":" + std::string(simulated ? "true" : "false");
     j += ",\"aName\":\"" + jsonEscape(aName) + "\",\"bName\":\"" + jsonEscape(bName) + "\"";
     std::snprintf(buf, sizeof(buf),
                   ",\"aW\":%d,\"bW\":%d,\"deltaW\":%d,\"ratio\":%.4f,\"biasPct\":%.2f,\"nPairs\":%d",

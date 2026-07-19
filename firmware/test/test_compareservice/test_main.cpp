@@ -30,7 +30,8 @@ static void test_injected_sources_reach_the_view() {
 }
 
 // 2) THE SEAM: the B-source is injected, so swapping the adapter changes the outcome with no branch
-//    inside the service — the simulated adapter and a "real second meter" adapter both just fit.
+//    inside the service — the bench adapter and an independent-meter-shaped source both just fit.
+//    (No adapter over the real second central exists yet; see the note in main.cpp for what it takes.)
 static void test_b_source_is_an_injected_seam() {
     CompareService::Source a = [](uint32_t) { return rd(200); };
     int ratio = 1200;
@@ -94,6 +95,40 @@ static void test_json_through_the_service() {
     TEST_ASSERT_TRUE(j.find("\"grid\":{") != std::string::npos);
 }
 
+// 7) HONESTY: the "B is fabricated" bit rides with the ADAPTER, so a bench B cannot be presented as a
+//    measurement. scaledSource defines B := A x ratio — its bias IS the ratio, restated. A source
+//    written over an independent meter converts implicitly and is not flagged.
+static void test_simulated_rides_with_the_adapter() {
+    CompareService::Source a = [](uint32_t) { return rd(200); };
+    int ratio = 1110;
+    CompareService sim(a, scaledSource(a, &ratio));
+    for (uint32_t t = 1000; t <= 10000; t += 1000) sim.tick(t);
+    CompareView vs;
+    sim.fillView(vs);
+    TEST_ASSERT_TRUE(vs.simulated);
+    TEST_ASSERT_TRUE(sim.simulated());
+    TEST_ASSERT_TRUE(sim.json().find("\"simulated\":true") != std::string::npos);
+
+    CompareService real(a, [](uint32_t) { return rd(210); });   // independent meter -> implicit BSource
+    for (uint32_t t = 1000; t <= 10000; t += 1000) real.tick(t);
+    CompareView vr;
+    real.fillView(vr);
+    TEST_ASSERT_FALSE(vr.simulated);
+    TEST_ASSERT_TRUE(real.json().find("\"simulated\":false") != std::string::npos);
+}
+
+// 8) High-torque pairs must REACH the head-unit view. An 8-band view silently dropped 40-60 N·m —
+//    exactly where sprints clamp and where the SB20 error is expected to be worst.
+static void test_high_torque_reaches_the_view() {
+    // 400 W at 50 rpm ~= 76 N·m -> clamps into the TOP torque band
+    CompareService svc([](uint32_t) { return rd(400, 50); }, [](uint32_t) { return rd(440, 50); });
+    for (uint32_t t = 1000; t <= 20000; t += 1000) svc.tick(t);
+    CompareView v;
+    svc.fillView(v);
+    TEST_ASSERT_TRUE(v.bands[CompareView::NBANDS - 1].nPairs > 0);
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, 10.0f, v.bands[CompareView::NBANDS - 1].meanBiasPct);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_injected_sources_reach_the_view);
@@ -102,5 +137,7 @@ int main() {
     RUN_TEST(test_quiet_meter_contributes_nothing);
     RUN_TEST(test_scaled_b_is_exact_against_a_moving_ramp);
     RUN_TEST(test_json_through_the_service);
+    RUN_TEST(test_simulated_rides_with_the_adapter);
+    RUN_TEST(test_high_torque_reaches_the_view);
     return UNITY_END();
 }

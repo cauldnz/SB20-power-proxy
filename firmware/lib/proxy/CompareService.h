@@ -6,9 +6,11 @@
 // exactly the main.cpp-as-dumping-ground the R-series calls "the real liability"
 // (code/findings/architecture-remediation.md). This owns all of it; main.cpp just wires adapters.
 //
-// THE SEAM IS THE B-SOURCE. Both meters arrive as an injected `Source`, so "real second meter" vs
-// "simulated on the bench" is *which adapter you pass*, never a branch in here. Two adapters exist
-// today — the real second BLE central (refMeter) and scaledSource() below — so the seam is real.
+// THE SEAM IS THE SOURCE. Both meters arrive as an injected Source, so "live meter" vs "bench ramp"
+// vs "test fake" is *which adapter you pass*, never a branch in here. On the A side the seam is
+// already real: main.cpp passes the live proxy reading (falling back to rampSource) and the host
+// tests inject their own. The B side is the pending work — every B adapter that exists today
+// FABRICATES B from A, so a BSource carries a `simulated` bit the surfaces must honour (below).
 //
 // Pure: no Arduino, no BLE, no LVGL. The interface IS the test surface — inject fake Sources, tick(),
 // then assert fillView()/json(). Everything deep sits behind it: the rolling MeterCompare (pairing
@@ -17,6 +19,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <type_traits>
+#include <utility>
 
 #include "MeterCompare.h"
 #include "PowerReading.h"  // the only thing we need from the source side
@@ -33,10 +37,25 @@ public:
     // same reading — because a derived source (scaledSource) reads its upstream again in that tick.
     using Source = std::function<PowerReading(uint32_t nowMs)>;
 
-    CompareService(Source a, Source b, std::string aName = "Meter A", std::string bName = "Meter B",
+    // Meter B plus the one fact a caller must not be free to get wrong: is B an independent meter,
+    // or fabricated from A? A fabricated B makes every statistic a restatement of the fabrication,
+    // so the bit rides WITH the adapter that fabricates it rather than being a ctor flag someone
+    // forgets to set. A hand-written Source (a real meter) converts implicitly and is not simulated.
+    struct BSource {
+        Source fn;
+        bool simulated = false;
+        // Templated so a bare lambda converts in ONE step (lambda -> Source -> BSource would be two
+        // user-defined conversions, which C++ won't do implicitly). The enable_if keeps it from
+        // hijacking the copy constructor.
+        template <typename F, typename = typename std::enable_if<
+                                  !std::is_same<typename std::decay<F>::type, BSource>::value>::type>
+        BSource(F&& f, bool sim = false) : fn(std::forward<F>(f)), simulated(sim) {}
+    };
+
+    CompareService(Source a, BSource b, std::string aName = "Meter A", std::string bName = "Meter B",
                    uint32_t feedIntervalMs = 500)
-        : a_(std::move(a)), b_(std::move(b)), aName_(std::move(aName)), bName_(std::move(bName)),
-          feedMs_(feedIntervalMs) {}
+        : a_(std::move(a)), b_(std::move(b.fn)), simulated_(b.simulated), aName_(std::move(aName)),
+          bName_(std::move(bName)), feedMs_(feedIntervalMs) {}
 
     // Pull one paired sample. Safe to call every loop — it self-throttles to feedIntervalMs (real
     // meters tick ~1 Hz; flooding the window would bias the rolling stats toward whatever is idle).
@@ -51,9 +70,11 @@ public:
     }
 
     // Project for the head-unit Compare screen (bias by TORQUE band — the whole point of #10).
+    // Not free: it walks the rolling window. Callers should skip it when the screen isn't visible.
     void fillView(CompareView& v) const {
         v.aName = aName_;
         v.bName = bName_;
+        v.simulated = simulated_;
         const MeterCompareStats s = cmp_.stats();
         v.valid = s.valid;
         v.aWatts = (int16_t)s.aWatts;
@@ -62,34 +83,42 @@ public:
         v.ratio = s.meanRatio;
         v.biasPct = s.meanBiasPct;
         v.nPairs = (uint16_t)s.nPairs;
-        const std::vector<MeterBand> tb = cmp_.torqueBands();
-        for (int i = 0; i < CompareView::NBANDS && i < (int)tb.size(); ++i)
-            v.bandBiasPct10[i] = tb[i].nPairs > 0 ? (int16_t)(tb[i].meanBiasPct * 10.0f) : INT16_MIN;
+        const std::vector<MeterBand> tb = cmp_.torqueBands();   // NBANDS === kTorqueBands: a full copy
+        for (int i = 0; i < CompareView::NBANDS && i < (int)tb.size(); ++i) v.bands[i] = tb[i];
     }
 
     // The GET /compare payload the web Compare view renders.
-    std::string json() const { return renderCompareJson(cmp_, aName_, bName_); }
+    std::string json() const { return renderCompareJson(cmp_, aName_, bName_, simulated_); }
+
+    bool simulated() const { return simulated_; }
 
     void reset() { cmp_.reset(); lastFeed_ = 0; }
 
 private:
     Source a_, b_;
+    bool simulated_;
     std::string aName_, bName_;
     uint32_t feedMs_;
     uint32_t lastFeed_ = 0;
     MeterCompare cmp_;
 };
 
-// ---- B-source adapters (the seam's two sides) -------------------------------------------------
-// Bench: derive meter B from meter A by a fixed ratio (B reads ratioMilli/1000 of A). Stands in
-// until a real second meter feeds the service; the real side is just a Source over that meter.
-inline CompareService::Source scaledSource(CompareService::Source a, const int* ratioMilli) {
-    return [a, ratioMilli](uint32_t nowMs) {
-        PowerReading r = a ? a(nowMs) : PowerReading{};
-        if (r.power_w > 0 && ratioMilli)
-            r.power_w = (int16_t)((int)r.power_w * (*ratioMilli) / 1000);
-        return r;
-    };
+// ---- B-source adapters -------------------------------------------------------------------------
+// Bench: derive meter B from meter A by a fixed ratio (B reads ratioMilli/1000 of A). This is NOT a
+// measurement — B is A restated, so the bias equals the ratio BY CONSTRUCTION and every torque band
+// and grid cell reads identically. Marked `simulated` so the surfaces report a stand-in instead of
+// printing a metrology verdict ("flat across torque — a clean scale error") about a number this
+// function invented: whether the real SB20's ~+11% is flat or torque-dependent is precisely the OPEN
+// question these views exist to answer (code/findings/meter-compare-visualization.md).
+inline CompareService::BSource scaledSource(CompareService::Source a, const int* ratioMilli) {
+    return CompareService::BSource(
+        [a, ratioMilli](uint32_t nowMs) {
+            PowerReading r = a ? a(nowMs) : PowerReading{};
+            if (r.power_w > 0 && ratioMilli)
+                r.power_w = (int16_t)((int)r.power_w * (*ratioMilli) / 1000);
+            return r;
+        },
+        /*simulated=*/true);
 }
 
 // Bench: a synthetic rider (power sweeps, cadence drifts) so the torque bands fill with no meter

@@ -388,8 +388,14 @@ static void touchCalTick() {
 // ---- #10 A/B meter compare — the CompareService seam (lib/proxy/CompareService.h) --------------
 // main.cpp only picks the ADAPTERS; the service owns the lifecycle (feed -> rolling compare -> view
 // projection -> /compare JSON). Meter A = the live source, falling back to a synthetic rider so the
-// torque bands fill on a bare bench. Meter B = scaled-from-A until the real second central
-// (refMeter) is wired: going real is a ONE-LINE adapter swap here, not a change inside the service.
+// torque bands fill on a bare bench.
+//
+// Meter B IS FABRICATED (B := A x g_cmpRatioMilli/1000) and flagged `simulated` all the way to the
+// surfaces, so they report a stand-in rather than a verdict. Feeding it the REAL second central is
+// NOT a one-line swap — refMeter today (a) only connects while g_calibrating, (b) has its address
+// cleared when the wizard finishes, (c) hands its reading to a single-occupancy callback the wizard
+// owns, and (d) exposes no lastReading() for a pull Source to sample. Un-gate its lifecycle, make
+// the callback multicast (or cache the last reading), then `CompareService(a, refMeterSource())`.
 static int g_cmpRatioMilli = 1110;           // bench: B reads this/1000 of A (1.110 = real SB20 vs Assioma)
 static volatile bool g_cmpShowReq = false;   // serial CMP -> jump to the Compare screen (from the LCD task)
 static CompareService g_cmpSvc = []() {
@@ -435,7 +441,15 @@ static void buildLcdViews(LcdViews& v) {
     }
 #endif
 
-    g_cmpSvc.fillView(v.compare);   // #10: the Compare screen's view-model (bias by torque band)
+    // #10: the Compare screen's view-model (bias by torque band). Projecting it walks the whole
+    // rolling window, and this runs at 5 Hz on EVERY screen — so only pay for it when Compare is
+    // actually up. tick() keeps accumulating regardless, and /compare renders straight from the
+    // service, so nothing is lost by skipping the projection.
+#if defined(USE_LVGL) && USE_LVGL
+    if (lvglUiCurrentScreen() == LcdScreen::Compare) g_cmpSvc.fillView(v.compare);
+#else
+    if (g_lcdUi.screen == LcdScreen::Compare) g_cmpSvc.fillView(v.compare);
+#endif
 
     // Workout (from the shared runtime)
     WorkoutView& w = v.wk;
@@ -855,12 +869,15 @@ static void lcdSerialConsole() {
         }
 #if defined(USE_LVGL) && USE_LVGL
         else if (cmd == "CMP") {                // #10: jump to the Compare screen (then SCREEN grabs it)
-            g_cmpShowReq = true;
-        } else if (cmd.rfind("CMPRATIO", 0) == 0) {  // simulated meter-B = A * ratio/1000 (demo knob)
+            g_cmpShowReq = true;                // (navigation is LVGL-only; the ratio knob below isn't)
+        }
+#endif
+        // Guarded with the SERVICE, not the renderer: g_cmpSvc exists on every USE_LCD build, so an
+        // LVGL-less one used to ship the knob's variable with no way to turn it.
+        else if (cmd.rfind("CMPRATIO", 0) == 0) {  // simulated meter-B = A * ratio/1000 (demo knob)
             g_cmpRatioMilli = (cmd.size() > 8) ? atoi(cmd.substr(8).c_str()) : 1000;
             Serial.printf("[cmp] sim B ratio = %d/1000\n", g_cmpRatioMilli);
         }
-#endif
     }
 }
 #endif  // USE_LCD

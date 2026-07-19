@@ -2,7 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "Obc.h"            // OBC_MAX_MSG + the ButtonState codec
+#include "Obc.h"            // emitObcClick + the ButtonState codec
 #include "Sb20ButtonMap.h"  // the configurable per-button action binding
 #include "Shifter.h"        // ShifterDebounce (decode char 0c46be60 + edge-debounce)
 
@@ -35,13 +35,7 @@ public:
         if (btn == ShifterButton::None) return;  // repeat / boundary / release / short / unknown
         const Sb20ActionSpec spec = bindings_.resolve(btn);
         if (spec.kind == Sb20ActionKind::Obc && spec.obcId != 0) {
-            uint8_t buf[OBC_MAX_MSG];
-            ObcAction act{spec.obcId, OBC_STATE_PRESSED};
-            size_t n = encodeButtonState(&act, 1, buf, sizeof(buf));
-            if (n > 0) emitObc(buf, n);
-            act.state = OBC_STATE_RELEASED;
-            n = encodeButtonState(&act, 1, buf, sizeof(buf));
-            if (n > 0) emitObc(buf, n);
+            emitObcClick(spec.obcId, emitObc);   // PRESSED then RELEASED (Obc.h)
         } else if (spec.kind == Sb20ActionKind::ErgBias && spec.ergDelta != 0) {
             onErg(spec.ergDelta);
         }

@@ -43,14 +43,20 @@ takeover, not part of the UI nav, so it doesn't need LVGL theming/widgets.
 - ❌ do **not** ship an `LcdCanvas`→`lcd.blit` takeover as the on-device renderer for a UI screen.
 
 **Resolved (2026-07-16):** the **#10 Compare screen** is now a proper **LVGL screen** — the debt above is
-paid. `buildCompare()` in `LvglUi.cpp` builds the cards + verdict + an `lv_chart` bias-by-band line, fed
-from a shared `CompareView` (`LcdUi.h`) filled by `buildLcdViews`; it's reached via **More → Compare**
-(`LcdScreen::Compare`), host-tested by `native-lvgl` (`test_compare_screen_renders`), and the direct-blit
-takeover + its serial `CMP`/`CMPSHOT` frame-grab were removed. `MeterCompareRender.h` stays as the pure
-**host-test reference** (mirroring how `LcdUi.h` references the other screens). Serial `CMP` now just
-navigates to the LVGL screen; `SCREEN` captures it like any other. The chart's bias axis is bins-by-power
-today, re-axable to **torque bins** per the visualization plan
-([`meter-compare-visualization.md`](meter-compare-visualization.md)) with no renderer change.
+paid. `buildCompare()` in `LvglUi.cpp` builds the cards + verdict + an `lv_chart` bias-by-**torque**-band
+line, fed from a shared `CompareView` (`UiModel.h`, so it stays free of `LcdCanvas`/`LCD_PANEL`) that
+`CompareService::fillView` fills; it's reached via **More → Compare** (`LcdScreen::Compare`), host-tested
+by `native-lvgl` (`test_compare_screen_renders`), and the direct-blit takeover + its serial `CMP`/`CMPSHOT`
+frame-grab were removed. Serial `CMP` now just navigates to the LVGL screen; `SCREEN` captures it like any
+other. The chart's band count is **derived** from `MeterCompare::kTorqueBands`, so the head-unit and
+`GET /compare` can never silently show different torque domains.
+
+**Correction (2026-07-17):** this section previously claimed `MeterCompareRender.h` stayed as the pure
+"host-test reference (mirroring how `LcdUi.h` references the other screens)". That was **not true as
+written** — nothing but its own test ever called it, `lcdRenderAll` had no `Compare` case, and it had
+already drifted (it rendered *power* bands while the live screen moved to *torque*). It has been deleted.
+The pure, host-tested layer for Compare is `MeterCompare.h` (the math) + `CompareService.h` (the
+lifecycle); the LVGL screen is the only renderer, exactly as the rule above intends.
 
 ## 2. What is ALREADY shared (don't rebuild these)
 

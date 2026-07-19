@@ -862,32 +862,42 @@ void lvglUiUpdate(const LcdViews& v) {
 #endif
     lv_label_set_text(M.ip, v.more.ip.empty() ? "no wifi" : v.more.ip.c_str());
 
-    // Compare (#10)
-    const CompareView& cmp = v.compare;
-    if (cmp.valid) {
-        lv_label_set_text(CMP.aName, cmp.aName.c_str());
-        lv_label_set_text(CMP.bName, cmp.bName.c_str());
-        snprintf(buf, sizeof(buf), "%d", (int)cmp.aWatts);
-        lv_label_set_text(CMP.aW, buf);
-        snprintf(buf, sizeof(buf), "%d", (int)cmp.bWatts);
-        lv_label_set_text(CMP.bW, buf);
-        const bool agree = cmp.biasPct > -2.0f && cmp.biasPct < 2.0f;
-        if (agree) snprintf(buf, sizeof(buf), "AGREE  x%.3f", (double)cmp.ratio);
-        else snprintf(buf, sizeof(buf), "%s %+.1f%%  x%.3f",
-                      cmp.bName.c_str(), (double)cmp.biasPct, (double)cmp.ratio);
-        lv_label_set_text(CMP.verdict, buf);
-        lv_obj_set_style_text_color(CMP.verdict, agree ? C_OK() : C_BAD(), 0);
-        for (int i = 0; i < CompareView::NBANDS; ++i) {
-            int16_t v10 = cmp.bandBiasPct10[i];
-            lv_chart_set_value_by_id(CMP.chart, CMP.ser, (uint32_t)i,
-                                     v10 == INT16_MIN ? LV_CHART_POINT_NONE : (int32_t)(v10 / 10));
+    // Compare (#10) — only while it's the live screen. This runs at 5 Hz on every screen, and main.cpp
+    // skips the (rolling-window-walking) projection off-screen anyway, so the data would be stale.
+    if (g_cur == LcdScreen::Compare) {
+        const CompareView& cmp = v.compare;
+        if (cmp.valid) {
+            lv_label_set_text(CMP.aName, cmp.aName.c_str());
+            lv_label_set_text(CMP.bName, cmp.bName.c_str());
+            snprintf(buf, sizeof(buf), "%d", (int)cmp.aWatts);
+            lv_label_set_text(CMP.aW, buf);
+            snprintf(buf, sizeof(buf), "%d", (int)cmp.bWatts);
+            lv_label_set_text(CMP.bW, buf);
+            const bool agree = cmp.biasPct > -kAgreeBandPct && cmp.biasPct < kAgreeBandPct;
+            if (cmp.simulated) {
+                // B is A x ratio by construction, so a verdict here would just restate the knob.
+                snprintf(buf, sizeof(buf), "SIMULATED B  x%.3f", (double)cmp.ratio);
+            } else if (agree) {
+                snprintf(buf, sizeof(buf), "AGREE  x%.3f", (double)cmp.ratio);
+            } else {
+                snprintf(buf, sizeof(buf), "%s %+.1f%%  x%.3f",
+                         cmp.bName.c_str(), (double)cmp.biasPct, (double)cmp.ratio);
+            }
+            lv_label_set_text(CMP.verdict, buf);
+            lv_obj_set_style_text_color(
+                CMP.verdict, cmp.simulated ? C_MUT() : (agree ? C_OK() : C_BAD()), 0);
+            for (int i = 0; i < CompareView::NBANDS; ++i)
+                lv_chart_set_value_by_id(
+                    CMP.chart, CMP.ser, (uint32_t)i,
+                    cmp.bands[i].nPairs > 0 ? (int32_t)cmp.bands[i].meanBiasPct : LV_CHART_POINT_NONE);
+            lv_chart_refresh(CMP.chart);
+            snprintf(buf, sizeof(buf), cmp.simulated ? "n=%d pairs (simulated B)" : "n=%d pairs",
+                     (int)cmp.nPairs);
+            lv_label_set_text(CMP.foot, buf);
+        } else {
+            lv_label_set_text(CMP.verdict, "waiting for both meters...");
+            lv_label_set_text(CMP.foot, "");
         }
-        lv_chart_refresh(CMP.chart);
-        snprintf(buf, sizeof(buf), "n=%d pairs", (int)cmp.nPairs);
-        lv_label_set_text(CMP.foot, buf);
-    } else {
-        lv_label_set_text(CMP.verdict, "waiting for both meters...");
-        lv_label_set_text(CMP.foot, "");
     }
 }
 

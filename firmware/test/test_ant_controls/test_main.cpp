@@ -40,15 +40,11 @@ static void test_rejects_non_command_page() {
 }
 
 static void test_command_to_obc_mapping() {
-    uint8_t ids[4];
-    TEST_ASSERT_EQUAL(1, antControlToObc(AntControlCmd::MenuUp, ids, 4));
-    TEST_ASSERT_EQUAL_HEX8(OBC_BTN_NAV_UP, ids[0]);
-    TEST_ASSERT_EQUAL(1, antControlToObc(AntControlCmd::Lap, ids, 4));
-    TEST_ASSERT_EQUAL_HEX8(OBC_BTN_LAP, ids[0]);
-    TEST_ASSERT_EQUAL(1, antControlToObc(AntControlCmd::MenuSelect, ids, 4));
-    TEST_ASSERT_EQUAL_HEX8(OBC_BTN_SELECT, ids[0]);
-    TEST_ASSERT_EQUAL(0, antControlToObc(AntControlCmd::NoCommand, ids, 4));
-    TEST_ASSERT_EQUAL(0, antControlToObc(AntControlCmd::Reset, ids, 4));
+    TEST_ASSERT_EQUAL_HEX8(OBC_BTN_NAV_UP, antControlToObc(AntControlCmd::MenuUp));
+    TEST_ASSERT_EQUAL_HEX8(OBC_BTN_LAP, antControlToObc(AntControlCmd::Lap));
+    TEST_ASSERT_EQUAL_HEX8(OBC_BTN_SELECT, antControlToObc(AntControlCmd::MenuSelect));
+    TEST_ASSERT_EQUAL_HEX8(0, antControlToObc(AntControlCmd::NoCommand));   // 0 = unmapped
+    TEST_ASSERT_EQUAL_HEX8(0, antControlToObc(AntControlCmd::Reset));
 }
 
 static void test_feed_emits_stateless_click() {

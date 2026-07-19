@@ -8,7 +8,13 @@ bias table (do the meters diverge at high power?). Two modes:
     python compare_meters.py --demo                 # self-check: 3 scenarios, no hardware
     python compare_meters.py --live "Assioma" "SB20"   # connect two BLE CPS meters (bleak)
 
-The head-unit shows the same numbers via firmware/lib/proxy/MeterCompareRender.h.
+The head-unit renders the same numbers on its LVGL Compare screen (firmware/src/ui/LvglUi.cpp);
+the web app's deep-dive reads them from GET /compare.
+
+PARITY GAP (known): the C++ core has since grown the cadence-fed TORQUE views — torque_bands(),
+grid2d(), sample_pairs() — which this twin does not mirror yet. The torque domain is the whole
+point of #10 (power bins mix torque levels and hide torque-dependent error), so closing this is
+tracked work, not a cosmetic gap. See code/findings/meter-compare-visualization.md.
 """
 from __future__ import annotations
 
@@ -18,6 +24,9 @@ import time
 
 BAND_W = 50
 BANDS = 12
+# |bias| under this reads as "the meters agree" — mirrors kAgreeBandPct in MeterCompare.h. One
+# domain rule; if it moves, it moves on both sides of the twin.
+AGREE_BAND_PCT = 2.0
 
 
 class MeterCompare:
@@ -85,7 +94,7 @@ def dashboard(a_name, b_name, mc: MeterCompare) -> str:
     s = mc.stats()
     if not s["valid"]:
         return "  (waiting for both meters...)"
-    agree = -2.0 < s["bias"] < 2.0
+    agree = -AGREE_BAND_PCT < s["bias"] < AGREE_BAND_PCT
     verdict = ("AGREE - within 2%" if agree
                else f"{b_name} reads {s['bias']:+.1f}% {'HIGH' if s['bias'] > 0 else 'LOW'}")
     lines = [
@@ -129,10 +138,16 @@ def run_live(a_filter, b_filter):
     except Exception as e:  # pragma: no cover
         sys.exit(f"live mode needs bleak: {e}")
 
-    CPS_MEAS = "00002a63-0000-1000-8000-00805f9b34fb"
+    # The project's CPS codec — the twin of firmware/lib/proxy/Cps.h. Parsing the notification by its
+    # FLAGS (rather than slicing data[2:4] blind) is what makes this correct on meters that vary the
+    # optional fields, and it's what puts cadence within reach for the torque views.
+    from sb20proxy.ble.cps import UUID_CP_MEASUREMENT, decode_cps_measurement
+    from sb20proxy.ble.multi_capture import sig_uuid
 
-    def cps_power(data: bytes) -> int:  # CPS measurement: [flags(2 LE), instant_power(2 LE, sint16)]
-        return int.from_bytes(data[2:4], "little", signed=True)
+    CPS_MEAS = sig_uuid(UUID_CP_MEASUREMENT)
+
+    def cps_power(data: bytes) -> int:
+        return decode_cps_measurement(data).power_w
 
     async def main():
         print(f"scanning for '{a_filter}' and '{b_filter}' ...")

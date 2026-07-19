@@ -18,7 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "Obc.h"  // OBC action ids + encodeButtonState (the re-broadcast target)
+#include "Obc.h"  // OBC action ids + emitObcClick (the re-broadcast target)
 
 namespace sb20proxy {
 
@@ -64,25 +64,22 @@ inline AntControlEvent decodeAntControlPage(const uint8_t* d, size_t n) {
     return e;
 }
 
-// Map a standard control command to OBC action id(s). Returns the number written (0 = unmapped, e.g.
-// NoCommand). These are the natural standard mappings; per-controller multi-action bindings (the
-// obc-shifter-sources.md table) are a future config once real AXS button->command pairs are captured.
-inline size_t antControlToObc(AntControlCmd cmd, uint8_t* ids, size_t cap) {
-    uint8_t id = 0;
+// Map a standard control command to its OBC button id (0 = unmapped, e.g. NoCommand). These are the
+// natural standard mappings; per-controller multi-action bindings (the obc-shifter-sources.md table)
+// are a future config once real AXS button->command pairs are captured — a single id matches the
+// sibling ObcShifterSource, so both re-broadcast through the same emitObcClick().
+inline uint8_t antControlToObc(AntControlCmd cmd) {
     switch (cmd) {
-        case AntControlCmd::MenuUp:     id = OBC_BTN_NAV_UP; break;
-        case AntControlCmd::MenuDown:   id = OBC_BTN_NAV_DOWN; break;
-        case AntControlCmd::MenuSelect: id = OBC_BTN_SELECT; break;
-        case AntControlCmd::MenuBack:   id = OBC_BTN_BACK; break;
-        case AntControlCmd::Home:       id = OBC_BTN_MENU; break;
-        case AntControlCmd::Lap:        id = OBC_BTN_LAP; break;
-        case AntControlCmd::Start:      id = OBC_BTN_RESUME; break;
-        case AntControlCmd::Stop:       id = OBC_BTN_PAUSE; break;
-        default: return 0;  // NoCommand / Reset / Length / Reserved / Custom -> unmapped for now
+        case AntControlCmd::MenuUp:     return OBC_BTN_NAV_UP;
+        case AntControlCmd::MenuDown:   return OBC_BTN_NAV_DOWN;
+        case AntControlCmd::MenuSelect: return OBC_BTN_SELECT;
+        case AntControlCmd::MenuBack:   return OBC_BTN_BACK;
+        case AntControlCmd::Home:       return OBC_BTN_MENU;
+        case AntControlCmd::Lap:        return OBC_BTN_LAP;
+        case AntControlCmd::Start:      return OBC_BTN_RESUME;
+        case AntControlCmd::Stop:       return OBC_BTN_PAUSE;
+        default:                        return 0;  // NoCommand / Reset / Length / Reserved / Custom
     }
-    if (cap < 1) return 0;
-    ids[0] = id;
-    return 1;
 }
 
 // Stateful source: feed ANT Controls pages; it dedups re-transmits (same seq) and, for each NEW
@@ -100,18 +97,7 @@ public:
         if (have_ && e.seq == lastSeq_) return;   // same press re-broadcast -> ignore
         have_ = true;
         lastSeq_ = e.seq;
-        uint8_t ids[4];
-        const size_t nIds = antControlToObc(e.cmd, ids, sizeof(ids));
-        if (nIds == 0) return;                     // NoCommand / unmapped -> nothing to fire
-        ObcAction acts[4];
-        uint8_t buf[OBC_MAX_MSG];
-        // PRESSED for all mapped ids, then RELEASED — a stateless click any OBC app accepts.
-        const uint8_t states[2] = {OBC_STATE_PRESSED, OBC_STATE_RELEASED};
-        for (int s = 0; s < 2; ++s) {
-            for (size_t i = 0; i < nIds; ++i) acts[i] = ObcAction{ids[i], states[s]};
-            const size_t len = encodeButtonState(acts, nIds, buf, sizeof(buf));
-            if (len) emit(buf, len);
-        }
+        emitObcClick(antControlToObc(e.cmd), emit);   // 0 (unmapped) fires nothing; Obc.h
     }
 
     bool have() const { return have_; }

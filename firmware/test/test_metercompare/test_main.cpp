@@ -1,16 +1,8 @@
 // Host tests for the pure MeterCompare core (pio test -e native). Feeds synthetic dual streams and
 // asserts the rolling agreement stats + per-band table + pairing window.
-#ifndef LCD_PANEL_W
-#define LCD_PANEL_W 240
-#endif
-#ifndef LCD_PANEL_H
-#define LCD_PANEL_H 320
-#endif
-
 #include <unity.h>
 
 #include "MeterCompare.h"
-#include "MeterCompareRender.h"
 #include "WebJson.h"
 
 using namespace sb20proxy;
@@ -82,17 +74,31 @@ static void test_low_power_guarded() {
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.0f, s.meanRatio);  // but ratio stays at the neutral default
 }
 
-static void test_render_smoke() {
-    // The Compare screen must render in-bounds for both the empty and populated cases.
+// The rolling window is a fixed ring: overflowing it must cap the count and DROP THE OLDEST pairs,
+// so a long ride's stats reflect recent riding rather than whatever happened at minute one.
+static void test_ring_caps_and_evicts_oldest() {
     MeterCompare mc;
-    LcdCanvas c;
-    renderMeterCompare(c, "Assioma", "SB20", mc.stats(), mc.bands());  // invalid/empty path
-    for (int i = 0; i < 20; ++i) { uint32_t t = i * 1000; mc.onA(200, t); mc.onB(222, t + 10); }
-    renderMeterCompare(c, "Assioma", "SB20", mc.stats(), mc.bands());  // populated (+11%)
-    TEST_ASSERT_EQUAL((size_t)LCD_W * LCD_H, c.px.size());
-    bool sawRed = false;                       // the "B reads HIGH" red should appear somewhere
-    for (uint16_t p : c.px) if (p == MCMP_HI) { sawRed = true; break; }
-    TEST_ASSERT_TRUE(sawRed);
+    uint32_t t = 0;
+    for (size_t i = 0; i < MeterCompare::kMaxPairs + 200; ++i) {   // 200 past the cap
+        const bool late = i >= 200;                 // first 200 pairs agree; the rest read +20% high
+        mc.onA(200, t);
+        mc.onB(late ? 240 : 200, t + 10);
+        t += 1000;
+    }
+    auto s = mc.stats();
+    TEST_ASSERT_EQUAL((int)MeterCompare::kMaxPairs, s.nPairs);      // capped, never grows
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 20.0f, s.meanBiasPct);           // the agreeing pairs aged out
+    TEST_ASSERT_EQUAL(240, s.bWatts);                               // newest pair is still the latest
+}
+
+// The agree threshold is one shared domain rule, not a magic number re-typed per surface.
+static void test_agrees_threshold() {
+    MeterCompare tight;
+    for (int i = 0; i < 10; ++i) { uint32_t t = i * 1000; tight.onA(200, t); tight.onB(202, t + 10); }
+    TEST_ASSERT_TRUE(tight.stats().agrees());     // +1% -> agree
+    MeterCompare wide;
+    for (int i = 0; i < 10; ++i) { uint32_t t = i * 1000; wide.onA(200, t); wide.onB(222, t + 10); }
+    TEST_ASSERT_FALSE(wide.stats().agrees());     // +11% -> does not agree
 }
 
 static void test_torque_flat_for_constant_scale_error() {
@@ -186,7 +192,6 @@ static void test_compare_json() {
 
 int main() {
     UNITY_BEGIN();
-    RUN_TEST(test_render_smoke);
     RUN_TEST(test_compare_json);
     RUN_TEST(test_torque_flat_for_constant_scale_error);
     RUN_TEST(test_torque_reveals_what_power_hides);
@@ -198,5 +203,7 @@ int main() {
     RUN_TEST(test_delta_is_latest_pair);
     RUN_TEST(test_per_band_divergence);
     RUN_TEST(test_low_power_guarded);
+    RUN_TEST(test_ring_caps_and_evicts_oldest);
+    RUN_TEST(test_agrees_threshold);
     return UNITY_END();
 }

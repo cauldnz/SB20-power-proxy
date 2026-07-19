@@ -149,7 +149,11 @@ void test_compare_screen_renders() {
     v.compare.nPairs = 80;
     // synthetic per-band shape: a rising bias (a torque/power-dependent error — the case the chart
     // exists to reveal). Whether the real SB20's +11% is flat or ramps is the open question (viz plan).
-    for (int i = 0; i < CompareView::NBANDS; ++i) v.compare.bandBiasPct10[i] = (int16_t)(20 + i * 22);
+    for (int i = 0; i < CompareView::NBANDS; ++i) {
+        v.compare.bands[i].loW = i * MeterCompare::kTorqueBandNm;
+        v.compare.bands[i].nPairs = 4;
+        v.compare.bands[i].meanBiasPct = 2.0f + i * 1.4f;
+    }
     lvglUiUpdate(v);
     renderFull();
     dumpFbIfRequested();   // $LVGL_DUMP -> pixel-accurate capture of the real LVGL Compare screen

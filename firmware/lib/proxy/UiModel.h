@@ -11,6 +11,8 @@
 #include <cstdint>
 #include <string>
 
+#include "MeterCompare.h"  // MeterBand + kTorqueBands (CompareView's torque domain)
+
 namespace sb20proxy {
 
 // The ride/live-data view — the numbers both panels display (power/cadence/balance + link state).
@@ -56,13 +58,21 @@ struct CompareView {
     std::string aName = "Meter A";
     std::string bName = "Meter B";
     bool valid = false;
+    // B is FABRICATED from A by the bench adapter (B := A x ratio), so every "finding" below is a
+    // restatement of that ratio — NOT a measurement. Surfaces must say so instead of printing a
+    // verdict: whether the real SB20 error is flat or torque-dependent is the OPEN question these
+    // views exist to answer (code/findings/meter-compare-visualization.md), not one to fake an
+    // answer to. False once a real second meter feeds the B source.
+    bool simulated = false;
     int16_t aWatts = 0, bWatts = 0, deltaW = 0;
     float ratio = 1.0f;
     float biasPct = 0.0f;
     uint16_t nPairs = 0;
-    static constexpr int NBANDS = 8;    // 0..40 N·m (5 N·m bands) shown on the head-unit
-    int16_t bandBiasPct10[NBANDS];      // per-band bias, tenths of a percent; INT16_MIN = empty band
-    CompareView() { for (int i = 0; i < NBANDS; ++i) bandBiasPct10[i] = INT16_MIN; }
+    // DERIVED from the core's torque domain, never a hand-picked subset: an 8-band head-unit silently
+    // dropped 40-60 N·m — exactly where sprints clamp and where the error is worst — while /compare
+    // showed all 12. Same data, two domains, no test to catch it. Deriving it makes that undriftable.
+    static constexpr int NBANDS = MeterCompare::kTorqueBands;
+    MeterBand bands[NBANDS];   // per-torque-band bias; nPairs == 0 means "empty band" (no sentinel)
 };
 
 }  // namespace sb20proxy

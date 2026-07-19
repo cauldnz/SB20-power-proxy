@@ -11,10 +11,16 @@ mirror. `ui-schema/web-json.json` is the ONE source of the field names; this too
     python code/scripts/gen_webjson.py           # regenerate the human reference table (web-json.md)
     python code/scripts/gen_webjson.py --check    # CI: fail if C++, JS, or the doc drifted from the schema
 
---check verifies three things stay in lock-step with the schema:
-  1. C++: each serializer in WebJson.h emits EXACTLY the schema's field names (+ its wrapper key).
-  2. JS:  web/index.html references every schema field name (so a rename can't silently orphan a read).
-  3. Doc: ui-schema/web-json.md matches the schema (regenerate it after editing the schema).
+--check verifies four things stay in lock-step with the schema:
+  1. C++: each serializer in WebJson.h emits EXACTLY the schema's field names (+ its wrapper key, minus
+     any declared `nested` inner keys).
+  2. JS:  web/index.html references every schema field name unless it's flagged js=false (emit-only, e.g.
+     a field kept for head-unit parity that the SPA doesn't render) — so a rename can't silently orphan a read.
+  3. Closed-world: every serializer DEFINED in WebJson.h is in the schema. This is the guard that would
+     have caught /compare — a new serializer here can't escape the contract just by not being enumerated.
+     (Serializers in other headers — renderStatusJson/renderPerfJson/renderWorkoutJson — are intentionally
+     outside this particular contract; this closed-world check is scoped to WebJson.h.)
+  4. Doc: ui-schema/web-json.md matches the schema (regenerate it after editing the schema).
 """
 from __future__ import annotations
 
@@ -88,7 +94,9 @@ def main() -> int:
 
     for ep in endpoints:
         want = expected_keys(ep)
-        got = cpp_serializer_keys(cpp_text, ep["serializer"])
+        # `nested` keys (e.g. grid.pW) are emitted deeper in the payload; the regex sees them flat, so
+        # subtract them before the top-level equality check rather than list them as top-level fields.
+        got = cpp_serializer_keys(cpp_text, ep["serializer"]) - set(ep.get("nested", []))
         if got != want:
             missing = want - got
             extra = got - want
@@ -97,9 +105,21 @@ def main() -> int:
                 + (f"; missing {sorted(missing)}" if missing else "")
                 + (f"; extra {sorted(extra)}" if extra else "")
             )
-        for name in want:
+        # A field kept only for parity with another surface (js=false) is emitted but not read by the SPA;
+        # don't demand a reference for it. The wrapper key (if any) is still required.
+        js_names = {f["name"] for f in ep["fields"] if f.get("js", True)}
+        if ep.get("wrapper"):
+            js_names.add(ep["wrapper"])
+        for name in js_names:
             if name not in html:
                 problems.append(f"JS web/index.html: field '{name}' ({ep['path']}) is never referenced")
+
+    # Closed-world over WebJson.h: a serializer defined there but absent from the schema silently escapes
+    # the contract (exactly how /compare slipped through). Force it to be registered.
+    defined = set(re.findall(r"inline std::string\s+(render\w+Json)\s*\(", cpp_text))
+    schema_serializers = {ep["serializer"] for ep in endpoints}
+    for s in sorted(defined - schema_serializers):
+        problems.append(f"WebJson.h serializer {s}() is not in the schema — add it to ui-schema/web-json.json")
 
     doc_want = render_doc(endpoints)
     doc_have = DOC.read_text(encoding="utf-8") if DOC.exists() else ""
