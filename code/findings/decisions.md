@@ -3181,3 +3181,38 @@ meter**, ramping watts + cadence 85) → nRF XIAO **BLE central reads it** (`src
   scan (scan-requests) sees what WinRT's passive scan hides.
 - **nRF↔C3 both native-USB:** the 0.42 C3 *does* deliver USB-CDC serial (unlike the dead 0.96); its ramp
   print is the ground-truth that the app booted after flash_c3.py's reset.
+## 2026-07-20 — Track Launch Control planning contract drafted; implementation NOT authorised
+
+Owner interview and primary-source research resolved the v1 product shape:
+
+- **Hardware:** Waveshare ESP32-S3-Touch-LCD-3.5 coach unit, external USB-C bank, physical START/ABORT,
+  all-in-one sound within 5 m; XIAO nRF52840 Sense mounted top-tube/head-tube, arrow forward, >=3 h.
+- **Capture:** 104 Hz six-axis IMU, fixed 10 s pre-roll, 10-60 s post-GO (30 s default), BLE CPS, one
+  retained nRF RAM run. Acoustic T0 is primary; BLE fallback proceeds automatically but stays visibly
+  low-confidence.
+- **Workflow:** explicit session/roster, portable sensor assigned to rider, preferred meter per rider,
+  meter preflight with explicit IMU-only override, separate ARMED then START, deterministic cues continue
+  through late radio faults.
+- **Custody:** auto-download on return to authoritative controller microSD, resumable range/window
+  transfer, stored-object CRC before matching erase ACK, retain runs until explicit deletion. A failed SD
+  may leave one run at risk on nRF, then every next start blocks.
+- **Coach surfaces:** secured offline controller-hosted PWA plus controller operations/last summary;
+  synchronized plots and current-vs-one-prior comparison, no lossless export in v1.
+- **Scope:** standalone timer/capture/download first. Installed timing gets only a generic isolated raw
+  input seam and does not gate v1. Keep the product in this repo through the static-bike R3 gate, then
+  reconsider extraction.
+- **Critical transfer finding:** current GATT can fall to one 12-byte IMU sample per notification at MTU
+  23 and has no resume. Do not freeze a speed target before the Waveshare+nRF baseline; correctness,
+  durable verification and resume are already mandatory.
+
+Canonical planning docs:
+[`track-launch-control-research.md`](track-launch-control-research.md),
+[`track-launch-ble-transfer.md`](track-launch-ble-transfer.md),
+[`track-launch-control-spec.md`](track-launch-control-spec.md), and
+[`track-launch-control-plan.md`](track-launch-control-plan.md).
+
+## 2026-07-20 (later) — Track Launch Control specification and phased plan APPROVED; implementation paused
+
+The owner approved `track-launch-control-spec.md` and `track-launch-control-plan.md` as the planning
+baseline after the requirements interview and adversarial design review. This approval freezes the plan;
+it does **not** authorise LC0 procurement or any implementation slice. Wait for a separate explicit go.
