@@ -190,8 +190,93 @@ static void test_compare_json() {
     TEST_ASSERT_TRUE(j.back() == '}');                                     // well-formed close
 }
 
+// --- Parity golden: the SHARED dataset the Python twin (code/tests/test_compare_parity.py) also
+// asserts. Same sweep, same expected histograms + values, so MeterCompare.h and sb20proxy.compare
+// can't silently drift — the drift that let these cadence/torque/grid views land here while the
+// Python twin lagged. A pure +10% scale error (b := a + a/10, exact) over a spread of power +
+// cadence: every populated band/cell reads +10.0%, so the asserts pin the BINNING + the ratio/bias
+// math independent of the float32-vs-float64 gap between the two implementations.
+static void feedGoldenSweep(MeterCompare& mc) {
+    // (a_watts, cadence) — keep identical to _SWEEP in test_compare_parity.py.
+    static const int sweep[][2] = {
+        {100, 90}, {150, 90}, {200, 90}, {250, 90}, {300, 90},
+        {100, 60}, {150, 60}, {200, 60}, {250, 60}, {300, 60},
+    };
+    uint32_t t = 0;
+    for (int rep = 0; rep < 4; ++rep)                 // -> 40 pairs
+        for (const auto& row : sweep) {
+            const int a = row[0], cad = row[1];
+            const int b = a + a / 10;                 // a * 1.1, exact (every a is a multiple of 10)
+            mc.onA(a, t, cad);
+            mc.onB(b, t + 10, cad);
+            t += 1000;
+        }
+}
+
+static void test_parity_golden() {
+    TEST_ASSERT_EQUAL_FLOAT(2.0f, kAgreeBandPct);     // the one shared agree threshold
+
+    MeterCompare mc;
+    feedGoldenSweep(mc);
+
+    const auto s = mc.stats();
+    TEST_ASSERT_TRUE(s.valid);
+    TEST_ASSERT_EQUAL(40, s.nPairs);
+    TEST_ASSERT_EQUAL(300, s.aWatts);                 // latest pair
+    TEST_ASSERT_EQUAL(330, s.bWatts);
+    TEST_ASSERT_EQUAL(30, s.deltaW);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 10.0f, s.meanBiasPct);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 1.10f, s.meanRatio);
+    TEST_ASSERT_FALSE(s.agrees());                    // +10% is well past the 2% band
+
+    const int powerBandN[MeterCompare::kBands] = {0, 0, 8, 8, 8, 8, 8, 0, 0, 0, 0, 0};
+    const auto pb = mc.bands();
+    for (int i = 0; i < MeterCompare::kBands; ++i) {
+        TEST_ASSERT_EQUAL(powerBandN[i], pb[i].nPairs);
+        if (pb[i].nPairs) {
+            TEST_ASSERT_FLOAT_WITHIN(1e-3f, 10.0f, pb[i].meanBiasPct);
+            TEST_ASSERT_FLOAT_WITHIN(1e-3f, 1.10f, pb[i].meanRatio);
+        }
+    }
+
+    const int torqueBandN[MeterCompare::kTorqueBands] = {0, 0, 4, 8, 8, 4, 8, 4, 0, 4, 0, 0};
+    const auto tb = mc.torqueBands();
+    for (int i = 0; i < MeterCompare::kTorqueBands; ++i) {
+        TEST_ASSERT_EQUAL(torqueBandN[i], tb[i].nPairs);
+        if (tb[i].nPairs) TEST_ASSERT_FLOAT_WITHIN(1e-3f, 10.0f, tb[i].meanBiasPct);
+    }
+
+    // cadence 60 -> c-bin 1, cadence 90 -> c-bin 3; power 100..300 W -> p-bins 2..6.
+    const int gridN[MeterCompare::kGridPBins][MeterCompare::kGridCBins] = {
+        {0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0},
+        {0, 4, 0, 4, 0, 0}, {0, 4, 0, 4, 0, 0}, {0, 4, 0, 4, 0, 0},
+        {0, 4, 0, 4, 0, 0}, {0, 4, 0, 4, 0, 0}, {0, 0, 0, 0, 0, 0},
+    };
+    const auto g = mc.grid2d();
+    for (int pi = 0; pi < MeterCompare::kGridPBins; ++pi)
+        for (int ci = 0; ci < MeterCompare::kGridCBins; ++ci) {
+            TEST_ASSERT_EQUAL(gridN[pi][ci], g.cell[pi][ci].nPairs);
+            if (g.cell[pi][ci].nPairs)
+                TEST_ASSERT_FLOAT_WITHIN(1e-3f, 10.0f, g.cell[pi][ci].meanBiasPct);
+        }
+
+    // Downsample: step = 40 / 12 = 3 -> 14 samples, oldest-first (identical index math both sides).
+    const int expectPairs[][2] = {
+        {100, 110}, {250, 275}, {150, 165}, {300, 330}, {200, 220},
+        {100, 110}, {250, 275}, {150, 165}, {300, 330}, {200, 220},
+        {100, 110}, {250, 275}, {150, 165}, {300, 330},
+    };
+    const auto sp = mc.samplePairs(12);
+    TEST_ASSERT_EQUAL(14, (int)sp.size());
+    for (int i = 0; i < 14; ++i) {
+        TEST_ASSERT_EQUAL(expectPairs[i][0], sp[i].a);
+        TEST_ASSERT_EQUAL(expectPairs[i][1], sp[i].b);
+    }
+}
+
 int main() {
     UNITY_BEGIN();
+    RUN_TEST(test_parity_golden);
     RUN_TEST(test_compare_json);
     RUN_TEST(test_torque_flat_for_constant_scale_error);
     RUN_TEST(test_torque_reveals_what_power_hides);

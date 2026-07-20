@@ -7,7 +7,8 @@ lives — not just "B reads +11%". Governs the compare surfaces: the pure core
 [`CompareService.h`](../../firmware/lib/proxy/CompareService.h), the head-unit's LVGL Compare screen
 (`buildCompare()` in [`firmware/src/ui/LvglUi.cpp`](../../firmware/src/ui/LvglUi.cpp)), the web app's
 deep-dive ([`web/index.html`](../../web/index.html), fed by `GET /compare`), and the desk twin
-[`code/scripts/compare_meters.py`](../scripts/compare_meters.py). Companion to
+[`code/src/sb20proxy/compare.py`](../src/sb20proxy/compare.py) (with its CLI/bleak seam
+[`code/scripts/compare_meters.py`](../scripts/compare_meters.py)). Companion to
 [`sb20-power-topology.md`](sb20-power-topology.md) (the ~11% SB20/Stages-vs-Assioma finding) and
 [`domain-primer.md`](domain-primer.md) §2 (torque/cadence). **No code is changed by this doc** — it's the
 plan the next slice implements.
@@ -208,8 +209,12 @@ Design points:
   `minWattsForRatio` spirit with a `minCadenceForTorque` (~5–10 rpm) so garbage samples don't smear the
   high-torque bins.
 
-Both twins move together (parity is a project invariant): mirror the same `torqueBands()` in
-`compare_meters.py`.
+Both twins move together (parity is a project invariant). **Landed (2026-07-20):** the Python twin is
+now `sb20proxy.compare` (`torque_bands()` / `grid2d()` / `sample_pairs()`), an importable, ruff-linted
+module — `compare_meters.py` is reduced to its CLI/bleak seam. A shared golden dataset in
+[`tests/test_compare_parity.py`](../tests/test_compare_parity.py) ↔ `test_metercompare/test_main.cpp`
+(`test_parity_golden`) asserts identical stats/band/grid/sample outputs on both sides, so the twins
+can't silently drift again.
 
 ---
 
