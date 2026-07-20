@@ -21,6 +21,42 @@ boxes here as slices ship.
 | **LVGL head-unit** (`src/ui/LvglUi.cpp`) | CYD, S3-Touch — the **ride hardware** | LVGL v9 widgets | native widget callbacks → `UiAction` |
 | **Canvas head-unit** (`lib/proxy/LcdUi.h` + `LcdCanvas.h`) | *(superseded env only — kept as the host-test reference)* | pure RGB565 rasteriser | `lcdHandleTap(x,y)` → `UiAction` |
 | **C3 OLED** (`lib/proxy/OledScreen.h`) | C3 + 0.42"/0.96" OLED | 4 text rows (U8g2) | *(status display; no touch)* |
+| **Full-screen games** (`WattyBird*.h` → `lcd.blit`) | CYD, S3-Touch (**takeover**) | direct RGB565 framebuffer — **NOT LVGL** (sanctioned exception, see §1a) | power/cadence + touch |
+
+### 1a. Rendering architecture — LVGL for UI screens, direct-blit ONLY for games
+
+**The rule (canonical):** on the ride hardware (CYD, S3-Touch) **every UI screen is an LVGL screen**
+(`src/ui/LvglUi.cpp`, built with `lv_obj_*`, themed from `LcdTheme.h`, driven by `LcdViews` + emitting
+`UiAction`). The `LcdCanvas` rasteriser (`lib/proxy/LcdUi.h`) is the **host-test reference** — it renders
+the same view-models headlessly for pixel/tap tests, but **does not ship as the device UI renderer.**
+
+**The one sanctioned exception — full-screen games.** A real-time arcade screen (Watty Birds) renders
+into an `LcdCanvas` and `lcd.blit()`s the whole frame, bypassing LVGL. This is deliberate and correct:
+LVGL's widget/retained-mode model is the wrong tool for a 30 fps scrolling game (confirmed by the
+CYD game-engine research — `calint/bam` uses a direct framebuffer too). A game is a self-contained
+takeover, not part of the UI nav, so it doesn't need LVGL theming/widgets.
+
+**Therefore, for anything that is a *screen of the UI* (data, controls, nav):**
+- ✅ build it in **`LvglUi.cpp`** (`buildX()` + an `LcdScreen::X` + nav wiring), themed + `UiAction`-driven;
+- ✅ add an **`LcdCanvas` render** as the *host-test reference* (optional but matches Ride/Setup/… ) and
+  a **`native-lvgl` test** that the LVGL screen renders + reacts;
+- ❌ do **not** ship an `LcdCanvas`→`lcd.blit` takeover as the on-device renderer for a UI screen.
+
+**Resolved (2026-07-16):** the **#10 Compare screen** is now a proper **LVGL screen** — the debt above is
+paid. `buildCompare()` in `LvglUi.cpp` builds the cards + verdict + an `lv_chart` bias-by-**torque**-band
+line, fed from a shared `CompareView` (`UiModel.h`, so it stays free of `LcdCanvas`/`LCD_PANEL`) that
+`CompareService::fillView` fills; it's reached via **More → Compare** (`LcdScreen::Compare`), host-tested
+by `native-lvgl` (`test_compare_screen_renders`), and the direct-blit takeover + its serial `CMP`/`CMPSHOT`
+frame-grab were removed. Serial `CMP` now just navigates to the LVGL screen; `SCREEN` captures it like any
+other. The chart's band count is **derived** from `MeterCompare::kTorqueBands`, so the head-unit and
+`GET /compare` can never silently show different torque domains.
+
+**Correction (2026-07-17):** this section previously claimed `MeterCompareRender.h` stayed as the pure
+"host-test reference (mirroring how `LcdUi.h` references the other screens)". That was **not true as
+written** — nothing but its own test ever called it, `lcdRenderAll` had no `Compare` case, and it had
+already drifted (it rendered *power* bands while the live screen moved to *torque*). It has been deleted.
+The pure, host-tested layer for Compare is `MeterCompare.h` (the math) + `CompareService.h` (the
+lifecycle); the LVGL screen is the only renderer, exactly as the rule above intends.
 
 ## 2. What is ALREADY shared (don't rebuild these)
 

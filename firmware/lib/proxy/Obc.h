@@ -86,6 +86,21 @@ inline size_t encodeButtonPress(uint8_t id, uint8_t state, uint8_t* out, size_t 
     return encodeButtonState(&a, 1, out, cap);
 }
 
+// Emit a stateless momentary click for one button id: PRESSED then RELEASED, each as its own
+// Button-State message via `emit(bytes, len)`. This is the click shape every button SOURCE
+// re-broadcasts (a stateless press any OBC app accepts) — SB20 shifter buttons and ANT+ Controls
+// alike — so it lives here once rather than being hand-unrolled per source. id 0 = nothing to fire.
+template <typename Emit>
+inline void emitObcClick(uint8_t id, Emit&& emit) {
+    if (id == 0) return;
+    uint8_t buf[OBC_MAX_MSG];
+    const uint8_t states[2] = {OBC_STATE_PRESSED, OBC_STATE_RELEASED};
+    for (uint8_t state : states) {
+        const size_t n = encodeButtonPress(id, state, buf, sizeof(buf));
+        if (n > 0) emit(buf, n);
+    }
+}
+
 // Encode a Device-Status message -> `[0x02, battery, connected]`. battery 0..100, or 0xFF if n/a.
 inline size_t encodeDeviceStatus(uint8_t batteryPct, bool connected, uint8_t* out, size_t cap) {
     if (out == nullptr || cap < 3) return 0;

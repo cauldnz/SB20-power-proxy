@@ -132,12 +132,12 @@ lv_obj_t* mkButton(lv_obj_t* parent, const char* txt, lv_color_t bg, lv_color_t 
 }
 
 // ---- screens --------------------------------------------------------------------------------
-lv_obj_t* g_scrObj[5] = {};   // indexed by (int)LcdScreen: Ride, Setup, More, Workout, Calibrate
+lv_obj_t* g_scrObj[6] = {};   // indexed by (int)LcdScreen: Ride, Setup, More, Workout, Calibrate, Compare
 lv_obj_t* g_calScr = nullptr;
 LcdScreen g_cur = LcdScreen::Ride;
 
 struct Nav { lv_obj_t *ride, *setup, *more; };
-Nav g_nav[5] = {};
+Nav g_nav[6] = {};
 
 struct {
     lv_obj_t *srcDot, *srcName, *outDot, *outName, *hero, *unitW, *cad, *bal;
@@ -162,7 +162,11 @@ struct {
     lv_obj_t* rowMeta[6];
     lv_obj_t *bScan, *bSave, *empty;
 } S{};
-struct { lv_obj_t* val[8]; lv_obj_t* ip; } M{};
+struct { lv_obj_t* val[10]; lv_obj_t* ip; } M{};
+struct {  // #10 Compare screen widgets
+    lv_obj_t *aName, *aW, *bName, *bW, *verdict, *foot, *chart;
+    lv_chart_series_t* ser;
+} CMP{};
 struct { lv_obj_t *sub, *btn; } CAL{};
 struct { lv_obj_t *cross_h, *cross_v, *box, *head, *sub, *test_h, *test_v; } TC{};
 
@@ -473,19 +477,51 @@ void buildSetup() {
 }
 
 // --- More -------------------------------------------------------------------
+// One data-driven table (row-descriptor type shared with the canvas twin in LcdUi.h) is the single
+// source of truth for the Settings rows: buildMore() lays them out, moreRowCb() dispatches taps, and
+// lvglUiUpdate() fills each value cell — all three iterate THIS array, so adding / removing /
+// reordering a row is a one-line edit here with no row-index literals anywhere else.
+const MoreRowDef kMoreRows[] = {
+    // label        nav (tap target)      action (tap emits)       value cell            CYD-only
+    {"Workout",   LcdScreen::Workout,   UiAction::None,          MoreVal::WorkoutLink, false},
+    {"Calibrate", LcdScreen::Calibrate, UiAction::None,          MoreVal::Link,        false},
+    {"Compare",   LcdScreen::Compare,   UiAction::None,          MoreVal::Link,        false},
+    {"Mode",      LcdScreen::More,      UiAction::None,          MoreVal::Mode,        false},
+    {"Identity",  LcdScreen::More,      UiAction::None,          MoreVal::Identity,    false},
+    {"Source",    LcdScreen::More,      UiAction::None,          MoreVal::Source,      false},
+    {"Trainer",   LcdScreen::More,      UiAction::None,          MoreVal::Trainer,     false},
+    {"Bright",    LcdScreen::More,      UiAction::SetBrightness, MoreVal::Brightness,  false},
+    {"Touch cal", LcdScreen::More,      UiAction::TouchCalStart, MoreVal::Link,        true },
+};
+constexpr int kMoreRowCount = (int)(sizeof(kMoreRows) / sizeof(kMoreRows[0]));
+static_assert(kMoreRowCount <= (int)(sizeof(M.val) / sizeof(M.val[0])),
+              "grow M.val[] to cover every More row");
+
+// A row is present in THIS build unless it is CYD-only and this isn't a CYD (resistive-touch) build.
+inline bool moreRowActive(const MoreRowDef& r) {
+#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
+    (void)r;
+    return true;   // resistive film -> the touch-cal row is exposed
+#else
+    return !r.cydOnly;   // capacitive (S3) needs no touch cal
+#endif
+}
+
 void moreRowCb(lv_event_t* e) {
-    int idx = (int)(intptr_t)lv_event_get_user_data(e);
-    if (idx == 0) navTo(LcdScreen::Workout);
-    else if (idx == 1) navTo(LcdScreen::Calibrate);
-    else if (idx == 6) {  // brightness cycles 25 -> 50 -> 75 -> 100
+    int i = (int)(intptr_t)lv_event_get_user_data(e);
+    if (i < 0 || i >= kMoreRowCount) return;
+    const MoreRowDef& r = kMoreRows[i];
+    if (r.action == UiAction::SetBrightness) {  // brightness cycles 25 -> 50 -> 75 -> 100
         UiAction a;
         a.type = UiAction::SetBrightness;
         a.index = g_brightness >= 100 ? 25 : g_brightness + 25;
         emitAction(a);
-    } else if (idx == 7) {  // Touch cal -> run the tap-the-crosshair ritual
+    } else if (r.action != UiAction::None) {  // e.g. Touch cal -> the tap-the-crosshair ritual
         UiAction a;
-        a.type = UiAction::TouchCalStart;
+        a.type = r.action;
         emitAction(a);
+    } else if (r.nav != LcdScreen::More) {
+        navTo(r.nav);
     }
 }
 
@@ -493,27 +529,27 @@ void buildMore() {
     lv_obj_t* s = g_scrObj[2] = mkScreen();
     lv_obj_t* h = mkLabel(s, &lv_inter_sb_20, C_FG(), "Settings");
     lv_obj_align(h, LV_ALIGN_TOP_LEFT, 10, 8);
-    static const char* rowName[8] = {"Workout", "Calibrate", "Mode", "Identity",
-                                     "Source",  "Trainer",   "Bright", "Touch cal"};
-#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
-    const int nRows = 8;   // resistive film -> expose the cal ritual in the UI
-#else
-    const int nRows = 7;   // capacitive (S3) needs no touch cal
-#endif
-    for (int i = 0; i < nRows; ++i) {
+    // `vis` (visible rows kept so far) drives the y position; the table index `i` keys M.val[] and
+    // the tap user-data — so a compiled-out CYD-only row leaves no gap and shifts no other row's id.
+    int vis = 0;
+    for (int i = 0; i < kMoreRowCount; ++i) {
+        const MoreRowDef& def = kMoreRows[i];
+        if (!moreRowActive(def)) continue;
         lv_obj_t* row = lv_button_create(s);
         lv_obj_remove_style_all(row);
         lv_obj_set_size(row, g_hor - 20, 27);
-        lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 36 + i * 29);
+        lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 36 + vis * 29);
         lv_obj_set_style_border_color(row, C_LINE(), 0);
         lv_obj_set_style_border_width(row, 1, 0);
         lv_obj_set_style_border_side(row, LV_BORDER_SIDE_BOTTOM, 0);
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_t* n = mkLabel(row, &lv_inter_16, C_FG(), rowName[i]);
+        lv_obj_t* n = mkLabel(row, &lv_inter_16, C_FG(), def.label);
         lv_obj_align(n, LV_ALIGN_LEFT_MID, 4, 0);
-        M.val[i] = mkLabel(row, &lv_inter_16, i == 6 ? C_ACCENT() : C_MUT(), "");
+        M.val[i] = mkLabel(row, &lv_inter_16,
+                           def.val == MoreVal::Brightness ? C_ACCENT() : C_MUT(), "");
         lv_obj_align(M.val[i], LV_ALIGN_RIGHT_MID, -4, 0);
         lv_obj_add_event_cb(row, moreRowCb, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+        ++vis;
     }
     M.ip = mkLabel(s, &lv_inter_12, C_MUT(), "");
     lv_obj_align(M.ip, LV_ALIGN_BOTTOM_MID, 0, -34);
@@ -536,6 +572,50 @@ void buildCalibrate() {
     lv_obj_set_size(CAL.btn, g_hor - 20, 40);
     lv_obj_align(CAL.btn, LV_ALIGN_BOTTOM_MID, 0, -40);
     mkNav(s, 4);
+}
+
+// --- Compare (#10 live A/B meter agreement) ----------------------------------
+void buildCompare() {
+    lv_obj_t* s = g_scrObj[5] = mkScreen();
+    lv_obj_t* h = mkLabel(s, &lv_inter_sb_20, C_FG(), "Compare");
+    lv_obj_align(h, LV_ALIGN_TOP_LEFT, 10, 8);
+    const int cw = (g_hor - 26) / 2;
+    lv_obj_t* ca = mkCard(s);
+    lv_obj_set_size(ca, cw, 58);
+    lv_obj_align(ca, LV_ALIGN_TOP_LEFT, 8, 36);
+    CMP.aName = mkLabel(ca, &lv_inter_12, C_ACCENT(), "Meter A");
+    lv_obj_align(CMP.aName, LV_ALIGN_TOP_LEFT, 0, -4);
+    CMP.aW = mkLabel(ca, &lv_inter_sb_28, C_FG(), "0");
+    lv_obj_align(CMP.aW, LV_ALIGN_BOTTOM_LEFT, 0, 4);
+    lv_obj_t* cb = mkCard(s);
+    lv_obj_set_size(cb, cw, 58);
+    lv_obj_align(cb, LV_ALIGN_TOP_RIGHT, -8, 36);
+    CMP.bName = mkLabel(cb, &lv_inter_12, C_MUT(), "Meter B");
+    lv_obj_align(CMP.bName, LV_ALIGN_TOP_LEFT, 0, -4);
+    CMP.bW = mkLabel(cb, &lv_inter_sb_28, C_FG(), "0");
+    lv_obj_align(CMP.bW, LV_ALIGN_BOTTOM_LEFT, 0, 4);
+    CMP.verdict = mkLabel(s, &lv_inter_16, C_MUT(), "waiting for both meters...");
+    lv_obj_align(CMP.verdict, LV_ALIGN_TOP_MID, 0, 102);
+    lv_obj_t* cl = mkLabel(s, &lv_inter_12, C_MUT(), "bias % by torque (Nm)");
+    lv_obj_align(cl, LV_ALIGN_TOP_LEFT, 10, 126);
+    CMP.chart = lv_chart_create(s);
+    lv_obj_remove_style_all(CMP.chart);
+    lv_obj_set_style_bg_color(CMP.chart, C_CARD(), 0);
+    lv_obj_set_style_bg_opa(CMP.chart, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(CMP.chart, 8, 0);
+    lv_obj_set_size(CMP.chart, g_hor - 20, 92);
+    lv_obj_align(CMP.chart, LV_ALIGN_TOP_MID, 0, 142);
+    lv_chart_set_type(CMP.chart, LV_CHART_TYPE_LINE);   // bias% per band: flat = offset, sloped = torque/power-dependent
+    lv_chart_set_point_count(CMP.chart, CompareView::NBANDS);
+    lv_chart_set_range(CMP.chart, LV_CHART_AXIS_PRIMARY_Y, -20, 20);
+    lv_chart_set_div_line_count(CMP.chart, 3, 0);
+    lv_obj_set_style_line_width(CMP.chart, 2, LV_PART_ITEMS);   // else remove_style_all leaves a 0-width (invisible) line
+    lv_obj_set_style_size(CMP.chart, 3, 3, LV_PART_INDICATOR);  // small point markers per band
+    lv_obj_set_style_line_color(CMP.chart, C_LINE(), LV_PART_MAIN);  // faint grid/div lines
+    CMP.ser = lv_chart_add_series(CMP.chart, C_BAD(), LV_CHART_AXIS_PRIMARY_Y);
+    CMP.foot = mkLabel(s, &lv_inter_12, C_MUT(), "");
+    lv_obj_align(CMP.foot, LV_ALIGN_BOTTOM_MID, 0, -34);
+    mkNav(s, 5);
 }
 
 // --- WiFi-onboarding (captive portal) screen -------------------------------------
@@ -624,7 +704,7 @@ void buildTouchCal() {
 void navTo(LcdScreen s) {
     g_cur = s;
     int idx = (int)s;
-    if (idx < 0 || idx > 4 || !g_scrObj[idx]) return;
+    if (idx < 0 || idx > 5 || !g_scrObj[idx]) return;
     lv_screen_load(g_scrObj[idx]);
     tintNav(idx, s);
 }
@@ -659,6 +739,7 @@ void lvglUiInit(const LvglDriverHooks& hooks, int hor, int ver) {
     buildSetup();
     buildMore();
     buildCalibrate();
+    buildCompare();
     buildTouchCal();
     buildProvision();
     navTo(LcdScreen::Ride);
@@ -797,19 +878,67 @@ void lvglUiUpdate(const LcdViews& v) {
         }
     }
 
-    // More
-    lv_label_set_text(M.val[0], v.wk.loaded ? "loaded  >" : ">");
-    lv_label_set_text(M.val[1], ">");
-    lv_label_set_text(M.val[2], v.more.mode.c_str());
-    lv_label_set_text(M.val[3], v.more.identity.c_str());
-    lv_label_set_text(M.val[4], v.more.source.c_str());
-    lv_label_set_text(M.val[5], v.more.trainer.empty() ? "not set" : v.more.trainer.c_str());
-    snprintf(buf, sizeof(buf), "%d%%", (int)v.more.brightness);
-    lv_label_set_text(M.val[6], buf);
-#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
-    if (M.val[7]) lv_label_set_text(M.val[7], ">");
-#endif
+    // More — fill each row's value cell from the same table that laid out + dispatches the rows
+    for (int i = 0; i < kMoreRowCount; ++i) {
+        if (!M.val[i]) continue;  // a CYD-only row this build compiled out
+        switch (kMoreRows[i].val) {
+            case MoreVal::Link:        lv_label_set_text(M.val[i], ">"); break;
+            case MoreVal::WorkoutLink: lv_label_set_text(M.val[i], v.wk.loaded ? "loaded  >" : ">"); break;
+            case MoreVal::Mode:        lv_label_set_text(M.val[i], v.more.mode.c_str()); break;
+            case MoreVal::Identity:    lv_label_set_text(M.val[i], v.more.identity.c_str()); break;
+            case MoreVal::Source:      lv_label_set_text(M.val[i], v.more.source.c_str()); break;
+            case MoreVal::Trainer:
+                lv_label_set_text(M.val[i], v.more.trainer.empty() ? "not set" : v.more.trainer.c_str());
+                break;
+            case MoreVal::Brightness:
+                snprintf(buf, sizeof(buf), "%d%%", (int)v.more.brightness);
+                lv_label_set_text(M.val[i], buf);
+                break;
+            case MoreVal::Version:
+                snprintf(buf, sizeof(buf), "v%s", v.more.version.c_str());
+                lv_label_set_text(M.val[i], buf);
+                break;
+        }
+    }
     lv_label_set_text(M.ip, v.more.ip.empty() ? "no wifi" : v.more.ip.c_str());
+
+    // Compare (#10) — only while it's the live screen. This runs at 5 Hz on every screen, and main.cpp
+    // skips the (rolling-window-walking) projection off-screen anyway, so the data would be stale.
+    if (g_cur == LcdScreen::Compare) {
+        const CompareView& cmp = v.compare;
+        if (cmp.valid) {
+            lv_label_set_text(CMP.aName, cmp.aName.c_str());
+            lv_label_set_text(CMP.bName, cmp.bName.c_str());
+            snprintf(buf, sizeof(buf), "%d", (int)cmp.aWatts);
+            lv_label_set_text(CMP.aW, buf);
+            snprintf(buf, sizeof(buf), "%d", (int)cmp.bWatts);
+            lv_label_set_text(CMP.bW, buf);
+            const bool agree = cmp.biasPct > -kAgreeBandPct && cmp.biasPct < kAgreeBandPct;
+            if (cmp.simulated) {
+                // B is A x ratio by construction, so a verdict here would just restate the knob.
+                snprintf(buf, sizeof(buf), "SIMULATED B  x%.3f", (double)cmp.ratio);
+            } else if (agree) {
+                snprintf(buf, sizeof(buf), "AGREE  x%.3f", (double)cmp.ratio);
+            } else {
+                snprintf(buf, sizeof(buf), "%s %+.1f%%  x%.3f",
+                         cmp.bName.c_str(), (double)cmp.biasPct, (double)cmp.ratio);
+            }
+            lv_label_set_text(CMP.verdict, buf);
+            lv_obj_set_style_text_color(
+                CMP.verdict, cmp.simulated ? C_MUT() : (agree ? C_OK() : C_BAD()), 0);
+            for (int i = 0; i < CompareView::NBANDS; ++i)
+                lv_chart_set_value_by_id(
+                    CMP.chart, CMP.ser, (uint32_t)i,
+                    cmp.bands[i].nPairs > 0 ? (int32_t)cmp.bands[i].meanBiasPct : LV_CHART_POINT_NONE);
+            lv_chart_refresh(CMP.chart);
+            snprintf(buf, sizeof(buf), cmp.simulated ? "n=%d pairs (simulated B)" : "n=%d pairs",
+                     (int)cmp.nPairs);
+            lv_label_set_text(CMP.foot, buf);
+        } else {
+            lv_label_set_text(CMP.verdict, "waiting for both meters...");
+            lv_label_set_text(CMP.foot, "");
+        }
+    }
 }
 
 void lvglUiCalShow(int step, int done, int testX, int testY) {

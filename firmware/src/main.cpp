@@ -53,6 +53,7 @@
 #endif
 #if USE_LCD
   #include "LcdUi.h"              // pure head-unit UI (screens + tap routing; LCD_W x LCD_H)
+  #include "CompareService.h"     // #10 A/B compare seam: feed -> compare -> view + /compare JSON
   #if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
     #include "disp/CydDisplay.h"  // ILI9341/ST7789 + XPT2046 seam (ESP32-2432S028R "CYD")
   #else
@@ -384,6 +385,28 @@ static void touchCalTick() {
 #endif  // LCD_DRIVER_CYD
 
 // Fill the view structs from live proxy/meter/workout/wifi state. Called under lock.
+// ---- #10 A/B meter compare — the CompareService seam (lib/proxy/CompareService.h) --------------
+// main.cpp only picks the ADAPTERS; the service owns the lifecycle (feed -> rolling compare -> view
+// projection -> /compare JSON). Meter A = the live source, falling back to a synthetic rider so the
+// torque bands fill on a bare bench.
+//
+// Meter B IS FABRICATED (B := A x g_cmpRatioMilli/1000) and flagged `simulated` all the way to the
+// surfaces, so they report a stand-in rather than a verdict. Feeding it the REAL second central is
+// NOT a one-line swap — refMeter today (a) only connects while g_calibrating, (b) has its address
+// cleared when the wizard finishes, (c) hands its reading to a single-occupancy callback the wizard
+// owns, and (d) exposes no lastReading() for a pull Source to sample. Un-gate its lifecycle, make
+// the callback multicast (or cache the last reading), then `CompareService(a, refMeterSource())`.
+static int g_cmpRatioMilli = 1110;           // bench: B reads this/1000 of A (1.110 = real SB20 vs Assioma)
+static volatile bool g_cmpShowReq = false;   // serial CMP -> jump to the Compare screen (from the LCD task)
+static CompareService g_cmpSvc = []() {
+    CompareService::Source ramp = rampSource();
+    CompareService::Source a = [ramp](uint32_t nowMs) {
+        const PowerReading r = proxy.lastSource();
+        return r.power_w > 0 ? r : ramp(nowMs);
+    };
+    return CompareService(a, scaledSource(a, &g_cmpRatioMilli));
+}();
+
 static void buildLcdViews(LcdViews& v) {
     RideView& r = v.ride;
     r.outName = g_lcdIdentity;
@@ -416,6 +439,16 @@ static void buildLcdViews(LcdViews& v) {
         v.prov.pin = wifi.setupPin();
         v.prov.url = Config::SETUP_PORTAL_URL;
     }
+#endif
+
+    // #10: the Compare screen's view-model (bias by torque band). Projecting it walks the whole
+    // rolling window, and this runs at 5 Hz on EVERY screen — so only pay for it when Compare is
+    // actually up. tick() keeps accumulating regardless, and /compare renders straight from the
+    // service, so nothing is lost by skipping the projection.
+#if defined(USE_LVGL) && USE_LVGL
+    if (lvglUiCurrentScreen() == LcdScreen::Compare) g_cmpSvc.fillView(v.compare);
+#else
+    if (g_lcdUi.screen == LcdScreen::Compare) g_cmpSvc.fillView(v.compare);
 #endif
 
     // Workout (from the shared runtime)
@@ -614,6 +647,7 @@ static void lcdTask(void*) {
         if (now - lastData >= 200 && !wasCal) {
             lastData = now;
             lcdLock();
+            g_cmpSvc.tick(now);     // #10: accumulate one A/B sample (self-throttling)
             buildLcdViews(views);
             lvglUiUpdate(views);
             g_lcdUi.screen = lvglUiCurrentScreen();  // keep STATE/serial in sync
@@ -630,6 +664,10 @@ static void lcdTask(void*) {
         if (g_lvglDumpReq) {  // serial SCREEN: dump from the LVGL thread (lv is not thread-safe)
             g_lvglDumpReq = false;
             lvglUiScreenDumpBegin();
+        }
+        if (g_cmpShowReq) {   // serial CMP: navigate to the Compare screen (from the LVGL thread)
+            g_cmpShowReq = false;
+            lvglUiShowScreen(LcdScreen::Compare);
         }
         lvglUiTick();
         {   // liveness heartbeat: proves this task is pumping (S3 stall diagnosis, 2026-07-03)
@@ -828,6 +866,17 @@ static void lcdSerialConsole() {
                           proxy.lastOutput().cadence_rpm, !g_wk.workout.segments.empty(),
                           g_wk.running, g_wk.state(millis()).targetW, lcd.touchAlive());
             lcdUnlock();
+        }
+#if defined(USE_LVGL) && USE_LVGL
+        else if (cmd == "CMP") {                // #10: jump to the Compare screen (then SCREEN grabs it)
+            g_cmpShowReq = true;                // (navigation is LVGL-only; the ratio knob below isn't)
+        }
+#endif
+        // Guarded with the SERVICE, not the renderer: g_cmpSvc exists on every USE_LCD build, so an
+        // LVGL-less one used to ship the knob's variable with no way to turn it.
+        else if (cmd.rfind("CMPRATIO", 0) == 0) {  // simulated meter-B = A * ratio/1000 (demo knob)
+            g_cmpRatioMilli = (cmd.size() > 8) ? atoi(cmd.substr(8).c_str()) : 1000;
+            Serial.printf("[cmp] sim B ratio = %d/1000\n", g_cmpRatioMilli);
         }
     }
 }
@@ -1041,6 +1090,16 @@ void setup() {
         perf.reset();
         g_perfWindowStartMs = millis();
     });
+#if USE_LCD
+    // GET /compare -> the #10 deep-dive payload (summary + torque bands + power×cadence grid + pairs)
+    // the web Compare view renders. Locked: the LCD task ticks g_cmpSvc on its data cycle.
+    wifi.setCompare([]() {
+        lcdLock();
+        std::string j = g_cmpSvc.json();
+        lcdUnlock();
+        return j;
+    });
+#endif
     // Source-setup UI (GET/POST /setup): pick the meter / surviving crank over WiFi, persist to NVS,
     // reboot to apply. Decoupled via hooks — the candidate list + rescan come from the live central;
     // a mock build has no sources to offer. (Trainer-field preservation for old form bodies lives

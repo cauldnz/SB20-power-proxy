@@ -2104,6 +2104,31 @@ void test_lcd_tap_ride_title_toggles_details() {
     TEST_ASSERT_FALSE(st.rideDetails);
 }
 
+// Every More/Settings row dispatches to the right place through the shared lcdMoreRows() table
+// (row order: Workout, Calibrate, Mode, Identity, Source, Trainer, Bright, Firmware). Covers the
+// twin's data-driven render+tap so a row insert/reorder can't silently break the mapping.
+void test_lcd_tap_more_rows_dispatch() {
+    using namespace lcdlay;
+    LcdViews v;
+    // nav rows: tapping loads the target screen
+    { LcdUiState st; st.screen = LcdScreen::More;
+      lcdHandleTap(st, v, LCD_W / 2, MORE_ROW0 + 0 * MORE_ROW_H + 4);
+      TEST_ASSERT_EQUAL_INT((int)LcdScreen::Workout, (int)st.screen); }
+    { LcdUiState st; st.screen = LcdScreen::More;
+      lcdHandleTap(st, v, LCD_W / 2, MORE_ROW0 + 1 * MORE_ROW_H + 4);
+      TEST_ASSERT_EQUAL_INT((int)LcdScreen::Calibrate, (int)st.screen); }
+    // brightness row (index 6): emits SetBrightness, stays on More
+    { LcdUiState st; st.screen = LcdScreen::More;
+      UiAction a = lcdHandleTap(st, v, LCD_W / 2, MORE_ROW0 + 6 * MORE_ROW_H + 4);
+      TEST_ASSERT_EQUAL_INT((int)LcdScreen::More, (int)st.screen);
+      TEST_ASSERT_EQUAL_INT((int)UiAction::SetBrightness, (int)a.type); }
+    // plain value row (Mode, index 2): navigates nowhere, emits nothing
+    { LcdUiState st; st.screen = LcdScreen::More;
+      UiAction a = lcdHandleTap(st, v, LCD_W / 2, MORE_ROW0 + 2 * MORE_ROW_H + 4);
+      TEST_ASSERT_EQUAL_INT((int)LcdScreen::More, (int)st.screen);
+      TEST_ASSERT_EQUAL_INT((int)UiAction::None, (int)a.type); }
+}
+
 void test_lcd_tap_workout_controls_and_presets() {
     LcdViews v;
     LcdUiState st; st.screen = LcdScreen::Workout;
@@ -2835,6 +2860,7 @@ int runUnityTests() {
     RUN_TEST(test_touchcal_fit_rejects_clustered_taps);
     RUN_TEST(test_touchcal_screen_renders_all_states);
     RUN_TEST(test_lcd_tap_nav_switches_screen);
+    RUN_TEST(test_lcd_tap_more_rows_dispatch);
     RUN_TEST(test_lcd_tap_ride_title_toggles_details);
     RUN_TEST(test_lcd_tap_workout_controls_and_presets);
     RUN_TEST(test_workout_runtime_unload_returns_to_picker);

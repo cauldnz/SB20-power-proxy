@@ -47,6 +47,10 @@ public:
         perfReset_ = reset;
     }
 
+    // Wire GET /compare (#10 A/B deep-dive JSON: summary + torque bands + power×cadence grid + pairs).
+    using CompareProvider = std::function<std::string()>;
+    void setCompare(CompareProvider p) { compareProvider_ = p; }
+
     // Wire the source-setup UI (GET /setup picker, POST /setup/save, GET /setup/scan). Optional;
     // call after begin(). Kept decoupled from the BLE layer via hooks: `cfg` returns the stored
     // RuntimeConfig, `sources` the discovered candidates, `save` persists a new config (WifiLink
@@ -154,6 +158,7 @@ private:
     DNSServer* dns_ = nullptr;
     StatusProvider provider_;
     PerfProvider perfProvider_;
+    CompareProvider compareProvider_;
     PerfResetHook perfReset_;
     ConfigProvider configProvider_;
     SourcesProvider sourcesProvider_;
