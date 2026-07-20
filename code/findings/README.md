@@ -46,6 +46,7 @@ later that worked before, the answer is usually in here.
 
 ## Meters & calibration
 - **[meter-to-meter-proxy.md](meter-to-meter-proxy.md)** — the corrector mode: read an XCadey, rebroadcast it on the Assioma scale under our own identity.
+- **[meter-compare-visualization.md](meter-compare-visualization.md)** — *(PLANNED)* how to visualize live/offline A/B meter-error, emphasising the **torque domain** (power-only bins hide torque error). Bland–Altman + residual-vs-torque + 2-D power×cadence heatmap on the desk; a per-torque-band bar on the head-unit; the `MeterCompare.h` cadence-capture change that enables it. → governs `firmware/lib/proxy/MeterCompare.h` / `CompareService.h`, the LVGL Compare screen (`firmware/src/ui/LvglUi.cpp`), the web deep-dive (`web/index.html` via `GET /compare`), and the Python twin `src/sb20proxy/compare.py` + its CLI seam `scripts/compare_meters.py`.
 - **[supported-meters.md](supported-meters.md)** — which power meters work / what we screen testers for.
 
 ## Performance & coexistence

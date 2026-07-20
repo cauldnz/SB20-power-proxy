@@ -41,6 +41,30 @@
         {"name": "has_curve", "type": "bool", "doc": "a fitted curve is active"},
         {"name": "curve", "type": "array", "doc": "[[power_w, factor], ...] breakpoints"}
       ]
+    },
+    {
+      "path": "/compare",
+      "method": "GET",
+      "serializer": "renderCompareJson",
+      "doc": "The #10 A/B meter-compare deep-dive the web Compare card renders: summary + per-torque-band bias + a power×cadence bias grid + downsampled pairs for Bland-Altman. `nested` are the grid's inner keys (checked but not top-level fields); `deltaW` is emitted for head-unit parity and not read by the SPA (js=false).",
+      "wrapper": null,
+      "nested": ["pW", "cLo", "cW", "P", "C", "bias"],
+      "fields": [
+        {"name": "valid", "type": "bool", "doc": "at least one usable pair yet"},
+        {"name": "simulated", "type": "bool", "doc": "meter B is fabricated from A (bench adapter) — the numbers restate the ratio, not a measurement"},
+        {"name": "aName", "type": "string", "doc": "meter A (reference) label"},
+        {"name": "bName", "type": "string", "doc": "meter B label"},
+        {"name": "aW", "type": "int", "doc": "latest paired A watts"},
+        {"name": "bW", "type": "int", "doc": "latest paired B watts"},
+        {"name": "deltaW", "type": "int", "js": false, "doc": "b-a for the latest pair (head-unit view-model; the SPA doesn't render it)"},
+        {"name": "ratio", "type": "number", "doc": "rolling mean B/A"},
+        {"name": "biasPct", "type": "number", "doc": "rolling mean (b-a)/a %"},
+        {"name": "nPairs", "type": "int", "doc": "pairs in the rolling window"},
+        {"name": "tqBandNm", "type": "int", "doc": "torque-band width (N·m)"},
+        {"name": "tqBias", "type": "array", "doc": "per-torque-band bias %, null = empty band"},
+        {"name": "grid", "type": "object", "doc": "power×cadence bias heatmap; inner keys pW/cLo/cW (axes), P/C (bin counts), bias[][] (null = empty cell)"},
+        {"name": "pairs", "type": "array", "doc": "downsampled [a,b] pairs for the Bland-Altman scatter"}
+      ]
     }
   ]
 }

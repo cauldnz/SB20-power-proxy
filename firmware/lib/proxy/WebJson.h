@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "Correction.h"
+#include "MeterCompare.h"  // #10 A/B compare: stats + torque bands + power×cadence grid + pairs
 #include "RuntimeConfig.h"
 #include "SourceCandidate.h"
 #include "Status.h"  // jsonEscape
@@ -56,6 +57,63 @@ inline std::string renderCurveJson(const CorrectionCurve& curve) {
     for (size_t i = 0; i < curve.points.size(); ++i) {
         if (i) j += ",";
         std::snprintf(buf, sizeof(buf), "[%.1f,%.4f]", curve.points[i].power_w, curve.points[i].factor);
+        j += buf;
+    }
+    j += "]}";
+    return j;
+}
+
+// GET /compare -> the #10 A/B deep-dive payload the web Compare view renders: summary + per-torque-band
+// bias + the power×cadence bias grid (the heatmap) + a downsampled pair list (for Bland-Altman). Empty
+// bands/cells are `null`. Compact arrays keep it ~2-3 KB. Host-tested.
+//
+// `simulated` = meter B is fabricated from A (the bench adapter), so every number below restates that
+// fabrication rather than measuring anything. It is in the payload because only the CLIENT can stop
+// itself drawing a confident conclusion from invented data.
+inline std::string renderCompareJson(const MeterCompare& mc, const std::string& aName,
+                                     const std::string& bName, bool simulated = false) {
+    const MeterCompareStats s = mc.stats();
+    char buf[80];
+    std::string j = "{\"valid\":" + std::string(s.valid ? "true" : "false");
+    j += ",\"simulated\":" + std::string(simulated ? "true" : "false");
+    j += ",\"aName\":\"" + jsonEscape(aName) + "\",\"bName\":\"" + jsonEscape(bName) + "\"";
+    std::snprintf(buf, sizeof(buf),
+                  ",\"aW\":%d,\"bW\":%d,\"deltaW\":%d,\"ratio\":%.4f,\"biasPct\":%.2f,\"nPairs\":%d",
+                  s.aWatts, s.bWatts, s.deltaW, (double)s.meanRatio, (double)s.meanBiasPct, s.nPairs);
+    j += buf;
+    // bias by torque band
+    j += ",\"tqBandNm\":" + std::to_string(MeterCompare::kTorqueBandNm) + ",\"tqBias\":[";
+    const std::vector<MeterBand> tb = mc.torqueBands();
+    for (size_t i = 0; i < tb.size(); ++i) {
+        if (i) j += ",";
+        if (tb[i].nPairs > 0) { std::snprintf(buf, sizeof(buf), "%.2f", (double)tb[i].meanBiasPct); j += buf; }
+        else j += "null";
+    }
+    j += "]";
+    // power×cadence bias grid (the heatmap)
+    const MeterCompare::Grid2D g = mc.grid2d();
+    j += ",\"grid\":{\"pW\":" + std::to_string(g.pBinW) + ",\"cLo\":" + std::to_string(g.cBinLo) +
+         ",\"cW\":" + std::to_string(g.cBinW) + ",\"P\":" + std::to_string(MeterCompare::kGridPBins) +
+         ",\"C\":" + std::to_string(MeterCompare::kGridCBins) + ",\"bias\":[";
+    for (int pi = 0; pi < MeterCompare::kGridPBins; ++pi) {
+        if (pi) j += ",";
+        j += "[";
+        for (int ci = 0; ci < MeterCompare::kGridCBins; ++ci) {
+            if (ci) j += ",";
+            if (g.cell[pi][ci].nPairs > 0) {
+                std::snprintf(buf, sizeof(buf), "%.2f", (double)g.cell[pi][ci].meanBiasPct);
+                j += buf;
+            } else j += "null";
+        }
+        j += "]";
+    }
+    j += "]}";
+    // downsampled (a,b) pairs for the Bland-Altman scatter
+    j += ",\"pairs\":[";
+    const std::vector<MeterCompare::SamplePair> sp = mc.samplePairs(120);
+    for (size_t i = 0; i < sp.size(); ++i) {
+        if (i) j += ",";
+        std::snprintf(buf, sizeof(buf), "[%d,%d]", sp[i].a, sp[i].b);
         j += buf;
     }
     j += "]}";

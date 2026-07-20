@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 #include <Arduino.h>   // the host shim (test/lvgl_shim) — millis()/Serial/heap_caps/psramFound
@@ -51,6 +53,24 @@ static void renderFull() {
     pump(30);
 }
 static uint16_t u16(uint32_t rgb) { return lv_color_to_u16(lv_color_hex(rgb)); }
+
+// If $LVGL_DUMP is set, write the current framebuffer to that path as a PPM (a pixel-accurate capture
+// of the REAL LvglUi.cpp render — the same code the S3/CYD run). No-op in CI (env unset).
+static void dumpFbIfRequested() {
+    const char* path = getenv("LVGL_DUMP");
+    if (!path) return;
+    FILE* f = fopen(path, "wb");
+    if (!f) return;
+    fprintf(f, "P6\n%d %d\n255\n", W, H);
+    for (uint16_t v : g_fb) {
+        uint8_t r = (uint8_t)(((v >> 11) & 0x1F) << 3), g = (uint8_t)(((v >> 5) & 0x3F) << 2),
+                b = (uint8_t)((v & 0x1F) << 3);
+        r |= r >> 5; g |= g >> 6; b |= b >> 5;
+        uint8_t px[3] = {r, g, b};
+        fwrite(px, 1, 3, f);
+    }
+    fclose(f);
+}
 
 static bool g_inited = false;
 void setUp() {
@@ -111,11 +131,86 @@ void test_update_changes_render() {
     TEST_ASSERT_FALSE(std::equal(first.begin(), first.end(), g_fb.begin()));
 }
 
+// 4) The #10 Compare screen renders A/B agreement content from a CompareView (the LVGL path, not the
+//    LcdCanvas takeover) — this is the coverage the standardization requires.
+void test_compare_screen_renders() {
+    lvglUiShowScreen(LcdScreen::Compare);
+    pump(5);
+    TEST_ASSERT_EQUAL(int(LcdScreen::Compare), int(lvglUiCurrentScreen()));
+    LcdViews v;
+    v.compare.valid = true;
+    v.compare.aName = "Assioma";
+    v.compare.bName = "SB20";
+    v.compare.aWatts = 250;
+    v.compare.bWatts = 278;
+    v.compare.deltaW = 28;
+    v.compare.ratio = 1.11f;
+    v.compare.biasPct = 11.0f;
+    v.compare.nPairs = 80;
+    // synthetic per-band shape: a rising bias (a torque/power-dependent error — the case the chart
+    // exists to reveal). Whether the real SB20's +11% is flat or ramps is the open question (viz plan).
+    for (int i = 0; i < CompareView::NBANDS; ++i) {
+        v.compare.bands[i].loW = i * MeterCompare::kTorqueBandNm;
+        v.compare.bands[i].nPairs = 4;
+        v.compare.bands[i].meanBiasPct = 2.0f + i * 1.4f;
+    }
+    lvglUiUpdate(v);
+    renderFull();
+    dumpFbIfRequested();   // $LVGL_DUMP -> pixel-accurate capture of the real LVGL Compare screen
+    const uint16_t bg = u16(0x0f1320);
+    size_t nonBg = std::count_if(g_fb.begin(), g_fb.end(),
+                                 [&](uint16_t p) { return p != 0 && p != bg; });
+    TEST_ASSERT_GREATER_THAN(2000, (int)nonBg);
+}
+
+// Tap the More row shown at visible position `visRow` (0-based), clearing any queued action first.
+// y mirrors buildMore()'s layout (rows at 36 + i*29, height 27) — the centre is 36 + i*29 + 13.
+static void tapMoreRow(int visRow) {
+    lvglUiShowScreen(LcdScreen::More);
+    pump(6);
+    UiAction drain;
+    while (lvglUiPollAction(drain)) {}
+    g_tx = W / 2;
+    g_ty = 36 + visRow * 29 + 13;
+    pump(4);
+    g_tx = -1;   // release -> LVGL fires the CLICKED event on the row
+    pump(8);
+}
+
+// 5) Every More/Settings row dispatches to the right place: the nav rows (Workout / Calibrate /
+//    Compare) load their target screen; the brightness row emits SetBrightness without leaving More;
+//    a plain value row does neither. This is the per-row coverage the data-driven More table needs —
+//    a future row insert/reorder that breaks the row->target mapping fails HERE, not on the bike.
+//    (Touch cal is CYD-only and absent on this build, so rows 0..7 == table indices 0..7.)
+void test_more_rows_dispatch() {
+    tapMoreRow(0);
+    TEST_ASSERT_EQUAL(int(LcdScreen::Workout), int(lvglUiCurrentScreen()));
+    tapMoreRow(1);
+    TEST_ASSERT_EQUAL(int(LcdScreen::Calibrate), int(lvglUiCurrentScreen()));
+    tapMoreRow(2);
+    TEST_ASSERT_EQUAL(int(LcdScreen::Compare), int(lvglUiCurrentScreen()));
+
+    // brightness row (index 7): emits SetBrightness, stays on More
+    tapMoreRow(7);
+    TEST_ASSERT_EQUAL(int(LcdScreen::More), int(lvglUiCurrentScreen()));
+    UiAction a;
+    TEST_ASSERT_TRUE(lvglUiPollAction(a));
+    TEST_ASSERT_EQUAL(int(UiAction::SetBrightness), int(a.type));
+
+    // plain value row (Mode, index 3): navigates nowhere, emits nothing
+    tapMoreRow(3);
+    TEST_ASSERT_EQUAL(int(LcdScreen::More), int(lvglUiCurrentScreen()));
+    UiAction none;
+    TEST_ASSERT_FALSE(lvglUiPollAction(none));
+}
+
 int runUnityTests() {
     UNITY_BEGIN();
     RUN_TEST(test_ride_screen_renders_content);
     RUN_TEST(test_nav_tap_switches_screen);
     RUN_TEST(test_update_changes_render);
+    RUN_TEST(test_compare_screen_renders);
+    RUN_TEST(test_more_rows_dispatch);
     return UNITY_END();
 }
 

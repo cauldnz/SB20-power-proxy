@@ -413,6 +413,10 @@ void WifiLink::startStationServer_() {
         std::string j = perfProvider_ ? perfProvider_() : std::string("{}");
         server_->send(200, "application/json", j.c_str());
     });
+    server_->on("/compare", HTTP_GET, [this]() {   // #10 A/B deep-dive JSON for the web Compare view
+        std::string j = compareProvider_ ? compareProvider_() : std::string("{\"valid\":false}");
+        server_->send(200, "application/json", j.c_str());
+    });
     server_->on("/stats/reset", HTTP_GET, [this]() {  // zero the window (perf_soak calls this)
         if (perfReset_) perfReset_();
         server_->send(200, "text/plain", "perf window reset\n");

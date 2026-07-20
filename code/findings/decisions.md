@@ -3160,3 +3160,24 @@ behaviour unchanged):
   — but COM13's board is ambiguous (three ESP32s share `303A:1001`; the C3-0.96 there has dead WiFi + no
   host serial). Deferred as a separate bench step; the serial-injection proof already validates the
   source→page→air plumbing end to end.
+
+## 2026-07-15 — FULL real-BLE-source → nRF → ANT+ loop proven on the bench (both codebases)
+Closed the deferred step above: a real BLE CPS **source** drives the whole nRF pipeline, decoded on air.
+**Chain:** ESP32-C3 (0.42", peff74, MAC `38:44:be:45:e9:a4`) running `esp32c3-supermini` (a **mock CPS
+meter**, ramping watts + cadence 85) → nRF XIAO **BLE central reads it** (`srcConn=1`, `src=190→180→…`) →
+`Correction` (scale 1.0) → nRF **S340 ANT+ Bike Power master** → **Garmin ANT USBStick2 + openant** decode
+`dev 62144` page 0x10: **watts VARY [0,180,200,220,250,270,280,290]** tracking the C3 ramp, **cadence=85**
+(the mock's cadence, once the crank-delta baseline is established). Two codebases, no bike, fully desk-side.
+- **ESP32 bench-source gotcha (reusable):** the C3 proxy **gates BLE advertising behind the WiFi setup
+  portal** (`main.cpp` ~1018: `proxy.begin()` only runs `if (!wifi.inPortal())`) — so a WiFi-build C3 with
+  no provisioned network sits in portal mode and **never advertises CPS**. For a bench BLE source use the
+  **`esp32c3-supermini` env** (`-DUSE_WIFI=0 -DUSE_MOCK_METER=1`): BLE comes up unconditionally (the
+  `#else proxy.begin()` path), no portal, no `wifi_secret.h`, no AP-join needed. Flash with
+  `code/scripts/flash_c3.py --env esp32c3-supermini --port COMx`.
+- **Windows/bleak quirk:** `BleakScanner` did **not** surface the C3's **public** address (`38:44:be…`)
+  even while it advertised — only the nRF's random-static addr showed. Don't trust a bleak no-show as
+  "not advertising"; confirm via the app's USB-CDC serial (`ARDUINO_USB_CDC_ON_BOOT=1` → COM5 printed
+  `[proxy] mock=200W -> crank=200W`) and via the nRF actually connecting (`srcConn=1`). The nRF's **active**
+  scan (scan-requests) sees what WinRT's passive scan hides.
+- **nRF↔C3 both native-USB:** the 0.42 C3 *does* deliver USB-CDC serial (unlike the dead 0.96); its ramp
+  print is the ground-truth that the app booted after flash_c3.py's reset.

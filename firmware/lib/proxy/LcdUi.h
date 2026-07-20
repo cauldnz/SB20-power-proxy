@@ -21,7 +21,7 @@ namespace sb20proxy {
 // open from More (and from the Ride screen's live workout strip).
 
 // ---------- state + actions ----------------------------------------------------------------
-enum class LcdScreen : uint8_t { Ride, Setup, More, Workout, Calibrate };
+enum class LcdScreen : uint8_t { Ride, Setup, More, Workout, Calibrate, Compare };
 
 struct LcdUiState {
     LcdScreen screen = LcdScreen::Ride;
@@ -86,6 +86,8 @@ struct MoreView {
 
 // (ProvisionView moved to UiModel.h — shared with the OLED builds.)
 
+// (CompareView moved to UiModel.h — pure, so CompareService + WiFi-only builds can use it too.)
+
 struct LcdViews {
     RideView ride;
     WorkoutView wk;
@@ -93,6 +95,7 @@ struct LcdViews {
     MoreView more;
     CalWizardView cal;
     ProvisionView prov;
+    CompareView compare;
 };
 
 // ---------- shared layout ----------------------------------------------------------------
@@ -444,32 +447,79 @@ inline void lcdRenderSetup(LcdCanvas& c, const SetupView& v) {
 }
 
 // ---------- More / Settings ----------------------------------------------------------------
+// The More/Settings rows are DATA, not code: one descriptor per row drives the layout, the tap
+// dispatch, and the value cell — so adding / removing / reordering a row is a one-line table edit
+// with no per-row index arithmetic anywhere. The row-descriptor TYPE below is shared with the LVGL
+// head-unit UI (src/ui/LvglUi.cpp) so the two renderers can't drift in shape; each keeps its OWN
+// row table (this canvas build has no Compare screen to open; the LVGL build has no firmware-version
+// row) and its own value resolver.
+enum class MoreVal : uint8_t {
+    Link,         // a bare ">" chevron — a nav row, or the touch-cal ritual (LVGL/CYD)
+    WorkoutLink,  // ">" or "loaded  >" — LVGL only (needs the WorkoutView)
+    Mode, Identity, Source, Trainer,  // a MoreView string field
+    Brightness,   // "NN%" — drawn in the accent colour
+    Version,      // "vX.Y.Z" — this canvas twin only
+};
+struct MoreRowDef {
+    const char*    label;
+    LcdScreen      nav;      // tap -> navigate here; LcdScreen::More means "not a nav row"
+    UiAction::Type action;   // tap -> emit this action; UiAction::None means none
+    MoreVal        val;      // what the value cell shows
+    bool           cydOnly;  // shown only on resistive-touch (CYD) builds
+};
+
+// The canvas twin's row table — the single source of truth for BOTH lcdRenderMore (draw) and the
+// More case in lcdHandleTap (dispatch), so a row can't drift between the two. No Compare row: the
+// canvas lcdRender() has no Compare screen to draw.
+inline const MoreRowDef* lcdMoreRows(int& n) {
+    static const MoreRowDef rows[] = {
+        {"Workout",   LcdScreen::Workout,   UiAction::None,          MoreVal::Link,       false},
+        {"Calibrate", LcdScreen::Calibrate, UiAction::None,          MoreVal::Link,       false},
+        {"Mode",      LcdScreen::More,      UiAction::None,          MoreVal::Mode,       false},
+        {"Identity",  LcdScreen::More,      UiAction::None,          MoreVal::Identity,   false},
+        {"Source",    LcdScreen::More,      UiAction::None,          MoreVal::Source,     false},
+        {"Trainer",   LcdScreen::More,      UiAction::None,          MoreVal::Trainer,    false},
+        {"Bright",    LcdScreen::More,      UiAction::SetBrightness, MoreVal::Brightness, false},
+        {"Firmware",  LcdScreen::More,      UiAction::None,          MoreVal::Version,    false},
+    };
+    n = (int)(sizeof(rows) / sizeof(rows[0]));
+    return rows;
+}
+// The value-cell string for a row (pure — reads only the MoreView).
+inline std::string lcdMoreRowValue(MoreVal val, const MoreView& v) {
+    switch (val) {
+        case MoreVal::Link:        return ">";
+        case MoreVal::WorkoutLink: return ">";  // LVGL-only kind; ">" if it ever renders here
+        case MoreVal::Mode:        return v.mode;
+        case MoreVal::Identity:    return v.identity;
+        case MoreVal::Source:      return v.source;
+        case MoreVal::Trainer:     return v.trainer;
+        case MoreVal::Brightness:  return lcdNum(v.brightness) + "%";
+        case MoreVal::Version:     return "v" + v.version;
+    }
+    return "";
+}
+
 inline void lcdRenderMore(LcdCanvas& c, const MoreView& v) {
     using namespace lcdlay;
     c.clear();
     lcdDrawTitle(c, "Settings", "sb20");
-    struct Row { const char* label; std::string value; bool link; };
-    const Row rows[] = {
-        {"Workout", ">", true},
-        {"Calibrate", ">", true},
-        {"Mode", v.mode, false},
-        {"Identity", v.identity, false},
-        {"Source", v.source, false},
-        {"Trainer", v.trainer, false},
-        {"Bright", lcdNum(v.brightness) + "%", true},
-        {"Firmware", "v" + v.version, false},
-    };
-    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); ++i) {
-        int ry = MORE_ROW0 + (int)i * MORE_ROW_H;
+    int n = 0;
+    const MoreRowDef* rows = lcdMoreRows(n);
+    for (int i = 0; i < n; ++i) {
+        int ry = MORE_ROW0 + i * MORE_ROW_H;
         c.text(PAD + 2, ry + 9, rows[i].label, 1, LCD_FG);
+        // chevron links + the brightness readout draw accent; a plain value field is muted
+        const bool link = rows[i].val == MoreVal::Link || rows[i].val == MoreVal::WorkoutLink ||
+                          rows[i].val == MoreVal::Brightness;
+        const std::string value = lcdMoreRowValue(rows[i].val, v);
         // value width = what the label leaves free on the 160px row (8px/char at scale 1)
         size_t labelChars = std::string(rows[i].label).size();
         size_t valMax = (size_t)((LCD_W - PAD * 2 - 4) / 8) - labelChars - 1;
-        c.textRight(LCD_W - PAD - 2, ry + 9, lcdFit(rows[i].value, valMax), 1,
-                    rows[i].link ? LCD_ACCENT : LCD_MUT);
+        c.textRight(LCD_W - PAD - 2, ry + 9, lcdFit(value, valMax), 1, link ? LCD_ACCENT : LCD_MUT);
         c.hline(PAD, ry + MORE_ROW_H - 1, LCD_W - PAD * 2, LCD_LINE);
     }
-    c.textCentered(MORE_ROW0 + 8 * MORE_ROW_H + 8, v.ip, 1, LCD_MUT);
+    c.textCentered(MORE_ROW0 + n * MORE_ROW_H + 8, v.ip, 1, LCD_MUT);
     lcdDrawNav(c, LcdScreen::More);
 }
 
@@ -630,15 +680,18 @@ inline UiAction lcdHandleTap(LcdUiState& st, const LcdViews& v, int x, int y) {
         }
 
         case LcdScreen::More: {
-            if (y >= MORE_ROW0 && y < MORE_ROW0 + 8 * MORE_ROW_H) {
-                int idx = (y - MORE_ROW0) / MORE_ROW_H;
-                if (idx == 0) { st.screen = LcdScreen::Workout; return a; }
-                if (idx == 1) { st.screen = LcdScreen::Calibrate; return a; }
-                if (idx == 6) {  // brightness cycles 25 -> 50 -> 75 -> 100
+            int n = 0;
+            const MoreRowDef* rows = lcdMoreRows(n);
+            if (y >= MORE_ROW0 && y < MORE_ROW0 + n * MORE_ROW_H) {
+                const MoreRowDef& r = rows[(y - MORE_ROW0) / MORE_ROW_H];
+                if (r.action == UiAction::SetBrightness) {  // cycles 25 -> 50 -> 75 -> 100
                     st.brightness = (uint8_t)(st.brightness >= 100 ? 25 : st.brightness + 25);
                     a.type = UiAction::SetBrightness;
                     a.index = st.brightness;
-                    return a;
+                } else if (r.action != UiAction::None) {
+                    a.type = r.action;
+                } else if (r.nav != LcdScreen::More) {
+                    st.screen = r.nav;
                 }
             }
             return a;

@@ -201,6 +201,24 @@
     <canvas id="preview" width="520" height="70"></canvas>
   </div>
 
+  <!-- #10 A/B meter compare deep-dive — shown where caps.compare (GET /compare); hidden otherwise. -->
+  <div class="card" id="compareCard" style="display:none">
+    <h2>Meter compare</h2>
+    <div class="note" id="cmpSub">–</div>
+    <div class="metrics" style="display:flex;gap:10px;margin:8px 0">
+      <div class="metric"><div class="v" id="cmpBias">–</div><div class="l">mean bias</div></div>
+      <div class="metric"><div class="v" id="cmpRatio">–</div><div class="l">ratio</div></div>
+      <div class="metric"><div class="v" id="cmpN">–</div><div class="l">pairs</div></div>
+    </div>
+    <div class="note" id="cmpVerdict"></div>
+    <div class="note" style="margin-top:8px">error map — power × cadence</div>
+    <canvas id="cmpHeat" width="440" height="230" style="width:100%;max-width:440px"></canvas>
+    <div class="note">bias % by torque (N·m)</div>
+    <canvas id="cmpTorq" width="440" height="130" style="width:100%;max-width:440px"></canvas>
+    <div class="note">Bland–Altman — mean of A,B vs B−A</div>
+    <canvas id="cmpBa" width="440" height="160" style="width:100%;max-width:440px"></canvas>
+  </div>
+
   <div class="card"><h2>Log</h2><div id="log"></div></div>
 
 <script>
@@ -236,7 +254,9 @@ class BleTransport {
     this.kind = "ble"; this.autoConnect = false;
     // antCapable: the nRF52840 (this transport's only device) is ANT-capable silicon, so the spoof
     // radio can be BLE or ANT+ (ANT+ still gated on the S340 SoftDevice — the UI shows it disabled).
-    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:true, buttons:true, antCapable:true, scalarCorrection:true };
+    // compare:false — #10's deep-dive rides on GET /compare; exposing it as a BLE characteristic is
+    // the nRF follow-up. A capability, not a device-kind check (see the scalarCorrection note below).
+    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:true, buttons:true, antCapable:true, scalarCorrection:true, compare:false };
     this.dev = null; this.ch = {}; this.dl = null;
     this.onStatus = this.onScan = this.onCal = this.onWk = this.onRec = this.onRecDone =
       this.onConn = this.onLog = () => {};
@@ -415,7 +435,7 @@ class HttpTransport {
     // antCapable:false — the ESP32 has no ANT radio, so spoof is BLE-only (no radio picker shown).
     // scalarCorrection:false — the ESP32's correction is a fitted curve, not editable scale/offset, so
     // the SPA hides the scalar inputs here (setConfig would otherwise silently drop them, WebJson.h:33).
-    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:false, buttons:true, antCapable:false, scalarCorrection:false };
+    this.caps = { config:true, scan:true, calibration:true, workout:true, recording:false, buttons:true, antCapable:false, scalarCorrection:false, compare:true };
     this.cfg = { scale: 1, offset: 0 }; this.timer = null;
     this.onStatus = this.onScan = this.onCal = this.onWk = this.onRec = this.onRecDone =
       this.onConn = this.onLog = () => {};
@@ -468,6 +488,9 @@ class HttpTransport {
   // /obc/buttons.json: {enabled, actions:[i0..i5]} — same action-option indices as the BLE Buttons char.
   async getButtons() { try { const j = await this._get("/obc/buttons.json"); return { enabled: !!j.enabled, actions: (j.actions || [0,0,0,0,0,0]).slice(0, 6) }; } catch (e) { return { enabled: false, actions: [0,0,0,0,0,0] }; } }
   setButtons(b) { return this._post("/obc/buttons.json", JSON.stringify({ enabled: !!b.enabled, actions: b.actions })); }
+  // /compare: the #10 A/B deep-dive payload (renderCompareJson) — summary + per-torque-band bias +
+  // the power×cadence grid + downsampled pairs. `simulated` flags a fabricated meter B.
+  compare() { return this._get("/compare"); }
   scan() { return this._post("/setup/scan"); }
   calStart(ref) { return this._post("/calibrate/start", "ref=" + encodeURIComponent(ref)); }
   calCancel() { return this._post("/calibrate/cancel"); }
@@ -590,6 +613,7 @@ function wire(t) {
   t.onConn = (on, name) => { setConnected(on); if (on) { $("devName").textContent = name; loadConfig(); refreshCurve(); loadButtons(); } log(on ? "connected" : "disconnected"); };
   if (!t.caps.recording) $("recCard").style.display = "none";
   if (!t.caps.buttons) $("buttonsCard").style.display = "none";
+  if (t.caps.compare) $("compareCard").style.display = "";
   // Scalar scale/offset is real on the nRF (packConfig writes it) but a no-op on the ESP32 (curve-only);
   // hide the inputs where they'd be silently dropped, and point at the curve instead.
   const scalar = t.caps.scalarCorrection !== false;
@@ -715,11 +739,108 @@ $("btnWkStop").onclick = () => T.wkStop();
 $("btnBiasDown").onclick = () => T.wkBias(-10);
 $("btnBiasUp").onclick = () => T.wkBias(10);
 
+// ---- #10 meter-compare deep dive (GET /compare — the device's renderCompareJson payload) ----
+// Three views over the same payload: the power×cadence error map (where the error lives), the
+// bias-by-torque slice (flat = scale error, ramp = torque-dependent), and Bland–Altman.
+const CMP_CAP = 15;                                  // colour/scale saturates at ±15% bias
+function cmpColor(pct) {
+  const t = Math.max(-1, Math.min(1, pct / CMP_CAP));
+  const dark = [0x26, 0x30, 0x4a], hot = t >= 0 ? [0xef, 0x44, 0x44] : [0x3b, 0x82, 0xf6], a = Math.abs(t);
+  return `rgb(${dark.map((d, i) => Math.round(d + (hot[i] - d) * a)).join(",")})`;
+}
+function cmpDrawHeat(D) {
+  const cv = $("cmpHeat"), ctx = cv.getContext("2d"), g = D.grid, PAD = { l: 34, b: 22, t: 6, r: 6 };
+  const W = cv.width - PAD.l - PAD.r, H = cv.height - PAD.t - PAD.b, cw = W / g.C, ch = H / g.P;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  for (let pi = 0; pi < g.P; pi++) for (let ci = 0; ci < g.C; ci++) {
+    const v = g.bias[pi][ci];
+    ctx.fillStyle = v === null ? "#141a28" : cmpColor(v);
+    ctx.fillRect(PAD.l + ci * cw + 1, PAD.t + (g.P - 1 - pi) * ch + 1, cw - 2, ch - 2);
+  }
+  const pHi = g.P * g.pW, cLo = g.cLo, cHi = g.cLo + g.C * g.cW;   // 28 N·m iso-torque guide
+  ctx.strokeStyle = "rgba(255,255,255,.28)"; ctx.setLineDash([4, 3]); ctx.beginPath();
+  let first = true;
+  for (let cad = cLo; cad <= cHi; cad += 2) {
+    const p = 28 * cad * 0.10472; if (p > pHi) continue;
+    const x = PAD.l + ((cad - cLo) / (cHi - cLo)) * W, y = PAD.t + H - (p / pHi) * H;
+    first ? (ctx.moveTo(x, y), first = false) : ctx.lineTo(x, y);
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = "#8b93a7"; ctx.font = "10px sans-serif";
+  ctx.fillText("28 N·m", PAD.l + 4, PAD.t + 11);
+  ctx.fillText(cLo + " rpm", PAD.l, cv.height - 6); ctx.fillText(cHi + "", PAD.l + W - 18, cv.height - 6);
+  ctx.fillText(pHi + " W", 2, PAD.t + 8); ctx.fillText("0", 2, PAD.t + H);
+}
+function cmpDrawTorque(D) {
+  const cv = $("cmpTorq"), ctx = cv.getContext("2d"), N = D.tqBias.length;
+  const PAD = { l: 26, b: 16, t: 6, r: 6 }, W = cv.width - PAD.l - PAD.r, H = cv.height - PAD.t - PAD.b;
+  const mid = PAD.t + H / 2, bw = W / N;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.strokeStyle = "#2a3142"; ctx.beginPath(); ctx.moveTo(PAD.l, mid); ctx.lineTo(PAD.l + W, mid); ctx.stroke();
+  ctx.fillStyle = "#8b93a7"; ctx.font = "10px sans-serif"; ctx.fillText("0%", 2, mid + 3);
+  D.tqBias.forEach((v, i) => {
+    if (v === null) return;
+    const h = Math.max(-1, Math.min(1, v / CMP_CAP)) * (H / 2), x = PAD.l + i * bw;
+    ctx.fillStyle = cmpColor(v);
+    h >= 0 ? ctx.fillRect(x + 1, mid - h, bw - 2, h) : ctx.fillRect(x + 1, mid, bw - 2, -h);
+  });
+  ctx.fillStyle = "#8b93a7";
+  ctx.fillText("0", PAD.l, cv.height - 4); ctx.fillText(N * D.tqBandNm + " N·m", PAD.l + W - 34, cv.height - 4);
+}
+function cmpDrawBa(D) {
+  const cv = $("cmpBa"), ctx = cv.getContext("2d");
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const pts = (D.pairs || []).map(([a, b]) => ({ x: (a + b) / 2, y: b - a }));
+  if (!pts.length) return;
+  const PAD = { l: 34, b: 16, t: 8, r: 8 }, W = cv.width - PAD.l - PAD.r, H = cv.height - PAD.t - PAD.b;
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  const xLo = Math.min(...xs), xHi = Math.max(...xs);
+  const mean = ys.reduce((s, v) => s + v, 0) / ys.length;
+  const sd = Math.sqrt(ys.reduce((s, v) => s + (v - mean) ** 2, 0) / ys.length);
+  const yLo = Math.min(...ys, mean - 2 * sd), yHi = Math.max(...ys, mean + 2 * sd);
+  const X = v => PAD.l + ((v - xLo) / (xHi - xLo || 1)) * W, Y = v => PAD.t + H - ((v - yLo) / (yHi - yLo || 1)) * H;
+  const line = (v, c, dash, label) => {
+    ctx.strokeStyle = c; ctx.setLineDash(dash); ctx.beginPath();
+    ctx.moveTo(PAD.l, Y(v)); ctx.lineTo(PAD.l + W, Y(v)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = c; ctx.font = "10px sans-serif"; ctx.fillText(label, PAD.l + W - 58, Y(v) - 3);
+  };
+  line(mean + 1.96 * sd, "#8b93a7", [4, 3], "+1.96 SD");
+  line(mean - 1.96 * sd, "#8b93a7", [4, 3], "−1.96 SD");
+  for (const p of pts) { ctx.fillStyle = "rgba(239,68,68,.55)"; ctx.beginPath(); ctx.arc(X(p.x), Y(p.y), 2, 0, 7); ctx.fill(); }
+  line(mean, "#ef4444", [], "bias " + mean.toFixed(1) + " W");
+  ctx.fillStyle = "#8b93a7"; ctx.font = "10px sans-serif";
+  ctx.fillText(Math.round(xLo) + " W", PAD.l, cv.height - 4);
+  ctx.fillText(Math.round(xHi) + " W", PAD.l + W - 30, cv.height - 4);
+}
+async function refreshCompare() {
+  if (document.hidden) return;   // a background tab doesn't need a 3 s poll of the device
+  try {
+    const D = await T.compare();
+    if (!D || !D.valid) { $("cmpSub").textContent = "waiting for both meters…"; return; }
+    $("cmpSub").textContent = `${D.aName} (A, reference) vs ${D.bName} (B) · ${D.aW} W vs ${D.bW} W`;
+    $("cmpBias").textContent = (D.biasPct >= 0 ? "+" : "") + D.biasPct.toFixed(1) + "%";
+    $("cmpRatio").textContent = "×" + D.ratio.toFixed(3);
+    $("cmpN").textContent = D.nPairs;
+    const tq = D.tqBias.filter(v => v !== null);
+    const spread = tq.length > 1 ? tq[tq.length - 1] - tq[0] : 0;
+    // A fabricated B (the bench adapter sets B := A × ratio) is flat across torque BY CONSTRUCTION,
+    // so a verdict here would only restate the knob. Whether the real SB20's ~+11% is flat or ramps
+    // with torque is the OPEN question this view exists to answer — say that, don't fake an answer.
+    $("cmpVerdict").textContent = D.simulated
+      ? `Simulated meter B (B := A × ${D.ratio.toFixed(3)}). These are the bench adapter's own numbers restated, not a measurement — pair a real second meter for a verdict.`
+      : Math.abs(spread) > 3
+        ? `${D.bName} is NOT uniform: bias climbs ~${spread.toFixed(0)} points across torque — a torque-dependent error.`
+        : `${D.bName} is flat across torque (a clean scale error).`;
+    cmpDrawHeat(D); cmpDrawTorque(D); cmpDrawBa(D);
+  } catch (e) { /* device may not expose /compare */ }
+}
+
 // ================= boot =================
 (async () => {
   const t = await pickTransport();
   wire(t);
   if (t.autoConnect) { $("connectCard").style.display = "none"; try { await t.connect(); } catch (e) { log(`connect failed: ${e.message}`); } }
+  if (t.caps.compare) { refreshCompare(); setInterval(refreshCompare, 3000); }
 })();
 </script>
 </body>
