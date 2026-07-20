@@ -292,85 +292,86 @@ not another after-the-fact black box.
 
 ---
 
-## C. Instrument first, optimise only when earned
+## C. Five deliberately different product directions
 
-### 17. Indoor velodrome launch simulator
+### 17. Automatic trackside video and telemetry director
 
-Bring the planned track-start workflow indoors without turning it into a ghost race or game. The same
-T-15 controller would cue and measure reaction/first-crank timing, while a trainer characterized by the
-Dyno presents a bounded resistance or simulation load chosen to approximate a track gear and flywheel
-condition. A rider could rehearse starts repeatedly, then compare the indoor trace with a real track run.
+Arm one session and let the system capture the whole start without a second camera operator. The launch
+controller triggers one or more local cameras, gives every clip the same run ID, and produces an immediate
+replay with synchronized power, cadence, IMU and launch-phase markers. A later version could use UWB or a
+wide/360-degree camera to follow the rider beyond the start while keeping all footage local.
 
-- **Additional hardware:** none beyond the launch controller, Assioma and a supported smart trainer.
-- **Reuses:** launch timing/capture, the Dyno plant model, FTMS modes, run summaries and comparison plots.
-- **First gate:** prove at conservative load that a capture-grounded resistance/simulation protocol feels
-  passive and releases safely. ERG target-power mode must not be assumed suitable for a standing start.
-- **Not a ride ghost:** the goal is repeatable reaction and force-development rehearsal, not racing a
-  recorded avatar.
-- **Effort:** L.
+- **Additional hardware:** one or more locally controllable action, 360-degree or RTSP cameras; optional
+  UWB tag/anchors for rider position.
+- **Reuses:** launch run IDs and cues, acoustic synchronization, local microSD custody, plots and controller
+  PWA.
+- **First gate:** trigger one camera and align its clip to bike telemetry using a visible/audible sync event,
+  with bounded and reported timing error.
+- **Not generic ride recording:** it creates a ready-to-review coaching clip around a named run, without
+  manual file matching or cloud upload.
+- **Effort:** M, rising to L for reliable multi-camera rider tracking.
 
-### 18. Standing-start experiment director
+### 18. TrainerScope: transparent FTMS flight recorder and safety firewall
 
-Turn repeated starts into a proper N-of-1 experiment. The coach defines factors such as gear inches,
-warm-up, hand position or tyre setup; the system randomizes/balances trial order, enforces repeats, records
-notes and quality gates, and reports uncertainty rather than simply declaring the fastest attempt the
-winner. It could reveal that a setup is consistently better rather than merely attached to the freshest
-rider.
+Place the head unit between a training app and the trainer as a transparent control proxy. It forwards the
+real workout while decoding every command, response, disconnect and retry, then explains whether a bad
+transition originated in the app, radio path or trainer. The same seam can enforce explicit local safety
+rules — maximum target, maximum ramp, command timeout and physical stop — without silently “improving” the
+workout.
 
-- **Additional hardware:** none beyond the launch-control system; optional wheel-speed truth remains
-  evidence-gated.
-- **Reuses:** rider/session identity, synchronized launch records, one-run comparison and confidence model.
-- **First gate:** use repeated unchanged-control starts to quantify normal variation, fatigue and order
-  effects before allowing comparisons between setups.
-- **Not the launch analyser:** #5 measures one run; this manages controlled multi-run experimentation.
-- **Effort:** M.
-
-### 19. Reaction and anticipation cue laboratory
-
-Add a clearly separated training mode that compares the official fixed cadence with bounded randomized
-final holds and, later, audio versus light or haptic GO cues. Bike-local IMU timing would distinguish early
-preload, anticipatory movement and true post-cue response. A coach could train reaction without teaching a
-rider to guess one perfectly predictable interval.
-
-- **Additional hardware:** optional high-intensity start light or bike/rider haptic transducer.
-- **Reuses:** deterministic cue scheduler, acoustic T0, IMU pre-roll, abort controls and confidence labels.
-- **First gate:** prove that randomized profiles are safe, unambiguous and venue-appropriate, and cannot be
-  confused with the official fixed start profile.
-- **Not a game:** it is a sensory/reaction experiment with the official profile preserved unchanged.
-- **Effort:** M.
-
-### 20. Power-meter transient-response bench
-
-Two meters can agree on average power yet differ materially during the first second of a sprint because of
-sampling, filtering and event latency. Use a high-bandwidth torque/angle truth source and controlled load
-changes to identify each meter's delay, smoothing, overshoot, dropout and crank-event timing. The result is
-a dynamic fingerprint that explains why meters disagree during launches even when steady-state A/B bias is
-small.
-
-- **Additional hardware:** calibrated high-rate torque/load sensing plus crank-angle/encoder truth, likely
-  building on the static-torque cradle rather than trusting trainer target power as the input.
-- **Reuses:** multi-meter capture, Dyno system-identification methods, raw CPS/ANT events and calibration
-  reporting.
-- **First gate:** prove the truth rig has better bandwidth, timing and uncertainty than the meters being
-  characterized; trainer dynamics must not be mistaken for meter latency.
-- **Not live A/B compare:** the existing feature measures disagreement; this identifies each sensor's
-  temporal response against independent truth.
+- **Additional hardware:** none; an optional physical stop button remains the strongest override.
+- **Reuses:** dual-role BLE proxying, FTMS codecs, event logs, simulator/replay and control ownership.
+- **First gate:** pass an SB20 workout through unchanged and prove packet ordering/timing against a direct
+  connection before enabling any safety policy.
+- **Not the Black Box or Dyno:** the Black Box observes local events and the Dyno runs synthetic tests;
+  TrainerScope records and governs the live app-to-trainer control conversation.
 - **Effort:** M-L.
 
-### 21. Portable drivetrain and inertia coast-down lab
+### 19. Local multi-bike coach “pit wall”
 
-Use a known-inertia roller or compact stand for controlled acceleration and coast-down tests. Wheel speed,
-power and high-rate IMU/encoder data could estimate equivalent rotating inertia, drivetrain loss and
-warm-up drift, then compare chains, bearings, wheels or tyre setups under a repeatable protocol. The first
-product is a relative “mechanically changed” result, not a claim that it can name a failed bearing.
+Give one coach a private, offline console for two to eight indoor bikes. It can launch synchronized or
+staggered workouts, show each rider's target gap and sensor/preflight state, send short cues, and stop one
+bike or the entire room. Each head unit still owns its trainer clock, safety rules and recording, so loss
+of the coach WiFi cannot leave a trainer under remote control.
 
-- **Additional hardware:** known-inertia roller/flywheel, wheel or roller encoder, repeatable bike fixture,
-  and optional torque/load sensing.
-- **Reuses:** nRF event capture, Dyno analysis patterns, setup identity and controlled experiment workflow.
-- **First gate:** demonstrate repeatable control runs and separate bearing/chain effects from tyre,
-  roller-pressure, temperature and aerodynamic variation.
-- **Not the vibration fingerprint:** #7 listens for spectral change on the moving bike; this measures a
-  controlled mechanical input/output response on a portable rig.
+- **Additional hardware:** one CYD-class head unit per bike, a dedicated local access point and optional
+  large coach display.
+- **Reuses:** deterministic workout runtime, rider/device identity, local PWA, FTMS control and preflight.
+- **First gate:** run two simulated trainers through a dropped-network test, then prove two physical bikes
+  stay synchronized within a declared tolerance while retaining independent stop control.
+- **Not Party Mode:** this is a coach-operated training room and safety system, not multiplayer gaming.
+- **Effort:** L.
+
+### 20. Instrumented smart rollers for track handling
+
+Build or retrofit rollers that measure steering angle, bike lean, lateral position and left/right support
+load alongside power and cadence. The head unit could teach high-cadence stability, smooth out-of-saddle
+transitions and repeatable aero posture without cameras. V1 only measures and warns; no actuator should
+move the bike or deliberately destabilize the rider until the passive rig is proven safe.
+
+- **Additional hardware:** quality rollers with safety rails, steering/lean sensing, lateral optical or ToF
+  tracking, load cells and an emergency stop.
+- **Reuses:** nRF IMU tags, power/cadence ingestion, local display, session comparison and fit experiments.
+- **First gate:** independently validate each motion/load measurement and complete a guarded low-speed
+  safety programme before interpreting technique.
+- **Not the bike-fit assistant:** this measures dynamic bike control and stability, not body-joint position.
+- **Effort:** L.
+
+### 21. Track wheel and tyre intelligence pods
+
+Create tiny wheel-safe pressure/temperature pods that report both tyres during preflight and through a
+session. The system could catch a slow leak before a maximal effort, record the actual hot pressure reached,
+and build rider/venue/setup history without pretending to prescribe one universal “fast” pressure. Track
+disc wheels, carbon shielding and very high rotational speed make this a serious hardware challenge rather
+than a rebadged road-bike TPMS.
+
+- **Additional hardware:** custom low-mass pressure/temperature pods or valve modules, a spin-test fixture
+  and wheel-specific retention/balance hardware.
+- **Reuses:** nRF/BLE sensor plumbing, exact setup identity, preflight gates, local run records and alerts.
+- **First gate:** prove pressure accuracy, retention, balance, battery safety and reliable radio operation
+  at maximum wheel speed before any rider test.
+- **Not an environmental sensor:** it measures the state of the actual race wheels and tyres before and
+  during use.
 - **Effort:** L.
 
 ---
@@ -385,8 +386,10 @@ product is a relative “mechanically changed” result, not a claim that it can
 | **Motion tags** | 2-4 small nRF/IMU tags with known mounting clips | 5, 6, 11 |
 | **Indoor fit kit** | multi-zone ToF modules and adjustable mounts | 11 |
 | **Indoor utility kit** | fan control, bottle load cell, NFC reader, physical stop button/presence sensor | 12-15 |
-| **Launch/Dyno crossover kit** | planned start controller, Assioma, supported trainer, optional light/haptic cue | 17-19 |
-| **Dynamic mechanics rig** | high-rate torque/angle truth, known-inertia roller, encoder and fixture | 20, 21 |
+| **Trackside media kit** | locally controllable action/360 cameras, mounts, optional UWB ranging | 17 |
+| **Indoor control LAN** | CYD head units, dedicated access point, physical stop controls, coach display | 18, 19 |
+| **Instrumented rollers** | guarded rollers, load/lean/steering/lateral sensors, emergency stop | 20 |
+| **Wheel intelligence kit** | pressure/temperature pods, spin fixture, retention and balance tooling | 21 |
 
 ## My five strongest bets from the original 16
 
@@ -408,15 +411,16 @@ still begins with exact-unit SB20 measurement rather than compensation code.
 
 ## Strongest of the five additions
 
-1. **Indoor velodrome launch simulator (#17):** the most distinctive synthesis of the two selected
-   programmes, but only after both measurement foundations work independently.
-2. **Standing-start experiment director (#18):** likely the cheapest way to turn launch capture into a
-   genuine coaching/science workflow.
-3. **Power-meter transient-response bench (#20):** closest to the calibration mission and potentially
-   explains launch-time disagreement that steady-state comparison cannot.
-4. **Reaction and anticipation lab (#19):** compelling once official-profile launch timing is trusted.
-5. **Drivetrain/inertia coast-down lab (#21):** valuable but the largest mechanical/repeatability programme.
+1. **TrainerScope (#18):** the clearest new standalone product and the only one that can explain and safely
+   govern a real third-party app/trainer conversation.
+2. **Automatic trackside video director (#17):** removes substantial coaching friction and makes the
+   planned launch instrument immediately visual.
+3. **Multi-bike coach pit wall (#19):** a plausible second product line for clubs and coaching studios.
+4. **Wheel and tyre intelligence (#21):** a sharply track-specific preflight capability if the rotating
+   hardware can be made unquestionably safe.
+5. **Instrumented smart rollers (#20):** distinctive and potentially valuable, but the largest safety and
+   mechanical programme.
 
-The sensible order is #18 after launch-control evidence, then a truth-sensor spike for #20. #17 should wait
-until both launch control and Dyno have passed their static hardware gates; its value depends on measured
-trainer behaviour, not an invented indoor “track feel.”
+The economical sequence is a simulator-backed transparent-proxy spike for #18, followed by a one-camera
+timing experiment for #17. #19 can begin with multiple simulated bikes. #20 and #21 should remain hardware
+research programmes until their passive safety gates are solved.
