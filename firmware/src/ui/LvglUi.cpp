@@ -477,20 +477,51 @@ void buildSetup() {
 }
 
 // --- More -------------------------------------------------------------------
+// One data-driven table (row-descriptor type shared with the canvas twin in LcdUi.h) is the single
+// source of truth for the Settings rows: buildMore() lays them out, moreRowCb() dispatches taps, and
+// lvglUiUpdate() fills each value cell — all three iterate THIS array, so adding / removing /
+// reordering a row is a one-line edit here with no row-index literals anywhere else.
+const MoreRowDef kMoreRows[] = {
+    // label        nav (tap target)      action (tap emits)       value cell            CYD-only
+    {"Workout",   LcdScreen::Workout,   UiAction::None,          MoreVal::WorkoutLink, false},
+    {"Calibrate", LcdScreen::Calibrate, UiAction::None,          MoreVal::Link,        false},
+    {"Compare",   LcdScreen::Compare,   UiAction::None,          MoreVal::Link,        false},
+    {"Mode",      LcdScreen::More,      UiAction::None,          MoreVal::Mode,        false},
+    {"Identity",  LcdScreen::More,      UiAction::None,          MoreVal::Identity,    false},
+    {"Source",    LcdScreen::More,      UiAction::None,          MoreVal::Source,      false},
+    {"Trainer",   LcdScreen::More,      UiAction::None,          MoreVal::Trainer,     false},
+    {"Bright",    LcdScreen::More,      UiAction::SetBrightness, MoreVal::Brightness,  false},
+    {"Touch cal", LcdScreen::More,      UiAction::TouchCalStart, MoreVal::Link,        true },
+};
+constexpr int kMoreRowCount = (int)(sizeof(kMoreRows) / sizeof(kMoreRows[0]));
+static_assert(kMoreRowCount <= (int)(sizeof(M.val) / sizeof(M.val[0])),
+              "grow M.val[] to cover every More row");
+
+// A row is present in THIS build unless it is CYD-only and this isn't a CYD (resistive-touch) build.
+inline bool moreRowActive(const MoreRowDef& r) {
+#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
+    (void)r;
+    return true;   // resistive film -> the touch-cal row is exposed
+#else
+    return !r.cydOnly;   // capacitive (S3) needs no touch cal
+#endif
+}
+
 void moreRowCb(lv_event_t* e) {
-    int idx = (int)(intptr_t)lv_event_get_user_data(e);
-    if (idx == 0) navTo(LcdScreen::Workout);
-    else if (idx == 1) navTo(LcdScreen::Calibrate);
-    else if (idx == 2) navTo(LcdScreen::Compare);
-    else if (idx == 7) {  // brightness cycles 25 -> 50 -> 75 -> 100
+    int i = (int)(intptr_t)lv_event_get_user_data(e);
+    if (i < 0 || i >= kMoreRowCount) return;
+    const MoreRowDef& r = kMoreRows[i];
+    if (r.action == UiAction::SetBrightness) {  // brightness cycles 25 -> 50 -> 75 -> 100
         UiAction a;
         a.type = UiAction::SetBrightness;
         a.index = g_brightness >= 100 ? 25 : g_brightness + 25;
         emitAction(a);
-    } else if (idx == 8) {  // Touch cal -> run the tap-the-crosshair ritual
+    } else if (r.action != UiAction::None) {  // e.g. Touch cal -> the tap-the-crosshair ritual
         UiAction a;
-        a.type = UiAction::TouchCalStart;
+        a.type = r.action;
         emitAction(a);
+    } else if (r.nav != LcdScreen::More) {
+        navTo(r.nav);
     }
 }
 
@@ -498,27 +529,27 @@ void buildMore() {
     lv_obj_t* s = g_scrObj[2] = mkScreen();
     lv_obj_t* h = mkLabel(s, &lv_inter_sb_20, C_FG(), "Settings");
     lv_obj_align(h, LV_ALIGN_TOP_LEFT, 10, 8);
-    static const char* rowName[9] = {"Workout", "Calibrate", "Compare", "Mode", "Identity",
-                                     "Source",  "Trainer",   "Bright",  "Touch cal"};
-#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
-    const int nRows = 9;   // resistive film -> expose the cal ritual in the UI
-#else
-    const int nRows = 8;   // capacitive (S3) needs no touch cal
-#endif
-    for (int i = 0; i < nRows; ++i) {
+    // `vis` (visible rows kept so far) drives the y position; the table index `i` keys M.val[] and
+    // the tap user-data — so a compiled-out CYD-only row leaves no gap and shifts no other row's id.
+    int vis = 0;
+    for (int i = 0; i < kMoreRowCount; ++i) {
+        const MoreRowDef& def = kMoreRows[i];
+        if (!moreRowActive(def)) continue;
         lv_obj_t* row = lv_button_create(s);
         lv_obj_remove_style_all(row);
         lv_obj_set_size(row, g_hor - 20, 27);
-        lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 36 + i * 29);
+        lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 36 + vis * 29);
         lv_obj_set_style_border_color(row, C_LINE(), 0);
         lv_obj_set_style_border_width(row, 1, 0);
         lv_obj_set_style_border_side(row, LV_BORDER_SIDE_BOTTOM, 0);
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_t* n = mkLabel(row, &lv_inter_16, C_FG(), rowName[i]);
+        lv_obj_t* n = mkLabel(row, &lv_inter_16, C_FG(), def.label);
         lv_obj_align(n, LV_ALIGN_LEFT_MID, 4, 0);
-        M.val[i] = mkLabel(row, &lv_inter_16, i == 7 ? C_ACCENT() : C_MUT(), "");
+        M.val[i] = mkLabel(row, &lv_inter_16,
+                           def.val == MoreVal::Brightness ? C_ACCENT() : C_MUT(), "");
         lv_obj_align(M.val[i], LV_ALIGN_RIGHT_MID, -4, 0);
         lv_obj_add_event_cb(row, moreRowCb, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+        ++vis;
     }
     M.ip = mkLabel(s, &lv_inter_12, C_MUT(), "");
     lv_obj_align(M.ip, LV_ALIGN_BOTTOM_MID, 0, -34);
@@ -847,19 +878,28 @@ void lvglUiUpdate(const LcdViews& v) {
         }
     }
 
-    // More
-    lv_label_set_text(M.val[0], v.wk.loaded ? "loaded  >" : ">");
-    lv_label_set_text(M.val[1], ">");
-    lv_label_set_text(M.val[2], ">");   // Compare
-    lv_label_set_text(M.val[3], v.more.mode.c_str());
-    lv_label_set_text(M.val[4], v.more.identity.c_str());
-    lv_label_set_text(M.val[5], v.more.source.c_str());
-    lv_label_set_text(M.val[6], v.more.trainer.empty() ? "not set" : v.more.trainer.c_str());
-    snprintf(buf, sizeof(buf), "%d%%", (int)v.more.brightness);
-    lv_label_set_text(M.val[7], buf);
-#if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
-    if (M.val[8]) lv_label_set_text(M.val[8], ">");
-#endif
+    // More — fill each row's value cell from the same table that laid out + dispatches the rows
+    for (int i = 0; i < kMoreRowCount; ++i) {
+        if (!M.val[i]) continue;  // a CYD-only row this build compiled out
+        switch (kMoreRows[i].val) {
+            case MoreVal::Link:        lv_label_set_text(M.val[i], ">"); break;
+            case MoreVal::WorkoutLink: lv_label_set_text(M.val[i], v.wk.loaded ? "loaded  >" : ">"); break;
+            case MoreVal::Mode:        lv_label_set_text(M.val[i], v.more.mode.c_str()); break;
+            case MoreVal::Identity:    lv_label_set_text(M.val[i], v.more.identity.c_str()); break;
+            case MoreVal::Source:      lv_label_set_text(M.val[i], v.more.source.c_str()); break;
+            case MoreVal::Trainer:
+                lv_label_set_text(M.val[i], v.more.trainer.empty() ? "not set" : v.more.trainer.c_str());
+                break;
+            case MoreVal::Brightness:
+                snprintf(buf, sizeof(buf), "%d%%", (int)v.more.brightness);
+                lv_label_set_text(M.val[i], buf);
+                break;
+            case MoreVal::Version:
+                snprintf(buf, sizeof(buf), "v%s", v.more.version.c_str());
+                lv_label_set_text(M.val[i], buf);
+                break;
+        }
+    }
     lv_label_set_text(M.ip, v.more.ip.empty() ? "no wifi" : v.more.ip.c_str());
 
     // Compare (#10) — only while it's the live screen. This runs at 5 Hz on every screen, and main.cpp

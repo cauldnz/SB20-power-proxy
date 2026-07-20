@@ -163,12 +163,54 @@ void test_compare_screen_renders() {
     TEST_ASSERT_GREATER_THAN(2000, (int)nonBg);
 }
 
+// Tap the More row shown at visible position `visRow` (0-based), clearing any queued action first.
+// y mirrors buildMore()'s layout (rows at 36 + i*29, height 27) — the centre is 36 + i*29 + 13.
+static void tapMoreRow(int visRow) {
+    lvglUiShowScreen(LcdScreen::More);
+    pump(6);
+    UiAction drain;
+    while (lvglUiPollAction(drain)) {}
+    g_tx = W / 2;
+    g_ty = 36 + visRow * 29 + 13;
+    pump(4);
+    g_tx = -1;   // release -> LVGL fires the CLICKED event on the row
+    pump(8);
+}
+
+// 5) Every More/Settings row dispatches to the right place: the nav rows (Workout / Calibrate /
+//    Compare) load their target screen; the brightness row emits SetBrightness without leaving More;
+//    a plain value row does neither. This is the per-row coverage the data-driven More table needs —
+//    a future row insert/reorder that breaks the row->target mapping fails HERE, not on the bike.
+//    (Touch cal is CYD-only and absent on this build, so rows 0..7 == table indices 0..7.)
+void test_more_rows_dispatch() {
+    tapMoreRow(0);
+    TEST_ASSERT_EQUAL(int(LcdScreen::Workout), int(lvglUiCurrentScreen()));
+    tapMoreRow(1);
+    TEST_ASSERT_EQUAL(int(LcdScreen::Calibrate), int(lvglUiCurrentScreen()));
+    tapMoreRow(2);
+    TEST_ASSERT_EQUAL(int(LcdScreen::Compare), int(lvglUiCurrentScreen()));
+
+    // brightness row (index 7): emits SetBrightness, stays on More
+    tapMoreRow(7);
+    TEST_ASSERT_EQUAL(int(LcdScreen::More), int(lvglUiCurrentScreen()));
+    UiAction a;
+    TEST_ASSERT_TRUE(lvglUiPollAction(a));
+    TEST_ASSERT_EQUAL(int(UiAction::SetBrightness), int(a.type));
+
+    // plain value row (Mode, index 3): navigates nowhere, emits nothing
+    tapMoreRow(3);
+    TEST_ASSERT_EQUAL(int(LcdScreen::More), int(lvglUiCurrentScreen()));
+    UiAction none;
+    TEST_ASSERT_FALSE(lvglUiPollAction(none));
+}
+
 int runUnityTests() {
     UNITY_BEGIN();
     RUN_TEST(test_ride_screen_renders_content);
     RUN_TEST(test_nav_tap_switches_screen);
     RUN_TEST(test_update_changes_render);
     RUN_TEST(test_compare_screen_renders);
+    RUN_TEST(test_more_rows_dispatch);
     return UNITY_END();
 }
 
