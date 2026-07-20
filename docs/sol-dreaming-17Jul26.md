@@ -1,4 +1,4 @@
-# SOL dreaming, 17 July 2026: 16 new device ideas
+# SOL dreaming, 17 July 2026: 21 new device ideas
 
 **Status:** DREAMING, not a roadmap or decision. These are hypotheses to test using the repository's
 capture-before-code discipline.
@@ -40,6 +40,20 @@ erg-loop compensation does not change the workout prescription.
 
 **Effort:** S = a focused software/hardware spike; M = several slices plus bench proof; L = a real
 hardware programme with repeated track or rider sessions.
+
+## What the selected ideas taught us
+
+The two directions chosen for detailed planning — standing-start launch control (#5) and the
+Dyno→evidence-gated Autotuner programme (#9/#10) — share a useful pattern:
+
+- build a purpose-specific instrument and workflow, not another passive dashboard;
+- run controlled, repeatable experiments with raw evidence and visible data quality;
+- keep the real-time clock/control loop local and autonomous;
+- make the measurement product useful even if optimisation never follows; and
+- permit automation only after the exact device/setup demonstrates stable, predictable behaviour, with
+  bounded authority and an immediate bypass.
+
+The five additions in section C deliberately explore that same pattern in new directions.
 
 ---
 
@@ -110,6 +124,11 @@ is a coaching instrument for gear choice and technique, not a ghost race or game
 - **Reuses:** high-rate IMU, power/cadence data, Garmin display, event-oriented recording.
 - **First gate:** align all clocks tightly enough that repeated starts produce stable phase boundaries.
 - **Effort:** M.
+
+**Planning status (20 July 2026):** the owner approved a detailed
+[specification](../code/findings/track-launch-control-spec.md) and
+[phased plan](../code/findings/track-launch-control-plan.md) as the baseline; implementation remains
+explicitly paused.
 
 ### 6. Aero-position and head-tuck coach
 
@@ -183,6 +202,10 @@ and instantly bypassable.
 - **Not adaptive workouts:** it compensates the plant; it does not decide that the rider should do an
   easier or harder session.
 - **Effort:** M-L.
+
+**Planning status (20 July 2026):** #9 and #10 graduated into one approved Dyno→evidence-gated Autotuner
+planning programme on its owning branch. The Dyno remains independently useful, the Autotuner remains
+optional and evidence-gated, and implementation is explicitly paused.
 
 ### 11. Camera-free indoor bike-fit assistant
 
@@ -269,6 +292,89 @@ not another after-the-fact black box.
 
 ---
 
+## C. Instrument first, optimise only when earned
+
+### 17. Indoor velodrome launch simulator
+
+Bring the planned track-start workflow indoors without turning it into a ghost race or game. The same
+T-15 controller would cue and measure reaction/first-crank timing, while a trainer characterized by the
+Dyno presents a bounded resistance or simulation load chosen to approximate a track gear and flywheel
+condition. A rider could rehearse starts repeatedly, then compare the indoor trace with a real track run.
+
+- **Additional hardware:** none beyond the launch controller, Assioma and a supported smart trainer.
+- **Reuses:** launch timing/capture, the Dyno plant model, FTMS modes, run summaries and comparison plots.
+- **First gate:** prove at conservative load that a capture-grounded resistance/simulation protocol feels
+  passive and releases safely. ERG target-power mode must not be assumed suitable for a standing start.
+- **Not a ride ghost:** the goal is repeatable reaction and force-development rehearsal, not racing a
+  recorded avatar.
+- **Effort:** L.
+
+### 18. Standing-start experiment director
+
+Turn repeated starts into a proper N-of-1 experiment. The coach defines factors such as gear inches,
+warm-up, hand position or tyre setup; the system randomizes/balances trial order, enforces repeats, records
+notes and quality gates, and reports uncertainty rather than simply declaring the fastest attempt the
+winner. It could reveal that a setup is consistently better rather than merely attached to the freshest
+rider.
+
+- **Additional hardware:** none beyond the launch-control system; optional wheel-speed truth remains
+  evidence-gated.
+- **Reuses:** rider/session identity, synchronized launch records, one-run comparison and confidence model.
+- **First gate:** use repeated unchanged-control starts to quantify normal variation, fatigue and order
+  effects before allowing comparisons between setups.
+- **Not the launch analyser:** #5 measures one run; this manages controlled multi-run experimentation.
+- **Effort:** M.
+
+### 19. Reaction and anticipation cue laboratory
+
+Add a clearly separated training mode that compares the official fixed cadence with bounded randomized
+final holds and, later, audio versus light or haptic GO cues. Bike-local IMU timing would distinguish early
+preload, anticipatory movement and true post-cue response. A coach could train reaction without teaching a
+rider to guess one perfectly predictable interval.
+
+- **Additional hardware:** optional high-intensity start light or bike/rider haptic transducer.
+- **Reuses:** deterministic cue scheduler, acoustic T0, IMU pre-roll, abort controls and confidence labels.
+- **First gate:** prove that randomized profiles are safe, unambiguous and venue-appropriate, and cannot be
+  confused with the official fixed start profile.
+- **Not a game:** it is a sensory/reaction experiment with the official profile preserved unchanged.
+- **Effort:** M.
+
+### 20. Power-meter transient-response bench
+
+Two meters can agree on average power yet differ materially during the first second of a sprint because of
+sampling, filtering and event latency. Use a high-bandwidth torque/angle truth source and controlled load
+changes to identify each meter's delay, smoothing, overshoot, dropout and crank-event timing. The result is
+a dynamic fingerprint that explains why meters disagree during launches even when steady-state A/B bias is
+small.
+
+- **Additional hardware:** calibrated high-rate torque/load sensing plus crank-angle/encoder truth, likely
+  building on the static-torque cradle rather than trusting trainer target power as the input.
+- **Reuses:** multi-meter capture, Dyno system-identification methods, raw CPS/ANT events and calibration
+  reporting.
+- **First gate:** prove the truth rig has better bandwidth, timing and uncertainty than the meters being
+  characterized; trainer dynamics must not be mistaken for meter latency.
+- **Not live A/B compare:** the existing feature measures disagreement; this identifies each sensor's
+  temporal response against independent truth.
+- **Effort:** M-L.
+
+### 21. Portable drivetrain and inertia coast-down lab
+
+Use a known-inertia roller or compact stand for controlled acceleration and coast-down tests. Wheel speed,
+power and high-rate IMU/encoder data could estimate equivalent rotating inertia, drivetrain loss and
+warm-up drift, then compare chains, bearings, wheels or tyre setups under a repeatable protocol. The first
+product is a relative “mechanically changed” result, not a claim that it can name a failed bearing.
+
+- **Additional hardware:** known-inertia roller/flywheel, wheel or roller encoder, repeatable bike fixture,
+  and optional torque/load sensing.
+- **Reuses:** nRF event capture, Dyno analysis patterns, setup identity and controlled experiment workflow.
+- **First gate:** demonstrate repeatable control runs and separate bearing/chain effects from tyre,
+  roller-pressure, temperature and aerodynamic variation.
+- **Not the vibration fingerprint:** #7 listens for spectral change on the moving bike; this measures a
+  controlled mechanical input/output response on a portable rig.
+- **Effort:** L.
+
+---
+
 ## Hardware bundles that unlock several ideas
 
 | Bundle | Candidate contents | Ideas unlocked |
@@ -279,8 +385,10 @@ not another after-the-fact black box.
 | **Motion tags** | 2-4 small nRF/IMU tags with known mounting clips | 5, 6, 11 |
 | **Indoor fit kit** | multi-zone ToF modules and adjustable mounts | 11 |
 | **Indoor utility kit** | fan control, bottle load cell, NFC reader, physical stop button/presence sensor | 12-15 |
+| **Launch/Dyno crossover kit** | planned start controller, Assioma, supported trainer, optional light/haptic cue | 17-19 |
+| **Dynamic mechanics rig** | high-rate torque/angle truth, known-inertia roller, encoder and fixture | 20, 21 |
 
-## My five strongest bets
+## My five strongest bets from the original 16
 
 1. **Portable static-torque calibration cradle (#3):** closest to the project's calibration mission and
    creates a new source of truth rather than another display.
@@ -295,5 +403,20 @@ not another after-the-fact black box.
 
 The most economical exploration sequence is #16 first (software-only), then a load-cell spike for #3,
 then purchase one UWB kit and test timing repeatability before committing to either #1 or #2. Ideas #9
-and #10 should wait for the already-planned real-SB20 FTMS ride, because that test supplies the dynamic
-response data they need.
+and #10 have since graduated into one approved-but-paused planning programme; its first implementation
+still begins with exact-unit SB20 measurement rather than compensation code.
+
+## Strongest of the five additions
+
+1. **Indoor velodrome launch simulator (#17):** the most distinctive synthesis of the two selected
+   programmes, but only after both measurement foundations work independently.
+2. **Standing-start experiment director (#18):** likely the cheapest way to turn launch capture into a
+   genuine coaching/science workflow.
+3. **Power-meter transient-response bench (#20):** closest to the calibration mission and potentially
+   explains launch-time disagreement that steady-state comparison cannot.
+4. **Reaction and anticipation lab (#19):** compelling once official-profile launch timing is trusted.
+5. **Drivetrain/inertia coast-down lab (#21):** valuable but the largest mechanical/repeatability programme.
+
+The sensible order is #18 after launch-control evidence, then a truth-sensor spike for #20. #17 should wait
+until both launch control and Dyno have passed their static hardware gates; its value depends on measured
+trainer behaviour, not an invented indoor “track feel.”

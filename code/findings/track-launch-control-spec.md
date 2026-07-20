@@ -24,7 +24,7 @@ The system must:
 - continue recording after the bike leaves the coach's radio range;
 - automatically and safely download the only run copy on return;
 - give the coach an immediate summary, synchronized plots and one-run comparison;
-- work without venue internet or a continuously connected phone; and h
+- work without venue internet or a continuously connected phone; and
 - fail visibly without silently mixing low-confidence and high-confidence results.
 
 ## 2. V1 product boundary
