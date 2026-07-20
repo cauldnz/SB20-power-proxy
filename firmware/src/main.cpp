@@ -53,6 +53,8 @@
 #endif
 #if USE_LCD
   #include "LcdUi.h"              // pure head-unit UI (screens + tap routing; LCD_W x LCD_H)
+  #include "WattyBird.h"          // the Easter egg: a pure power-flown Flappy core
+  #include "WattyBirdRender.h"    // renders it into an LcdCanvas (blitted straight to the panel)
   #include "CompareService.h"     // #10 A/B compare seam: feed -> compare -> view + /compare JSON
   #if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
     #include "disp/CydDisplay.h"  // ILI9341/ST7789 + XPT2046 seam (ESP32-2432S028R "CYD")
@@ -257,6 +259,58 @@ using PanelDisplay = LcdDisplay;
 #endif
 static PanelDisplay lcd;
 static LcdUiState g_lcdUi;
+
+// --- Watty Birds Easter egg -----------------------------------------------------------------
+// Fit to this panel (172x320 S3 / 240x320 CYD). Touch = flap (desk-playable now); on the bike the
+// meter's live power flies the bird. Rendered into its own canvas, blitted straight to the panel
+// (bypasses LVGL while active). WATTY_DEMO=1 boots straight into the game; else toggle via `WATTY`.
+#ifndef WATTY_DEMO
+#define WATTY_DEMO 0
+#endif
+static WattyBird g_watty(wattyBirdPanelConfig());
+static LcdCanvas g_wbFrame;
+static volatile bool g_wattyActive = (WATTY_DEMO != 0);
+static volatile bool g_wbAuto = (WATTY_DEMO != 0);  // on-device sim-power "rider" flies the bird
+static volatile int  g_wbInjectW = -1;              // WBPWR: inject a fixed sim-meter power (-1 = off)
+static volatile bool g_wbShotReq = false;           // WBSHOT: dump the next rendered frame over serial
+
+// The on-device "rider": modulate power toward the next gap centre (mirrors the host-sim autopilot),
+// so a simulated power source flies the bird well for the demo + screenshots.
+static int wattyAutoPower() {
+    const WattyBirdConfig& cf = g_watty.cfg();
+    float targetY = cf.worldH * 0.42f;
+    for (const auto& p : g_watty.pipes())
+        if (p.x + cf.pipeW > (float)(cf.birdX - cf.birdR)) { targetY = (float)p.gapCenterY; break; }
+    float w = (float)g_watty.hoverWatts() + 1.6f * (g_watty.birdY() - targetY) + 1.5f * g_watty.vy();
+    if (w < 0) w = 0;
+    if (w > 360) w = 360;
+    return (int)(w + 0.5f);
+}
+
+// Dump the current game frame over USB-serial as framed base64 RGB565 (captured on the host -> PNG).
+static void wbB64Write(const uint8_t* d, size_t n) {
+    static const char T[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    char o[4];
+    size_t i = 0;
+    for (; i + 3 <= n; i += 3) {
+        uint32_t v = ((uint32_t)d[i] << 16) | ((uint32_t)d[i + 1] << 8) | d[i + 2];
+        o[0] = T[(v >> 18) & 63]; o[1] = T[(v >> 12) & 63]; o[2] = T[(v >> 6) & 63]; o[3] = T[v & 63];
+        Serial.write((const uint8_t*)o, 4);
+    }
+    if (i < n) {
+        int rem = (int)(n - i);
+        uint32_t v = (uint32_t)d[i] << 16;
+        if (rem == 2) v |= (uint32_t)d[i + 1] << 8;
+        o[0] = T[(v >> 18) & 63]; o[1] = T[(v >> 12) & 63];
+        o[2] = rem == 2 ? T[(v >> 6) & 63] : '='; o[3] = '=';
+        Serial.write((const uint8_t*)o, 4);
+    }
+}
+static void wbDumpFrame() {
+    Serial.printf("\nWBSHOT %d %d\n", (int)LCD_W, (int)LCD_H);
+    wbB64Write((const uint8_t*)g_wbFrame.px.data(), g_wbFrame.px.size() * 2);
+    Serial.print("\nWBEND\n");
+}
 // LCD_BANDS: on no-PSRAM boards (the classic-ESP32 CYD) the full frame can't sit beside WiFi+BLE,
 // so the canvas holds one horizontal band and the render loop sweeps it down the frame (the pure
 // renderer is band-agnostic — proven pixel-identical by test_lcd_banded_render_matches_full).
@@ -643,6 +697,39 @@ static void lcdTask(void*) {
             lvglUiCalShow(-1, -1, -1, -1);  // ritual over: restore the regular screen
         }
 #endif
+        // --- Watty Birds takeover: render the game instead of the UI while active ---------------
+        {
+            static bool wbWas = false;
+            if (g_wattyActive && !wbWas) g_watty.reset(millis());  // (re)enter at the attract screen
+            wbWas = g_wattyActive;
+        }
+        if (g_wattyActive) {
+            lcdLock();
+            buildLcdViews(views);
+            lcdUnlock();
+            int tx = 0, ty = 0;
+            const bool touched = lcd.readTouchState(tx, ty);
+            const int climbW = g_watty.hoverWatts() * 9 / 5;       // touch => a strong climb
+            int base;                                              // the "power" flying the bird:
+            if (g_wbInjectW >= 0)      base = g_wbInjectW;         //   a serial-injected sim value, or
+            else if (g_wbAuto)         base = wattyAutoPower();    //   the on-device sim-power rider, or
+            else                       base = views.ride.watts;    //   the real live meter power
+            const int inputW = touched ? climbW : base;            // touch always overrides (hand-play)
+            const uint32_t nowm = millis();
+            static uint32_t wbLast = 0;
+            uint32_t dt = wbLast ? (nowm - wbLast) : 33;
+            wbLast = nowm;
+            if (dt > 80) dt = 80;                                   // clamp scheduler hiccups
+            static bool wbPrevTouch = false;
+            if (g_watty.mode() == WbMode::Dead && touched && !wbPrevTouch) g_watty.start(nowm);  // retry
+            wbPrevTouch = touched;
+            g_watty.step(dt, inputW, views.ride.cadence);
+            renderWattyBird(g_wbFrame, g_watty);
+            lcd.blit(g_wbFrame);
+            if (g_wbShotReq) { g_wbShotReq = false; wbDumpFrame(); }  // grab this exact frame
+            vTaskDelay(pdMS_TO_TICKS(5));
+            continue;
+        }
         uint32_t now = millis();
         if (now - lastData >= 200 && !wasCal) {
             lastData = now;
@@ -822,6 +909,22 @@ static void lcdSerialConsole() {
             Serial.printf("[erg] trainer filter = '%s'; rebooting\n", c.trainerNameFilter.c_str());
             delay(300);
             esp_restart();
+#if USE_LCD
+        } else if (cmd == "WATTY") {              // toggle the Watty Birds Easter egg
+            g_wattyActive = !g_wattyActive;
+            Serial.printf("[watty] %s\n", g_wattyActive ? "ON - tap to flap; pedal to fly" : "off");
+        } else if (cmd == "WBAUTO") {             // toggle the on-device sim-power rider
+            g_wbAuto = !g_wbAuto;
+            Serial.printf("[watty] auto=%d\n", (int)g_wbAuto);
+        } else if (cmd.rfind("WBPWR", 0) == 0) {  // inject a fixed sim-meter power ("WBPWR 200"; -1=off)
+            g_wbInjectW = (cmd.size() > 5) ? atoi(cmd.substr(5).c_str()) : -1;
+            Serial.printf("[watty] inject=%d\n", g_wbInjectW);
+        } else if (cmd == "WBSTATE") {            // the bird's response to the power (for a scripted test)
+            Serial.printf("WBSTATE y=%d vy=%d mode=%d score=%d watts=%d\n", (int)g_watty.birdY(),
+                          (int)g_watty.vy(), (int)g_watty.mode(), g_watty.score(), g_watty.watts());
+        } else if (cmd == "WBSHOT") {             // grab the current frame over serial (base64 RGB565)
+            g_wbShotReq = true;
+#endif
 #if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
         } else if (cmd == "CALTOUCH") {           // (re)run the touch-calibration ritual
             g_tcal = CalRitual{};
