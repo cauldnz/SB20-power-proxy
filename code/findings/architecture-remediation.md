@@ -68,9 +68,11 @@ last.** Extracting R1a–R1c removes ~700 lines and is the precondition that mak
   activity / an FTMS trainer connected.** So part 2 is best done with the bike-side hardware present.
   Part 1 deliberately reroutes only char *access* (no callback logic changed) so it's behaviour-identical
   by construction and fully bench-verifiable now.
-- [ ] **R1c — `ImuRecorder`** (~200 lines: `pumpDownload`, `imuSelfTest`, `recCtlWriteCb`, IMU globals,
-  loop pacing). Buffer is already pure (`lib/bridge/ImuCapture.h`); this is the hardware + BLE-download
-  glue. **Prove:** compile; `IMUTEST` serial self-test once on hardware.
+- [ ] **R1c — absorbed by Track Launch LC2 `BikeRun`; do not implement separately.** The launch plan's
+  behavior-preserving LC2 extraction is the execution vehicle for this same ~200-line region
+  (`pumpDownload`, `imuSelfTest`, `recCtlWriteCb`, IMU globals, loop pacing), then LC3 deepens it with the
+  one-run lifecycle. Buffer is already pure (`lib/bridge/ImuCapture.h`). **Prove:** compile; existing
+  framing tests; `IMUTEST` serial self-test once on hardware.
 - [ ] **R1d — `IRadioSource`/`IRadioSink` seam** (~560 lines: `scanCb`, `measNotifyCb`, the erg state
   machine, `centralConnect/Disconnect`, `cpWriteCb`, the advertising build). Split into
   `ble/BleCpsSource` + `ble/BleCpsPeripheral` (mirror `BleCrankPeripheral`) + `ble/FtmsErgClient` (mirror

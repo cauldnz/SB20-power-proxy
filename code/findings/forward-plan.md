@@ -4,7 +4,7 @@
 > SB20 meter/crank proxy to ~10 collaborator-testers. This doc remains the **technical backlog** it draws on.
 
 **Status: Phase 0 substantially complete and de-risked. This is the operational plan to get from
-"we know it will work" to a working proxy.** Last updated 2026-06-16.
+"we know it will work" to a working proxy.** Last updated 2026-07-20.
 
 This doc operationalises [`phase-0-report.md`](phase-0-report.md) §6 and
 [`05-implementation-phases.md`](../../05-implementation-phases.md). Read the report first for the
@@ -742,3 +742,26 @@ target write). The firmware executor is a **pure port** behind the radio seam (h
 4. **Wire to FTMS** — per-segment target → Set-Target-Power; bench-gated (coex on the C3 when stacked
    on the CPS spoof + WiFi), then the on-bike drive. **Safety:** every stop/disconnect/error resets erg
    to neutral (the §13 try/finally rule).
+
+## 15. Track Launch Control — approved planning baseline, implementation paused (owner 2026-07-20)
+
+> **Status: BACKLOG / APPROVED PLAN — do not implement without a separate owner go.**
+
+Build a coach-controlled track standing-start system: a Waveshare ESP32-S3 handheld runs the autonomous
+T-15 cues and offline PWA, while a top-tube XIAO nRF52840 Sense captures 104 Hz IMU, acoustic T0 and BLE
+CPS. The one nRF RAM run returns over a resumable BLE transfer and is erased only after verified
+controller-microSD persistence.
+
+Canonical package:
+
+- [`track-launch-control-research.md`](track-launch-control-research.md) — grounded research and completed
+  owner interview;
+- [`track-launch-ble-transfer.md`](track-launch-ble-transfer.md) — current throughput hazards, resumable
+  protocol and hardware benchmark;
+- [`track-launch-control-spec.md`](track-launch-control-spec.md) — approved product/technical contract; and
+- [`track-launch-control-plan.md`](track-launch-control-plan.md) — approved LC/HB/BT/TM/CW/AN delivery
+  slices through static-bike and velodrome gates.
+
+**First action when reconsidered:** obtain a fresh explicit implementation approval, then execute LC0
+procurement/pin-source audit. Do not jump directly to firmware: generated contract, pure lifecycle modules,
+real microphone/IMU/power captures and measured BLE baseline precede product wiring.

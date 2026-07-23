@@ -94,7 +94,7 @@ custom GATT service + a Web Bluetooth app). Reuses the pure ESP32 core via `lib_
 | BLE↔BLE bridge + correction · curve · single-sided ×2 · zero-forward · RGB status LED | ✅ | `firmware-nrf/src/main.cpp`, `lib/bridge/` · PRs #215/#221 |
 | On-device calibration · BLE OTA (buttonless DFU) · scan-based source picker | ✅ | `CalibrationSession.h` (shared), `BLEDfu`, `SourceCandidate.h` (shared) · PRs #222/#223 |
 | FTMS erg + structured workouts + **shifter bias** (3rd central drives a trainer) | ✅ bench (serial `WKTEST`); live erg gated | `main.cpp` erg loop, `WorkoutRuntime.h` (shared), Workout char `0x0008` · PR #224 |
-| BLE-controlled IMU track recording (LSM6DS3, bounded ring, CRC download) | ✅ live-sampling proven | `lib/bridge/ImuCapture.h`, RecCtl/RecData chars |
+| BLE-controlled IMU track recording (LSM6DS3, bounded linear buffer, CRC download) | ✅ live-sampling proven | `lib/bridge/ImuCapture.h`, RecCtl/RecData chars |
 | Pure wire-format core host-tested in CI (Proto.h + ImuCapture.h golden vectors) | ✅ | `firmware-nrf/test/test_bridge/` (`pio test -e native`) · PR #225 |
 | Garmin **Connect IQ** app — in-ride controller (record · erg start/pause · shifter ±) | ✅ builds edge540+epix2; on-device pending | [`firmware-nrf/ciq/`](firmware-nrf/ciq/README.md) · PR #227 |
 | ANT+BLE mix (receive ANT / send BLE, &c.) | ⏳ needs licensed S340 SoftDevice | seam ready; drop-zone armed · [nrf52-sense](code/findings/nrf52-sense.md) |

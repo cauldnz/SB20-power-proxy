@@ -164,6 +164,9 @@ done. USB DFU (`pio -t upload`) still works as the fallback.
 
 ## Memory budget (why recording is bounded)
 
-nRF52840 has 256 KB RAM; SoftDevice + FreeRTOS + BLE stacks leave ~150 KB. The ring budget is
-**120 KB** → 10 240 samples → **~3.3 min @52 Hz** (6.5 @26 Hz, 13 @13 Hz). Start/stop over BLE is
-therefore the workflow (arm it at the start line); rate 13 Hz covers a full track session.
+The authoritative build instantiates `ImuCapture<8192>`. It is a fixed **linear** buffer, not a ring:
+8,192 samples x 12 bytes = **96 KiB**. It stops accepting samples when full.
+
+Capacity is about 78.8 s at 104 Hz, 157.5 s at 52 Hz, 315 s at 26 Hz or 630 s at 13 Hz. The launch-control
+maximum (10 s pre-roll + 60 s after GO) uses 7,280 samples and leaves 912 samples / 10,944 bytes of sample
+headroom.
