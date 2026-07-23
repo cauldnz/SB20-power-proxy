@@ -765,3 +765,30 @@ Canonical package:
 **First action when reconsidered:** obtain a fresh explicit implementation approval, then execute LC0
 procurement/pin-source audit. Do not jump directly to firmware: generated contract, pure lifecycle modules,
 real microphone/IMU/power captures and measured BLE baseline precede product wiring.
+
+## 16. Trainer Dyno → evidence-gated Autotuner — OWNER-APPROVED; IMPLEMENTATION PAUSED (2026-07-20)
+
+Build a trainer-agnostic **dynamic-response Dyno** on the CYD touch head unit: run versioned ERG
+steps, ramps, and gated pseudo-random changes while reading the Assioma reference meter on the same
+clock; report delay, rise/fall, overshoot, settling, tracking error, oscillation, cadence/gear
+sensitivity, release behavior, and repeatability. Initial real trainers are **SB20 first, then the
+owner's Tacx NEO**; KICKR is a later capture-gated target. This is distinct from static A/B meter
+bias.
+
+The optional **Autotuner** follows only for an exact trainer/profile that earns repeatable two-day
+Dyno evidence and replay/simulation eligibility. It never changes the workout prescription, is
+bounded and per-session opt-in, fails to RAW pass-through, and cannot extrapolate beyond its
+validated envelope. Hard short sprints are a separate evidence-gated envelope expansion, not an
+extrapolation of the endurance profile.
+
+**Canonical documents (approved planning baseline):**
+- Research and primary-source findings:
+  [`erg-response-dyno-autotuner.md`](erg-response-dyno-autotuner.md)
+- Normative product/technical specification:
+  [`erg-response-dyno-autotuner-spec.md`](erg-response-dyno-autotuner-spec.md)
+- Independently mergeable delivery plan:
+  [`erg-response-dyno-autotuner-plan.md`](erg-response-dyno-autotuner-plan.md)
+
+**Status:** approved as a planning baseline only. **Do not implement** until a later explicit owner
+instruction authorizes the first unblocked PR slice. Dyno measurement remains mandatory before any
+compensation work.

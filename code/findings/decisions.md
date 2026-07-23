@@ -3181,6 +3181,39 @@ meter**, ramping watts + cadence 85) → nRF XIAO **BLE central reads it** (`src
   scan (scan-requests) sees what WinRT's passive scan hides.
 - **nRF↔C3 both native-USB:** the 0.42 C3 *does* deliver USB-CDC serial (unlike the dead 0.96); its ramp
   print is the ground-truth that the app booted after flash_c3.py's reset.
+
+## 2026-07-20 — Trainer Dyno → evidence-gated Autotuner planning baseline APPROVED; implementation paused
+
+The owner explicitly approved the combined trainer-dynamics program after primary-source research
+and a one-question-at-a-time design interview. The durable baseline is:
+
+- **Dyno is mandatory; Autotuner is optional and separately earned.** Dyno measures controlled-system
+  response, not static A/B meter bias. No performance claim precedes a repeatable baseline and no
+  improvement claim precedes same-rig hardware proof.
+- **Trainer-agnostic, proven on two initial plants:** simulator first, then **SB20**, then the owner's
+  **Tacx NEO**. KICKR is a later capture-gated target (FTMS first, FE-C fallback). No profile or
+  trainer behavior is assumed portable.
+- **CYD + Assioma is the product topology.** The CYD drives the trainer and reads the Assioma over BLE
+  on one monotonic clock. Every Dyno run requires the independent reference meter and writes an
+  immutable SD-card run bundle; the local PWA supplies detailed analysis/export.
+- **Accepted baselines require evidence:** three repeats per condition and two complete valid runs on
+  different days; cadence is coached at 60/80/100/120 rpm with a ±5 rpm validity band and 10-second
+  stabilization. Results remain a metric vector with uncertainty — never a composite score.
+- **Profiles bind to the exact trainer unit and measured identity/capabilities.** Known
+  firmware/capability changes disable and archive the profile. Compensation is explicit per-session,
+  bounded to the validated envelope, immediately bypassable to RAW, and never learns online.
+- **Hard sprints are a separate envelope expansion.** The target matrix is 5 s/400% FTP,
+  10 s/300%, and 15 s/250%, capped by the rider's absolute limit with three-minute recovery; the
+  rolling start/command ramp is deliberately deferred until ordinary Dyno evidence can design it.
+
+Canonical record:
+[`erg-response-dyno-autotuner.md`](erg-response-dyno-autotuner.md) (research),
+[`erg-response-dyno-autotuner-spec.md`](erg-response-dyno-autotuner-spec.md) (normative specification),
+and [`erg-response-dyno-autotuner-plan.md`](erg-response-dyno-autotuner-plan.md) (phased delivery).
+
+**Approval establishes the planning baseline only. Product implementation remains explicitly paused
+until a later owner instruction authorizes the first unblocked PR slice.**
+
 ## 2026-07-20 — Track Launch Control planning contract drafted; implementation NOT authorised
 
 Owner interview and primary-source research resolved the v1 product shape:
