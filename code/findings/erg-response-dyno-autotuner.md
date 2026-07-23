@@ -1,6 +1,6 @@
 # Erg-response Dyno and optional Autotuner
 
-**Status: RESEARCH (2026-07-20).** This is the cited research foundation for a trainer-agnostic
+**Status: RESEARCH COMPLETE (2026-07-20); IMPLEMENTATION PAUSED.** This is the cited research foundation for a trainer-agnostic
 dynamic-response program. **Dyno** is the mandatory measurement stage. The optional **Autotuner**
 is strictly evidence-gated plant compensation. This document creates no product code and makes no
 trainer accuracy, response, or improvement claim: no such claim is justified before a repeatable
@@ -440,4 +440,3 @@ standing capture gate; the current software plant is idealized; NEO and KICKR be
 Therefore no statement about trainer speed, accuracy, overshoot, stability, comparative quality, or
 compensation benefit is warranted until the relevant evidence gate is satisfied. Every eventual
 dynamic figure must trace to a committed capture.
-
