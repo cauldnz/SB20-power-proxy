@@ -2,8 +2,8 @@
 
 **Status:** 🟢 READY (planned 2026-07-25) · **Bike:** Stages SB20 (`E4:AA:5A:D6:0E:D4`) ·
 **Board:** C3-OLED bike board `sb20proxy.local` / **192.168.1.165** (COM9) · **Branch:** `main`
-(everything is merged — no feature branch) · **Budget: ~75 min, 3 must-dos** (≈25 min of gates, then a
-**40-min workout** that doubles as the soak test).
+(everything is merged — no feature branch) · **Budget: ~80 min, 3 must-dos** (≈25 min of gates, then a
+**~53-min workout** that doubles as the soak test).
 
 > **Design principle for this one:** the erg gate *is* the workout. If the SB20 takes our target power,
 > you ride a real structured session driven by our own stack, and that ride simultaneously soaks the
@@ -120,14 +120,16 @@ already be remembered-paired, in which case it just reconnects.
   question either way.
 - **Safety:** Stop releases erg. Worst case, power-cycle the board — the bike returns to normal.
 
-### G3 · **The workout** (the soak) — **must-do**, ~40 min
+### G3 · **The workout** (the soak) — **must-do**, ~53 min
 - **Goal:** you train; the ride simultaneously soaks everything.
 - **Default workout: `4×8 Threshold`** — 10 min warm-up, 4 × 8 min @ 99 % FTP with 2 min recoveries,
-  5 min cool-down ≈ **44 min**. Chosen because the sharp 99 % ↔ 50 % transitions are the *best* erg
-  validation. **Easier swap:** `Endurance 45` (45 min @ 68 %) or `Sweet Spot 3×12` (61 min — too long
-  today). Say which you want and the agent loads it.
-- **⚠️ FTP:** the presets assume **`ftp_w` 250**. If yours differs, tell the agent **before** loading and
-  it will import a scaled copy (`import_workout.py --ftp <yours>`, run from the venv).
+  5 min cool-down = **53 min** (verified against the on-device preset `4x8`:
+  `600 + 4×480 + 3×120 + 300` s). Chosen because the sharp 99 % ↔ 50 % transitions are the *best* erg
+  validation. **Easier swap:** `Endurance 45` (`endur45`, 45 min @ 68 %) or `Sweet Spot 3×12` (`ss3x12`,
+  longer — too long today). All three are **built-in firmware presets** (`WorkoutPresets.h`) — the agent
+  just picks one on `/workout`, **no file import needed**. Say which you want.
+- **⚠️ FTP:** the presets assume **`ftp_w` 250**. If yours differs, tell the agent **before** loading —
+  it will import a scaled copy (`import_workout.py --ftp <yours>`, **run from the venv**) and POST it.
 - **Action:** agent sets the SB20 as the erg trainer via `/setup`, loads the preset on `/workout`, you
   Start and ride.
 - **What the agent watches, live, while you pedal** (no extra rider effort):
