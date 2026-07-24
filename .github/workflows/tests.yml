@@ -63,7 +63,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.platformio
-          key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini') }}
+          # Both platformio.ini files: this job builds the ESP32 envs AND the nRF board envs, so a
+          # change to either project's toolchain pins must invalidate the cache.
+          key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini', 'firmware-nrf/platformio.ini') }}
           restore-keys: pio-${{ runner.os }}-
 
       - name: Test (native)
@@ -98,6 +100,27 @@ jobs:
       - name: Test nRF bridge wire-format core (native)
         working-directory: firmware-nrf
         run: pio test -e native
+
+      # Link the REAL nRF board firmware. The native env above sets `build_src_filter = -<*>`, so it
+      # never compiles src/ — meaning ~1450 lines of src/main.cpp plus the BLE/GATT seams
+      # (BridgeService, BridgeConfigStore, the Bluefruit central/peripheral glue) had ZERO CI
+      # compilation, while being the file every active nRF task edits. This is the nRF equivalent of
+      # the esp32c3-supermini link guard above.
+      - name: Compile nRF bridge firmware (link guard)
+        working-directory: firmware-nrf
+        run: pio run -e xiao-sense
+
+      # The Feather env exists so the board seam (src/board.h) keeps the firmware buildable off the
+      # XIAO's RGB-LED/IMU macros. Without compiling it, a XIAO-only regression in that seam is
+      # invisible until someone flashes a Feather. Cheap: same platform/toolchain as the step above.
+      - name: Compile nRF Feather variant (board-seam guard)
+        working-directory: firmware-nrf
+        run: pio run -e feather-nrf52840
+
+      # NOTE: [env:xiao-sense-s340] is deliberately NOT built here — it needs the licensed S340
+      # SoftDevice headers + ANT network key under firmware-nrf/vendor/softdevice/ (gitignored, not
+      # redistributable). Its ANT code is gated behind `#if defined(S340) && __has_include(...)`, so
+      # the envs above compile the same tree with ANT excluded. ANT stays bench-verified.
 
   bridge-parity:
     # The Bridge wire contract has one source (ui-schema/bridge.json). This job proves the generated

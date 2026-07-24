@@ -80,8 +80,11 @@ lifecycle); the LVGL screen is the only renderer, exactly as the rule above inte
   device work. This *is* the "one interaction model" — see U1.
 - **View-model:** `buildLcdViews` fills `LcdViews`; the OLED now projects from the same `RideView`/
   `ProvisionView` (U3).
-- **Wire contract (partial):** the Bridge GATT is schema-generated with golden vectors (R2); other JSON
-  mirrors are not yet (U2).
+- **Wire contract:** the Bridge GATT is schema-generated with golden vectors (R2) — and since 2026-07-24
+  the **SPA actually imports the generated `bridge-codec.js`** (R2a), so `web/index.html` holds no byte
+  offsets at all; `gen_spa_header.py` inlines the module for the board's single-file `/app`. The one
+  remaining unlocked Bridge mirror is Monkey-C `BridgeBle.mc` (R2c). Other JSON mirrors: the ESP↔web
+  contract is linted (U2), `/status` is not in a schema yet.
 
 ## 3. What is still parallel (the U-series targets)
 

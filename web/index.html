@@ -221,8 +221,18 @@
 
   <div class="card"><h2>Log</h2><div id="log"></div></div>
 
-<script>
+<script type="module">
 "use strict";
+// The Bridge GATT byte layouts are GENERATED from ui-schema/bridge.json (code/scripts/gen_bridge.py);
+// see design/ui-schema-design.md. Importing them here is what actually locks this SPA to Proto.h —
+// the Node parity test + the C++ golden vectors assert the same schema, so an offset change can no
+// longer silently corrupt the primary control surface (architecture-remediation.md R2a).
+//   * served from GitHub Pages: bridge-codec.js is fetched as a sibling module.
+//   * served from a board (GET /app): web/gen_spa_header.py INLINES the module into WebSpa.h, so the
+//     firmware still ships exactly one self-contained file.
+//   * opening this file straight off disk (file://) no longer works — a module import needs http;
+//     use the Pages copy or the board's /app.
+import * as BC from "./bridge-codec.js";
 // The shared Bike Bridge SPA. Device I/O goes through a Transport; two implementations —
 // BleTransport (Web Bluetooth, GitHub Pages host) and HttpTransport (fetch, ESP32 host) — both
 // translate to/from the SAME normalized objects the view renders, so a UI change lands on both:
@@ -298,20 +308,17 @@ class BleTransport {
     if (!this.ch.curv) return { hasCurve: false, breakpoints: [] };
     const d = await this.ch.curv.readValue();
     if (d.byteLength < 2 || d.getUint8(0) !== VER) return { hasCurve: false, breakpoints: [] };
-    const n = d.getUint8(1), bp = [];
-    for (let i = 0; i < n; i++) bp.push([d.getUint16(2 + i * 4, true), d.getUint16(4 + i * 4, true) / 1000]);
-    return { hasCurve: n > 0, breakpoints: bp };
+    const pts = BC.parseCurve(d).points;  // generated codec (ui-schema/bridge.json)
+    return { hasCurve: pts.length > 0, breakpoints: pts.map(p => [p.powerW, p.factor]) };
   }
   async setCurve(bp) {
     if (!this.ch.curv) throw new Error("this device has no curve characteristic");
-    const pts = bp.slice(0, 8);  // GATT cap is 8 points
-    const b = new Uint8Array(2 + pts.length * 4), v = new DataView(b.buffer);
-    b[0] = VER; b[1] = pts.length;
-    pts.forEach(([p, f], i) => {
-      v.setUint16(2 + i * 4, Math.max(0, Math.min(65535, Math.round(p))), true);
-      v.setUint16(4 + i * 4, Math.max(250, Math.min(4000, Math.round(f * 1000))), true);  // 0.25–4.0×
-    });
-    await this.ch.curv.writeValueWithResponse(b);
+    // Clamp here (product limits: power u16, factor 0.25–4.0×); the LAYOUT is the generated codec's.
+    const points = bp.slice(0, 8).map(([p, f]) => ({          // GATT cap is 8 points
+      powerW: Math.max(0, Math.min(65535, Math.round(p))),
+      factor: Math.max(0.25, Math.min(4.0, f)),
+    }));
+    await this.ch.curv.writeValueWithResponse(BC.packCurve({ points }));
   }
   // Buttons char (0x0009): [ver, enabled, act0..act5] — actN is an action-option INDEX (Sb20ButtonMap
   // order; OBC_ACTIONS below mirrors it). The SB20-shifter -> action binding + sink enable.
@@ -319,14 +326,12 @@ class BleTransport {
     if (!this.ch.btn) return { enabled: false, actions: [0, 0, 0, 0, 0, 0] };
     const d = await this.ch.btn.readValue();
     if (d.byteLength < 8 || d.getUint8(0) !== VER) return { enabled: false, actions: [0, 0, 0, 0, 0, 0] };
-    const a = []; for (let i = 0; i < 6; i++) a.push(d.getUint8(2 + i));
-    return { enabled: d.getUint8(1) !== 0, actions: a };
+    const b = BC.parseButtons(d);  // generated codec (ui-schema/bridge.json)
+    return { enabled: b.enabled, actions: b.act };
   }
   async setButtons(b) {
     if (!this.ch.btn) throw new Error("this device has no buttons characteristic");
-    const w = new Uint8Array(8); w[0] = VER; w[1] = b.enabled ? 1 : 0;
-    for (let i = 0; i < 6; i++) w[2 + i] = (b.actions[i] || 0) & 0xff;
-    await this.ch.btn.writeValueWithResponse(w);
+    await this.ch.btn.writeValueWithResponse(BC.packButtons({ enabled: !!b.enabled, act: b.actions }));
     return this.getButtons();
   }
   async scan() {}  // the bridge scans autonomously; ScanList pushes updates
@@ -360,49 +365,48 @@ class BleTransport {
   }
 }
 // --- BLE byte <-> normalized parsers/packers ---
+// The byte layout lives in ONE place: ui-schema/bridge.json -> code/scripts/gen_bridge.py ->
+// bridge-codec.js (imported above) + the C++ golden vectors Proto.h is asserted against. These
+// functions are now pure NAME ADAPTERS: wire shape (srcPowerW, flags{}, entries[]) -> the view's
+// normalized shape (srcW, flat booleans, ...) documented at the top of this file. No offsets here —
+// an offset change in the schema regenerates the codec and can never silently miss the SPA (R2a).
 function parseStatus(d) {
-  const f = d.getUint8(1);
-  return { srcConnected: !!(f & 1), recording: !!(f & 4), srcW: d.getInt16(2, true), outW: d.getInt16(4, true),
-    cad: d.getInt16(6, true), bal: d.getInt8(8), scale: d.getUint16(10, true) / 1000, offset: d.getInt16(12, true) / 10,
-    recN: d.getUint32(14, true), uptime: d.getUint16(18, true) };
+  const s = BC.parseStatus(d);
+  return { srcConnected: s.flags.srcConnected, recording: s.flags.recording, srcW: s.srcPowerW, outW: s.outPowerW,
+    cad: s.cadenceRpm, bal: s.balancePct, scale: s.scale, offset: s.offset,
+    recN: s.recSamples, uptime: s.uptimeS };
 }
 function parseConfig(d) {
-  // flags byte (offset 1): b0 srcIsAnt · b1 outIsAnt · b2 singleSided · b3 spoof (Proto.h).
-  return { scale: d.getUint16(2, true) / 1000, offset: d.getInt16(4, true) / 10, singleSided: !!(d.getUint8(1) & 4),
-    spoof: !!(d.getUint8(1) & 8),
-    srcFilter: dec(new Uint8Array(d.buffer, d.byteOffset + 6, 19)), outName: dec(new Uint8Array(d.buffer, d.byteOffset + 25, 19)) };
+  const c = BC.parseConfig(d);
+  return { scale: c.scale, offset: c.offset, singleSided: c.flags.singleSided, spoof: c.flags.spoof,
+    srcFilter: c.srcFilter, outName: c.outName };
 }
 function packConfig(c) {
-  const b = new Uint8Array(44), v = new DataView(b.buffer);
-  // Combine the flag bits (we leave srcIsAnt/outIsAnt 0 — ANT routing is firmware-gated on the S340).
-  b[0] = VER; b[1] = (c.singleSided ? 4 : 0) | (c.spoof ? 8 : 0);
-  v.setUint16(2, Math.round((c.scale || 1) * 1000), true);
-  v.setInt16(4, Math.round((c.offset || 0) * 10), true);
-  new TextEncoder().encodeInto((c.srcFilter || "").slice(0, 19), b.subarray(6, 25));
-  new TextEncoder().encodeInto((c.outName || "").slice(0, 19), b.subarray(25, 44));
-  return b;
+  // srcIsAnt/outIsAnt stay 0 — ANT routing is firmware-gated (rejected until the S340 build).
+  return BC.packConfig({ scale: c.scale || 1, offset: c.offset || 0,
+    flags: { srcIsAnt: false, outIsAnt: false, singleSided: !!c.singleSided, spoof: !!c.spoof },
+    srcFilter: (c.srcFilter || "").slice(0, 19), outName: (c.outName || "").slice(0, 19) });
 }
 function parseScan(d) {
-  const n = d.getUint8(1), out = [];
-  for (let i = 0; i < n; i++) {
-    const o = 2 + i * 21, f = d.getUint8(o + 20);
-    out.push({ name: dec(new Uint8Array(d.buffer, d.byteOffset + o, 19)), rssi: d.getInt8(o + 19),
-      isCps: !!(f & 1), isFtms: !!(f & 2), isCrank: !!(f & 4) });
-  }
-  return out;
+  return BC.parseScanList(d).entries.map(e => ({ name: e.name, rssi: e.rssi,
+    isCps: e.flags.isCps, isFtms: e.flags.isFtms, isCrank: e.flags.isStagesCrank }));
 }
 function parseCal(d) {
-  const cov = []; for (let i = 0; i < 6; i++) cov.push(d.getUint8(9 + i));
-  return { state: d.getUint8(1), pairs: d.getUint16(3, true), minPairs: d.getUint16(5, true),
-    resid: d.getInt16(7, true) / 10, coverage: cov, enough: !!d.getUint8(15) };
+  const c = BC.parseCalState(d);
+  return { state: c.state, pairs: c.pairCount, minPairs: c.minPairs,
+    resid: c.residual, coverage: c.coverage, enough: c.enoughToFit };
 }
 function parseWk(d) {
-  const f = d.getUint8(1);
-  return { loaded: !!(f & 1), running: !!(f & 2), paused: !!(f & 4), ergConnected: !!(f & 8), ergControlled: !!(f & 16),
-    target: d.getInt16(2, true), segIndex: d.getUint8(4), nSeg: d.getUint8(5), segRemain: d.getUint16(6, true),
-    elapsed: d.getUint16(10, true), bias: d.getInt16(12, true) };
+  const w = BC.parseWkState(d);
+  return { loaded: w.flags.loaded, running: w.flags.running, paused: w.flags.paused,
+    ergConnected: w.flags.ergConnected, ergControlled: w.flags.ergControlled,
+    target: w.targetW, segIndex: w.segIndex, nSeg: w.nSeg, segRemain: w.segRemainS,
+    elapsed: w.elapsedS, bias: w.biasW };
 }
-function parseRec(d) { return { state: d.getUint8(1), rate: d.getUint8(2), n: d.getUint32(4, true), capacity: d.getUint32(8, true) }; }
+function parseRec(d) {
+  const r = BC.parseRecState(d);
+  return { state: r.state, rate: r.rateHz, n: r.samples, capacity: r.capacity };
+}
 
 // IMU download assembly (BLE-only) -> {csv, mags, n, ok, rate}
 function crc32(bytes) {
