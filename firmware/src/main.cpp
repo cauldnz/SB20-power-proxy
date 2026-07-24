@@ -4,6 +4,7 @@
 
 #include <Arduino.h>
 #include <NimBLEDevice.h>
+#include <new>
 #include <esp_timer.h>
 
 #include "Config.h"
@@ -268,8 +269,44 @@ static LcdUiState g_lcdUi;
 #define WATTY_DEMO 0
 #endif
 static WattyBird g_watty(wattyBirdPanelConfig());
-static LcdCanvas g_wbFrame;
-static volatile bool g_wattyActive = (WATTY_DEMO != 0);
+// The game frame is allocated ON DEMAND, never in a global ctor. A full-frame 16-bit canvas is
+// LCD_W*LCD_H*2 bytes = 150 KB on the CYD (240x320) — larger than any single contiguous DRAM block a
+// classic ESP32 can hand out with no PSRAM. As a global it ran during do_global_ctors, `operator new`
+// threw, and with -fno-exceptions in play that is std::terminate -> abort(): the CYD boot-looped
+// before printing a single log line (hardware, 2026-07-25). Watty is an Easter egg; it must cost
+// nothing — not memory, and certainly not a boot — unless someone actually turns it on.
+static LcdCanvas* g_wbFrame = nullptr;
+static volatile bool g_wattyActive = false;  // never auto-on at boot; wattySetActive() gates on memory
+
+// Turn the game on/off, allocating (and handing back) its frame. On a board whose largest contiguous
+// block can't take the frame we say so and stay off — the head-unit keeps working, minus an Easter egg.
+// Returns the state actually reached, which is NOT always what was asked for.
+static bool wattySetActive(bool on) {
+    if (on && !g_wbFrame) {
+        const size_t need = (size_t)LCD_W * LCD_H * sizeof(uint16_t);
+        const size_t largest = ESP.getMaxAllocHeap();
+        // Check before allocating: LcdCanvas's std::vector throws on failure, and a throw here is
+        // abort(). The pre-check is what keeps a memory shortage a message instead of a reboot.
+        if (largest < need + 8192) {  // 8 KB headroom so we don't leave the heap with nothing
+            Serial.printf("[watty] needs %u B contiguous, largest block is %u B - staying off\n",
+                          (unsigned)need, (unsigned)largest);
+            g_wattyActive = false;
+            return false;
+        }
+        g_wbFrame = new (std::nothrow) LcdCanvas();
+        if (!g_wbFrame) {
+            Serial.println("[watty] frame alloc failed - staying off");
+            g_wattyActive = false;
+            return false;
+        }
+    }
+    g_wattyActive = on;
+    if (!on && g_wbFrame) {  // hand the frame back the moment the egg is closed
+        delete g_wbFrame;
+        g_wbFrame = nullptr;
+    }
+    return on;
+}
 static volatile bool g_wbAuto = (WATTY_DEMO != 0);  // on-device sim-power "rider" flies the bird
 static volatile int  g_wbInjectW = -1;              // WBPWR: inject a fixed sim-meter power (-1 = off)
 static volatile bool g_wbShotReq = false;           // WBSHOT: dump the next rendered frame over serial
@@ -307,8 +344,9 @@ static void wbB64Write(const uint8_t* d, size_t n) {
     }
 }
 static void wbDumpFrame() {
+    if (!g_wbFrame) { Serial.print("\nWBSHOT none\n"); return; }  // the egg isn't running
     Serial.printf("\nWBSHOT %d %d\n", (int)LCD_W, (int)LCD_H);
-    wbB64Write((const uint8_t*)g_wbFrame.px.data(), g_wbFrame.px.size() * 2);
+    wbB64Write((const uint8_t*)g_wbFrame->px.data(), g_wbFrame->px.size() * 2);
     Serial.print("\nWBEND\n");
 }
 // LCD_BANDS: on no-PSRAM boards (the classic-ESP32 CYD) the full frame can't sit beside WiFi+BLE,
@@ -703,7 +741,7 @@ static void lcdTask(void*) {
             if (g_wattyActive && !wbWas) g_watty.reset(millis());  // (re)enter at the attract screen
             wbWas = g_wattyActive;
         }
-        if (g_wattyActive) {
+        if (g_wattyActive && g_wbFrame) {
             lcdLock();
             buildLcdViews(views);
             lcdUnlock();
@@ -724,8 +762,8 @@ static void lcdTask(void*) {
             if (g_watty.mode() == WbMode::Dead && touched && !wbPrevTouch) g_watty.start(nowm);  // retry
             wbPrevTouch = touched;
             g_watty.step(dt, inputW, views.ride.cadence);
-            renderWattyBird(g_wbFrame, g_watty);
-            lcd.blit(g_wbFrame);
+            renderWattyBird(*g_wbFrame, g_watty);
+            lcd.blit(*g_wbFrame);
             if (g_wbShotReq) { g_wbShotReq = false; wbDumpFrame(); }  // grab this exact frame
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
@@ -911,7 +949,7 @@ static void lcdSerialConsole() {
             esp_restart();
 #if USE_LCD
         } else if (cmd == "WATTY") {              // toggle the Watty Birds Easter egg
-            g_wattyActive = !g_wattyActive;
+            wattySetActive(!g_wattyActive);       // may refuse (and say why) if the frame won't fit
             Serial.printf("[watty] %s\n", g_wattyActive ? "ON - tap to flap; pedal to fly" : "off");
         } else if (cmd == "WBAUTO") {             // toggle the on-device sim-power rider
             g_wbAuto = !g_wbAuto;
@@ -1368,6 +1406,7 @@ void setup() {
     bootStage("pre-lcd");
     lcd.begin();
     bootStage("post-lcd");
+    if (WATTY_DEMO) wattySetActive(true);  // demo build boots into the egg — after the heap exists
 #if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
     Serial.printf("[lcd] CYD %dx%d up (%d band%s); touch(XPT2046)=%s\n", LCD_W, LCD_H, LCD_BANDS,
                   LCD_BANDS > 1 ? "s" : "", lcd.touchAlive() ? "alive" : "DEAD");

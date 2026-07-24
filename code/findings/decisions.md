@@ -3249,3 +3249,25 @@ Canonical planning docs:
 The owner approved `track-launch-control-spec.md` and `track-launch-control-plan.md` as the planning
 baseline after the requirements interview and adversarial design review. This approval freezes the plan;
 it does **not** authorise LC0 procurement or any implementation slice. Wait for a separate explicit go.
+
+## 2026-07-25 — CYD (esp32cyd-live) boot-looped on `main`: Watty Birds frame as a global ctor — FIXED
+
+Pre-staging session 12 on the desk, flashed the current-`main` `esp32cyd-live` build to the CYD (COM17)
+and it **boot-looped before printing a line** — `abort()` at `do_global_ctors`. addr2line on the ELF
+put it in `LcdCanvas::LcdCanvas()` (a `std::vector<uint16_t>`) inside `_GLOBAL__sub_I_g_loopBeat`, i.e.
+the global `static LcdCanvas g_wbFrame;` added with the Watty Birds Easter egg (`7ba40af`). On the CYD
+(240×320) that frame is `240*320*2` = **150 KB in one contiguous DRAM block** — larger than the largest
+block a classic ESP32 with no PSRAM can hand out during static init. `operator new` throws, and under
+`-fno-exceptions` a throw is `std::terminate → abort()`. It never reached `setup()`, so there was no
+`/log`, no WiFi, no dashboard — the board was **dead as a head-unit**. (S3, 172×320 = 107 KB, and the
+C3, no LCD, dodged it — which is why CI's compile-only gate and the other boards never caught it.)
+
+**Fix** (`fix/cyd-watty-boot-loop`): the game frame is now a `LcdCanvas*`, allocated on demand by
+`wattySetActive(true)` and freed on exit — never in a global ctor. Allocation is **pre-checked** against
+`ESP.getMaxAllocHeap()` (+8 KB headroom) and uses `new(std::nothrow)`, so a board that can't spare the
+block **declines the egg with a serial message and keeps running** instead of aborting. `WATTY_DEMO`
+builds now enter the egg from `setup()`, after the heap exists. Verified on hardware: the CYD boots
+clean — `[lcd] CYD 240x320 up (4 bands)`, `[lvgl] alive`, WiFi portal up. Native suite 245/245 (incl.
+`test_wattybird`); `esp32c3-oled-live-ota` (the bike board) still links. **Lesson: a full-frame canvas
+must never be a global — and CI needs a no-PSRAM link/boot guard, not just a compile.** The Watty egg is
+optional; it must cost nothing (memory or boot) unless switched on.
