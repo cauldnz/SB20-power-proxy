@@ -53,8 +53,13 @@ Hardware on the bike: the **Assioma** pedals, a **phone**, and the **SB20** (wit
    **Ride** screen loads.
 2. **Setup** → your **Assioma** is in the (now filtered) picker; tap it → Save. Pedal: **power tracks**
    on Ride, IN→OUT title shows Assioma → Stages.
-3. **Pair the SB20** to the spoofed crank (Stages app; battery-out the real crank). SB20 shows your
-   corrected watts.
+3. **Pair the SB20** in the Stages app — **NO battery pull** (the session-8 own-id pivot). Two
+   free-type L/R fields: **L = `62145`** (the C3/ESP), **R = `4963`** (your **real right crank**, left
+   powered). Sessions 8/9: the SB20 needs both ids *findable* (a phantom R failed; the real 4963
+   works) and there's **no double-count** — the bike consumes only the ESP's doubled-left. May already
+   be remembered-paired → just reconnects. SB20 then shows your corrected watts.
+   *Restore-after (if you ever revert): real pair `Stages 62144 (L) : 4963 (R)`, length 165 mm,
+   zero-offset L 903 / R 951.*
 
 ### The erg run
 4. **Set the SB20 as the erg trainer.** On the phone `/setup` → **Trainer / erg** section → the SB20's

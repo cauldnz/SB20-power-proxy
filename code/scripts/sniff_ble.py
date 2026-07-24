@@ -28,6 +28,18 @@ Examples
 
 from __future__ import annotations
 
+import sys as _sys
+
+# The docstring/help contains non-cp1252 glyphs (e.g. the "app <-> SB20" arrow), and a Windows console
+# defaults to cp1252 — so `--help` died with UnicodeEncodeError while the actual capture worked fine.
+# Force UTF-8 on the streams (same fix flash_c3.py needed for esptool 5.x's progress bar). Found while
+# pre-staging a bike session: a confusing traceback at the bike costs ride time.
+for _s in (_sys.stdout, _sys.stderr):
+    try:
+        _s.reconfigure(encoding="utf-8")
+    except (AttributeError, OSError):  # not a real console / already closed — never fatal
+        pass
+
 import argparse
 import os
 import sys
