@@ -96,19 +96,33 @@ single offset change silently corrupts the *primary user control surface* with z
 (`test_spa_sync` only checks the embedded copy is in sync, not that the bytes are right). The idiom to fix
 it exists (`test_wire_format_parity.py`); the blocker is that the JS codec isn't executable in isolation.
 
-**Needs an owner decision (records the choice here before building):**
-- [ ] **R2-decision — how to make the JS Bridge codec testable.** Options: (a) extract the `parse*/pack*`
-  functions into a small ES module the SPA imports *and* a Node test imports (adds Node to CI); (b) a
-  headless-browser test; (c) generate a shared golden-vectors JSON from the C++ side and assert both the
-  C++ test and a Node test against it. **Recommendation: (a)+(c)** — a `web/bridge-codec.js` module + a
-  committed `web/bridge-golden.json` both sides check. Requires a Node step in `tests.yml`.
-- [ ] **R2a — extract `web/bridge-codec.js`** (the Bridge parse/pack only; keep the SPA a single served
-  file via the existing `gen_spa_header` inlining, or import at build). Regenerate `WebSpa.h`; keep
-  `test_spa_sync` green.
-- [ ] **R2b — shared golden vectors + Node parity test** — emit canonical `Proto.h` byte vectors, assert
-  `bridge-codec.js` decode/encode matches; wire the Node job into CI.
-- [ ] **R2c — Monkey-C** (`BridgeBle.mc`): lower priority (no CI build today, needs the Garmin SDK). At
-  minimum, a doc note + the shared golden JSON as the reference; a `monkeyc` CI job is a stretch.
+**Resolved — and the answer went further than this doc's recommendation.** The owner-approved design is
+[`design/ui-schema-design.md`](../../design/ui-schema-design.md) (U2): don't hand-extract the codec,
+**generate** it from a single schema (`ui-schema/bridge.json`) and lock every mirror to committed golden
+vectors.
+
+- [x] **R2-decision** ✅ — chose (a)+(c) as recommended, implemented as full codegen:
+  `code/scripts/gen_bridge.py` emits `ui-schema/bridge-golden.json` + `web/bridge-codec.js` +
+  `firmware-nrf/test/.../bridge_golden_gen.h`. Node added to CI. (commit `6194d06`)
+- [x] **R2a — the SPA runs the generated codec** ✅ (2026-07-24). `web/index.html` is now
+  `<script type="module">` and `import * as BC from "./bridge-codec.js"`; its `parse*/pack*` are pure
+  **name adapters** (wire shape → the view's normalized shape) with **zero byte offsets left**. Curve +
+  Buttons moved over too. `web/gen_spa_header.py` inlines the module into `WebSpa.h` so a board still
+  serves exactly one self-contained file. Verified: Node parity ✅, `gen_bridge --check` ✅,
+  `test_spa_sync` ✅, SPA loaded over http in a real browser with an in-page codec round-trip ✅,
+  `esp32c3-wifi` links (Flash 62.3%) ✅.
+  **Caveat:** opening `web/index.html` straight off disk (`file://`) no longer works — a module import
+  needs http. Use the Pages copy or the board's `/app`.
+- [x] **R2b — shared golden vectors + Node parity test** ✅ — `bridge-parity` job in `tests.yml`
+  (`gen_bridge.py --check`, `node web/test/bridge-codec.test.mjs`, `gen_webjson.py --check`); the C++ side
+  is locked by `firmware-nrf` native (`bridge_golden_gen.h`). (commit `6194d06`)
+- [ ] **R2c — Monkey-C** (`BridgeBle.mc`): still untouched — it remains the one Bridge mirror with no
+  golden-vector lock (no CI build today; needs the Garmin SDK). At minimum, a doc note + the shared golden
+  JSON as the reference; a `monkeyc` CI job is a stretch.
+
+> **R2 was previously mis-stated in both directions** — this doc had all four boxes unticked while
+> `ui-unification.md` marked U2 "done"; in fact R2b had shipped and R2a had not. The gap that mattered:
+> CI was guarding `bridge-codec.js`, a file the shipping SPA never imported. That is now closed.
 
 ---
 
