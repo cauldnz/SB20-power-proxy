@@ -179,3 +179,23 @@ Diagrams are **Mermaid text, rendered locally.** Source is authoritative; the im
 - **GitHub ` ```mermaid ` fenced blocks** are fine inline in Markdown (rendered by GitHub, in-repo).
 
 Canonical convention & shared helper: `cauldnz/cauldnz-pos` → `skills/diagrams/`.
+
+## Agent skills
+
+Per-repo configuration the engineering skills read. Edit the files under `docs/agents/` directly to
+change any of this.
+
+### Issue tracker
+
+Issues live in **GitHub Issues** for `cauldnz/SB20-power-proxy`, driven by the `gh` CLI.
+See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles, each label string equal to its name — `needs-triage`, `needs-info`,
+`ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root, created lazily by `/domain-modeling`
+when terms or decisions actually get resolved. See `docs/agents/domain.md`.
