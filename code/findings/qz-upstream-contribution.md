@@ -1,7 +1,8 @@
 # Contributing the OBC listener upstream to qdomyos-zwift
 
-**Status: branch pushed + build-verifying on our fork; the upstream PR is NOT open and needs the
-owner's explicit go** (it is a public action on a third party's repo, under the owner's name).
+**Status: branch pushed + GREEN on our fork's Linux-desktop CI (2026-07-25); the upstream PR is NOT
+open and needs the owner's explicit go** (it is a public action on a third party's repo, under the
+owner's name).
 
 This doc is the whole state of that contribution, so it does not have to live in a session's context.
 It is a **process/state** doc, not a protocol doc — the OBC wire format is
@@ -36,6 +37,13 @@ long histories; branch fresh off `upstream/master` instead).
 
 Upstream's own `main.yml` triggers only on `push` to `master` and on `pull_request`, so pushing a
 feature branch to the fork does **not** build it — hence the separate verification branch.
+
+**Build-verified 2026-07-25:** `ci/verify-obc-listener` is **green** on the fork's Linux-desktop CI
+(run 30121934489, 12m28s). One fix was needed beyond the raw port: qz keeps a **fixed-size**
+`QVariant allSettings[allSettingsCount][2]` defaults table with `allSettingsCount = 1000`, and that
+array was already exactly full — adding `obc_listener_enabled` overflowed it
+(`error: too many initializers for 'QVariant [1000][2]'`). Bumped the count to **1001**. This is the
+kind of thing the compile-only reasoning misses and a real build catches.
 
 Files touched (all additive):
 
