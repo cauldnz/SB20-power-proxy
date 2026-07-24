@@ -24,6 +24,10 @@ inline std::string renderDiagReport(const RuntimeConfig& cfg, const ProxyStatus&
     r += st.fw;
     r += "  version=";
     r += st.version;
+    r += "  build=";
+    r += st.buildSha;
+    r += " ";
+    r += st.buildTime;
     r += "  uptime_ms=" + std::to_string(st.uptimeMs) + "  heap=" + std::to_string(st.freeHeap) +
          "  rssi=" + std::to_string(st.rssi) + "\n\n";
 

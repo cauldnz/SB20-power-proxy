@@ -10,6 +10,16 @@
 #define SB20_FIRMWARE_VERSION "0.1.0"
 #endif
 
+// Build stamp — the git short SHA + build time, injected by scripts/build_version.py so we can tell
+// dev builds apart (the semver above only changes at release). Fallbacks keep host/test builds compiling
+// when the pre-build hook didn't run. Surfaced next to the semver in /status + /diag + the screen.
+#ifndef SB20_BUILD_SHA
+#define SB20_BUILD_SHA "nogit"
+#endif
+#ifndef SB20_BUILD_TIME
+#define SB20_BUILD_TIME "nobuild"
+#endif
+
 namespace sb20proxy {
 
 // What the proxy spoofs and reads. Phase 0 / Phase 1 values; later these move to NVS +
@@ -17,6 +27,9 @@ namespace sb20proxy {
 struct Config {
     // Build version, surfaced in /status + /diag and used as the OTA "currentVersion".
     static constexpr const char* FIRMWARE_VERSION = SB20_FIRMWARE_VERSION;
+    // Build stamp (git SHA + build time) — uniquely identifies a dev build; see build_version.py.
+    static constexpr const char* BUILD_SHA  = SB20_BUILD_SHA;
+    static constexpr const char* BUILD_TIME = SB20_BUILD_TIME;
 
     // --- the crank we impersonate (the Stages L crank; values captured 2026-06-17 over BLE) ---
     static constexpr const char* SPOOF_NAME         = "Stages 62144";
