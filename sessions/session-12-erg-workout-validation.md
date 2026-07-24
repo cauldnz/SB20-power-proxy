@@ -144,8 +144,11 @@ Pick at most one; each is genuinely optional.
 - **S2 · MeterCompare with two real meters** (~10 min) — put the **Assioma** on as meter B and open
   `/compare`. Today every number in that feature is **fabricated** (`B := A × 1.11`); this is the only
   way to answer the session-7 question "is the ~11 % flat or torque-dependent?".
-- **S3 · qz on-air** — only if you have a **runnable qz build** at the bike (Linux desktop). Would
-  upgrade the upstream PR from "compiles" to "verified on air". See §8.
+- **S3 · qz on-air** — only if a **runnable qz build** is already staged at the bike (Linux desktop,
+  from the fork branch `feat/obc-listener-upstream`). Would upgrade the upstream PR from "compiles" to
+  "verified on air" — the exact steps, and what we may/may not claim, are in
+  [`qz-upstream-contribution.md`](../code/findings/qz-upstream-contribution.md) §6.
+  **Do not build qz on the rider's clock.**
 
 ---
 
