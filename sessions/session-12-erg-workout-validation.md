@@ -38,7 +38,13 @@ Banked already, **do not re-plan**: sessions 8/9 (spoof pairing + calibrate + ze
 | **nRF sniffer** | ✅ **proven live capturing on this desk** — `sniffer on COM13 @ 1000000 baud`, 24 advertisers seen |
 | `sniff_ble.py --help` | ⚠️ **was crashing** (UnicodeEncodeError on a Windows console) → **fixed + reverified** (`52a4aca`) |
 | `import_workout.py` | ⚠️ **fails on system Python** (`ModuleNotFoundError: sb20proxy`) → **use the venv**, see below |
+| **CYD board (COM17)** | ⚠️ **`esp32cyd-live` on `main` boot-looped** (Watty Birds frame = a 150 KB global ctor OOM on the no-PSRAM CYD) → **found + fixed on hardware**, PR #281; CYD now boots clean (`[lcd] CYD 240x320 up`, `[lvgl] alive`). **The bike board is the C3-OLED — it was never affected.** |
+| Bike board (`192.168.1.165`) | ❌ **unreachable from this desk** (off/away) — **could not be pre-flashed**. G0 recovers + flashes it at the bike. |
 | ANT+ stick | ❌ **not present on the desk machine** — could not be pre-verified. See §7 risk |
+
+> **Note on PR #281 (CYD boot-loop fix):** merge it before flashing a **CYD** as the head-unit. It does
+> **not** touch the C3 ride path (that board has no LCD and never hit the bug), so it is not a blocker
+> for the ride itself — but the CYD is unusable as a display until it lands.
 
 > **Use the venv for every Python tool:** `code\.venv\Scripts\python.exe` — the package is installed
 > there (editable) and `bleak` is present. System Python does **not** have `sb20proxy`.

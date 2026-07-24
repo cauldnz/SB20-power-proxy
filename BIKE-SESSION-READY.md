@@ -1,10 +1,16 @@
 # 🟢 READ ME FIRST — bike-machine session cold-start
 
-**You are the assistant on the bike machine.** **One ride is 🟢 READY** for this visit:
+**You are the assistant on the bike machine.** The 🟢 **READY-next** ride is:
 
-- **[Session 5 — meter-to-meter calibration ride (XCadey → reads like Assioma)](sessions/session-05-meter-calibration-capture.md)** —
-  on the **track bike** (both meters fitted). Drive the on-device `/calibrate` wizard so the XCadey reads
-  like the Assioma, then leave the proxy rebroadcasting the corrected XCadey for the Garmin. ~20–30 min.
+- ⭐ **[Session 12 — the erg workout ride: prove the stack while you train](sessions/session-12-erg-workout-validation.md)** —
+  on the **SB20**. *The erg gate is the workout:* G2 front-loads a cheap FTMS go/no-go, which decides
+  whether the **40-min `4×8 Threshold`** runs erg-driven or manual; either way the ride soaks the spoof,
+  the workout engine, coex/heap, the OBC paddles, and the regenerated-codec web UI. ~75 min.
+  **Paste-able opening prompt + cold-start: [`session-12-LAPTOP-HANDOFF.md`](sessions/session-12-LAPTOP-HANDOFF.md).**
+  Desk-derisked 2026-07-25 (see the plan's §2).
+- Also 🟢 READY (independent, other bikes): **[Session 5](sessions/session-05-meter-calibration-capture.md)**
+  (track bike, meter-to-meter `/calibrate`) and **[Session 11](sessions/session-11-obc-bike-test.md)**
+  (OBC G2/G3 — folded into session 12 as an in-ride extra). Do whichever bike is ready.
 
 > **Session 9 ✅ DONE (2026-06-26)** — zero-reset → Assioma confirmed on air (`200c01ffff` SUCCESS = a real
 > zero) + phantom-R resolved (the SB20 needs *both* crank IDs findable). Don't re-run it; see the ledger +
@@ -130,5 +136,7 @@ API-verified against bleak 3.0.2.)
 **Live support:** the rider narrates in chat; you `curl` the board (`/`, `/log`, `/stats`, `/status`) and
 read the JSONL captures off the machine as they go.
 
-> All sessions are indexed in [`sessions/README.md`](sessions/README.md). Sessions **9 + 5** are the
-> independent 🟢 READY rides; session 8 + older `BIKE-SESSION-*.md` are historical (DONE).
+> All sessions are indexed in [`sessions/README.md`](sessions/README.md). **Session 12 is READY-next**
+> (see [`session-12-LAPTOP-HANDOFF.md`](sessions/session-12-LAPTOP-HANDOFF.md)); sessions 5 + 11 are also
+> independent 🟢 READY rides; sessions 8/9 + older `BIKE-SESSION-*.md` are historical (DONE).
+> **The bike board is `192.168.1.165` / COM9 — the IP + host examples below are current for it.**
