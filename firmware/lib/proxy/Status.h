@@ -14,6 +14,8 @@ namespace sb20proxy {
 struct ProxyStatus {
     const char* fw = "sb20proxy-esp32";
     const char* version = Config::FIRMWARE_VERSION;  // semver build stamp (OTA currentVersion)
+    const char* buildSha = Config::BUILD_SHA;    // git short SHA — which dev build is installed
+    const char* buildTime = Config::BUILD_TIME;  // build timestamp (ISO-ish, no space)
     bool sourceConnected = false;  // meter linked (always false in mock mode)
     bool mock = false;             // running the synthetic meter, no real source
     std::string srcName;           // the connected source's advertised name ("" if none)
@@ -57,7 +59,9 @@ inline std::string renderStatusJson(const ProxyStatus& s) {
     j += s.fw;
     j += "\",\"version\":\"";
     j += s.version;
-    j += "\",\"source\":\"";
+    j += "\",\"build_sha\":\"" + jsonEscape(s.buildSha) + "\"";
+    j += ",\"build_time\":\"" + jsonEscape(s.buildTime) + "\"";
+    j += ",\"source\":\"";
     j += source;
     j += "\",\"src_name\":\"" + jsonEscape(s.srcName) + "\"";
     // The OUT side: the identity we advertise + which product mode we're in. The dashboard title

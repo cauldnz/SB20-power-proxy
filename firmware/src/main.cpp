@@ -502,7 +502,7 @@ static CompareService g_cmpSvc = []() {
 static void buildLcdViews(LcdViews& v) {
     RideView& r = v.ride;
     r.outName = g_lcdIdentity;
-    r.version = std::string(Config::FIRMWARE_VERSION);
+    r.version = std::string(Config::FIRMWARE_VERSION) + " " + Config::BUILD_SHA;  // semver + git SHA
     r.watts = proxy.lastOutput().power_w;
     r.srcWatts = proxy.lastSource().power_w;
     r.cadence = proxy.lastOutput().cadence_rpm;
@@ -1044,6 +1044,8 @@ void setup() {
 #endif
     delay(200);
     Serial.println("[sb20proxy] BLE crank proxy starting");
+    Serial.printf("[sb20proxy] build %s  %s  %s\n", Config::FIRMWARE_VERSION, Config::BUILD_SHA,
+                  Config::BUILD_TIME);  // which build is on this board (git SHA + build time)
 #ifdef S3_DIAG
     for (int i = 0; i < 8; i++) { Serial.printf("[diag] alive %d heap=%u\n", i, (unsigned)ESP.getFreeHeap()); delay(250); }
     Serial.println("[diag] stage: pre-config");
