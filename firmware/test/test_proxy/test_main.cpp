@@ -1396,6 +1396,16 @@ void test_status_json_has_firmware_version() {
     TEST_ASSERT_TRUE(renderStatusJson(s).find(expect) != std::string::npos);
 }
 
+void test_status_json_has_build_stamp() {
+    ProxyStatus s;  // buildSha/buildTime default to Config::BUILD_SHA / BUILD_TIME (the git stamp)
+    const std::string j = renderStatusJson(s);
+    // The unique-per-build identity lives in its own fields; the semver stays clean for OTA.
+    TEST_ASSERT_TRUE(j.find(std::string("\"build_sha\":\"") + Config::BUILD_SHA + "\"") !=
+                     std::string::npos);
+    TEST_ASSERT_TRUE(j.find(std::string("\"build_time\":\"") + Config::BUILD_TIME + "\"") !=
+                     std::string::npos);
+}
+
 // --- WebJson: /scan + /config for the shared SPA's HTTP transport (web/HTTP-API.md) ---
 void test_scan_json_shape_and_flags() {
     std::vector<SourceCandidate> srcs;
@@ -2799,6 +2809,7 @@ int runUnityTests() {
     RUN_TEST(test_status_json_source_state);
     RUN_TEST(test_status_json_unknown_cadence);
     RUN_TEST(test_status_json_has_firmware_version);
+    RUN_TEST(test_status_json_has_build_stamp);
     RUN_TEST(test_scan_json_shape_and_flags);
     RUN_TEST(test_scan_json_empty);
     RUN_TEST(test_config_json_maps_fields);
