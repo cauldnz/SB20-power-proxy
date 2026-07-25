@@ -3271,3 +3271,39 @@ clean — `[lcd] CYD 240x320 up (4 bands)`, `[lvgl] alive`, WiFi portal up. Nati
 `test_wattybird`); `esp32c3-oled-live-ota` (the bike board) still links. **Lesson: a full-frame canvas
 must never be a global — and CI needs a no-PSRAM link/boot guard, not just a compile.** The Watty egg is
 optional; it must cost nothing (memory or boot) unless switched on.
+
+## 2026-07-25 (later) — CYD setup-portal SoftAP "connects then drops" — FIXED (BT coex power-save)
+
+**Symptom (a regression, CYD-only).** On the classic-ESP32 CYD, the WiFi setup portal came up (`[wifi]
+setup portal up: AP 'Setup-CC8C'`) but a phone joined and then couldn't reach `172.29.4.1` and kept
+dropping — you could never re-provision. The **C3-OLED had no such problem** (its newer core provisioned
+onto a real network fine), which pinned it as classic-ESP32-specific.
+
+**Root cause.** `NimBLEDevice::init()` runs before the portal decision, so the **BT controller stays up
+during the portal** (only advertising/scanning is held off — the `eb5fa8e` BLE-off fix). A live BT
+controller forces WiFi **modem-sleep** for coex; with no BLE traffic to keep the radio awake, the SoftAP
+sleeps between beacons and misses the client's DHCP/HTTP packets → the phone self-assigns `169.254.x.x`
+and the page never loads. So `eb5fa8e` (BLE off to stop the AP being *starved by BLE*) inadvertently
+removed the radio activity that had been masking the modem-sleep drop.
+
+**⚠️ LANDMINE (cost a hung board this session).** The obvious fix — `WiFi.setSleep(false)` in
+`startPortal_` — **hard-faults the classic ESP32 when BT is still initialised** (the coex layer aborts;
+the comment in `WifiLink::begin` already warned this). Doing it there **hung the CYD blank in
+`startPortal_`** (no "portal up" line). **Never disable WiFi modem-sleep while the NimBLE/BT controller is
+up on a classic ESP32.**
+
+**Fix (`fix/cyd-portal-coex`).** In `main.cpp`, when `wifi.inPortal()`, **`NimBLEDevice::deinit(true)`
+FIRST** (fully release the BT controller → frees the radio) **then `WiFi.setSleep(false)`** (now safe, no
+BT) → the SoftAP owns the radio and stays awake. Provisioning ends in an `esp_restart`, so BT returns on
+the next boot. New boot line: `[wifi] portal: BT released + modem-sleep off (stable SoftAP)`.
+
+**Validated on the CYD (host WiFi self-test, not just a phone):** boots clean through the portal; a client
+gets a real DHCP lease **172.29.4.2** (not `169.254`); the setup page loaded **15/15** hammered requests,
+0 drops; `/generate_204` returns **302** (the iOS/Android captive auto-popup fires). The QR-join +
+auto-popup onboarding were already built (`Onboarding.h` WIFI-QR + the probe redirects) — they only
+*looked* broken because the AP was dropping the probes; the same fix lights them up.
+
+Landed alongside a **build-version stamp** (separate PR): every build now reports its git SHA + build
+time in `/status` + `/diag` + the boot banner + the screen (the semver was hand-bumped and couldn't
+distinguish dev builds — you couldn't tell what was flashed). Boot line:
+`[sb20proxy] build 0.1.0 <sha> <time>`.

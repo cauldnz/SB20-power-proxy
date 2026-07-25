@@ -1217,6 +1217,17 @@ void setup() {
         shifterBegin(cfg);  // sink SB20 shifter buttons -> OBC, when obcSinkShifter is on
     } else {
         Serial.println("[ble] held off while the setup portal is up (starts after provisioning)");
+        // Classic-ESP32 portal stability: NimBLEDevice::init above left the BT controller running, and a
+        // live BT controller forces WiFi modem-sleep for coex. With no BLE traffic to keep the radio
+        // awake (the portal holds advertising/scanning off), modem-sleep makes the SoftAP miss the
+        // client's packets between beacons — the phone associates but can't reach 172.29.4.1 and drops
+        // (a CYD-specific regression; the C3's newer core tolerates it). Fully release BT so we can turn
+        // modem-sleep OFF and give the AP the radio to itself. Provisioning ends in an esp_restart, so
+        // BT comes back on the next boot. (setSleep(false) with BT still up hard-faults the classic core
+        // — see WifiLink's coex note — hence the deinit FIRST.)
+        NimBLEDevice::deinit(true);
+        WiFi.setSleep(false);
+        Serial.println("[wifi] portal: BT released + modem-sleep off (stable SoftAP)");
     }
 #else
     proxy.begin();  // no WiFi in this build: BLE starts immediately
