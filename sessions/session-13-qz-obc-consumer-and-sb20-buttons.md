@@ -104,17 +104,22 @@ sudo chmod 666 /dev/ttyACM0        # dialout membership needs a re-login; this i
 python3 -m serial.tools.miniterm /dev/ttyACM0 115200   # or: screen /dev/ttyACM0 115200
 ```
 
-## 4c. Capture rig — ⚠️ BLE-ONLY this session (a deliberate deviation)
+## 4c. Capture rig — dual-radio RESTORED (ANT stick found)
 
-**The ANT+ stick could not be found (2026-07-26), so the PLAYBOOK's standing dual-radio rule is
-knowingly broken.** Recorded here rather than discovered later.
+The ANT+ stick was **found and connected** (`0fcf:1008` Dynastream ANT USBStick2), so the PLAYBOOK's
+standing dual-radio rule holds after all. *(An earlier revision of this doc recorded a BLE-only
+deviation — superseded.)*
 
-- **Cost:** no ANT+ power capture to cross-check the spoof against; `16_scan_ant.py` and any
-  `--radio ant` path are unavailable. **Nothing in this session is blocked** — every gate (G0-G3,
-  N0-N2) is BLE or HTTP. It would matter far more for **session 12**, where ANT is how corrected
-  power gets validated. *(Unrelated to the Di2/ANT question in §7b, which is blocked on the S340
-  SoftDevice.)*
-- **Mitigation:** the nRF sniffer runs for the whole session, so the BLE exhaust is still replayable.
+- **⚠️ ONE STEP OUTSTANDING:** the stick enumerates but is `crw-rw-r-- root:root`, so `openant`
+  cannot claim it. Install the udev rule from `CLAUDE.md`, then **re-plug**:
+  ```bash
+  sudo tee /etc/udev/rules.d/42-ant-usb-sticks.rules >/dev/null <<'RULE'
+  SUBSYSTEM=="usb", ATTRS{idVendor}=="0fcf", MODE="0666"
+  RULE
+  sudo udevadm control --reload-rules && sudo udevadm trigger
+  ```
+  **Until this is done the ANT radio is unusable** — and per the session-9 hard rule, a live test
+  capture on EACH radio must pass before the rider is at the bike.
 
 **Sniffer — staged + verified live on Linux 2026-07-26** (dongle already carried the v4.1.1 sniffer
 firmware, PID `522a`; scan returned 30+ advertisers incl. the XIAO at −45 dBm):
@@ -233,6 +238,11 @@ central+peripheral coex on a single-core C3 is the known risk.**
 The nRF has **no WiFi** — its UI is the shared SPA talking **Web Bluetooth**. If this is good, the
 nRF becomes a serious target device (that's the point of the gate).
 
+> **✅ ALREADY PROVEN ON iOS (2026-07-26, pre-ride).** Bluefy on iPhone connected to `SB20 Bridge`
+> from the GitHub Pages build. Getting there fixed **three real bugs** — all of which would have
+> burned rider time (see §7 R11-R13). On the bike this gate is now a re-confirm plus the parts that
+> need the SB20 present, not a first attempt.
+
 - **Goal:** prove the SPA drives the nRF end-to-end from this laptop.
 - **Setup (agent, desk):** Chromium is installed (snap 150.0.7871.128 — **Firefox cannot do Web
   Bluetooth**, it was the only browser here until today). Serve the canonical file over **localhost**
@@ -332,6 +342,18 @@ independent validation of the fork's name-prefix matcher.
   **neither** of qz's matchers can fire: no `OBC-` name, no OBC service UUID. N2 works around it by
   renaming `outName`. The durable fix is a firmware decision — advertise the OBC UUID (31-byte
   budget!) or ship an `OBC-` default name in devmode — **desk work, not rider-clock work.**
+- **R11 · The Pages SPA deploy shipped `index.html` alone (FIXED).** Since the R2a change it is a
+  `<script type="module">` importing `./bridge-codec.js`; a module whose import 404s **does not run
+  at all** — no handlers, no banner, no log, dead Connect button. `deploy.sh` now parses the imports
+  and aborts if one is missing. *(The ESP32 was never affected — it inlines the codec.)*
+- **R12 · iOS/Bluefy rejects the numeric UUID shorthand (FIXED).** `optionalServices: [SVC, 0x1818]`
+  → instant reject, **no picker**, and the rejection is not an `Error`, so the UI said only
+  `connect failed: undefined`. Canonical UUID strings work. Chrome accepts both forms; **iOS does
+  not** — so a desktop-only check can never catch this class of bug.
+- **R13 · Bluefy drops the GATT link whenever it backgrounds (MITIGATED).** iOS suspends JS and tears
+  the link down — **normal on a phone, not a fault**. The SPA now auto-reconnects (backoff, silent
+  `getDevices()` resume, immediate retry on `visibilitychange`). **If the rider backgrounds the
+  browser mid-gate, expect a brief red dot then self-recovery** — do not call that a failure.
 - **R10 · BlueZ service caching can mask a discovery bug.** qz found the C3 via the *UUID* path only
   because BlueZ had cached 7 UUIDs (incl. `d273f680`) from an earlier connection; a live bleak scan
   of the same MAC showed only `0x1818` + `d445fe01`. **On a cold-cache machine the name match may be
