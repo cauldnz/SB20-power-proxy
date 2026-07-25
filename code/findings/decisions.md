@@ -3343,5 +3343,14 @@ the code and just boots a touch faster.
 
 **Verified (host):** `pio test -e native-lvgl` **41/41** including `test_lvglui` (its 5 tests navigate
 to Ride, Setup, Workout, Calibrate, Compare + tap the More rows — i.e. they exercise every lazy build
-and the guarded update blocks). **CYD hardware validation: pending flash** (watch `/stats`
-`largest_block` stays > ~3 KB and `reboot_count` stops climbing).
+and the guarded update blocks).
+
+**Verified (CYD hardware, flashed build `689757831` over COM17):** the board now **boots once and
+stays up** — no white-screen loop. `/stats` on the joined board: **`largest_block` 2676 → 49140 B (18×),
+`frag_pct` 90 → 31**, `stalls_50ms`/`stalls_200ms` = 0/0, `reset_reason: poweron` (not a panic),
+`uptime_ms` climbing monotonically (93 s → 96 s → 100 s across samples). `[lvgl] alive scr=0` steady at
+~73.5 KB free — `scr=0` confirms only the Ride screen is built at boot (the lazy behavior). The lifetime
+NVS `reboot_count` (4671) is the historical tally from the crash-loop era and survives a flash; the live
+proof it's fixed is the monotonic uptime + `poweron` reset reason. **Lesson: on a no-PSRAM board, the LVGL
+failure mode is heap *fragmentation*, not exhaustion — build the widget tree lazily and watch
+`largest_block`, not just `free_heap`.**
