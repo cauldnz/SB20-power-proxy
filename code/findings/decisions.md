@@ -3307,3 +3307,41 @@ Landed alongside a **build-version stamp** (separate PR): every build now report
 time in `/status` + `/diag` + the boot banner + the screen (the semver was hand-bumped and couldn't
 distinguish dev builds — you couldn't tell what was flashed). Boot line:
 `[sb20proxy] build 0.1.0 <sha> <time>`.
+
+## 2026-07-25 (later still) — CYD LVGL white-screen crash loop — FIXED (lazy screen construction)
+
+**Symptom (CYD-only).** Once the CYD had WiFi + BLE + the web server all up, the LVGL UI **flashed to a
+white screen ~once a second** — a reboot loop. The panic was `StoreProhibited` in LVGL's
+`lv_draw_label.c:648` (`draw_buf->header.h = ...`) with `EXCVADDR=0x6` — i.e. a **write through a NULL**
+`lv_draw_buf` that `lv_draw_buf_create_ex` had just failed to allocate. LVGL's malloc-assert is off
+(`LV_USE_ASSERT_MALLOC 0`, see `include/lv_conf.h`), so the null wasn't caught — it was dereferenced.
+
+**Root cause: heap fragmentation, not exhaustion.** `/stats` on the joined board showed
+`free_heap` healthy but **`largest_block: 2676`, `frag_pct: 90`** — the shared C heap
+(`LV_USE_STDLIB_MALLOC = LV_STDLIB_CLIB`, no PSRAM on the classic-ESP32 CYD) was shredded into small
+holes. The Ride screen's hero digit is a 64 px glyph; its per-glyph **A8 draw buffer** needs a single
+contiguous `box_w × LV_ROUND_UP(box_h,32) ≈ 40×64 = ~2.5 KB` block — larger than the biggest hole left
+once WiFi/lwIP + NimBLE + the web server had carved up the heap → `create_ex` returns NULL → crash.
+What fragmented it: `lvglUiInit` built **all six screens + the provision + touch-cal screens up-front**,
+so a large, permanent widget tree was interleaved with the radios' allocations at boot.
+
+**Dead ends already ruled out (don't retry):** shrinking the LVGL draw buffer (→28.5 KB) didn't help;
+dropping the hero font 64→28 px only made crashes intermittent; the LVGL dedicated pool
+(`LV_STDLIB_BUILTIN`) is a documented dead end (48 K exhausts, 72 K overflows dram0 with NimBLE — see
+the comment in `lv_conf.h`). None address the *fragmentation*.
+
+**Fix (`fix/cyd-lvgl-heap`) — lazy screen construction, in the shared `src/ui/LvglUi.cpp` so every LVGL
+board (CYD + S3) gets it.** Boot builds **only the Ride screen**; the other five build on first
+navigation (`navTo → buildScreenIfNeeded`), and the provision + touch-cal screens build on first use
+(`provisionSync` / `lvglUiCalShow`). `navTo` now commits `g_cur` **only after a successful
+`lv_screen_load`**, so a screen that can't fit the heap leaves the current one up instead of crashing
+(best-effort). `lvglUiUpdate` guards the Workout/Setup/More blocks on `g_cur == <that screen>` (the
+Compare block already did) — off-screen refreshes aren't visible anyway, and the widgets don't exist
+until built. Net effect: the boot-time persistent widget tree is ~1/6th the size, so the heap keeps a
+big contiguous block for the Ride hero's draw buffer even after the radios load. The S3 (PSRAM) shares
+the code and just boots a touch faster.
+
+**Verified (host):** `pio test -e native-lvgl` **41/41** including `test_lvglui` (its 5 tests navigate
+to Ride, Setup, Workout, Calibrate, Compare + tap the More rows — i.e. they exercise every lazy build
+and the guarded update blocks). **CYD hardware validation: pending flash** (watch `/stats`
+`largest_block` stays > ~3 KB and `reboot_count` stops climbing).
