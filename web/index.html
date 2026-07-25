@@ -255,6 +255,8 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;"
 
 // ================= BleTransport (Web Bluetooth) =================
 const SVC = "53423230-0000-4bd9-a4ae-1b4e2c633a1d";
+// Cycling Power Service, written out in full — see the note on optionalServices in connect().
+const CPS_UUID = "00001818-0000-1000-8000-00805f9b34fb";
 const CH = { stat:"0001", cfg:"0002", rctl:"0003", rdat:"0004", curv:"0005", cal:"0006", scan:"0007", wk:"0008", btn:"0009" };
 const uuid = s => `53423230-${s}-4bd9-a4ae-1b4e2c633a1d`;
 const dec = b => new TextDecoder().decode(b).replace(/\0+$/, "");
@@ -273,7 +275,11 @@ class BleTransport {
   }
   async connect() {
     this.dev = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: "SB20" }], optionalServices: [SVC, 0x1818],
+      // optionalServices MUST use canonical UUID strings, not the 16-bit numeric shorthand.
+      // Bluefy (iOS Web Bluetooth) rejects `0x1818` outright — no picker, and it rejects with a
+      // non-Error value, so the catch below saw `undefined`. Chrome accepts both forms; iOS does
+      // not. Proven on-device 2026-07-26 (diag: numeric -> REJECTED, string -> picker OK).
+      filters: [{ namePrefix: "SB20" }], optionalServices: [SVC, CPS_UUID],
     });
     this.dev.addEventListener("gattserverdisconnected", () => this.onConn(false, ""));
     const server = await this.dev.gatt.connect();
@@ -524,6 +530,9 @@ async function pickTransport() {
 
 // ================= view =================
 let T = null;
+// Not every rejection is an Error — iOS/Bluefy rejects requestDevice with a bare value, which
+// made every failure read "connect failed: undefined". Always render something diagnosable.
+const errText = e => (e && (e.message || e.name)) || (e === undefined ? "undefined (no error object — on iOS/Bluefy this usually means a bad requestDevice argument, e.g. a numeric 16-bit UUID)" : String(e));
 const log = m => { const d = $("log"); d.innerHTML = `<div>${new Date().toLocaleTimeString()} ${esc(m)}</div>` + d.innerHTML; };
 PRESETS.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = p; $("wkPreset").appendChild(o); });
 
@@ -701,7 +710,7 @@ $("curveFile").onchange = async e => {
   } catch (err) { log(`import failed: ${err.message}`); }
   e.target.value = "";
 };
-$("btnConnect").onclick = async () => { try { await T.connect(); } catch (e) { log(`connect failed: ${e.message}`); } };
+$("btnConnect").onclick = async () => { try { await T.connect(); } catch (e) { log(`connect failed: ${errText(e)}`); } };
 $("btnDisconnect").onclick = () => T.disconnect();
 $("btnApply").onclick = async () => {
   try {
@@ -718,7 +727,7 @@ $("btnApply").onclick = async () => {
     log(T.kind === "http" ? "config saved — device restarting to apply"
         : modeChanged ? `mode set to ${c.spoof ? "SPOOF (Stages crank)" : "CORRECTOR"} — reboot to re-advertise the identity`
         : "config applied");
-  } catch (e) { log(`config failed: ${e.message}`); }
+  } catch (e) { log(`config failed: ${errText(e)}`); }
 };
 $("btnButtonsApply").onclick = async () => {
   try {
@@ -726,7 +735,7 @@ $("btnButtonsApply").onclick = async () => {
     const b = await T.setButtons({ enabled: $("btnSink").checked, actions });
     if (b) { $("btnSink").checked = !!b.enabled; for (let i = 0; i < 6; i++) $("btnAct" + i).value = String(b.actions[i] ?? 0); }
     log("button actions applied");
-  } catch (e) { log(`buttons failed: ${e.message}`); }
+  } catch (e) { log(`buttons failed: ${errText(e)}`); }
 };
 $("btnRec").onclick = async () => { await T.recSetRate(+$("recRate").value); await T.recStart(); };
 $("btnStop").onclick = () => T.recStop();
@@ -843,7 +852,7 @@ async function refreshCompare() {
 (async () => {
   const t = await pickTransport();
   wire(t);
-  if (t.autoConnect) { $("connectCard").style.display = "none"; try { await t.connect(); } catch (e) { log(`connect failed: ${e.message}`); } }
+  if (t.autoConnect) { $("connectCard").style.display = "none"; try { await t.connect(); } catch (e) { log(`connect failed: ${errText(e)}`); } }
   if (t.caps.compare) { refreshCompare(); setInterval(refreshCompare, 3000); }
 })();
 </script>
