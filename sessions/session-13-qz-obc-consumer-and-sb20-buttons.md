@@ -52,6 +52,11 @@ An on-air result is the strongest possible activity.
 | **qz receives OBC** ⭐ | ✅ **NEW** — `obclistener` connected, subscribed, dispatched 4/4: `1→gear_up`, `2→gear_down`, `48→power_up`, `53→lap` |
 | qz runs unprivileged | ✅ via bench-only `-allow-nonroot` (BLE central needs no root) |
 | `obc_reader.py` on Linux | ✅ venv at `repos/sb20-power-proxy/.venv`, self-test PASS |
+| Python capture tooling (`code/.venv`) | ✅ `sb20proxy`/`openant`/`bleak`/`pycycling` import; **460 passed, 3 skipped** *(note: `NEXT-BIKE-SESSION.md`'s "expect 121 passed" is stale)* |
+| nRF sniffer | ✅ live scan, 30+ advertisers — see §4c for the Linux staging |
+| Chromium (Web Bluetooth) | ✅ snap 150.0.7871.128 — **Firefox cannot do Web Bluetooth** |
+| nRF firmware build on this box | ✅ `xiao-sense` builds (`NRF_BUILD_EXIT=0`); `xiao-sense-s340` **cannot** (no SoftDevice — §7b) |
+| USB cables | ⚠️ **several are power-only** — C3 + CYD never enumerated; both are WiFi-controlled so it doesn't block anything |
 
 **So the entire OBC *virtual* path is proven end-to-end, qz included.** Everything below is about
 real paddles and real coex.
@@ -99,10 +104,43 @@ sudo chmod 666 /dev/ttyACM0        # dialout membership needs a re-login; this i
 python3 -m serial.tools.miniterm /dev/ttyACM0 115200   # or: screen /dev/ttyACM0 115200
 ```
 
+## 4c. Capture rig — ⚠️ BLE-ONLY this session (a deliberate deviation)
+
+**The ANT+ stick could not be found (2026-07-26), so the PLAYBOOK's standing dual-radio rule is
+knowingly broken.** Recorded here rather than discovered later.
+
+- **Cost:** no ANT+ power capture to cross-check the spoof against; `16_scan_ant.py` and any
+  `--radio ant` path are unavailable. **Nothing in this session is blocked** — every gate (G0-G3,
+  N0-N2) is BLE or HTTP. It would matter far more for **session 12**, where ANT is how corrected
+  power gets validated. *(Unrelated to the Di2/ANT question in §7b, which is blocked on the S340
+  SoftDevice.)*
+- **Mitigation:** the nRF sniffer runs for the whole session, so the BLE exhaust is still replayable.
+
+**Sniffer — staged + verified live on Linux 2026-07-26** (dongle already carried the v4.1.1 sniffer
+firmware, PID `522a`; scan returned 30+ advertisers incl. the XIAO at −45 dBm):
+
+```bash
+cd /home/cauldnz-x270/repos/sb20-power-proxy/code
+.venv/bin/python scripts/sniff_ble.py --scan-only --duration 15 \
+  --extcap-dir /home/cauldnz-x270/repos/nrf52840-mdk-usb-dongle/tools/ble_sniffer/extcap
+```
+
+Two Linux gotchas that cost time and will recur:
+1. **`sniff_ble.py`'s default extcap search path is Windows-only** (`C:\Program Files/Wireshark/extcap`),
+   so `--extcap-dir` is **mandatory** here. *(Worth a portability fix in the script.)*
+2. **`psutil` is a hard SnifferAPI dependency** and is not in `code/pyproject.toml`'s extras — it had
+   to be installed separately. *(Worth adding to the `ble` extra.)*
+
+`SnifferAPI` comes from the **matched-pair** makerdiary checkout (never Nordic's, which would mismatch
+the firmware): `github.com/makerdiary/nrf52840-mdk-usb-dongle` → `tools/ble_sniffer/extcap`, cloned to
+`/home/cauldnz-x270/repos/nrf52840-mdk-usb-dongle`.
+
 ## 5. Standing rules (PLAYBOOK pre-flight)
 
-- **Dual-radio capture for the whole session**; start the nRF sniff **before anything connects**
-  (it can only follow a link whose `CONNECT_IND` it caught), and confirm within ~1 min.
+- **BLE-only capture this session** (see §4c); start the nRF sniff **before anything connects**
+  (it can only follow a link whose `CONNECT_IND` it caught), and confirm within ~1 min that the
+  followed device's **adverts stop** — if packet counts keep coming from adverts alone, you are
+  following the wrong personality (the SB20 presents several) and must re-target *now*.
 - **JSON POSTs need `-H "Content-Type: application/json"`** (the #239 lesson).
 - **A fresh board boot needs ~25 s** before HTTP rebinds. **The C3 never roams** — power-cycle to
   re-associate.
