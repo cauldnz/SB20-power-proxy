@@ -77,7 +77,7 @@ void setUp() {
     if (g_inited) return;
     g_fb.assign((size_t)W * H, 0);
     LvglDriverHooks hooks{capFlush, capTouch};
-    lvglUiInit(hooks, W, H);   // lv_init + builds all screens; single init for the whole suite
+    lvglUiInit(hooks, W, H);   // lv_init + builds the Ride screen; the rest build lazily on first nav
     g_inited = true;
     pump(5);
 }

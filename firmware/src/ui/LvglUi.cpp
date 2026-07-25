@@ -655,6 +655,7 @@ void buildProvision() {
 void provisionSync(const ProvisionView& v) {
     if (v.portal) {
         if (!g_provShown) {
+            if (!PV.scr) buildProvision();  // lazy: only exists once the portal actually comes up
             const std::string qrtxt = wifiQrPayload(v.apSsid, v.pin);  // shared + escaped (U4)
             lv_qrcode_update(PV.qr, qrtxt.c_str(), (uint32_t)qrtxt.size());
             char buf[64];
@@ -701,10 +702,32 @@ void buildTouchCal() {
     lv_obj_add_flag(TC.test_v, LV_OBJ_FLAG_HIDDEN);
 }
 
-void navTo(LcdScreen s) {
-    g_cur = s;
+// Lazy screen construction: build a screen the first time it's shown, not all six up-front. On the
+// no-PSRAM CYD, building the whole widget tree at boot inflates LVGL's (malloc-backed) footprint and
+// fragments the shared C heap — the ride screen's per-glyph draw-buf alloc then returns NULL once
+// WiFi/BLE/web have loaded the heap, and (asserts off) LVGL writes to it → StoreProhibited crash loop
+// (decisions.md 2026-07-25). Only Ride is built at boot; the rest build on first navigation, so the
+// hot path stays tiny and secondary screens are best-effort (navTo just stays put if a build can't
+// fit). Idempotent. The S3 has PSRAM headroom but shares this code — it boots faster for free.
+void buildScreenIfNeeded(LcdScreen s) {
     int idx = (int)s;
-    if (idx < 0 || idx > 5 || !g_scrObj[idx]) return;
+    if (idx < 0 || idx > 5 || g_scrObj[idx]) return;
+    switch (s) {
+        case LcdScreen::Ride:      buildRide(); break;
+        case LcdScreen::Setup:     buildSetup(); break;
+        case LcdScreen::More:      buildMore(); break;
+        case LcdScreen::Workout:   buildWorkout(); break;
+        case LcdScreen::Calibrate: buildCalibrate(); break;
+        case LcdScreen::Compare:   buildCompare(); break;
+    }
+}
+
+void navTo(LcdScreen s) {
+    int idx = (int)s;
+    if (idx < 0 || idx > 5) return;
+    buildScreenIfNeeded(s);          // build on first navigation (see note above)
+    if (!g_scrObj[idx]) return;      // build didn't fit — leave the current screen up
+    g_cur = s;                       // only commit g_cur after a successful load
     lv_screen_load(g_scrObj[idx]);
     tintNav(idx, s);
 }
@@ -734,14 +757,11 @@ void lvglUiInit(const LvglDriverHooks& hooks, int hor, int ver) {
     lv_indev_set_type(in, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(in, lvTouchCb);
 
+    // Build ONLY the ride screen at boot — every other screen (Setup/More/Workout/Calibrate/Compare)
+    // builds lazily on first navigation, and the provision + touch-cal screens build on first use
+    // (see provisionSync / lvglUiCalShow). Keeps the boot-time LVGL heap footprint minimal so the
+    // no-PSRAM CYD doesn't fragment (decisions.md 2026-07-25).
     buildRide();
-    buildWorkout();
-    buildSetup();
-    buildMore();
-    buildCalibrate();
-    buildCompare();
-    buildTouchCal();
-    buildProvision();
     navTo(LcdScreen::Ride);
 }
 
@@ -796,111 +816,120 @@ void lvglUiUpdate(const LcdViews& v) {
         lv_label_set_text(R.dOutMeta, buf);
     }
 
-    // Workout
-    const WorkoutView& w = v.wk;
-    if (w.loaded && w.w) {
-        lv_obj_add_flag(W.pickPanel, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(W.runPanel, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(W.title, w.w->name.empty() ? "Workout" : w.w->name.c_str());
-        snprintf(buf, sizeof(buf), "%ld:%02ld", w.st.totalElapsedS / 60, w.st.totalElapsedS % 60);
-        lv_label_set_text(W.clock, buf);
-        int nSeg = (int)w.w->segments.size();
-        snprintf(buf, sizeof(buf), "%d of %d  -  %ld:%02ld left",
-                 w.st.segIndex + (w.st.finished ? 0 : 1), nSeg, w.st.segRemainingS / 60,
-                 w.st.segRemainingS % 60);
-        lv_label_set_text(W.stepLine, buf);
-        if (w.st.targetW >= 0) snprintf(buf, sizeof(buf), "%d", w.st.targetW);
-        else snprintf(buf, sizeof(buf), "--");
-        lv_label_set_text(W.target, buf);
-        snprintf(buf, sizeof(buf), "now %dW . %drpm", (int)v.ride.watts,
-                 v.ride.cadence < 0 ? 0 : (int)v.ride.cadence);
-        lv_label_set_text(W.now, buf);
-        if (!w.ergConfigured) snprintf(buf, sizeof(buf), "erg: no trainer set");
-        else if (!w.ergConnected) snprintf(buf, sizeof(buf), "erg: connecting...");
-        else if (!w.ergControlled) snprintf(buf, sizeof(buf), "erg: linked, no ctrl");
-        else snprintf(buf, sizeof(buf), "erg: ON %dW", (int)w.ergTarget);
-        lv_label_set_text(W.ergLine, buf);
+    // Workout — only while it's the live screen (W.* widgets exist only after the lazy build, and
+    // an off-screen refresh isn't visible anyway; same rule the Compare block below follows).
+    if (g_cur == LcdScreen::Workout) {
+        const WorkoutView& w = v.wk;
+        if (w.loaded && w.w) {
+            lv_obj_add_flag(W.pickPanel, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(W.runPanel, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(W.title, w.w->name.empty() ? "Workout" : w.w->name.c_str());
+            snprintf(buf, sizeof(buf), "%ld:%02ld", w.st.totalElapsedS / 60, w.st.totalElapsedS % 60);
+            lv_label_set_text(W.clock, buf);
+            int nSeg = (int)w.w->segments.size();
+            snprintf(buf, sizeof(buf), "%d of %d  -  %ld:%02ld left",
+                     w.st.segIndex + (w.st.finished ? 0 : 1), nSeg, w.st.segRemainingS / 60,
+                     w.st.segRemainingS % 60);
+            lv_label_set_text(W.stepLine, buf);
+            if (w.st.targetW >= 0) snprintf(buf, sizeof(buf), "%d", w.st.targetW);
+            else snprintf(buf, sizeof(buf), "--");
+            lv_label_set_text(W.target, buf);
+            snprintf(buf, sizeof(buf), "now %dW . %drpm", (int)v.ride.watts,
+                     v.ride.cadence < 0 ? 0 : (int)v.ride.cadence);
+            lv_label_set_text(W.now, buf);
+            if (!w.ergConfigured) snprintf(buf, sizeof(buf), "erg: no trainer set");
+            else if (!w.ergConnected) snprintf(buf, sizeof(buf), "erg: connecting...");
+            else if (!w.ergControlled) snprintf(buf, sizeof(buf), "erg: linked, no ctrl");
+            else snprintf(buf, sizeof(buf), "erg: ON %dW", (int)w.ergTarget);
+            lv_label_set_text(W.ergLine, buf);
 
-        int n = nSeg > 32 ? 32 : nSeg;
-        lv_chart_set_point_count(W.prof, (uint32_t)n);
-        int maxW = 100;
-        for (int i = 0; i < n; ++i) {
-            int t = segmentTargetW(w.w->segments[i], w.w->ftpW);
-            if (t > maxW) maxW = t;
-        }
-        lv_chart_set_range(W.prof, LV_CHART_AXIS_PRIMARY_Y, 0, maxW + 20);
-        for (int i = 0; i < n; ++i)
-            lv_chart_set_value_by_id(W.prof, W.profSer, (uint32_t)i,
-                                     segmentTargetW(w.w->segments[i], w.w->ftpW));
-        lv_chart_refresh(W.prof);
+            int n = nSeg > 32 ? 32 : nSeg;
+            lv_chart_set_point_count(W.prof, (uint32_t)n);
+            int maxW = 100;
+            for (int i = 0; i < n; ++i) {
+                int t = segmentTargetW(w.w->segments[i], w.w->ftpW);
+                if (t > maxW) maxW = t;
+            }
+            lv_chart_set_range(W.prof, LV_CHART_AXIS_PRIMARY_Y, 0, maxW + 20);
+            for (int i = 0; i < n; ++i)
+                lv_chart_set_value_by_id(W.prof, W.profSer, (uint32_t)i,
+                                         segmentTargetW(w.w->segments[i], w.w->ftpW));
+            lv_chart_refresh(W.prof);
 
-        if (w.running) {
-            lv_obj_add_flag(W.bStart, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(W.bChange, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_remove_flag(W.bPause, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_remove_flag(W.bSkip, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_remove_flag(W.bStop, LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(W.bPauseLabel, w.paused ? "Resume" : "Pause");
+            if (w.running) {
+                lv_obj_add_flag(W.bStart, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_add_flag(W.bChange, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_remove_flag(W.bPause, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_remove_flag(W.bSkip, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_remove_flag(W.bStop, LV_OBJ_FLAG_HIDDEN);
+                lv_label_set_text(W.bPauseLabel, w.paused ? "Resume" : "Pause");
+            } else {
+                lv_obj_remove_flag(W.bStart, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_remove_flag(W.bChange, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_add_flag(W.bPause, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_add_flag(W.bSkip, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_add_flag(W.bStop, LV_OBJ_FLAG_HIDDEN);
+            }
         } else {
-            lv_obj_remove_flag(W.bStart, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_remove_flag(W.bChange, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(W.bPause, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(W.bSkip, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(W.bStop, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_remove_flag(W.pickPanel, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(W.runPanel, LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(W.title, "Workout");
+            lv_label_set_text(W.clock, "");
         }
-    } else {
-        lv_obj_remove_flag(W.pickPanel, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(W.runPanel, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(W.title, "Workout");
-        lv_label_set_text(W.clock, "");
     }
 
     // Setup — RENDER THE SAME LIST THE TAP HANDLER RESOLVES (lcdPickerList): only usable
     // devices (meters/cranks/trainers), deduped + sorted. Rendering the raw list while the
-    // handler sorted meant row taps could pick a DIFFERENT device than displayed.
-    const auto pick = lcdPickerList(v.setup.devices);
-    if (pick.empty()) lv_obj_remove_flag(S.empty, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(S.empty, LV_OBJ_FLAG_HIDDEN);
-    for (int i = 0; i < 6; ++i) {
-        if (i < (int)pick.size()) {
-            const auto& dev = pick[i];
-            lv_obj_remove_flag(S.rows[i], LV_OBJ_FLAG_HIDDEN);
-            lv_label_set_text(S.rowName[i],
-                              dev.name.empty() ? dev.address.c_str() : dev.name.c_str());
-            const bool selM = !v.setup.meterAddr.empty() && dev.address == v.setup.meterAddr;
-            const bool selT = !v.setup.trainerAddr.empty() && dev.address == v.setup.trainerAddr;
-            const char* kind = dev.isFtms ? "trainer" : (dev.isStagesCrank ? "crank" : "meter");
-            snprintf(buf, sizeof(buf), "%s %d%s%s", kind, dev.rssi, selM ? " *" : "",
-                     selT ? " *" : "");
-            lv_label_set_text(S.rowMeta[i], buf);
-        } else {
-            lv_obj_add_flag(S.rows[i], LV_OBJ_FLAG_HIDDEN);
+    // handler sorted meant row taps could pick a DIFFERENT device than displayed. Only while
+    // it's the live screen (S.* widgets exist only after the lazy build).
+    if (g_cur == LcdScreen::Setup) {
+        const auto pick = lcdPickerList(v.setup.devices);
+        if (pick.empty()) lv_obj_remove_flag(S.empty, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(S.empty, LV_OBJ_FLAG_HIDDEN);
+        for (int i = 0; i < 6; ++i) {
+            if (i < (int)pick.size()) {
+                const auto& dev = pick[i];
+                lv_obj_remove_flag(S.rows[i], LV_OBJ_FLAG_HIDDEN);
+                lv_label_set_text(S.rowName[i],
+                                  dev.name.empty() ? dev.address.c_str() : dev.name.c_str());
+                const bool selM = !v.setup.meterAddr.empty() && dev.address == v.setup.meterAddr;
+                const bool selT = !v.setup.trainerAddr.empty() && dev.address == v.setup.trainerAddr;
+                const char* kind = dev.isFtms ? "trainer" : (dev.isStagesCrank ? "crank" : "meter");
+                snprintf(buf, sizeof(buf), "%s %d%s%s", kind, dev.rssi, selM ? " *" : "",
+                         selT ? " *" : "");
+                lv_label_set_text(S.rowMeta[i], buf);
+            } else {
+                lv_obj_add_flag(S.rows[i], LV_OBJ_FLAG_HIDDEN);
+            }
         }
     }
 
-    // More — fill each row's value cell from the same table that laid out + dispatches the rows
-    for (int i = 0; i < kMoreRowCount; ++i) {
-        if (!M.val[i]) continue;  // a CYD-only row this build compiled out
-        switch (kMoreRows[i].val) {
-            case MoreVal::Link:        lv_label_set_text(M.val[i], ">"); break;
-            case MoreVal::WorkoutLink: lv_label_set_text(M.val[i], v.wk.loaded ? "loaded  >" : ">"); break;
-            case MoreVal::Mode:        lv_label_set_text(M.val[i], v.more.mode.c_str()); break;
-            case MoreVal::Identity:    lv_label_set_text(M.val[i], v.more.identity.c_str()); break;
-            case MoreVal::Source:      lv_label_set_text(M.val[i], v.more.source.c_str()); break;
-            case MoreVal::Trainer:
-                lv_label_set_text(M.val[i], v.more.trainer.empty() ? "not set" : v.more.trainer.c_str());
-                break;
-            case MoreVal::Brightness:
-                snprintf(buf, sizeof(buf), "%d%%", (int)v.more.brightness);
-                lv_label_set_text(M.val[i], buf);
-                break;
-            case MoreVal::Version:
-                snprintf(buf, sizeof(buf), "v%s", v.more.version.c_str());
-                lv_label_set_text(M.val[i], buf);
-                break;
+    // More — fill each row's value cell from the same table that laid out + dispatches the rows.
+    // Only while it's the live screen (M.* widgets exist only after the lazy build).
+    if (g_cur == LcdScreen::More) {
+        for (int i = 0; i < kMoreRowCount; ++i) {
+            if (!M.val[i]) continue;  // a CYD-only row this build compiled out
+            switch (kMoreRows[i].val) {
+                case MoreVal::Link:        lv_label_set_text(M.val[i], ">"); break;
+                case MoreVal::WorkoutLink: lv_label_set_text(M.val[i], v.wk.loaded ? "loaded  >" : ">"); break;
+                case MoreVal::Mode:        lv_label_set_text(M.val[i], v.more.mode.c_str()); break;
+                case MoreVal::Identity:    lv_label_set_text(M.val[i], v.more.identity.c_str()); break;
+                case MoreVal::Source:      lv_label_set_text(M.val[i], v.more.source.c_str()); break;
+                case MoreVal::Trainer:
+                    lv_label_set_text(M.val[i], v.more.trainer.empty() ? "not set" : v.more.trainer.c_str());
+                    break;
+                case MoreVal::Brightness:
+                    snprintf(buf, sizeof(buf), "%d%%", (int)v.more.brightness);
+                    lv_label_set_text(M.val[i], buf);
+                    break;
+                case MoreVal::Version:
+                    snprintf(buf, sizeof(buf), "v%s", v.more.version.c_str());
+                    lv_label_set_text(M.val[i], buf);
+                    break;
+            }
         }
+        lv_label_set_text(M.ip, v.more.ip.empty() ? "no wifi" : v.more.ip.c_str());
     }
-    lv_label_set_text(M.ip, v.more.ip.empty() ? "no wifi" : v.more.ip.c_str());
 
     // Compare (#10) — only while it's the live screen. This runs at 5 Hz on every screen, and main.cpp
     // skips the (rolling-window-walking) projection off-screen anyway, so the data would be stale.
@@ -946,6 +975,7 @@ void lvglUiCalShow(int step, int done, int testX, int testY) {
         navTo(g_cur);
         return;
     }
+    if (!g_calScr) buildTouchCal();  // lazy: only built when the touch-cal ritual is actually run
     if (lv_screen_active() != g_calScr) lv_screen_load(g_calScr);
     char buf[44];
     if (done < 0) {
