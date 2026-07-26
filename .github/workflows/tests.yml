@@ -47,8 +47,10 @@ jobs:
           changed="$(git diff --name-only "$base" HEAD)" || { echo "diff failed — failing open"; decide true; }
           echo "changed files:"; echo "$changed"
           # web/ and ui-schema/ are in the set because the firmware embeds generated mirrors
-          # of both (WebSpa.h, WebJson.h, Proto.h).
-          if echo "$changed" | grep -qE '^(firmware/|firmware-nrf/|web/|ui-schema/|\.github/workflows/)'; then
+          # of both (WebSpa.h, WebJson.h, Proto.h). tools/ is in the set because it holds the
+          # flash ride-guard (PioIni.ps1) whose only test reads firmware/platformio.ini --
+          # omitting it is how a guard regression shipped on 2026-07-27 without CI noticing.
+          if echo "$changed" | grep -qE '^(firmware/|firmware-nrf/|web/|ui-schema/|tools/|\.github/workflows/)'; then
             decide true
           fi
           echo "no firmware-relevant paths touched — skipping the toolchain matrix"
@@ -129,6 +131,16 @@ jobs:
       - name: Test (native)
         if: needs.changes.outputs.firmware == 'true'
         run: pio test -e native
+
+      # The flash ride-guard. tools/PioIni.ps1 decides whether an env is safe to leave on a board
+      # someone intends to ride; both flash.ps1 scripts refuse without -Force when it says no.
+      # It shipped untested and immediately regressed (a banner bled across a blank line and marked
+      # every C3 ride build SUPERSEDED). Runs here because the integration half asserts against the
+      # real platformio.ini, so it needs the PlatformIO installed above. -RequireReal makes that
+      # half impossible to silently skip. pwsh is preinstalled on the runner: no new dependency.
+      - name: Test flash ride-guard (tools/PioIni.ps1)
+        if: needs.changes.outputs.firmware == 'true'
+        run: pwsh -NoProfile -File "$GITHUB_WORKSPACE/tools/tests/Test-PioIni.ps1" -RequireReal
 
       # Host LVGL UI tests: compile the REAL src/ui/LvglUi.cpp headless (against a tiny Arduino shim
       # + a memory-buffer flush hook) and assert on rendered pixels + tap->screen changes — so the

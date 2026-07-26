@@ -144,8 +144,14 @@ function Get-PioSectionBanner {
             $pending = @()
         }
         elseif ($line -match '^\s*[;#]') { $pending += $line }
-        elseif ($line -match '^\s*$') { }              # blanks do not break the block
-        else { $pending = @() }                        # a real option does
+        # A blank line ENDS a banner. Without this, a comment block written for one section
+        # bleeds across the blank separator into the next one -- which is exactly what happened
+        # on 2026-07-27: the `esp32s3-touch` REMOVED tombstone leaked into [env:esp32c3-wifi]
+        # and, via `extends` lineage, marked all 15 C3 envs "SUPERSEDED", so flash.ps1 refused
+        # to flash every ride build without -Force. A guard that cries wolf on the good build
+        # trains you to always pass -Force, which is worse than having no guard.
+        elseif ($line -match '^\s*$') { $pending = @() }
+        else { $pending = @() }                        # a real option does too
     }
     return ""
 }
