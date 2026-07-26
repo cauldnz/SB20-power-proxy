@@ -3489,3 +3489,53 @@ compiling a generic lambda (C++14-only) and confirming the host now rejects it.
 
 Result: 22 new host tests (`firmware-nrf/test/test_peerrole/`), 62/62 native green, `xiao-sense`
 compiles (RAM 48.6%, flash 23.4%).
+
+## 2026-07-26 — nRF reference-latch guards fixed; the two ladders are now one (R1d.1b)
+
+Follow-up to the extraction above. Both defects it pinned are now fixed, and `classifyAdvert` /
+`classifyConnection` delegate to a single `classifyByName` so the scan-time and connect-time ladders
+**cannot disagree again**. A new host test asserts that agreement across the full state space
+(6 peer names x 3 source filters x 32 flag combinations): whatever the scanner would open a link AS,
+the connect handler classifies it the same way. That property was not even expressible before.
+
+**Fix 1 — connect-time gained `!refConnected` and the source-filter exclusion.** Previously a link
+the scanner would never have opened as a reference was still classified as one on connect,
+overwriting `g_refConnHandle` and orphaning the existing reference link.
+
+**Fix 2 — the source-filter exclusion is now gated on `f.source[0]`.** It was
+`strstr(name, srcFilter) == nullptr`; since `strstr(x, "")` always matches, an empty `srcFilter`
+excluded *every* peer from being a reference. The bench XIAO runs `filter=''` (confirmed over the
+serial console: `[hb] scanning=0 reports=6 srcConn=1 filter='' src=0W out=0W`), so on-device
+calibration in any-CPS mode could never have acquired a reference meter.
+
+Each fix was verified to be genuinely guarded by reverting it and watching the suite go red
+(fix 2 -> 2 failures, fix 1 -> 1 failure), not merely by watching it stay green.
+
+63/63 native; `xiao-sense` + `feather-nrf52840` compile. **Not yet confirmed on hardware** — the
+bench XIAO is parked in its UF2 bootloader and carries S340, which this worktree cannot build for
+(issues #297, #298). Behaviour only differs while `g_calibrating` is set, so the default ride path
+is unaffected.
+
+## 2026-07-26 — The `xiao-sense` env will mis-flash an S340-provisioned board
+
+The bench XIAO reports `SoftDevice: S340 6.1.1` in its bootloader's `INFO_UF2.TXT`, and its own
+flash dump (`CURRENT.UF2`) places the application at **0x31000..0xEA000** — the offset in
+`linker/nrf52840_s340_v6.ld`. So it runs an `xiao-sense-s340` build.
+
+`[env:xiao-sense]` inherits the board default `nrf52840_s140_v7.ld`, i.e. an app based at the
+**S140** offset, inside the region S340 occupies. `pio run -e xiao-sense -t upload` would have
+written it. Nothing in the env name, `platformio.ini`, or the upload path checks. It didn't land
+only because `adafruit-nrfutil`'s serial transport failed first
+(`WriteFile failed (PermissionError(13))`) — luck, not a guard.
+
+Compounding it: `vendor/softdevice/` is gitignored, so a fresh worktree **cannot build the correct
+image**, and the only env that compiles is the wrong one.
+
+Remedy (issue #298): the planned `--force` flash guard should read `INFO_UF2.TXT` from the mounted
+UF2 volume, parse the `SoftDevice:` line, compare it against what the selected env is linked for,
+and refuse on mismatch.
+
+Also recorded, because it cost time and is documented nowhere: **Adafruit's TinyUSB CDC gates all
+`Serial` output on DTR.** A listener that opens the port without asserting DTR sees total silence
+from a perfectly healthy board. 115200 is safe; it is the *1200*-baud touch that drops an nRF52
+into the UF2 bootloader.
