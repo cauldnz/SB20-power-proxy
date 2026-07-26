@@ -34,7 +34,7 @@ The per-device WiFi **setup-AP SSID is `Setup-XXXX`** where `XXXX` = the last 2 
   is the clean follow-up, same idea as the SSID suffix).
 - **ESP32 native-USB flashing** (C3 + S3) needs **esptool ≥ 4.11** (the bundled 4.5.1 wedges the USB-JTAG);
   `code/scripts/flash_c3.py` auto-picks a good one. The S3 must build on the **pioarduino** platform
-  (`esp32s3-pio*`) — the stock `esp32s3-touch` env boot-loops (⛔ superseded).
+  (`esp32s3-pio*`) — the stock `esp32s3-touch` env boot-looped and was **removed 2026-07-26**.
 
 *Maintenance: update a row when a board is added/reflashed/re-MAC'd. This is the local, project-specific
 sibling of the general board-ontology idea in [maker-skills#160](https://github.com/cauldnz/maker-skills/issues/160).*

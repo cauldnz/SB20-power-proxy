@@ -58,7 +58,9 @@ the mock env; on the live build, trust the physical panel.
 
 **What's DONE (software, all verified):**
 - **PlatformIO env** `esp32s3-touch` (+ `-live`, `-live-bench`, `-ota`) — compiles + flashes clean
-  (~1.16 MB image). Pin map from the board BSP: LCD **JD9853** 172×320 on SPI2 (MOSI 39 / SCLK 38 /
+  (~1.16 MB image). **These envs were removed on 2026-07-26** (they boot-loop on this module — see the
+  section above); `platformio.ini` keeps a name-tombstone where they were. Use `esp32s3-pio*` instead.
+  Pin map from the board BSP: LCD **JD9853** 172×320 on SPI2 (MOSI 39 / SCLK 38 /
   CS 21 / DC 45 / RST 40 / BL 46, INVON, col-offset 34); touch **AXS5106** on I²C (SDA 42 / SCL 41,
   RST 48 / INT 47, addr 0x63).
 - **The whole head-unit UI as pure, host-tested code:** `lib/proxy/LcdCanvas.h` (RGB565 + 8×8 font +

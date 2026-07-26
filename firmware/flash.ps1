@@ -14,6 +14,7 @@
   .\flash.ps1 -Mode usb                          # USB flash (auto-detect COM)
   .\flash.ps1 -Env esp32c3-wifi-live -Target 192.168.1.165
   .\flash.ps1 -NoBuild                           # skip the build, just (re)flash the existing .bin
+  .\flash.ps1 -Env esp32c3-wifi-live-bench -Force # bench/mock build: refuses without -Force
 #>
 param(
   [string]$Env = "esp32c3-oled-live",
@@ -21,12 +22,38 @@ param(
   [string]$Target = "sb20proxy.local",   # OTA host (mDNS name or IP)
   [string]$Port = "",                    # USB COM port (auto-detected if empty)
   [int]$Retries = 6,
-  [switch]$NoBuild
+  [switch]$NoBuild,
+  [switch]$Force                         # flash a bench / mock / superseded env anyway (desk use)
 )
 $ErrorActionPreference = "Stop"
 $fw = $PSScriptRoot                                   # this script lives in firmware/
 $bin = Join-Path $fw ".pio\build\$Env\firmware.bin"
 $espota = Join-Path $env:USERPROFILE ".platformio\packages\framework-arduinoespressif32\tools\espota.py"
+
+function Say($msg, $color = "Cyan") { Write-Host $msg -ForegroundColor $color }
+
+# ---- Ride-safety gate -------------------------------------------------------------------------
+# The env names are one hyphen apart ("...-live" vs "...-live-bench") and the flags that make the
+# difference are up to three `extends` hops away, so "the build you meant" and "a build that pairs
+# with any stranger's power meter" look identical at the call site. Resolve the chain and say so.
+. (Join-Path (Split-Path $fw -Parent) "tools\PioIni.ps1")
+$iniPath = Join-Path $fw "platformio.ini"
+$pioCfg = Get-PioConfig -ProjectDir $fw
+$envNames = Get-PioEnvNames -Config $pioCfg
+if ($envNames -notcontains $Env) {
+  $stem = ($Env -split '-')[0]
+  $near = ($envNames | Where-Object { $_ -like "*$stem*" }) -join ', '
+  throw "no [env:$Env] in platformio.ini.$(if ($near) { " Did you mean: $near" })"
+}
+$blockers = Get-PioEnvRideBlockers -Config $pioCfg -EnvName $Env -IniPath $iniPath
+if ($blockers.Count -gt 0) {
+  Say "'$Env' is not a shippable build:" "Yellow"
+  foreach ($r in $blockers) { Say "  - $r" "Yellow" }
+  if (-not $Force) {
+    throw "refusing to flash '$Env' without -Force. Desk/bench session? re-run with -Force. Otherwise pick a ride build (e.g. esp32c3-oled-live-ota)."
+  }
+  Say "-Force given: proceeding. Do NOT leave this build on a board you intend to ride." "Red"
+}
 
 # Authenticated push OTA: read OTA_PASSWORD from the (gitignored) ota_secret.h so espota can pass -a.
 # Single source of truth — the firmware compiles in the same value. Absent ⇒ push OTA is disabled on the
@@ -37,8 +64,6 @@ if (Test-Path $otaSecret) {
   $m = Select-String -Path $otaSecret -Pattern '#define\s+OTA_PASSWORD\s+"([^"]*)"'
   if ($m) { $otaPass = $m.Matches[0].Groups[1].Value }
 }
-
-function Say($msg, $color = "Cyan") { Write-Host $msg -ForegroundColor $color }
 
 if (-not $NoBuild) {
   Say "Building $Env ..."

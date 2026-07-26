@@ -55,8 +55,13 @@ ruff check src tests                                 # CI lint scope
 
 **Flashing** (ports will differ on this machine — discover them; don't trust old COM numbers):
 - ESP32-C3: `code/scripts/flash_c3.py` (auto-selects the newest esptool) or `firmware/flash.ps1`.
-- nRF (XIAO / Feather, Adafruit UF2 bootloader): `pio run -e xiao-sense -t upload` (CDC, auto 1200-bps
-  touch; double-tap RST for the UF2 drive if it wedges). BLE-OTA also works (buttonless DFU).
+  `flash.ps1` refuses bench/mock/probe/host envs unless you pass `-Force` — a bench build pairs with
+  any CPS advertiser and must never be left on a board you ride.
+- nRF (XIAO / Feather, Adafruit UF2 bootloader): **`firmware-nrf/flash.ps1 -Env <env>`**. Do **not** run
+  `pio run -e xiao-sense -t upload` directly: `xiao-sense` is linked for **S140**, and a board carrying
+  **S340** needs `xiao-sense-s340`. The wrong one lands the app inside the SoftDevice and does not fail
+  loudly (#298). `flash.ps1` reads the bootloader's `INFO_UF2.TXT` and refuses on mismatch.
+  Double-tap RST for the UF2 drive if it wedges. BLE-OTA also works (buttonless DFU).
 
 ---
 

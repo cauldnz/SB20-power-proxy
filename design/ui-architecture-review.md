@@ -278,10 +278,12 @@ run the R-items.
   the shared view models). Prioritise U2/U3.
 
 ### Execution order (each a branch → PR → green CI → merge)
-- **U0 — retire the superseded canvas env:** delete the `esp32s3-touch`/`-live`/`-bench`/`-ota` env family
-  (all extend the ⛔ superseded stock-platform base; the live S3 build is the `esp32s3-pio` family) + the
-  now-orphaned on-device canvas path (`LcdDisplay`, `LCD_BANDS`) once nothing ships it; keep
-  `LcdUi.h`/`LcdCanvas.h` as the **host-test oracle** and document them as such. (Token-gen already done.)
+- **U0 — retire the superseded canvas env:** ✅ **env family deleted 2026-07-26** (`esp32s3-touch`/`-live`
+  /`-live-bench`/`-ota`/`-live-ota`; `platformio.ini` keeps a name-tombstone so stale runbooks fail loudly).
+  The live S3 build is the `esp32s3-pio` family. **Still open:** the on-device canvas path (`LcdDisplay`,
+  `LCD_BANDS`) is *not* orphaned — `USE_LCD=1` is still set by the `esp32cyd*` and `esp32s3-pio*` envs — so
+  it can only be removed once those ship LVGL. Keep `LcdUi.h`/`LcdCanvas.h` as the **host-test oracle** and
+  document them as such. (Token-gen already done.)
 - **U1 — one interaction model:** LVGL defers to the pure `lcdHandleTap()` (or generates hit-regions from
   the shared layout constants); delete the duplicated per-callback nav/action logic.
 - **U2 — schema → codegen (the big one, = R2 widened):** `ui-schema/` + generator → `Proto.h` vectors +
