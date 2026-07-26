@@ -91,6 +91,13 @@ last.** Extracting R1a–R1c removes ~700 lines and is the precondition that mak
   ESP32's *one* fat tenant; everything else there is legitimate wiring. Start with the zero-risk
   **touch-cal ritual** (`279–378`) as a standalone `disp/TouchCalRitual`. **Prove:** the LCD envs
   (`esp32s3-pio`, `esp32cyd`) compile; screens sweep on hardware (R-gated).
+  - [x] **R1e.1 — the touch-cal ritual is out**, as the pure `lib/proxy/TouchCalRitual.h` rather than
+    `disp/` (it needs no hardware at all, so it belongs with the other pure cores). `tick()` returns an
+    action; `main.cpp` keeps only the film read, NVS, `Serial` and the raw→screen map. 10 host tests in
+    `test/test_touchcal/` cover press averaging, dropout ride-through, blip rejection, fit rejection +
+    restart, and the success-screen timing — none of which could be exercised without a screen before.
+    `esp32cyd` compiles (RAM −8 B, flash +212 B); `pio test -e native` 262/262.
+  - [ ] **R1e.2 — `buildLcdViews` / `lcdExecute` / `lcdTask`** — the remaining ~500 lines.
 
 ---
 

@@ -3863,3 +3863,55 @@ paths changed — adding these targets creates no gap.
 
 Verification: Python **606 passed** / 3 skipped; ruff clean over the new CI scope; all four generated
 artifacts in sync.
+
+---
+
+## 2026-07-26 — the touch-calibration ritual becomes testable without a screen
+
+**R1e, first slice.** `TouchCal.h` already had the pure pieces on either side — `touchCalFit()`
+(least-squares) and `renderTouchCalScreen()` (the crosshair UI), both host-tested. What sat *between*
+them lived in `main.cpp` as `touchCalTick()`, welded to `lcd.readRaw()`, `Preferences`, `Serial` and
+`millis()`. That middle piece is where the fiddly logic actually is, and the only way to exercise any of
+it was to physically tap a CYD four times and watch.
+
+The rules it encodes, none of which a compiler checks:
+
+- a press is **accumulated across ticks and averaged**, not sampled once (the film is noisy);
+- edge presses flicker below the pressure gate, so up to **3 dropout ticks** are ridden through
+  mid-press rather than ending it — meaning a real release takes **4** idle ticks to register;
+- a press shorter than **5 ticks** is a blip and is discarded, not recorded;
+- a rejected fit restarts from crosshair 0 after a **2 s** flash;
+- the success screen stays up while you keep tapping to verify, and only times out **6 s** after the
+  *last* tap.
+
+Now `firmware/lib/proxy/TouchCalRitual.h`: `tick(down, rawX, rawY, nowMs)` returns what the caller
+should *do* (`PointRecorded` / `Fitted` / `Rejected` / `TestTap` / `Finished`). `main.cpp` keeps only
+the I/O — reading the film, NVS, `Serial`, and the raw→screen map. **No sequencing decision is made in
+`main.cpp` any more.**
+
+`test/test_touchcal/` — **10 host tests**, each stating a rule rather than a magic number (the tunables
+are named constants the tests reference, so a threshold change surfaces as a failing named rule).
+Covered: a clean 4-tap ritual produces a fit that maps each tapped raw back onto its own crosshair
+(±2 px); a noisy press centres on the mean rather than the last sample; a 3-tick dropout does not end a
+press but a 4th does; a 4-tick press is discarded as a blip; four taps on one spot are **rejected, not
+saved**, and the ritual restarts; verification taps re-arm the 6 s window; the window then expires to
+`Finished`; `start()` clears prior progress.
+
+**Aside — the RAWTAP injection hook is now the same path as the tests.** Injection state
+(`g_tcalInjLeft/Rx/Ry`) moved to `main.cpp` beside the film read, because *choosing a sample source* is
+the caller's job. The ritual cannot tell a synthetic press from a real one — which is exactly what makes
+the device hook and the host tests the same test.
+
+Behaviour preserved deliberately: `pointIndex` is set on **every** recorded point including the fourth
+(where `action` is `Fitted`/`Rejected`), so the `[tcal] point 4/4 raw=… target=…` serial line still
+prints. The averaged raw is returned in the result for that log line rather than being re-derived.
+
+Verification: `pio test -e native` **262/262** (was 252); `esp32cyd` compiles — **RAM −8 B, flash
++212 B**, i.e. the extraction is free.
+
+**Toolchain note worth keeping: the CYD can be built on this Windows machine after all.** The
+`esp32cyd` build previously failed here because LVGL's `..\` include chains cross `MAX_PATH` (260) from
+the worktree path — by a single character. A directory junction shortening the root
+(`mklink /J C:\sbw <worktree>`) fixes it outright: **`esp32cyd` builds in ~3.5 min**. No registry
+change, no admin, no toolchain edit. Worth doing first on any machine whose checkout lives under a deep
+path — it turns "CI-only" firmware into locally verifiable firmware.
