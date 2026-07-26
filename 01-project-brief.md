@@ -1,5 +1,11 @@
 # 01 — Project Brief
 
+> ⛔ **SUPERSEDED — historical.** Part of the **pre-pivot brief**, written before the on-bike captures
+> and before the firmware existed. Kept for provenance. For the current state read
+> **[`PROJECT-MAP.md`](PROJECT-MAP.md)** (what already exists) and
+> **[`code/findings/decisions.md`](code/findings/decisions.md)** (what was decided and measured).
+> Where this doc disagrees with those, **they win.**
+
 ## What we're building
 
 A software bridge that lets a Stages SB20 smart bike consume real-time power data from a third-party ANT+ power meter (primary target: Favero Assioma DUO pedals) **as if** that data came from the bike's native onboard Stages crank power meters. The bridge runs on a small computer (Raspberry Pi or laptop) with one or two ANT+ USB sticks. Functionally, it impersonates the Stages cranks on-air so that the SB20's internal control loop — including erg-mode resistance — works unchanged from the bike's perspective.

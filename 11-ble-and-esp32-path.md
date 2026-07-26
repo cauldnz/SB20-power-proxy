@@ -1,5 +1,11 @@
 # 11 — BLE path & ESP32 productisation
 
+> ⛔ **SUPERSEDED — historical.** Part of the **pre-pivot brief**, written before the on-bike captures
+> and before the firmware existed. Kept for provenance. For the current state read
+> **[`PROJECT-MAP.md`](PROJECT-MAP.md)** (what already exists) and
+> **[`code/findings/decisions.md`](code/findings/decisions.md)** (what was decided and measured).
+> Where this doc disagrees with those, **they win.**
+
 Strategic + technical planning for taking the proxy off ANT+/Pi and onto a cheap,
 self-contained **BLE device (ESP32)** — the path to use-case-3 (distributable to
 other SB20 owners). Written after the day-1 ANT+ success and after reviewing the

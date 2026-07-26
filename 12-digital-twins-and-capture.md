@@ -1,5 +1,11 @@
 # 12 — Digital twins & community capture
 
+> ⛔ **SUPERSEDED — historical.** Part of the **pre-pivot brief**, written before the on-bike captures
+> and before the firmware existed. Kept for provenance. For the current state read
+> **[`PROJECT-MAP.md`](PROJECT-MAP.md)** (what already exists) and
+> **[`code/findings/decisions.md`](code/findings/decisions.md)** (what was decided and measured).
+> Where this doc disagrees with those, **they win.**
+
 Two owner ideas (2026-06-15) that turn out to be one coherent pipeline, and a
 reusable asset well beyond this one bike.
 

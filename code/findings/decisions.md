@@ -3915,3 +3915,61 @@ the worktree path — by a single character. A directory junction shortening the
 (`mklink /J C:\sbw <worktree>`) fixes it outright: **`esp32cyd` builds in ~3.5 min**. No registry
 change, no admin, no toolchain edit. Worth doing first on any machine whose checkout lives under a deep
 path — it turns "CI-only" firmware into locally verifiable firmware.
+## 2026-07-27 — The front door was describing a product that no longer existed (R8)
+
+**Context:** the five-model architecture review. Documentation was the one finding *every* model raised
+independently, which is itself the signal — each was reading the repo cold, which is exactly the
+experience the front door governs.
+
+**What was wrong.** `README.md` said **"Phase 0 substantially complete; proxy not yet built"** and
+described the deliverable as *"a small Python application (target: Raspberry Pi or laptop with one or two
+ANT+ USB sticks)"*. At the time of writing that was true. It has not been true for months: two firmware
+targets ship (ESP32-C3 and nRF52840), the crank spoof rides, there is a meter-to-meter mode, a web setup
+UI, OTA, an LCD head-unit and a beta programme. The README's repository layout listed **none** of
+`firmware/`, `firmware-nrf/`, `web/`, `sessions/`, `beta/`, `tools/`, `design/` or `PROJECT-MAP.md`, and
+its "Where to start" table sent every newcomer first to `START-HERE.md` and `HANDOFF.md` — the *pre-pivot
+brief*. A newcomer following the front door faithfully would have been led to the wrong architecture,
+wrong language, and wrong entry point, then told **"do not write proxy code before Phase 0"** — work
+completed long ago.
+
+**Decision: the README defers to `PROJECT-MAP.md`, it does not duplicate it.** The tempting fix is a
+README that summarises current capability. That creates a *second* inventory to keep in sync, and the
+whole reason `PROJECT-MAP.md` exists (CI-guarded, per its own header) is that summaries drift. So the
+README is now a thin front door — what this is, why it exists, how to build and test it, and a routing
+table — with one loud pointer to the map.
+
+**Refuted my own plan: "move the legacy ride/session cards out of root."** Measured inbound references
+first: every one is linked from other docs, and several from **append-only `decisions.md`**
+(`NEXT-BIKE-SESSION.md` 10 refs, `BIKE-SESSION-READY.md` 6, `RIDE-CARD.md` 5,
+`CALIBRATION-RIDE-CARD.md` 4). Moving them would break links out of the historical record to fix a
+cosmetic problem. **They stay at the root; they get banners instead.** 14 root docs had *no* staleness
+warning at all — including `START-HERE.md`, the doc the old README promoted to first place.
+
+**The playbook still taught the path its own retro had refuted.** `sessions/PLAYBOOK.md` §pre-flight
+said `doctor.ps1` gates **"Npcap + nRF Sniffer extcap"** and gave the live-capture smoke test as
+`tshark -i <nRF-Sniffer-iface>`. Two hundred lines below, §Passive BLE sniffing says the opposite in
+bold — *"Capture headless with `sniff_ble.py` — **NOT** Wireshark/Npcap … no Npcap, no tshark"* — and
+records that session 9's "install Npcap" call was **the wrong path**. Ground truth taken from
+`doctor.ps1` itself rather than from either passage: it gates **dongle on sniffer firmware (PID 522A) +
+`SnifferAPI` extcap staged + pyserial + the ANT+ WSL claim**, and says so in a comment — nine lines
+below its *own* header comment, which still said "Npcap". So the wrong instruction appeared in three
+places, in the one document read under time pressure with a rider waiting. All three corrected; the
+smoke test is now `sniff_ble.py --duration 3 --output test.pcap` (flags verified against its argument
+parser — my first draft said `--out`, which does not exist).
+
+**Measured, not assumed:** the boards are at **`192.168.1.165`** (C3) and **`192.168.1.234`** (CYD) —
+the LAN has moved off the `192.168.0.x` subnet recorded in `BOARDS.md`. The **mDNS hostname collision
+noted there is FIXED**: `sb20proxy.local` and `sb20proxy-cyd.local` now resolve to their own boards, both
+verified serving `/status`.
+
+**New CI invariant — `code/tests/test_doc_links.py`.** Any dead relative Markdown link, repo-wide, now
+fails CI. Scanning 583 relative links found **5 broken**: 2 were `<name>` placeholders inside code
+examples (excluded by design), and **3 were real** — `session-04` linked `sessions/README.md` from
+*inside* `sessions/`. Fixed. Mutation-verified: injecting a bogus link fails the test, removing it
+passes. This sits alongside `test_project_map.py` (the map is complete) and `test_findings_index.py`
+(the index is complete) — now every link between them resolves too.
+
+**The general lesson, and it is the same one as the rest of this arc:** documentation rots *silently*
+and asymmetrically. A stale internal note costs minutes; a stale front door costs a whole orientation,
+and a stale runbook costs session time with a rider standing there. The durable fix is never "rewrite
+it" — it is **rewrite it, then make the specific failure mode unmergeable**.

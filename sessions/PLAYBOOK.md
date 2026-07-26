@@ -74,8 +74,9 @@ rider starts:
   compiler exists for `pio test -e native`, **and** an OTA upload reaches the board — *before* the rider is
   at the bike. **Now committed:** `tools/provision-dev-env.ps1` provisions the pinned toolchain (PlatformIO
   + the BLE venv; pins in `tools/dev-env.lock`) and `tools/doctor.ps1` is the pre-flight gate — green it at
-  the desk. **It now also gates the dual-radio capture rig** (Npcap + nRF Sniffer extcap + dongle + the ANT+
-  WSL claim), so a green doctor means we can build, flash, *and* capture — see the dual-radio item below.
+  the desk. **It now also gates the dual-radio capture rig** (dongle on sniffer firmware + the Nordic
+  `SnifferAPI` extcap staged + pyserial + the ANT+ WSL claim — **not** Npcap/tshark; see §Passive BLE
+  sniffing), so a green doctor means we can build, flash, *and* capture — see the dual-radio item below.
   *(Session 8: the bike laptop had no
   PlatformIO — Py 3.14 orphaned it, empty `~/.platformio` — and no `gcc` → ~30 min of mid-session bring-up;
   the exact "does the tool run?" failure step 1 exists to prevent.)*
@@ -111,19 +112,22 @@ rider starts:
     nRF dongle + Wireshark/tshark. **Verify both are *actually capturing* before the rider is at the bike** —
     a sniffer you think is running but isn't is worse than none.
   - **⚠️ HARD RULE (session 9, 2026-06-26 — learned the painful way):** `doctor.ps1` MUST **gate the capture
-    rig**, not just build/flash — assert Npcap/tshark present + the nRF Sniffer extcap registered + the dongle
-    on its COM port + the ANT+ WSL claim (a libusb open). And **any "check everything" / readiness pass MUST do
-    a few-second live test capture on EACH radio** — never just tick the box. *(Session 9: the nRF sniffer was
-    NOT ready — Npcap uninstalled, extcap unregistered — and it slipped through TWO explicit "check everything"
-    passes, night-before AND morning, because `doctor.ps1` only checked build/flash. A green doctor MUST mean
-    the captures actually work.)* **Now implemented:** `doctor.ps1` default-gates the rig — Npcap (`wpcap`
-    loads) + the nRF Sniffer extcap registered + the dongle on its COM port + the ANT+ WSL libusb claim — and
-    FAILs (non-zero exit) with the exact fix when a piece is missing (`-NoNrf`/`-NoAnt` only when a radio is
-    *intentionally* absent; `-NoCaptureRig` for a build-only run). So the readiness procedure is now: **(1)**
-    run `.\tools\doctor.ps1` at the desk and get the **capture rig green**, then **(2)** take a **few-second
-    live test capture on each radio** — nRF: `tshark -i <nRF-Sniffer-iface> -a duration:3 -w test.pcapng`;
-    ANT+: a short `02_capture_assioma.py` — and confirm frames/pages actually land. Standing the nRF path up
-    at the desk (Npcap install, extcap register, dongle firmware): `tools/README.md` > "Capture rig setup".
+    rig**, not just build/flash — assert the dongle is on the **sniffer firmware** (PID `522A`) + the Nordic
+    `SnifferAPI` extcap is staged + `pyserial` is in the BLE venv + the ANT+ WSL claim (a libusb open). And
+    **any "check everything" / readiness pass MUST do a few-second live test capture on EACH radio** — never
+    just tick the box. *(Session 9: the nRF sniffer was NOT ready and it slipped through TWO explicit "check
+    everything" passes, night-before AND morning, because `doctor.ps1` only checked build/flash. A green
+    doctor MUST mean the captures actually work. Note the morning diagnosis — "install Npcap" — was itself
+    **wrong**; the real blockers were the un-staged extcap and missing pyserial. See §Passive BLE sniffing.)*
+    **Now implemented:** `doctor.ps1` default-gates the rig — dongle on sniffer fw + `SnifferAPI` extcap
+    staged + pyserial + the ANT+ WSL libusb claim — and FAILs (non-zero exit) with the exact fix when a piece
+    is missing (`-NoNrf`/`-NoAnt` only when a radio is *intentionally* absent; `-NoCaptureRig` for a
+    build-only run). So the readiness procedure is now: **(1)** run `.\tools\doctor.ps1` at the desk and get
+    the **capture rig green**, then **(2)** take a **few-second live test capture on each radio** — nRF:
+    `code/.venv/Scripts/python code/scripts/sniff_ble.py --duration 3 --output test.pcap`; ANT+: a short
+    `02_capture_assioma.py` — and confirm frames/pages actually land. Standing the nRF path up at the desk
+    (extcap staging, dongle firmware): `tools/README.md` > "Capture rig setup" and
+    [`code/findings/nrf-sniffer.md`](../code/findings/nrf-sniffer.md).
     **Never tick the capture box without doing both.**
   - **Commit the captures** (pcap + ANT JSONL) at close-out — canonical + lossless.
   - **Analyse by QUERYING `captures.sqlite`, never by dumping raw captures into context.** Parse both into the

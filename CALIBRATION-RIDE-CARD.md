@@ -1,5 +1,11 @@
 # 🚴 Calibration Ride Card — session 2
 
+> ⛔ **SUPERSEDED — historical.** A point-in-time operational card, kept for provenance because
+> [`code/findings/decisions.md`](code/findings/decisions.md) links it. Do not follow it as a procedure.
+> The current equivalents are **[`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md)** (how to run an on-bike
+> session), the ledger **[`sessions/README.md`](sessions/README.md)**, and
+> **[`PROJECT-MAP.md`](PROJECT-MAP.md)**.
+
 **Two objectives, one capture:**
 1. **Close open-question #7** — does the SB20 rescale crank power? (Decides whether
    "feed Assioma → erg targets land on Assioma watts" is literally true, or needs a

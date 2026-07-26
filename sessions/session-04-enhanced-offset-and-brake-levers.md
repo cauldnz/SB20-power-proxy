@@ -1,7 +1,7 @@
 # 🚴 Bike session 4 — ground the Enhanced-Offset (0x10) format + FTMS erg + brake-lever probe
 
 **Status: ✅ DONE (2026-06-21)** · ran ~09:43–11:23 local (UTC+10) · tracked in
-[`sessions/README.md`](sessions/README.md). Run via [`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md).
+[`sessions/README.md`](README.md). Run via [`sessions/PLAYBOOK.md`](PLAYBOOK.md).
 **Outcome:** **§C FTMS erg ✅ PASS** — the SB20 accepts + holds a *third-party* Set-Target-Power (spec-built
 FTMS codec validated vs real frames) — but the owner's independent cross-check surfaced a **power-topology
 finding**: the SB20's erg power reads only ~½–⅔ of the Assioma (likely **single-sided**), needing a
@@ -325,7 +325,7 @@ chase the number on your phone and **hold each block as steady as you can**.
 Reinsert **both** crank batteries → re-pair the SB20 to **`62144` (L) : `4963` (R)**, **165 mm**, ANT+
 offsets **903 / 951**, normal mode → pedal once to confirm the real cranks read.
 
-## Retro (2026-06-21 — see [`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md) §4)
+## Retro (2026-06-21 — see [`sessions/PLAYBOOK.md`](PLAYBOOK.md) §4)
 - **Went well:**
   - **Front-loading §C** (the gate) paid off — clean PASS early, then everything after was upside.
   - **"Agent runs the tooling, rider only pedals/presses + narrates"** — smooth; the rider never touched a
