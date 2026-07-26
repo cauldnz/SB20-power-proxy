@@ -45,6 +45,30 @@ firmware\.venv\Scripts\python.exe "$env:USERPROFILE\.platformio\packages\framewo
 # USB flash (fallback): python code\scripts\flash_c3.py --env esp32c3-oled-live --port COM9
 ```
 
+### Flash guards — read this before you flash anything
+
+Both flash scripts refuse before they do damage. Neither refusal is advisory; both cost a real board.
+
+```powershell
+firmware\flash.ps1     -Env esp32c3-oled-live-ota      # ESP32: refuses bench / mock / probe / host envs
+firmware-nrf\flash.ps1 -Env xiao-sense-s340            # nRF:   refuses a SoftDevice/linker mismatch
+```
+
+- **ESP32 — the ride-safety gate.** `...-live` and `...-live-bench` differ by one hyphen, and the flag that
+  matters (`METER_MATCH_ANY_CPS`, "pairs with *any* CPS advertiser — DESK ONLY") is up to three `extends`
+  hops away, so the two are indistinguishable at the call site. `flash.ps1` resolves the env through
+  PlatformIO itself and names the reason. Override with `-Force` for a desk session; never leave such a
+  build on a board you ride.
+- **nRF — the SoftDevice gate.** An nRF52 app is linked to start immediately above the SoftDevice, so its
+  base address is a property of *the board*, not the source. `xiao-sense` assumes **S140** (app @0x26000);
+  a board carrying **S340** needs `xiao-sense-s340` (app @0x31000). Flashing the wrong one lands the app
+  inside the SoftDevice — it does not fail loudly, it just stops working. `flash.ps1` reads the
+  bootloader's `INFO_UF2.TXT` and refuses on mismatch (#298). It stops rather than guessing if it cannot
+  identify either side.
+
+Both scripts also reject an unknown env name (listing near-matches), so a stale runbook command fails
+loudly instead of silently building something else.
+
 ## Capture rig setup
 
 The standing pre-flight rule (`sessions/PLAYBOOK.md` §pre-flight) is an **always-on dual-radio capture**

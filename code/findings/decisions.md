@@ -3589,3 +3589,78 @@ characters. The same tree built clean (SUCCESS, 3m45s, flash 82.7%) through a sh
 remediation, because the error message names a missing file that is demonstrably present — an hour
 of the wrong investigation otherwise. It resolves which envs actually pull LVGL by walking
 `extends =` transitively; the primary checkout (`C:\repos\cauldnz\SB20-power-proxy`) measures 209.
+
+## 2026-07-26 — The bench XIAO's application region is erased, and "byte-identical" proved nothing
+
+Corrects the earlier entry today ("The `xiao-sense` env will mis-flash an S340-provisioned board")
+and issue #297, which said the board only needed an RST press because its firmware was "already in
+flash, untouched". It is not. **There is no application on that board at all.**
+
+Read live from the bootloader's `CURRENT.UF2`, twice, by two independent methods:
+
+| region | contents |
+|---|---|
+| `0x01000..0x31000` | S340 6.1.1 SoftDevice, **valid** (vector table SP=`0x200018A8`, PC=`0x0002F08D`) |
+| `0x31000..0xEA000` | **erased** — 757,760 bytes, **zero** non-`0xFF` bytes |
+
+The bootloader is not "parked"; it is behaving correctly. With no valid application to jump to it
+stays in DFU, and no number of RST presses can change that. Writing the board's own image back to the
+UF2 drive (which reboots into the app on success) correctly did nothing, because that image has no app
+in it either.
+
+**The lesson is about the verification, not the board.** The earlier check compared the live app region
+against a backup, found them byte-identical (`2960/2960` blocks) and concluded nothing was lost. Both
+dumps were taken *after* the erase. Comparing two copies of an erased region proves only that it is
+consistently erased; with no pre-erase reference, the check could not detect the very loss it was
+written to rule out. **A differential check needs a reference from before the event, or it is theatre.**
+The related claim that "no flash write ever occurred" was also too strong: `adafruit-nrfutil` erases
+before it writes, the erase succeeded, and the write then failed with `PermissionError(13)`. The XIAO
+was advertising as `SB20 Bridge` earlier the same session, so an app demonstrably existed.
+
+Not recoverable from this worktree: an S340 board needs an app linked at `0x31000` (`xiao-sense-s340`),
+which needs the licensed ANT SoftDevice headers under `firmware-nrf/vendor/softdevice/` — gitignored,
+not redistributable, and absent here (only the README is present). Left as-is rather than overwriting
+the licensed S340 stack with S140, which is the owner's call. The XIAO is bench hardware; the ride
+devices (C3, CYD) are untouched.
+
+## 2026-07-26 — Flash guards: resolve the config through PlatformIO, never re-model it
+
+Two flashes in this repo can quietly cost a board, and neither was guarded:
+
+1. **ESP32 — the wrong build on a ride board.** `esp32c3-wifi-live` and `esp32c3-wifi-live-bench` differ
+   by one hyphen, and `METER_MATCH_ANY_CPS=1` (pairs with *any* CPS advertiser — `fake_meter.py` calls
+   it "DESK ONLY, don't ride") is up to three `extends` hops from the env you name.
+2. **nRF — the wrong SoftDevice layout.** An nRF52 app is linked immediately above the SoftDevice, so its
+   base address is a property of the board. `xiao-sense` (S140, app @`0x26000`) onto an S340 board lands
+   the app inside the SoftDevice. It does not fail loudly.
+
+Both are now gated: `firmware/flash.ps1` (ride-safety) and the new `firmware-nrf/flash.ps1` (SoftDevice),
+sharing `tools/PioIni.ps1`. The nRF guard reads the answer the bootloader already publishes in plain
+text — `INFO_UF2.TXT`'s `SoftDevice:` line — and refuses on mismatch, naming the env that would be
+right. Verified against the real board: `xiao-sense` is refused ("linked for S140 but this board runs
+S340 … Try instead: xiao-sense-s340"), `xiao-sense-s340` passes the gate. Both scripts also reject an
+unknown env name and list near-matches, so a stale runbook command fails loudly.
+
+**The engineering point is how the guards read the config.** The first version of `PioIni.ps1` parsed
+`platformio.ini` by hand and gathered the transitive text of an env's `extends` chain. That cannot
+express an *override*: a `-live` env sets `USE_MOCK_METER=0` but its parent's `=1` is still somewhere in
+the inherited text, so the guard flagged **every one of the 37 envs as a mock build — including the
+recommended ride build**. A guard that blocks everything is worse than no guard: it trains you to pass
+`-Force` reflexively. `pio project config --json-output` returns every option fully resolved (extends
+walked, `${section.key}` interpolated) in **0.6 s**, so the hand-rolled resolver was deleted and the
+guards now ask PlatformIO. The classification is now exactly right: the 12 envs that pass are precisely
+the live ride builds.
+
+Two smaller traps found on the way, both silent:
+- **A comment block immediately above a `[section]` header describes that section, not the one above
+  it.** Attributing it backwards marked `esp32s3-pio-live-ota` (a good build) as ⛔ SUPERSEDED and let
+  the actually-superseded `esp32s3-touch*` envs through — exactly inverted.
+- **PowerShell unrolls a single-element array on return**, so `return @($exe)` yields a bare string and
+  `$exe[0]` silently becomes its first *character* (`"C"`). Helpers that may return one item return a
+  hashtable instead.
+
+Also removed the five ⛔ SUPERSEDED `esp32s3-touch*` envs (37 → 32), leaving a name-tombstone in
+`platformio.ini` so `-e esp32s3-touch` now fails with "no [env:...]" plus the `esp32s3-pio*` alternatives
+rather than silently building a known boot-looping image. `USE_LCD=1` is still set by `esp32cyd*` and
+`esp32s3-pio*`, so `LcdDisplay` is *not* orphaned by the removal (design/ui-architecture-review.md §U0
+updated accordingly).
