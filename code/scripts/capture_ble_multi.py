@@ -46,8 +46,11 @@ if str(SRC) not in sys.path:
 try:
     from bleak import BleakClient
 except ImportError as e:  # pragma: no cover - desk machines without bleak
-    print(f"bleak not installed: {e}\nRun: pip install -e \"code/.[ble]\"", file=sys.stderr)
-    sys.exit(1)
+    _msg = f"bleak not installed: {e}\nRun: pip install -e \"code/.[ble]\""
+    if __name__ == "__main__":
+        print(_msg, file=sys.stderr)
+        sys.exit(1)
+    raise ImportError(_msg) from e  # importable: let callers skip, don't kill them
 
 from sb20proxy.ble.multi_capture import (  # noqa: E402
     DeviceSpec,

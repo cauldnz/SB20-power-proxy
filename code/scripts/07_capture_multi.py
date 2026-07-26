@@ -61,10 +61,12 @@ try:
     from openant.easy.node import Node
     from openant.easy.channel import Channel
     from openant.devices import ANTPLUS_NETWORK_KEY
-except ImportError as e:
-    print(f"openant not installed or import failed: {e}", file=sys.stderr)
-    print("Run: pip install openant", file=sys.stderr)
-    sys.exit(1)
+except ImportError as e:  # pragma: no cover - dependency guard
+    _msg = f"openant not installed or import failed: {e}\nRun: pip install openant"
+    if __name__ == "__main__":
+        print(_msg, file=sys.stderr)
+        sys.exit(1)
+    raise ImportError(_msg) from e  # importable: let callers skip, don't kill them
 
 # Reuse Bike Power decode_page from 01 (one source of truth for byte layouts).
 _spec = spec_from_file_location(

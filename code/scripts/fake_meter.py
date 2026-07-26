@@ -38,8 +38,11 @@ from sb20proxy.ble.cps import F_BALANCE_REF_LEFT, CrankCadence, encode_cps_measu
 try:
     from sb20proxy.ble.winrt_peripheral import WinrtCpsPeripheral
 except ImportError as e:  # pragma: no cover - platform guard
-    print(f"WinRT GATT server unavailable (Windows 10+ only): {e}", file=sys.stderr)
-    sys.exit(1)
+    _msg = f"WinRT GATT server unavailable (Windows 10+ only): {e}"
+    if __name__ == "__main__":
+        print(_msg, file=sys.stderr)
+        sys.exit(1)
+    raise ImportError(_msg) from e  # importable: let callers skip, don't kill them
 
 
 def _power_at(base: int, tick: int, steady: bool) -> int:

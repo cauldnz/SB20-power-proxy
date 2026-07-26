@@ -21,8 +21,12 @@ from pathlib import Path
 
 try:
     import serial  # pyserial
-except ImportError:
-    sys.exit("needs pyserial: pip install pyserial")
+except ImportError as e:  # pragma: no cover - dependency guard
+    _msg = f"needs pyserial: {e}\nRun: pip install pyserial"
+    if __name__ == "__main__":
+        print(_msg, file=sys.stderr)
+        sys.exit(1)
+    raise ImportError(_msg) from e  # importable: let callers skip, don't kill them
 
 
 class S3Bench:

@@ -34,8 +34,11 @@ import time
 try:
     from bleak import BleakClient, BleakScanner
 except ImportError as e:  # pragma: no cover - dependency guard
-    print(f"bleak not installed: {e}\nRun: pip install bleak", file=sys.stderr)
-    sys.exit(1)
+    _msg = f"bleak not installed: {e}\nRun: pip install -e \"code/.[ble]\""
+    if __name__ == "__main__":
+        print(_msg, file=sys.stderr)
+        sys.exit(1)
+    raise ImportError(_msg) from e  # importable: let callers skip, don't kill them
 
 from sb20proxy.ble.cps import (
     CP_START_OFFSET_COMPENSATION,

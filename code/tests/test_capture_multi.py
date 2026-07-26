@@ -8,6 +8,11 @@ from pathlib import Path
 
 import pytest
 
+# `parse_meter_spec` is pure string parsing, but it lives in a script whose module
+# body imports openant. Skip rather than error if the ANT+ stack isn't importable
+# (see test_script_import_guards.py for the dual-mode guard this relies on).
+pytest.importorskip("openant", reason="07_capture_multi.py imports openant at module scope")
+
 _PATH = Path(__file__).resolve().parents[1] / "scripts" / "07_capture_multi.py"
 _spec = importlib.util.spec_from_file_location("capture_multi_under_test", _PATH)
 capture_multi = importlib.util.module_from_spec(_spec)

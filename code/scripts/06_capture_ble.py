@@ -49,10 +49,12 @@ from typing import Any
 
 try:
     from bleak import BleakClient, BleakScanner
-except ImportError as e:
-    print(f"bleak not installed or import failed: {e}", file=sys.stderr)
-    print("Run: pip install bleak", file=sys.stderr)
-    sys.exit(1)
+except ImportError as e:  # pragma: no cover - dependency guard
+    _msg = f"bleak not installed or import failed: {e}\nRun: pip install -e \"code/.[ble]\""
+    if __name__ == "__main__":
+        print(_msg, file=sys.stderr)
+        sys.exit(1)
+    raise ImportError(_msg) from e  # importable: let callers skip, don't kill them
 
 
 # 16-bit SIG UUIDs, expanded to full form for bleak comparisons
