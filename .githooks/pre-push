@@ -1,0 +1,27 @@
+#!/bin/sh
+# pre-push — block a push that would land stale generated artifacts.
+#
+# Why: on 2026-07-25/26 `WebSpa.h` drifted two web commits behind `web/index.html`. CI caught
+# it, but only *after* six pushes had landed on `main`, and the shipping firmware served an
+# embedded SPA missing the iOS/Bluefy `optionalServices` fix and auto-reconnect. The check
+# needs to run before the push, not after.
+#
+# Install: tools\install-hooks.ps1   (sets core.hooksPath to .githooks)
+# Bypass:  git push --no-verify      (use only when you know the artifacts are intentionally mid-change)
+
+repo_root=$(git rev-parse --show-toplevel)
+
+if ! command -v python >/dev/null 2>&1; then
+    echo "pre-push: python not on PATH; skipping the generated-artifact check." >&2
+    exit 0
+fi
+
+python "$repo_root/code/scripts/check_generated.py" || {
+    echo "" >&2
+    echo "pre-push BLOCKED: generated artifacts are stale (see above)." >&2
+    echo "  fix:    python code/scripts/check_generated.py --fix && git add -A && git commit --amend --no-edit" >&2
+    echo "  bypass: git push --no-verify" >&2
+    exit 1
+}
+
+exit 0
