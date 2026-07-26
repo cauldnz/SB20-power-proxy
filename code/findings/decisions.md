@@ -3418,3 +3418,40 @@ is the leading candidate and has a cheap single-variable A/B written up in #288.
 banked as the A/B pair. **Earlier agent claims that the Stages app caused the wake, and that the
 bike's FTMS flags were internally inconsistent, were both wrong** — the flags were honest; the frame
 set was degraded.
+
+## 2026-07-26 — OBC consumers replay the last button press on connect (session 13 R3) — FIXED
+
+Desk-found, and a **real qz bug**, not a quirk of our producer. On subscribing, `obclistener`
+dispatched `button 49 -> power_down` for a press physically fired **58 s earlier**. The OBC
+Button-State characteristic (`d273f681-d548-419d-b9d1-fa0472345229`) is **Read/Notify and retains its
+last value**; Qt's service discovery reads it, so the consumer is handed a stale payload, its edge
+detector sees `0 -> pressed`, and it fires. **Every connect replays the last press as a live action.**
+
+At the bike this presents as an unexplained power or gear jump the instant a consumer attaches —
+**do not chase it as a bike fault.**
+
+Fix (shipped in [qz PR #4851](https://github.com/cagnulein/qdomyos-zwift/pull/4851), branch
+`pr/obc-listener`): seed the edge detector from the characteristic's **current** value before
+subscribing, so the retained state becomes the baseline instead of an event.
+
+**This is a property of the OBC protocol, not of qz** — a retained Read/Notify state characteristic
+plus edge-triggered consumption. **Any** consumer we write (the C3 sink, the nRF bridge, `obc_reader.py`)
+has the same defect unless it seeds the same way. Not yet audited in ours — worth checking before the
+next session.
+
+## 2026-07-26 — Native SB20 decode + OBC listener double-fire when both are enabled (session 13 R1)
+
+Desk-found on the merged bench binary `bench/obc-listener+sb20-buttons`. With **both** features on and
+the C3 sink relaying, **one physical paddle press fires twice in qz** — once natively (qz decoding the
+SB20's vendor characteristic directly) and once via OBC (the C3 re-broadcasting the same press) — and
+crucially **with *different* actions**, because the two paths map buttons differently.
+
+**Neither branch can show this alone; the merge created it.** Mitigation used during the session was
+to run **one path at a time** (G1 native vs G2 OBC), which is why the two gates were never run
+together.
+
+Implication for anything shippable: a build carrying both needs **mutual exclusion**, not two
+independent toggles — if a bike is natively decoded *and* an OBC producer is relaying its buttons, the
+rider gets two actions per press. The settings flags (`sb20_buttons_enabled` and the OBC listener
+toggle) currently do not know about each other. **Untested on the bike** — observed at the desk only,
+and the upstream PRs are deliberately separate so this combination does not arise upstream yet.
