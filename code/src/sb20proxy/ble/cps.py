@@ -12,6 +12,13 @@ Field order on the wire (CPS Measurement): flags (uint16 LE), instantaneous powe
   bit4 wheel revs (uint32) + wheel event time (uint16) · bit5 crank revs (uint16) +
   crank event time (uint16, 1/1024 s) · ... (extreme/dead-spot/energy fields follow).
 Bits 1 (balance reference) and 3 (torque source) are modifiers with no data field.
+
+Not the only CPS decoder in the tree, and deliberately so: `scripts/06_capture_ble.py` has a
+capture-side decoder that reads ALL 13 optional fields and is tolerant of truncation (it records
+a `decode_error` rather than dropping a record, because captures are the canonical lossless
+record). This one covers the four fields our meters actually set and RAISES on a short frame,
+which is what the runtime path needs. The script imports the flag/op/result constants from here
+so the protocol bytes have one definition; the two decode functions are not merged on purpose.
 """
 
 from __future__ import annotations

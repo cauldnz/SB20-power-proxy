@@ -78,8 +78,14 @@ jobs:
       - name: Install (dev extras)
         run: pip install -e ".[dev,ota,mcp]"
 
+      # The four code generators are load-bearing: they emit the committed wire-format mirrors
+      # (WebSpa.h, bridge-codec.js, WebJson.h, the design tokens) that check_generated.py compares
+      # byte-for-byte. They sat OUTSIDE the lint gate, so a real error in the tooling that writes
+      # the firmware's embedded SPA was invisible to CI. They live in three directories, hence the
+      # explicit paths; E501 is per-file-ignored for them in pyproject.toml (their long lines are
+      # the *generated* file's lines), but F/B/I/UP -- everything that catches real bugs -- applies.
       - name: Lint
-        run: ruff check src tests
+        run: ruff check src tests scripts/gen_bridge.py scripts/gen_webjson.py ../web/gen_spa_header.py ../design/gen_tokens.py
 
       - name: Test
         run: pytest -q

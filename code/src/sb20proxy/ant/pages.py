@@ -6,8 +6,9 @@ proxy receive a Stages crank stream and re-transmit it as a spoofed master.
 REAL-DATA-FIRST PROVENANCE
 --------------------------
 The byte layouts here are NOT transcribed from the ANT+ spec from memory — they
-mirror `code/scripts/01_capture_stages.py:decode_page`, which was validated in
-Phase 0 against the real Stages crank and the Stages app. Every layout in this
+were validated in Phase 0 against the real Stages crank and the Stages app
+(the decoder originally lived in `code/scripts/01_capture_stages.py`, which now
+imports this module). Every layout in this
 module round-trips against the committed Phase 0 captures (see
 `tests/test_ant_pages.py`): for all 3,209 real data records across
 `A-stagesL-steady-20260614-165737.jsonl` and `C0-ack-dryrun-20260614-164426.jsonl`,
@@ -26,9 +27,10 @@ confirmed constant at 0xFF across every captured record:
 Field names match `decode_page` output exactly, so `encode_page` consumes a
 decoded dict directly and Phase 2 can build the same dict from a `PowerReading`.
 
-NOTE: `decode_page` below is mirrored verbatim from the Phase 0 capture script so
-this package is a self-contained codec. The two copies must stay in sync; a
-follow-up should make the capture script import this one. Do not "simplify" the
+NOTE: `decode_page` below is the ONE implementation. `code/scripts/01_capture_stages.py` (the
+Phase 0 capture script it was originally mirrored from) now imports it from here rather than
+carrying its own copy — the two were byte-identical apart from a docstring, verified by an
+AST-normalised diff and by replaying every committed capture through both. Do not "simplify" the
 byte offsets — e.g. manufacturer_id genuinely lives at bytes 4-5 of page 0x50.
 
 Reference: ANT+ Bicycle Power Device Profile D00001086 Rev 5.x.
@@ -348,9 +350,10 @@ def encode_calibration_request(*, calibration_id: int = CAL_ID_MANUAL_ZERO_REQUE
 
 
 # ---------------------------------------------------------------------------
-# decode_page — mirrored verbatim from code/scripts/01_capture_stages.py (the
-# Phase 0-validated decoder). Keep the two in sync; the byte offsets are correct
-# against D00001086 and were cross-checked against the crank + Stages app.
+# decode_page — THE Bike Power page decoder. Originally written in
+# code/scripts/01_capture_stages.py (Phase 0-validated against D00001086, the
+# real crank, and the Stages app); that script now imports this one, so this is
+# the single copy. The byte offsets are correct — do not "simplify" them.
 # ---------------------------------------------------------------------------
 
 def decode_page(data: bytes) -> dict[str, Any]:

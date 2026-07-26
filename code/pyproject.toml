@@ -73,6 +73,14 @@ select = ["E", "F", "I", "B", "UP"]
 # webapp.py embeds a self-contained HTML/CSS/JS dashboard as a string asset; its
 # inline JavaScript legitimately runs past the Python line length.
 "src/sb20proxy/ride/webapp.py" = ["E501"]
+# The code generators emit C++/JS source as Python string literals. Their long lines are the
+# *generated* file's lines, so reflowing the Python would either change committed output (which
+# check_generated.py compares byte-for-byte) or force awkward concatenation for no reader benefit.
+# Everything that catches real bugs -- F, B, I, UP -- still applies to them.
+"scripts/gen_bridge.py" = ["E501"]
+"scripts/gen_webjson.py" = ["E501"]
+"../web/gen_spa_header.py" = ["E501"]
+"../design/gen_tokens.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

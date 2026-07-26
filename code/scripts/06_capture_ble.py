@@ -47,6 +47,23 @@ import time
 from pathlib import Path
 from typing import Any
 
+# The CPS flag bits and control-point op/result codes come from the package, so there is exactly
+# ONE definition of each protocol byte.
+#
+# The DECODERS below are deliberately NOT the package's, and should not be collapsed into them:
+#   * this script decodes ALL 13 optional CPS fields; `decode_cps_measurement` stops after the
+#     four our meters actually set (it says so, and extending it is a runtime decision);
+#   * this script is TOLERANT — a truncated or malformed frame yields a partial dict with a
+#     `decode_error` key, because a capture must never drop a record ("JSONL captures are the
+#     canonical lossless record", CLAUDE.md). The package decoder RAISES, which is right for the
+#     runtime path and wrong here;
+#   * `decode_cp_response` here INTERPRETS the response params per op (offset, crank length,
+#     sensor locations, sampling rate, factory cal date) including the Assioma-vs-Stages
+#     trailing-bytes subtlety; `decode_control_point` returns them raw for the proxy to act on.
+# Two jobs, two shapes. Sharing the constants removes the drift risk without flattening either.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from sb20proxy.ble import cps as _cps  # noqa: E402
+
 try:
     from bleak import BleakClient, BleakScanner
 except ImportError as e:  # pragma: no cover - dependency guard
@@ -77,20 +94,28 @@ CHR_BATTERY_LEVEL = sig_uuid(0x2A19)
 # Cycling Power Control Point (0x2A66) op codes — for the guarded calibration
 # recon (Session G Part A). It's Write + Indicate: enable indications, write one
 # op, read the indication. Codes per the BLE Cycling Power Service spec.
+#
+# The op codes and result codes come from the package so there is ONE definition of each byte;
+# the human-readable names below are this script's (a capture log wants labels, the runtime
+# codec doesn't). If you add an op here, add its constant to sb20proxy/ble/cps.py first.
 CP_OPS = {
-    "request-sensor-locations": 0x03,
-    "request-crank-length": 0x05,      # returns configured crank length (uint16, 1/2 mm)
+    "request-sensor-locations": _cps.CP_REQUEST_SUPPORTED_SENSOR_LOCATIONS,
+    "request-crank-length": _cps.CP_REQUEST_CRANK_LENGTH,  # uint16, 1/2 mm
     "request-chain-length": 0x07,
     "request-chain-weight": 0x09,
     "request-span-length": 0x0B,
-    "offset-compensation": 0x0C,       # the zero-reset; indication carries offset (sint16)
+    "offset-compensation": _cps.CP_START_OFFSET_COMPENSATION,  # zero-reset; offset (sint16)
     "request-sampling-rate": 0x0E,
     "request-factory-cal-date": 0x0F,
     "enhanced-offset-compensation": 0x10,
 }
-CP_RESPONSE_OPCODE = 0x20
-CP_RESULT = {0x01: "success", 0x02: "op_code_not_supported",
-             0x03: "invalid_parameter", 0x04: "operation_failed"}
+CP_RESPONSE_OPCODE = _cps.CP_RESPONSE_CODE
+CP_RESULT = {
+    _cps.CP_RESULT_SUCCESS: "success",
+    _cps.CP_RESULT_OP_NOT_SUPPORTED: "op_code_not_supported",
+    _cps.CP_RESULT_INVALID_PARAMETER: "invalid_parameter",
+    _cps.CP_RESULT_OPERATION_FAILED: "operation_failed",
+}
 
 # Device Information Service strings worth reading once
 DIS_STRING_CHARS = {
@@ -137,55 +162,55 @@ def decode_cp_measurement(data: bytes) -> dict[str, Any]:
         return chunk
 
     try:
-        if flags & 0x0001:  # pedal power balance
+        if flags & _cps.F_PEDAL_BALANCE:
             b = take(1)
             if b is not None:
                 out["pedal_power_balance_pct"] = b[0] / 2.0
-                out["balance_reference_left"] = bool(flags & 0x0002)
-        if flags & 0x0004:  # accumulated torque (1/32 Nm)
+                out["balance_reference_left"] = bool(flags & _cps.F_BALANCE_REF_LEFT)
+        if flags & _cps.F_ACCUM_TORQUE:  # 1/32 Nm
             b = take(2)
             if b is not None:
                 out["accumulated_torque_raw"] = int.from_bytes(b, "little")
-                out["accumulated_torque_source_crank"] = bool(flags & 0x0008)
-        if flags & 0x0010:  # wheel revolution data
+                out["accumulated_torque_source_crank"] = bool(flags & _cps.F_TORQUE_SOURCE_CRANK)
+        if flags & _cps.F_WHEEL_REV:
             b = take(6)
             if b is not None:
                 out["cumulative_wheel_revs"] = int.from_bytes(b[0:4], "little")
                 out["last_wheel_event_time_2048s"] = int.from_bytes(b[4:6], "little")
-        if flags & 0x0020:  # crank revolution data
+        if flags & _cps.F_CRANK_REV:
             b = take(4)
             if b is not None:
                 out["cumulative_crank_revs"] = int.from_bytes(b[0:2], "little")
                 out["last_crank_event_time_1024s"] = int.from_bytes(b[2:4], "little")
-        if flags & 0x0040:  # extreme force magnitudes
+        if flags & _cps.F_EXTREME_FORCE:
             b = take(4)
             if b is not None:
                 out["max_force_n"] = int.from_bytes(b[0:2], "little", signed=True)
                 out["min_force_n"] = int.from_bytes(b[2:4], "little", signed=True)
-        if flags & 0x0080:  # extreme torque magnitudes (1/32 Nm)
+        if flags & _cps.F_EXTREME_TORQUE:  # 1/32 Nm
             b = take(4)
             if b is not None:
                 out["max_torque_raw"] = int.from_bytes(b[0:2], "little", signed=True)
                 out["min_torque_raw"] = int.from_bytes(b[2:4], "little", signed=True)
-        if flags & 0x0100:  # extreme angles (uint24: two 12-bit angles)
+        if flags & _cps.F_EXTREME_ANGLES:  # uint24: two 12-bit angles
             b = take(3)
             if b is not None:
                 packed = int.from_bytes(b, "little")
                 out["max_angle_deg"] = packed & 0xFFF
                 out["min_angle_deg"] = (packed >> 12) & 0xFFF
-        if flags & 0x0200:  # top dead spot angle
+        if flags & _cps.F_TOP_DEAD_SPOT:
             b = take(2)
             if b is not None:
                 out["top_dead_spot_angle_deg"] = int.from_bytes(b, "little")
-        if flags & 0x0400:  # bottom dead spot angle
+        if flags & _cps.F_BOTTOM_DEAD_SPOT:
             b = take(2)
             if b is not None:
                 out["bottom_dead_spot_angle_deg"] = int.from_bytes(b, "little")
-        if flags & 0x0800:  # accumulated energy (kJ)
+        if flags & _cps.F_ACCUM_ENERGY:  # kJ
             b = take(2)
             if b is not None:
                 out["accumulated_energy_kj"] = int.from_bytes(b, "little")
-        out["offset_compensation_indicator"] = bool(flags & 0x1000)
+        out["offset_compensation_indicator"] = bool(flags & _cps.F_OFFSET_COMP_IND)
     except Exception as e:  # never let a decode bug drop a record
         out["decode_error"] = str(e)
 
