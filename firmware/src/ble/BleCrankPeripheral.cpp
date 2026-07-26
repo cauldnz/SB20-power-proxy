@@ -7,6 +7,7 @@
 
 #include "Config.h"
 #include "Cps.h"
+#include "spoofs/StagesSpm2.h"  // the captured Stages crank bytes this peripheral impersonates
 #include "Obc.h"           // OBC BLE service/characteristic UUIDs
 #include "LogBuffer.h"     // toHex
 #include "net/DebugLog.h"  // logf -> /log (learn the SB20's interactive protocol by observation)

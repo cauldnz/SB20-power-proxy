@@ -42,6 +42,13 @@ F_OFFSET_COMP_IND = 1 << 12       # modifier (no field)
 
 # The Stages SPM2 crank's full flag set, exactly as captured (0x002F):
 # balance + balance-ref-left + accumulated-torque + torque-source-crank + crank-rev.
+#
+# This is the ONE spoof-target-specific value in this module. Its C++ twin lives in
+# `firmware/lib/proxy/spoofs/StagesSpm2.h`, split out because the C++ side had accumulated four
+# Stages symbols (flags, CP Feature, sensor location, and a whole frame encoder) inside the
+# general codec. Keep that boundary here too: captured, target-specific values go below this
+# comment or into a `spoofs/` module of their own if they ever outgrow it — the flag bits above
+# are spec, and stay spec.
 STAGES_FLAGS = (F_PEDAL_BALANCE | F_BALANCE_REF_LEFT | F_ACCUM_TORQUE
                 | F_TORQUE_SOURCE_CRANK | F_CRANK_REV)
 
