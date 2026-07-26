@@ -3590,6 +3590,37 @@ remediation, because the error message names a missing file that is demonstrably
 of the wrong investigation otherwise. It resolves which envs actually pull LVGL by walking
 `extends =` transitively; the primary checkout (`C:\repos\cauldnz\SB20-power-proxy`) measures 209.
 
+## 2026-07-26 — R3a: the NVS config line is versioned, and can no longer be delimiter-injected
+
+`RuntimeConfig::toLine()` now emits a leading `v2|` schema tag. `fromLine()` consumes a leading
+`v<digits>` field and otherwise parses the untagged legacy line as v1 — count-based, exactly as
+before — so every device already in the field keeps its stored pairing across the OTA. The
+discriminator is safe because slot 0 is `meterAddress`: empty, or a `':'`-separated BLE address,
+never `v2`. A field that merely *starts* with `v` (`"v2x"`) is not a tag and stays in slot 0.
+
+A tag **newer** than the running build still parses positionally. That is deliberate: fields are
+append-only, so everything an older build knows is still in the slot it expects, and on an OTA
+rollback the rider keeps their meter pairing rather than silently reverting to defaults. Falling
+back to `defaults()` there would trade a real regression for a theoretical one.
+
+**The more valuable half of this change was not the version tag.** `stripConfigDelims` — the only
+thing standing between a user-supplied name and a corrupted config — was applied *by the caller*,
+hand-written at six form-parsing sites in `ConfigPage.h` / `CalibrationPage.h`. Two fields that land
+in the line, `meterAddress` and `refMeterAddress`, had no strip at all. One forgotten call shifts
+every later field (mode / curve / calibrating / OBC port) on the next reload, silently.
+
+It now lives in `RuntimeConfig.h`, beside the delimiter it protects, and **`toLine()` applies it to
+every field itself**. The serialiser owns its own invariant; no caller can forget. The form parsers
+still call it too, so what the user sees echoed back matches what is stored.
+
+Mutation-verified rather than merely observed green: dropping the strip from exactly one field
+(`meterNameFilter`) fails exactly one test —
+`test_to_line_strips_delimiters_from_every_field_itself: Expected 'ASSIOMA' Was 'ASS'` — and nothing
+else. 252/252 native (was 246); `esp32c3-wifi` links.
+
+Nothing outside the firmware parses this line (`ConfigStore` is the only round-trip: NVS key
+`proxycfg/cfg`), so the format change has no wire-compatibility surface.
+
 ## 2026-07-26 — The bench XIAO's application region is erased, and "byte-identical" proved nothing
 
 Corrects the earlier entry today ("The `xiao-sense` env will mis-flash an S340-provisioned board")

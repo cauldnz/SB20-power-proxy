@@ -76,17 +76,9 @@ inline std::string urlEncode(const std::string& in) {
     return out;
 }
 
-// Strip the NVS line delimiter '|' from a free-text field (a crank / device / meter name). Those
-// names are user-supplied and land in '|'-delimited fields of RuntimeConfig::toLine — a literal '|'
-// would inject an extra delimiter and shift every later field (mode/curve/calibrating) on reload.
-inline std::string stripConfigDelims(const std::string& s) {
-    std::string o;
-    o.reserve(s.size());
-    for (char c : s) {
-        if (c != '|') o += c;
-    }
-    return o;
-}
+// NOTE: stripConfigDelims() lived here, but it belongs to the NVS line format, not to WiFi
+// provisioning — it now lives beside the delimiter it protects, in RuntimeConfig.h, and toLine()
+// applies it itself so no caller can forget.
 
 // Iterate an application/x-www-form-urlencoded body, invoking fn(key, val) for each `key=value` pair
 // with both sides urlDecoded. This is the ONE place the `&`/`=` splitting + decode lives — every form

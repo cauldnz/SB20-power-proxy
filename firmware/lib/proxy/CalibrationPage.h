@@ -6,6 +6,7 @@
 #include "Config.h"              // CORRECTOR_NAME default
 #include "Correction.h"          // CorrectionCurve
 #include "Provisioning.h"        // urlDecode / htmlEscape / rssiBars
+#include "RuntimeConfig.h"       // stripConfigDelims (the NVS-line delimiter guard)
 #include "SourceCandidate.h"     // SourceCandidate + dedupeAndSortSources
 #include "WebUi.h"               // shared palette + base layout + bottom-nav CSS
 
