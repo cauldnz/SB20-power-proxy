@@ -80,6 +80,11 @@ last.** Extracting R1a–R1c removes ~700 lines and is the precondition that mak
   `centralConnectCb` multiplex four centrals (source/ref/trainer/SB20) by peer-name; pull the routing into
   a small dispatcher first. **Payoff:** the nRF can then adopt the shared `ProxyCore` and delete the
   hand-rolled read→correct→relay in `measNotifyCb`. **Do last.** Ties into the nRF roadmap P4 radio seam.
+  - [x] **R1d.1 — the peer-name dispatcher** is done: `lib/bridge/PeerRole.h` is the single pure
+    statement of the four-role ladder, `scanCb`/`centralConnectCb` are now thin adapters over it, and
+    `test/test_peerrole/` (22 host tests) pins it. Behaviour-neutral by construction; it surfaced two
+    latent routing bugs and one host/device toolchain gap, all recorded in `decisions.md` (2026-07-26)
+    and pinned as-is so the fixes land separately.
 - [ ] **R1e — ESP32 `LcdController`** (~590 lines: `firmware/src/main.cpp:240–828` — the LCD head-unit
   controller: `buildLcdViews`, `lcdExecute`, `lcdTask`, the touch-cal ritual, `lcdSerialConsole`). The
   ESP32's *one* fat tenant; everything else there is legitimate wiring. Start with the zero-risk

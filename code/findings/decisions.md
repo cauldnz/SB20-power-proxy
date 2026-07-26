@@ -3455,3 +3455,37 @@ independent toggles — if a bike is natively decoded *and* an OBC producer is r
 rider gets two actions per press. The settings flags (`sb20_buttons_enabled` and the OBC listener
 toggle) currently do not know about each other. **Untested on the bike** — observed at the desk only,
 and the upstream PRs are deliberately separate so this combination does not arise upstream yet.
+
+## 2026-07-26 — nRF peer-role ladder extracted; two latent routing bugs found + one toolchain gap (R1d part 1)
+
+Extracting the four-central routing ladder out of `firmware-nrf/src/main.cpp` into a pure
+`lib/bridge/PeerRole.h` (the dispatcher R1d asks for **first**) immediately surfaced defects that were
+invisible while the policy was written twice inline. All three are **pinned by host tests and left
+behaving exactly as before** — this slice is behaviour-neutral by construction; the fixes are separate.
+
+**1. The connect-time ladder is missing two guards the scan-time ladder has.** `scanCb` refuses a
+reference meter when one is already connected (`!g_refConnected`) and when the peer name *also* matches
+`srcFilter`. `centralConnectCb` does neither. So a link the scanner would never have opened as a
+reference is still *classified* as one on connect, overwriting `g_refConnHandle` and orphaning the
+existing reference link. Pinned by `test_connect_ladder_is_missing_two_reference_guards`.
+
+**2. With an empty `srcFilter`, a reference meter can NEVER be latched.** The scan-time exclusion is
+spelled `strstr(name, g_cfg.srcFilter) == nullptr`, and **`strstr(x, "")` always matches** — so when
+`srcFilter` is empty (the "accept any CPS advertiser" desk mode) the exclusion fires for *every* peer
+and calibration silently never acquires a reference. Only shows up at the desk, which is exactly where
+calibration would be exercised. Pinned by
+`test_advert_empty_source_filter_makes_the_reference_unreachable`.
+
+The same `strstr(x, "")` identity is what makes an empty `srcFilter` match any meter — one C idiom
+carrying two opposite intentions in the same function, which is why the bug survived review.
+
+**3. Host tests compiled the shared pure headers under a NEWER C++ standard than the board.**
+`platform-nordicnrf52` hard-codes `-std=gnu++11` (`builder/frameworks/adafruit.py:97`), while the host
+compiler defaulted to gnu++17. A struct with default member initialisers is an aggregate in C++14 but
+not C++11, so `return {true, PeerRole::Trainer};` **passed `pio test -e native` and then failed the
+device build**. `pio test -e native` green did not imply the firmware compiles. Fixed by pinning
+`[env:native] build_flags = -std=gnu++11` in `firmware-nrf/platformio.ini`; verified the pin bites by
+compiling a generic lambda (C++14-only) and confirming the host now rejects it.
+
+Result: 22 new host tests (`firmware-nrf/test/test_peerrole/`), 62/62 native green, `xiao-sense`
+compiles (RAM 48.6%, flash 23.4%).
