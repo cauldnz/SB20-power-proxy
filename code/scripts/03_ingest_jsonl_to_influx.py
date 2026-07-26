@@ -54,9 +54,12 @@ from typing import Any, Iterable
 try:
     from influxdb_client import InfluxDBClient, Point, WritePrecision
     from influxdb_client.client.write_api import SYNCHRONOUS
-except ImportError:
-    print("influxdb-client not installed. Run: pip install -e '.[analysis]'", file=sys.stderr)
-    sys.exit(1)
+except ImportError as e:  # pragma: no cover - dependency guard
+    _msg = f"influxdb-client not installed: {e}\nRun: pip install -e '.[analysis]'"
+    if __name__ == "__main__":
+        print(_msg, file=sys.stderr)
+        sys.exit(1)
+    raise ImportError(_msg) from e  # importable: let callers skip, don't kill them
 
 
 PAGE_NAMES = {

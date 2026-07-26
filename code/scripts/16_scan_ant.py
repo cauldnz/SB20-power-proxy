@@ -37,9 +37,12 @@ try:
     from openant.devices.common import DeviceType
     from openant.devices.scanner import Scanner
     from openant.easy.node import Node
-except ImportError as e:
-    print(f"openant import failed: {e}", file=sys.stderr)
-    sys.exit(1)
+except ImportError as e:  # pragma: no cover - dependency guard
+    _msg = f"openant import failed: {e}\nRun: pip install openant"
+    if __name__ == "__main__":
+        print(_msg, file=sys.stderr)
+        sys.exit(1)
+    raise ImportError(_msg) from e  # importable: let callers skip, don't kill them
 
 
 def _type_name(dtype: int) -> str:
