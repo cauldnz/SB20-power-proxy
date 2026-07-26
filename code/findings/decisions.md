@@ -3973,3 +3973,47 @@ passes. This sits alongside `test_project_map.py` (the map is complete) and `tes
 and asymmetrically. A stale internal note costs minutes; a stale front door costs a whole orientation,
 and a stale runbook costs session time with a rider standing there. The durable fix is never "rewrite
 it" — it is **rewrite it, then make the specific failure mode unmergeable**.
+
+---
+
+## 2026-07-27 — XIAO nRF52840 revived; the nRF flash path was broken for *every* env
+
+**Context:** the bench XIAO was left in UF2 bootloader mode with its application region erased
+(#297/#298). Reviving it was the gate on the nRF radio-seam work (R1d.2/.3).
+
+**Revived.** The S340 SoftDevice + `ant_network_key.h` were already provisioned on this machine, in
+the **main checkout's** `firmware-nrf/vendor/softdevice/`. That directory is gitignored except its
+README, so a `git worktree` starts empty and must copy them across — now documented there. The
+evaluation `ANT_LICENSE_KEY` was already uncommented in that copy. `pio run -e xiao-sense-s340`
+built first time (RAM 48.7%, Flash 23.4%), flashed, and the board came back on COM9 (PID
+`2886:8045`) with `[hb] scanning=0 reports=4 srcConn=1` — heartbeat running, source peer connected.
+
+**Three measured facts, each contradicting something we had written down:**
+
+1. **No nRF env emits a `.uf2`.** `flash.ps1` dead-ended with *"The nRF envs emit .uf2 via the
+   Adafruit builder; if only a .hex exists, this env is not set up for UF2 flashing."* That claim is
+   **false**: the stock `xiao-sense` env produces no `.uf2` either. The whole `flash.ps1` path was
+   unusable for every nRF env, not just the S340 one. Fixed by converting the `.hex` in-script
+   (`uf2conv.py -f 0xADA52840`).
+
+2. **S140's app base is `0x27000`, not `0x26000`.** `flash.ps1`'s own header, and notes around #298,
+   said 0x26000. Measured from the ldscript the toolchain actually uses — the Seeed core ships S140
+   **v7** (`nrf52840_s140_v7.ld`, `ORIGIN = 0x27000`); 0x26000 is the S140 *v6* value. A first cut of
+   the new guard hardcoded `S140 = 0x26000` and would have **falsely refused every stock build**.
+   The guard now reads ORIGIN out of the ldscript in use, so it cannot go stale.
+
+3. **A 1200-baud touch does not reliably reach the bootloader on this board.** It resets into it
+   (PID drops to `2886:0045`) but Windows enumerates only the CDC interface — `MI_02`, the
+   mass-storage one, never appears, so no `XIAO-SENSE` volume mounts and nothing can be copied.
+   `pnputil /scan-devices` needs admin and does not help. **Double-tap RST** brings up both
+   interfaces immediately. The error message that recommended the 1200-baud touch is corrected.
+
+**New guard (beyond #298's).** #298's check compares the ldscript's *filename* to the SoftDevice the
+bootloader reports. It cannot tell whether that ldscript was actually **honoured** — if
+`board_build.ldscript` is silently ignored, the app links at the core default and you flash a
+wrongly-based image onto an S340 board with the name-check showing green. `flash.ps1` now reads the
+target address out of the UF2 block header (offset 12) and asserts it equals the ldscript's
+`FLASH ORIGIN`. Verified both ways: `xiao-sense-s340` → `0x31000` matches; the same image checked
+against S140's base correctly fires.
+
+**Board end state:** XIAO on COM9, app mode, `xiao-sense-s340`, heartbeat healthy.
