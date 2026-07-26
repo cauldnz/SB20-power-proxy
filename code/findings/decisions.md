@@ -3539,3 +3539,53 @@ Also recorded, because it cost time and is documented nowhere: **Adafruit's Tiny
 `Serial` output on DTR.** A listener that opens the port without asserting DTR sees total silence
 from a perfectly healthy board. 115200 is safe; it is the *1200*-baud touch that drops an nRF52
 into the UF2 bootloader.
+
+## 2026-07-26 — CI pinned to immutable refs; the shipping builds now actually compile on CI
+
+Three of the toolchain's external inputs were free to move under a rebuild, so the same commit of
+this repo could compile differently on CI, on the bike laptop, and in a fresh clone:
+
+| input | was | now |
+|---|---|---|
+| `platform-nordicnrf52` | `#develop` | `#cac6fcf943a41accd2aeb4f3659ae297a73f422e` (= develop HEAD, last moved 2023-09-23) |
+| `Seeed_Arduino_LSM6DS3` | bare repo URL (master HEAD) | `#e063c3a544b8bb89238accddf24f0028bcd1ca20` (v2.0.7) |
+| PlatformIO on CI | `pip install platformio` (unpinned) | pinned from `tools/dev-env.lock` (6.1.19) |
+
+The Seeed pin is the one that mattered: its master **did** move (2026-07-14), so CI and the bike
+laptop were one `pio` cache eviction away from silently disagreeing about the IMU driver. Both
+pinned SHAs are current branch heads, so a shallow clone still resolves them. GitHub Actions are
+now pinned by commit SHA too — a re-tagged action can no longer change what runs on a protected
+branch. CI installs PlatformIO by grepping `dev-env.lock`, so there is exactly one pin to bump.
+
+**Two builds that ship were never compiled by CI.** `esp32c3-oled-live-ota` is *the* C3 proxy build
+the rider flashes (live meter + OLED + OTA); every env CI did build held at least one of those
+flags the other way. `esp32cyd` is the CYD head-unit board target — `native-lvgl` tested the UI
+logic headless, but nothing compiled TFT_eSPI + LVGL + the touch driver against real `src/`. Both
+are now steps in the `firmware` job.
+
+To pay for them, the `firmware` job is now gated on a `changes` job: doc-only PRs skip the ~9-minute
+toolchain matrix. Deliberately **not** an `on.pull_request.paths` filter — `firmware` is a required
+check, and a path-filtered job never starts, never reports, and blocks the PR forever waiting for a
+check that will never arrive. Gating the *steps* keeps the check name reporting.
+
+`bridge-parity` now runs `check_generated.py` instead of two individual `--check` calls: that script
+covers all four generators, so the job was previously blind to two of them.
+
+## 2026-07-26 — LVGL cannot build on Windows from a deep checkout (MAX_PATH, by one character)
+
+`pio run -e esp32cyd` failed in this worktree with:
+
+    src/.../stdlib/lv_mem.h:16:10: fatal error: ../lv_conf_internal.h: No such file or directory
+
+The file is present. LVGL's headers include each other through long chains of unnormalised `..\`
+segments, and gcc on Windows opens the path **as written** — it does not collapse the `..`, so the
+259-char MAX_PATH budget is spent on a path far longer than the real file's. Measured from
+`C:\repos\<org>\<repo>\copilot-worktrees\<proj>\<branch>\`, the worst chain came to **exactly 260**
+characters. The same tree built clean (SUCCESS, 3m45s, flash 82.7%) through a short junction —
+`New-Item -ItemType Junction -Path C:\sb20short -Target <worktree>`. Linux CI is unaffected, so
+`esp32cyd` is safe to add there.
+
+`tools/doctor.ps1` now measures this up front and reports PASS/WARN/FAIL with the junction
+remediation, because the error message names a missing file that is demonstrably present — an hour
+of the wrong investigation otherwise. It resolves which envs actually pull LVGL by walking
+`extends =` transitively; the primary checkout (`C:\repos\cauldnz\SB20-power-proxy`) measures 209.
