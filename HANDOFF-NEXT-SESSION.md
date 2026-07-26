@@ -1,5 +1,11 @@
 # HANDOFF → next session (the hardware machine)
 
+> ⛔ **SUPERSEDED — historical.** A point-in-time operational card, kept for provenance because
+> [`code/findings/decisions.md`](code/findings/decisions.md) links it. Do not follow it as a procedure.
+> The current equivalents are **[`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md)** (how to run an on-bike
+> session), the ledger **[`sessions/README.md`](sessions/README.md)**, and
+> **[`PROJECT-MAP.md`](PROJECT-MAP.md)**.
+
 **Written 2026-07-10.** Pick this up on the machine that has the nRF USB dongles, ESP32 boards, nRF
 devices, and the ANT+ stick. **Everything is committed + documented in-repo — nothing lives only in a
 chat.** This doc is the *operational* "how to resume + build + verify here"; the technical plans are the

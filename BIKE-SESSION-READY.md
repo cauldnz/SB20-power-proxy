@@ -1,5 +1,11 @@
 # 🟢 READ ME FIRST — bike-machine session cold-start
 
+> ⛔ **SUPERSEDED — historical.** A point-in-time operational card, kept for provenance because
+> [`code/findings/decisions.md`](code/findings/decisions.md) links it. Do not follow it as a procedure.
+> The current equivalents are **[`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md)** (how to run an on-bike
+> session), the ledger **[`sessions/README.md`](sessions/README.md)**, and
+> **[`PROJECT-MAP.md`](PROJECT-MAP.md)**.
+
 **You are the assistant on the bike machine.**
 
 > ⭐ **BEFORE PLANNING ANY SESSION — read [issue #290](https://github.com/cauldnz/SB20-power-proxy/issues/290).**

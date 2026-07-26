@@ -1,5 +1,11 @@
 # 04 — Architecture (v0)
 
+> ⛔ **SUPERSEDED — historical.** Part of the **pre-pivot brief**, written before the on-bike captures
+> and before the firmware existed. Kept for provenance. For the current state read
+> **[`PROJECT-MAP.md`](PROJECT-MAP.md)** (what already exists) and
+> **[`code/findings/decisions.md`](code/findings/decisions.md)** (what was decided and measured).
+> Where this doc disagrees with those, **they win.**
+
 This is the proposed software architecture **as of pre-Phase-0**. Treat as a working draft. Revise after Phase 0 reveals what the SB20 actually requires.
 
 ## High-level system diagram

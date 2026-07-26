@@ -1,5 +1,11 @@
 # Start Here — for the Project Owner
 
+> ⛔ **SUPERSEDED — historical.** Part of the **pre-pivot brief**, written before the on-bike captures
+> and before the firmware existed. Kept for provenance. For the current state read
+> **[`PROJECT-MAP.md`](PROJECT-MAP.md)** (what already exists) and
+> **[`code/findings/decisions.md`](code/findings/decisions.md)** (what was decided and measured).
+> Where this doc disagrees with those, **they win.**
+
 **Audience**: you, the SB20 owner, on a Windows machine with WSL2 available, doing the initial Phase 0 work yourself before handing engineering work to Claude Code.
 
 **Goal of this document**: get you from "fresh-cloned repo on Windows" to "Phase 0 captures committed and ready to analyse" without you having to read the eight numbered docs first. The numbered docs are the reference; this is the cookbook.

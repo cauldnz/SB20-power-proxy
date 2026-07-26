@@ -1,5 +1,11 @@
 # 🚴 Morning Ride Card — Phase 0 capture sessions
 
+> ⛔ **SUPERSEDED — historical.** A point-in-time operational card, kept for provenance because
+> [`code/findings/decisions.md`](code/findings/decisions.md) links it. Do not follow it as a procedure.
+> The current equivalents are **[`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md)** (how to run an on-bike
+> session), the ledger **[`sessions/README.md`](sessions/README.md)**, and
+> **[`PROJECT-MAP.md`](PROJECT-MAP.md)**.
+
 > **Note (2026-06-15):** on the actual ride days, `ride_wizard.py`'s interactive prompts
 > proved unreliable (a WSL terminal stdin issue), so the sessions were run **agent-driven** —
 > Claude launches the captures from outside the terminal and calls the cues in chat. That

@@ -1,5 +1,11 @@
 # 09 — Exploring Captures Together
 
+> ⛔ **SUPERSEDED — historical.** Part of the **pre-pivot brief**, written before the on-bike captures
+> and before the firmware existed. Kept for provenance. For the current state read
+> **[`PROJECT-MAP.md`](PROJECT-MAP.md)** (what already exists) and
+> **[`code/findings/decisions.md`](code/findings/decisions.md)** (what was decided and measured).
+> Where this doc disagrees with those, **they win.**
+
 Phase 0 produces JSONL captures. To make them useful for analysis — both for the owner solo and for collaborative work with Claude — there's a small pipeline of tools.
 
 ## The pipeline

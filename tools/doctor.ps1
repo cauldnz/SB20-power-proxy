@@ -181,7 +181,8 @@ else      { Result "host C++ compiler (native tests)" 'WARN' "- no gcc; 'pio tes
 
 # ----------------------------------------------------------------------------------------------------
 # Capture rig - the always-on dual-radio sniff (standing pre-flight rule; PLAYBOOK §pre-flight).
-#   nRF BLE sniffer -> pcap   (Npcap + the nRF Sniffer for Bluetooth LE extcap + the dongle on a COM port)
+#   nRF BLE sniffer -> pcap   (dongle on sniffer fw PID 522A + the SnifferAPI extcap staged + pyserial;
+#                              NOT Npcap/tshark - see the note below and code/findings/nrf-sniffer.md)
 #   ANT+ stick      -> JSONL  (usbipd shares the 0fcf:1008 stick into WSL; openant claims it over libusb)
 # A green rig here means BOTH radios can actually capture. This is the gate session 9's retro asked for.
 # ----------------------------------------------------------------------------------------------------

@@ -29,12 +29,18 @@ The per-device WiFi **setup-AP SSID is `Setup-XXXX`** where `XXXX` = the last 2 
   C3-0.96 `COM13`, CYD `COM12`, S3-Touch `COM14`/`COM16`, nRF dongle `COM8`, ANT+ stick (WSL usb).
 - **CYD full MAC not yet captured** — only the STA suffix `CC:8C` (from its `Setup-CC8C` SSID). Read it
   with esptool next time it's on a CH340 port.
-- **DHCP IPs seen (not stable):** an ESP32 at `192.168.0.92` (SPA-over-HTTP verify, spoof/ASSIOMA), the
-  CYD at `192.168.0.247`. mDNS: both answer `sb20proxy.local` (hostname collision — a per-device hostname
-  is the clean follow-up, same idea as the SSID suffix).
+- **Live IPs + mDNS (measured 2026-07-27, DHCP so not stable):** the head-unit C3 at **`192.168.1.165`**,
+  the CYD at **`192.168.1.234`** — note the LAN moved from the `192.168.0.x` subnet recorded earlier, so
+  any `192.168.0.*` address in an older doc is stale. **The mDNS hostname collision is FIXED:** each board
+  now answers its own name — `sb20proxy.local` → the C3, `sb20proxy-cyd.local` → the CYD (both verified
+  resolving, and both served `/status`). Per-board hostnames are `sb20proxy` / `-cyd` / `-s3`.
 - **ESP32 native-USB flashing** (C3 + S3) needs **esptool ≥ 4.11** (the bundled 4.5.1 wedges the USB-JTAG);
   `code/scripts/flash_c3.py` auto-picks a good one. The S3 must build on the **pioarduino** platform
   (`esp32s3-pio*`) — the stock `esp32s3-touch` env boot-looped and was **removed 2026-07-26**.
+- **Building the LVGL envs on Windows** (`esp32cyd*`, `esp32s3-pio*`): LVGL's relative include chains can
+  cross the `MAX_PATH` 260-char limit from a deep worktree path and fail to compile. Shorten the root with a
+  directory junction — `cmd /c mklink /J C:\sbw <repo-root>` — and build from there. No admin rights, no
+  registry change, no toolchain edit. *(2026-07-27; decisions.md.)*
 
 *Maintenance: update a row when a board is added/reflashed/re-MAC'd. This is the local, project-specific
 sibling of the general board-ontology idea in [maker-skills#160](https://github.com/cauldnz/maker-skills/issues/160).*

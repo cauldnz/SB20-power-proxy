@@ -234,6 +234,38 @@ implementing the second as written would have cost a lossless-capture guarantee.
   contract is now *pinned as it actually is* rather than as the docstring implied. Changing what the
   canonical capture writer records is an owner decision, not an unsupervised one.
 
+## R8 — The front door described a product that no longer existed  🟠 highest newcomer cost
+
+All five reviews flagged this independently, which is itself the signal: `README.md` said *"Phase 0
+substantially complete; **proxy not yet built**"* and described the deliverable as "a small Python
+application (Raspberry Pi or laptop with ANT+ USB sticks)" — while two firmware targets shipped, rode,
+and had a beta programme. Its repository layout listed neither `firmware/`, `firmware-nrf/`, `web/`,
+`sessions/`, `beta/`, `tools/` nor `PROJECT-MAP.md`. Its "Where to start" table sent every newcomer to
+`START-HERE.md` and `HANDOFF.md` — the *pre-pivot brief* — as the two top entries.
+
+The cost is asymmetric: an out-of-date internal note wastes minutes, but a front door pointing at a
+superseded architecture costs a whole orientation, and it is exactly the failure `PROJECT-MAP.md` was
+created to stop.
+
+- [x] **R8a — `README.md` rewritten as a truthful front door.** Leads with the actual product (an
+  on-bike dual-role BLE device), states real status, and **defers to `PROJECT-MAP.md` rather than
+  duplicating it** — a second inventory would just become a second thing to drift.
+- [x] **R8b — staleness banners on the 14 historical root docs that had none**, including
+  `START-HERE.md`. The docs **stay at the root on purpose**: append-only `decisions.md` links them, so
+  moving them would break the historical record. *(The original plan said "move legacy cards out of
+  root"; measuring inbound links showed every one is referenced — banner in place instead.)*
+- [x] **R8c — the `sessions/PLAYBOOK.md` pre-flight section still encoded the refuted Npcap/tshark
+  sniffer path** that cost session 9 hours, contradicting its own §Passive BLE sniffing 200 lines below
+  and `doctor.ps1`'s actual implementation. Ground truth taken from the script, not either passage.
+  `doctor.ps1`'s own header comment disagreed with its code nine lines further down; fixed too.
+- [x] **R8d — `BOARDS.md` live addresses refreshed** (the LAN had moved off the recorded `192.168.0.x`
+  subnet) and the recorded **mDNS hostname collision confirmed FIXED** — each board now answers its own
+  name. Also records the `mklink /J` fix for the LVGL `MAX_PATH` build failure on Windows.
+- [x] **R8e — a CI guard so this class of drift can't merge again:** `test_doc_links.py` fails on any
+  dead relative Markdown link repo-wide (583 links checked; found and fixed 3 real dead ones in
+  `session-04`). Mutation-verified. It joins `test_project_map.py` and `test_findings_index.py` — the
+  map is complete, the index is complete, and now every link between them resolves.
+
 ---
 
 - The three config **serializers / storage backends** (NVS line vs GATT binary vs HTTP JSON) — justified
