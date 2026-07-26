@@ -33,6 +33,7 @@
 #include "ImuCapture.h"    // pure capture buffer (lib/bridge)
 #include "Proto.h"         // pure Bridge-GATT pack/unpack (lib/bridge)
 #include "SourceCandidate.h"  // pure scanned-device list + dedup (shared with ESP32) (P3)
+#include "SourceRelay.h"   // pure read -> correct -> re-frame relay + crank state (lib/bridge)
 #include "WorkoutPresets.h"  // built-in workouts (presetJson) — pure (P4)
 #include "WorkoutRuntime.h"  // pure structured-workout clock (shared with ESP32) (P4)
 
@@ -328,97 +329,24 @@ static void scanCb(ble_gap_evt_adv_report_t* report) {
     Bluefruit.Central.connect(report);
 }
 
-// Stages-spoof (0x2F) accumulated-torque state + the previous source crank sample it integrates
-// against. Reset on a source disconnect so a new meter's cumulative-rev baseline can't inject a
-// bogus delta. Only touched in SPOOF mode (measNotifyCb below).
-static uint16_t g_spoofAccumTorque = 0;
-static uint16_t g_spoofPrevRevs = 0;
-static uint16_t g_spoofPrevEvt = 0;
-static bool g_spoofHavePrev = false;
-
-// General cadence tracker (both modes) — derives rpm from the source crank-rev delta so the ANT
-// master (and status) can report real cadence, not just power. Reset on a source disconnect.
-static uint16_t g_cadPrevRevs = 0;
-static uint16_t g_cadPrevEvt = 0;
-static bool g_cadHavePrev = false;
+// The read -> correct -> re-frame relay now lives in a pure, host-tested module
+// (lib/bridge/SourceRelay.h) with all its carried-over crank state. This callback is just the
+// hardware seam around it: supply the time, hand over the bytes, notify the result.
+static SourceRelay g_relay;
 
 static void measNotifyCb(BLEClientCharacteristic* /*chr*/, uint8_t* data, uint16_t len) {
-    // Decode the meter's frame with the shared pure codec, correct it, and relay: the output
-    // frame passes the source's own crank fields through unchanged (cadence is identical).
-    PowerReading r;
-    r.power_w = decodeCpsPower(data, len);
-    const uint16_t flags = decodeCpsFlags(data, len);
-    const CpsBalance bal = decodeCpsBalance(data, len);
-    r.balance_half_pct = bal.present ? bal.halfPct : -1;
-    r.t_ms = millis();
-    // Cadence (rpm) from the crank-rev delta (last-event ticks are 1/1024 s). Feeds the ANT master
-    // so it broadcasts real cadence; 0 = new sample but no new revs (coasting), -1 = no crank data.
-    if (flags & CPM_CRANK_REV_DATA_PRESENT) {
-        const CpsCrankData cd = decodeCrankData(data, len);
-        if (g_cadHavePrev) {
-            const uint16_t dRevs = (uint16_t)(cd.cumulativeRevs - g_cadPrevRevs);
-            const uint16_t dTicks = (uint16_t)(cd.lastEventTime - g_cadPrevEvt);
-            if (dRevs > 0 && dTicks > 0)
-                r.cadence_rpm = (int16_t)((float)dRevs * 1024.0f * 60.0f / (float)dTicks + 0.5f);
-            else if (dRevs == 0)
-                r.cadence_rpm = 0;  // coasting
-        }
-        g_cadPrevRevs = cd.cumulativeRevs;
-        g_cadPrevEvt = cd.lastEventTime;
-        g_cadHavePrev = true;
-    }
-    // single-sided x2: a left/right-only crank reports half of total; double it BEFORE the
-    // correction so the correction scale/curve operates on total power (ESP32 semantics).
-    if (g_cfg.singleSided) r.power_w = (int16_t)(r.power_w * 2);
-    g_lastSrc = r;
-    g_lastSrcMs = r.t_ms;
+    const RelayOutput o =
+        g_relay.onFrame(data, len, millis(), g_cfg.spoof, g_cfg.singleSided, g_corr);
+
+    g_lastSrc = o.source;
+    g_lastSrcMs = o.source.t_ms;
 
     // Calibration: the SOURCE we repeat IS the DUT (the meter to correct). Feed its raw reading
     // to the session; the reference stream arrives via refMeasNotifyCb.
-    if (g_calibrating) g_cal.onDut((float)r.power_w, r.t_ms);
+    if (g_calibrating) g_cal.onDut((float)o.source.power_w, o.source.t_ms);
 
-    PowerReading out = g_corr.apply(r);  // curve wins over scale/offset when populated
-    g_lastOut = out;
-
-    std::vector<uint8_t> frame;
-    if (g_cfg.spoof) {
-        // SB20 crank spoof: re-frame as the Stages 0x2F measurement (pedal balance + accumulated
-        // torque + crank rev), byte-identical to the ESP32 BleCrankPeripheral. The crank-rev fields
-        // pass through from the SOURCE meter (its real cadence); accumulated torque is integrated per
-        // completed crank revolution from the corrected power, exactly like the ESP publishPower.
-        uint16_t curRevs = 0, curEvt = 0;
-        if (flags & CPM_CRANK_REV_DATA_PRESENT) {
-            const CpsCrankData cd = decodeCrankData(data, len);
-            curRevs = cd.cumulativeRevs;
-            curEvt = cd.lastEventTime;
-            if (g_spoofHavePrev && out.power_w > 0) {
-                const uint16_t dRevs = (uint16_t)(curRevs - g_spoofPrevRevs);
-                const uint16_t dTicks = (uint16_t)(curEvt - g_spoofPrevEvt);
-                if (dRevs > 0 && dTicks > 0) {
-                    // Cadence (rpm) from the source crank delta (1/1024 s ticks), then accumulated
-                    // torque in 1/32 Nm units per rev: T = P·60 / (2·pi·rpm).
-                    const float rpm = (float)dRevs * 1024.0f * 60.0f / (float)dTicks;
-                    const float torqueNm = (float)out.power_w * 60.0f / (6.2831853f * rpm);
-                    g_spoofAccumTorque = (uint16_t)(g_spoofAccumTorque +
-                        (uint16_t)((float)dRevs * torqueNm * 32.0f + 0.5f));
-                }
-            }
-            g_spoofPrevRevs = curRevs;
-            g_spoofPrevEvt = curEvt;
-            g_spoofHavePrev = true;
-        }
-        // Forward the source's real left-referenced L/R split; 100 (=50 %) when it carries none.
-        const uint8_t balanceOut =
-            (r.balance_half_pct >= 0) ? (uint8_t)r.balance_half_pct : (uint8_t)100;
-        frame = encodeStagesCpsMeasurement(out.power_w, balanceOut, g_spoofAccumTorque, curRevs,
-                                           curEvt);
-    } else if (flags & CPM_CRANK_REV_DATA_PRESENT) {
-        const CpsCrankData cd = decodeCrankData(data, len);
-        frame = encodeCpsMeasurement(out.power_w, cd.cumulativeRevs, cd.lastEventTime);
-    } else {
-        frame = encodeCpsMeasurement(out.power_w);
-    }
-    notifyClients(outMeas, frame.data(), frame.size());
+    g_lastOut = o.corrected;
+    notifyClients(outMeas, o.frame.data(), o.frame.size());
 }
 
 // Reference-meter notify (calibration only): feed the session's reference stream.
@@ -589,8 +517,9 @@ static void centralDisconnectCb(uint16_t connHandle, uint8_t reason) {
         g_srcConnected = false;
         g_srcConnHandle = BLE_CONN_HANDLE_INVALID;
         g_srcName[0] = 0;
-        g_spoofHavePrev = false;  // a new source restarts the spoof torque integration cleanly
-        g_cadHavePrev = false;    // ...and the cadence delta baseline
+        // A new source restarts the crank-delta baselines (spoof torque integration + cadence).
+        // The accumulated-torque total deliberately survives - see SourceRelay::reset().
+        g_relay.reset();
         Serial.printf("[bridge] source dropped (0x%02X); rescanning\n", reason);
     }
     Bluefruit.Scanner.start(0);

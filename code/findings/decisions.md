@@ -4017,3 +4017,63 @@ target address out of the UF2 block header (offset 12) and asserts it equals the
 against S140's base correctly fires.
 
 **Board end state:** XIAO on COM9, app mode, `xiao-sense-s340`, heartbeat healthy.
+---
+
+## 2026-07-27 — R1d.2: the nRF relay is out of the radio callback, and verified on the air
+
+**What moved.** `measNotifyCb`'s 78 inline lines became the pure `firmware-nrf/lib/bridge/SourceRelay.h`
+plus `test/test_sourcerelay/` (18 host tests). That covers the entire protocol path — CPS decode,
+cadence from the crank-rev delta, the single-sided ×2, the correction, and both output framings
+(standard CPS, and the Stages 0x2F with its accumulated-torque integrator) — all of which lived
+inside a Bluefruit notify callback and so could not be exercised without a radio and a live meter.
+`measNotifyCb` is now 10 lines: supply the time, hand over the bytes, notify the result.
+The `native` env gained `lib_extra_dirs = ../firmware/lib`, without which an nRF host test cannot
+reach the shared pure headers at all.
+
+**A regression the extraction caught in itself.** The first cut had `SourceRelay::reset()` zero
+`accumTorque_`. The pre-extraction code deliberately did **not**: `centralDisconnectCb` reset
+`g_spoofHavePrev`/`g_cadHavePrev` and left `g_spoofAccumTorque` alone. That asymmetry is load-bearing
+— accumulated torque is a *free-running cumulative* field, which a consumer reads by differencing
+successive values, so zeroing it mid-stream presents as a huge negative (wrapping) delta. Only the
+baselines we difference *against* are stale after a source swap. Both behaviours now have a named
+test (`test_reset_preserves_accumulated_torque`, `test_reset_prevents_bogus_delta_across_source_swap`).
+Had this shipped, the symptom would have been an occasional torque glitch on the SB20 after a meter
+dropout — nearly impossible to attribute later.
+
+**Not folded into `sb20proxy::ProxyCore`, deliberately.** `ProxyCore` is the relay's *middle*
+(reading → correction → publish) and knows nothing about bytes. This is the nRF's two *ends*, and
+they differ from the ESP32's by design, not accident:
+
+- The **ESP32** SYNTHESISES crank revolutions — `BleCrankPeripheral::publishPower` runs a
+  `CadenceState` forward from `cadence_rpm` and a wall-clock delta, generating its own cumulative-rev
+  counter and event time.
+- The **nRF** PASSES THROUGH the source meter's own cumulative revs and last-event time.
+
+Both emit a valid Stages 0x2F frame, but the crank-rev *series* a consumer sees is not the same
+series, so they are not interchangeable and one cannot simply call the other. Worth recording that
+the accumulated-torque integrator is therefore implemented **twice**, and until now lived in a
+hardware file on both sides (`BleCrankPeripheral.cpp` and this callback) — host-testable in neither.
+Unifying them is a protocol decision needing an on-bike A/B, not a refactor.
+
+**Verified on hardware, end to end.** `fake_meter.py` (PC, WinRT CPS peripheral, 200 W @ 90 rpm) →
+XIAO nRF52840 running the refactored `xiao-sense-s340` build → `crank_reader.py` (PC, bleak central):
+
+| Check | Result |
+|---|---|
+| Corrector mode relay | `src=200W out=200W`; on air `2000 c800 …` = flags 0x0020 + 200 W, 90 rpm recovered |
+| Single-sided ×2 (`SINGLE1`) | `src=400W out=400W` — doubling applied pre-correction, as the host test predicts |
+| Spoof mode (`SPOOF1`) | on air `2f00 c800 64 …`, 11 bytes = flags 0x002F + 200 W + balance 0x64 (50 %) |
+| Accumulated torque | 200 W @ 90 rpm → T = 200·60/(2π·90) = 21.22 Nm → ×32 = **679 units/rev**. Measured deltas: 679 across 1 rev, 1359 across 2. |
+
+The torque figure is the useful one: it is computed independently by the host test and by the board,
+and the on-air bytes agree with both. Board left in corrector mode, scale 1.0, single-sided off.
+
+**A rig fact worth keeping.** With an empty source filter the bridge accepts *any* CPS advertiser, so
+it had latched onto the C3 ride board's own `Stages 62144` spoof (0 W, no meter behind it) and stopped
+scanning — `SCANLIST` showed it. The desk loop only works if the bridge rescans while `fake_meter.py`
+is already advertising, i.e. flash/reboot the board *after* starting the meter.
+
+**R1d.3 (the `BleCpsSource`/`BleCpsPeripheral`/`FtmsErgClient` connection adapters) is deliberately
+not done.** R1d.2 removed the protocol logic from that surface; what remains is genuine Bluefruit
+wiring, which is lower value per line and cannot be host-tested without a fake Bluefruit. It stays
+open in `architecture-remediation.md` to be done only if it buys something concrete.

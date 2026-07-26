@@ -86,6 +86,25 @@ last.** Extracting R1a–R1c removes ~700 lines and is the precondition that mak
     and one host/device toolchain gap; all three are fixed and recorded in `decisions.md`
     (2026-07-26). The scan-time and connect-time ladders are now one function, and a host test
     asserts they agree across the whole state space — a property that was not expressible before.
+  - [x] **R1d.2 — the read→correct→re-frame relay is out**, as the pure `lib/bridge/SourceRelay.h`
+    with all its carried-over crank state, plus `test/test_sourcerelay/` (18 host tests). The whole
+    protocol path — CPS decode, cadence-from-crank-delta, the single-sided ×2, the correction, and
+    both output framings (standard CPS / Stages 0x2F with its accumulated-torque integrator) — was
+    inside a Bluefruit notify callback and therefore host-testable nowhere; it now runs with no
+    radio. `measNotifyCb` is 10 lines of seam. The `native` env gained `lib_extra_dirs =
+    ../firmware/lib` so nRF host tests can reach the shared pure headers at all.
+    **The extraction caught a live regression in itself**: a first cut had `reset()` zero the
+    accumulated-torque total, which the pre-extraction code deliberately did *not* do — that field
+    is a free-running cumulative counter the consumer differences, so zeroing it mid-stream reads as
+    a huge wrapping delta. Both behaviours are now pinned by tests. Verified on hardware end-to-end
+    (`fake_meter.py` → XIAO → `crank_reader.py`): 200 W/90 rpm relayed in corrector mode, ×2 with
+    `SINGLE1`, and the Stages 0x2F frame byte-checked in spoof mode with its torque accumulating at
+    the predicted 679 units/rev. See `decisions.md` (2026-07-27).
+  - [ ] **R1d.3 — the connection adapters** (`BleCpsSource` / `BleCpsPeripheral` / `FtmsErgClient`)
+    remain: `scanCb`, `centralConnect/Disconnect`, the erg state machine and the advertising build
+    are still inline. R1d.2 removed the protocol logic from that surface, so what is left is genuine
+    Bluefruit wiring — lower value per line, and the part that cannot be host-tested without a fake
+    Bluefruit. Do it only if it buys something concrete.
 - [ ] **R1e — ESP32 `LcdController`** (~590 lines: `firmware/src/main.cpp:240–828` — the LCD head-unit
   controller: `buildLcdViews`, `lcdExecute`, `lcdTask`, the touch-cal ritual, `lcdSerialConsole`). The
   ESP32's *one* fat tenant; everything else there is legitimate wiring. Start with the zero-risk
