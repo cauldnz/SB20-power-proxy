@@ -546,3 +546,30 @@ Before asserting *why* something happened, say:
 **When you are wrong, say so plainly and immediately**, name what the evidence actually shows, and
 update the record (the session doc, the issue, `decisions.md`). A wrong claim left standing in an
 issue costs the next reader more than the original error cost you.
+
+## Close-out is not done until CI is green and the promotions are verified
+
+*(Added after auditing session 13's close-out, 2026-07-26. The close-out looked complete — status
+flipped, ledger row, retro written, captures banked, six issues filed — but two of the things it
+explicitly promised were missing, and `main` was red.)*
+
+Mid-session it is tempting to push straight to `main` because the rider is waiting. Session 13 did
+this for six commits. Two consequences, both discovered only days later:
+
+- **`main` was red for five consecutive runs** and nobody saw it. `web/index.html` changed twice
+  (the iOS/Bluefy fix, then auto-reconnect) without regenerating `firmware/lib/proxy/WebSpa.h`, so
+  `test_spa_sync` failed from `943024c` onward. **A board flashed from `main` would have served the
+  pre-fix SPA** — the very bugs the session had just fixed. A PR would have caught it in minutes.
+- **The retro's own close-out line was not fully executed.** It named R1, R3 and two §2 corrections
+  for promotion to `decisions.md`; only the corrections landed. Writing the instruction is not
+  performing it.
+
+**The rule — two checks before a session is closed:**
+1. **`main` is green.** Check it explicitly, by run conclusion, not by assuming. If the session pushed
+   direct to `main`, this is the *only* thing that would have caught a break.
+2. **Re-read the close-out line and verify each promotion actually exists** — `grep` `decisions.md`
+   for each finding by name. And **verify the grep itself**: a `grep -E` with BRE `\|` alternation
+   silently matches a literal pipe and reports zero hits, which reads exactly like "nothing to do".
+
+Prefer a PR even mid-session; it costs a minute and the CI gate is the whole point. Push direct only
+when the rider is physically blocked on it, and reconcile before close-out.
