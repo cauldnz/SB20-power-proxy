@@ -146,3 +146,49 @@ def test_load_sidecar_skips_torn_line(tmp_path):
     p.write_text(good + "\n" + '{"filename": "tor' + "\n", encoding="utf-8")
     anns = anno.load_sidecar(p)
     assert len(anns) == 1 and anns[0].label == "x"
+
+
+# --------------------------------------------------------------------------- #
+# control-point routing — the alias table and the CP set must not drift apart
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("spelling", sorted(
+    js._CP_CHARS | {k for k, v in js._CHAR_ALIASES.items() if v in js._CP_CHARS}))
+def test_every_control_point_spelling_routes_to_the_cp_table(conn, tmp_path, spelling):
+    """A `ble_notification` on any known CP spelling is a CP *response*.
+
+    Parametrised over the real maps, so a spelling added to `_CHAR_ALIASES` is
+    covered automatically. This is the test that fails if the routing check ever
+    goes back to matching the raw (pre-alias) char name.
+    """
+    p = _write(tmp_path / f"{spelling}.jsonl", [
+        {"kind": "ble_notification", "monotonic_s": 1.0, "char": spelling,
+         "raw_hex": "8004"},
+    ])
+    stats = js.import_capture(conn, p)
+    assert stats.error is None
+
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM ble_control_point").fetchone()["n"] == 1
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM ble_notification").fetchone()["n"] == 0
+
+
+def test_control_point_set_holds_canonical_names_only(conn):
+    """`_CP_CHARS` is checked *after* aliasing, so a non-canonical member is dead.
+
+    A member that is itself an alias key could never match, which is exactly the
+    silent-misroute bug this arrangement removes.
+    """
+    assert all(js._norm_char(c) == c for c in js._CP_CHARS)
+
+
+def test_a_non_control_point_notification_still_lands_in_ble_notification(conn, tmp_path):
+    p = _write(tmp_path / "n.jsonl", [
+        {"kind": "ble_notification", "monotonic_s": 1.0,
+         "char": "cycling_power_measurement", "raw_hex": "0000"},
+    ])
+    assert js.import_capture(conn, p).error is None
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM ble_notification").fetchone()["n"] == 1
+    assert conn.execute(
+        "SELECT COUNT(*) AS n FROM ble_control_point").fetchone()["n"] == 0

@@ -73,10 +73,13 @@ class SchemaVersionError(RuntimeError):
     """An existing on-disk DB was built by a different schema version — rebuild it."""
 
 # Control-point characteristics: a `ble_notification` on one of these is a CP
-# *response*, routed to `ble_control_point` (not `ble_notification`). Both the
-# verbose ("fitness_machine_control_point") and short ("control_point") spellings
-# appear across captures.
-_CP_CHARS = {"control_point", "fitness_machine_control_point"}
+# *response*, routed to `ble_control_point` (not `ble_notification`).
+#
+# Members are the CANONICAL (post-alias) names only. The routing check normalises
+# first, so adding a spelling to `_CHAR_ALIASES` below is enough to route it — the
+# two tables cannot drift apart. Checking the raw name here instead would mean every
+# new alias silently landed its CP responses in `ble_notification`.
+_CP_CHARS = {"control_point"}
 
 # Char name normalisation — collapse the spelling drift seen across captures.
 _CHAR_ALIASES = {
@@ -383,12 +386,13 @@ def _route_notification(conn: sqlite3.Connection, cid: int, idx: int, rec: dict)
     data = rec.get("data") if isinstance(rec.get("data"), dict) else {}
     raw_hex = rec.get("raw_hex") or data.get("raw_hex")
 
+    char = _norm_char(raw_char)
+
     # A notification on the control-point characteristic is a CP response.
-    if raw_char in _CP_CHARS:
+    if char in _CP_CHARS:
         _insert_cp(conn, cid, idx, rec, direction="response", raw_hex=raw_hex, data=data)
         return
 
-    char = _norm_char(raw_char)
     device = rec.get("device")  # multi-device capture stream label (NULL otherwise)
     flags = power = cadence = speed = avg_power = distance = None
     decoded = 0

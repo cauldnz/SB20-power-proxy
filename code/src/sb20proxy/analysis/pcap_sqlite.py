@@ -70,7 +70,6 @@ UUID16_CHARS = {
     "2ad8": "supported_power_range",
     "2902": "cccd",
 }
-_CP_CHARS = frozenset({"fitness_machine_control_point", "cycling_power_control_point"})
 # the Stages-proprietary 0c46be... base, in both wire orders (tshark prints either)
 _STAGES_MARKERS = ("c6eae1a2f4e5", "e5f4a2e1eac6")
 # GATT declaration attribute types (service / include / characteristic). In a
