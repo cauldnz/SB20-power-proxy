@@ -149,18 +149,17 @@ def make_guided_runner_class(cap_mod):
             self.last_power: int | None = None
             self.last_cadence: int | None = None
 
-        def _on_data(self, data: bytes) -> None:
-            # Same as the parent (decode + log) but keeps the latest power/
-            # cadence so the cue thread can show a live heartbeat.
-            decoded = cap_mod.decode_page(bytes(data))
-            self._log("broadcast", data=decoded)
-            if decoded.get("page_no_toggle") == 0x10:
-                p = decoded.get("instantaneous_power_w")
-                c = decoded.get("instantaneous_cadence_rpm")
-                if p is not None:
-                    self.last_power = p
-                if c is not None:
-                    self.last_cadence = c
+        def _on_decoded(self, kind: str, decoded: dict) -> None:
+            # Observe only; the parent has already decoded and logged. Keeping the latest
+            # power/cadence lets the cue thread show a live heartbeat.
+            if kind != "broadcast" or decoded.get("page_no_toggle") != 0x10:
+                return
+            p = decoded.get("instantaneous_power_w")
+            c = decoded.get("instantaneous_cadence_rpm")
+            if p is not None:
+                self.last_power = p
+            if c is not None:
+                self.last_cadence = c
 
     return GuidedRunner
 

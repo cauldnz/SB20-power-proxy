@@ -206,6 +206,36 @@ without the paragraph saying why the alternative fix (drop `std::` from the pure
 
 ---
 
+## R7 — Desk-tooling duplication: one real fork, one false positive  🟢 clarity, low risk
+
+**Problem (5-model review, item 10):** three "duplications" were named. Measuring each first mattered —
+implementing the second as written would have cost a lossless-capture guarantee.
+
+- [x] **R7a — `ant/pages.py` ↔ `01_capture_stages.py::decode_page` was a real 129-line fork.** An
+  AST-normalised diff showed they differed *only in the docstring*, and `pages.py` had said for months
+  that the capture script should import it. The script is now a thin wrapper (458 → ~340 lines) and
+  imports the shared `PAGE_*` constants. **Equivalence proven over 49,050 real capture records:
+  byte-identical.** Module surface unchanged — three siblings load it by `spec_from_file_location`.
+- [x] **R7b — `06_capture_ble.py` ↔ `ble/cps.py` was NOT a duplication; the constants were.** The two
+  decoders do different jobs: the capture side reads all 13 optional fields and is tolerant of
+  truncation (a capture must never drop a record); the runtime side reads the four we ship and *raises*.
+  Merging them would break the canonical-lossless-record invariant. What *was* duplicated is the
+  protocol bytes — the script hardcoded the CPS flag bits and control-point op/result codes as bare hex.
+  Those now come from the package; the functions stay separate, with the reasoning recorded in both so
+  the finding isn't re-filed. Golden-vector test over 234 real frames, mutation-verified.
+- [x] **R7c — `ride_wizard.py` copied `CaptureRunner._on_data` to observe traffic.** Two lines, but on
+  the ride-day path where a silently dropped log line surfaces only after the ride. `CaptureRunner` now
+  calls `_on_decoded(kind, decoded)` (no-op by default) after logging; the wizard overrides only that,
+  so an observer can no longer cost you the capture.
+- [x] **R7d — codegen scripts brought inside the lint gate.** `gen_bridge.py`, `gen_webjson.py`,
+  `gen_spa_header.py`, `gen_tokens.py` produce committed wire-format artifacts but sat outside `ruff`.
+  Now in CI's lint scope; generated output verified byte-identical after the fixes.
+- [ ] **R7e — truncated optional fields are dropped with no marker in the record** (issue #306). The
+  contract is now *pinned as it actually is* rather than as the docstring implied. Changing what the
+  canonical capture writer records is an owner decision, not an unsupervised one.
+
+---
+
 - The three config **serializers / storage backends** (NVS line vs GATT binary vs HTTP JSON) — justified
   by transport constraints; a single wire format would be worse on ≥2 of them.
 - The scalar-vs-curve **correction model** difference — a product decision (nRF exposes scalar knobs, the

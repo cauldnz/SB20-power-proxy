@@ -45,6 +45,28 @@ import time
 from pathlib import Path
 from typing import Any
 
+# The ANT+ page codec is the package's, not this script's. `ant/pages.py` used to say "mirrored
+# verbatim from code/scripts/01_capture_stages.py ... a follow-up should make the capture script
+# import this one" — this is that follow-up. The package copy is the tested one
+# (tests/test_ant_pages.py round-trips it against the committed Phase 0 captures).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from sb20proxy.ant.pages import (  # noqa: E402
+    PAGE_BATTERY_STATUS,
+    PAGE_CALIBRATION,
+    PAGE_CRANK_TORQUE,
+    PAGE_MANUFACTURER_INFO,
+    PAGE_POWER_ONLY,
+    PAGE_PRODUCT_INFO,
+    PAGE_TORQUE_EFFECTIVENESS,
+)
+from sb20proxy.ant.pages import decode_page as _decode_page  # noqa: E402
+
+__all__ = [
+    "PAGE_BATTERY_STATUS", "PAGE_CALIBRATION", "PAGE_CRANK_TORQUE", "PAGE_CRANK_TORQUE_FREQUENCY",
+    "PAGE_MANUFACTURER_INFO", "PAGE_POWER_ONLY", "PAGE_PRODUCT_INFO",
+    "PAGE_TORQUE_EFFECTIVENESS", "PAGE_WHEEL_TORQUE", "CaptureRunner", "decode_page", "main",
+]
+
 # openant imports — will fail clearly if openant isn't installed
 try:
     from openant.easy.node import Node
@@ -65,147 +87,23 @@ RF_FREQ_ANT_PLUS = 57          # 2457 MHz
 DEFAULT_CHANNEL_PERIOD = 8182  # 4 Hz (per spec)
 DEFAULT_TRANSMISSION_TYPE = 0  # wildcard — accept any
 
-# Page IDs we know how to decode (extend as needed)
-PAGE_POWER_ONLY = 0x10
+# Page IDs — the seven the codec decodes come from the package, so there is exactly one
+# definition of each. (0x11 and 0x20 are not decoded by either side; they exist here only to
+# name the pages this script may see on the wire.)
 PAGE_WHEEL_TORQUE = 0x11
-PAGE_CRANK_TORQUE = 0x12
-PAGE_TORQUE_EFFECTIVENESS = 0x13
 PAGE_CRANK_TORQUE_FREQUENCY = 0x20
-PAGE_MANUFACTURER_INFO = 0x50
-PAGE_PRODUCT_INFO = 0x51
-PAGE_BATTERY_STATUS = 0x52
-PAGE_CALIBRATION = 0x01
 
 
+# decode_page lives in the sb20proxy package (sb20proxy.ant.pages) — imported here rather than
+# duplicated. The two copies were byte-identical apart from a docstring, and the package version
+# is the one covered by tests/test_ant_pages.py against the committed Phase 0 captures.
 def decode_page(data: bytes) -> dict[str, Any]:
-    """Decode a Bike Power broadcast page. Returns a dict of decoded fields.
+    """Decode a Bike Power broadcast page — see :func:`sb20proxy.ant.pages.decode_page`.
 
-    Always includes 'page' and 'raw_hex'. Other fields depend on the page.
-    Unknown pages still produce raw_hex; analysis can be added later.
-
-    Field formulas come from D00001086 ANT+ Bicycle Power Device Profile.
+    Kept as a thin wrapper so this script keeps its standalone entry-point shape and any
+    existing caller of ``01_capture_stages.decode_page`` still works.
     """
-    if len(data) < 8:
-        return {"page": None, "raw_hex": data.hex(), "error": "short payload"}
-
-    page = data[0]
-    # The MSB of the data-page byte can be a page-toggle bit in some ANT+
-    # profiles. Bike Power doesn't toggle its main pages, but mask it off for
-    # matching so the decoder is robust if a toggled page (e.g. 0x90) ever
-    # appears. The raw page byte and the toggle bit are both recorded below.
-    page_match = page & 0x7F
-    decoded: dict[str, Any] = {
-        "page": page,
-        "page_hex": f"0x{page:02X}",
-        "raw_hex": data.hex(),
-    }
-
-    if page_match == PAGE_POWER_ONLY:
-        # Byte 1: event count (rolls 0..255)
-        # Byte 2: pedal power (LSB = balance%, MSB bit = differentiation flag)
-        # Byte 3: instantaneous cadence (RPM, 0xFF = invalid)
-        # Bytes 4-5: accumulated power (LE uint16)
-        # Bytes 6-7: instantaneous power (LE uint16, watts)
-        decoded.update({
-            "event_count": data[1],
-            "pedal_power_raw": data[2],
-            "pedal_power_balance": data[2] & 0x7F if data[2] != 0xFF else None,
-            "pedal_power_differentiation": bool(data[2] & 0x80) if data[2] != 0xFF else None,
-            "instantaneous_cadence_rpm": data[3] if data[3] != 0xFF else None,
-            "accumulated_power": int.from_bytes(data[4:6], "little"),
-            "instantaneous_power_w": int.from_bytes(data[6:8], "little"),
-        })
-
-    elif page_match == PAGE_CRANK_TORQUE:
-        # Byte 1: event count
-        # Byte 2: crank ticks
-        # Byte 3: instantaneous cadence
-        # Bytes 4-5: accumulated crank period (1/2048 s units)
-        # Bytes 6-7: accumulated torque (1/32 Nm units)
-        decoded.update({
-            "event_count": data[1],
-            "crank_ticks": data[2],
-            "instantaneous_cadence_rpm": data[3] if data[3] != 0xFF else None,
-            "accumulated_crank_period": int.from_bytes(data[4:6], "little"),
-            "accumulated_torque": int.from_bytes(data[6:8], "little"),
-        })
-
-    elif page_match == PAGE_TORQUE_EFFECTIVENESS:
-        decoded.update({
-            "event_count": data[1],
-            "left_te_raw": data[2],
-            "right_te_raw": data[3],
-            "left_ps_raw": data[4],
-            "right_ps_raw": data[5],
-        })
-
-    elif page_match == PAGE_MANUFACTURER_INFO:
-        # Common Page 0x50 (Manufacturer's Identification), per D00001086 §12:
-        #   byte 0: page number (0x50)
-        #   bytes 1-2: reserved (0xFF)
-        #   byte 3: HW revision
-        #   bytes 4-5: manufacturer ID (LE uint16) — Stages? Favero? Other?
-        #   bytes 6-7: model number (LE uint16)
-        # NOTE: the byte offsets below are correct against the spec. Do not
-        # "simplify" them to bytes 1-3 — manufacturer_id lives at bytes 4-5,
-        # and this field is the central evidence for hypothesis H2.
-        decoded.update({
-            "hw_revision": data[3],
-            "manufacturer_id": int.from_bytes(data[4:6], "little"),
-            "model_number": int.from_bytes(data[6:8], "little"),
-        })
-
-    elif page_match == PAGE_PRODUCT_INFO:
-        # Byte 1: SW revision (supplemental)
-        # Byte 2: SW revision (main)
-        # Bytes 4-7: serial number (LE uint32)
-        decoded.update({
-            "sw_revision_supp": data[2],
-            "sw_revision_main": data[3],
-            "serial_number": int.from_bytes(data[4:8], "little"),
-        })
-
-    elif page_match == PAGE_BATTERY_STATUS:
-        decoded.update({
-            "battery_id": data[2],
-            "operating_time_lsb": int.from_bytes(data[3:6], "little"),
-            "battery_voltage_frac": data[6],
-            "battery_status_byte": data[7],
-        })
-
-    elif page_match == PAGE_CALIBRATION:
-        # Byte 1: calibration ID (0xAC = success, 0xAF = failure, 0xAA = manual zero request)
-        # Byte 2: auto-zero status / response sub-id
-        # Bytes 6-7: calibration data (offset value for zero-offset)
-        decoded.update({
-            "calibration_id": data[1],
-            "calibration_id_hex": f"0x{data[1]:02X}",
-            "auto_zero_status": data[2],
-            "calibration_data": int.from_bytes(data[6:8], "little", signed=True),
-        })
-
-    # Bit 7 of page is sometimes used as a toggle bit on the first byte; record it.
-    decoded["page_toggle_bit"] = bool(page & 0x80)
-    decoded["page_no_toggle"] = page & 0x7F
-
-    # Extended-message tail. When extended RX messages are enabled (0x66), the
-    # ANT stick appends the source channel ID after the 8 data bytes:
-    #   data[8]    = flag byte
-    #   data[9:11] = device number (LE uint16)  <- which meter this came from
-    #   data[11]   = device type
-    #   data[12]   = transmission type
-    # This is purely additive: the page and all page fields live in bytes 0-7,
-    # so the decoding above is unaffected. Recording the source device number
-    # lets Sessions C/F prove which device each packet came from when several
-    # meters are live at once. (Layout confirmed against openant
-    # devices/common.py _on_data, which reads data[9:13] the same way.)
-    if len(data) >= 13:
-        decoded["ext_flag"] = data[8]
-        decoded["ext_device_number"] = int.from_bytes(data[9:11], "little")
-        decoded["ext_device_type"] = data[11]
-        decoded["ext_transmission_type"] = data[12]
-
-    return decoded
+    return _decode_page(data)
 
 
 class CaptureRunner:
@@ -259,11 +157,23 @@ class CaptureRunner:
         """Broadcast data callback from openant."""
         decoded = decode_page(bytes(data))
         self._log("broadcast", data=decoded)
+        self._on_decoded("broadcast", decoded)
 
     def _on_acknowledged(self, data: bytes) -> None:
         """Acknowledged-data callback. Critical for capturing pairing/calibration ACKs."""
         decoded = decode_page(bytes(data))
         self._log("acknowledged", data=decoded)
+        self._on_decoded("acknowledged", decoded)
+
+    def _on_decoded(self, kind: str, decoded: dict[str, Any]) -> None:
+        """Hook for subclasses that need each decoded page. No-op by default.
+
+        Exists so a subclass never has to re-implement `_on_data` just to observe traffic.
+        `ride_wizard.py` did exactly that, and its copy of the decode-and-log body then had
+        to be kept in step with this one by hand - on the ride-day path, where a silently
+        skipped log line is expensive. Overriding this instead makes it impossible to drop
+        the logging that makes the capture canonical.
+        """
 
     def setup(self) -> None:
         self._log("session_start", device_id=self.device_id,

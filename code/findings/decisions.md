@@ -3785,3 +3785,81 @@ source file so a failure names the offending file. **Mutation-verified**: prepen
 Verification: `pio test -e native` **252/252**; `esp32c3-oled-live-ota`, `xiao-sense` and
 `feather-nrf52840` all compile (the include resolves in both toolchains); Python **594 passed** / 3
 skipped; ruff clean.
+
+---
+
+## 2026-07-26 — the two "duplicate decoder" findings: one was real, one was not
+
+Item 10 of the five-model architecture review named two documented duplications and an observer copy.
+Measuring each before acting split them cleanly: **one was a real 129-line fork, one was two different
+jobs that merely look alike, and one was a two-line copy on the ride-day path that still deserved the
+fix.** The review's own wording ("`06_capture_ble.py` ↔ `ble/cps.py` duplication") was wrong, and would
+have cost a lossless-capture guarantee had it been implemented as written.
+
+**Real: `ant/pages.py` ↔ `01_capture_stages.py::decode_page` (129 lines, now gone).** An AST-normalised
+diff of the two copies showed they differed **only in the docstring**. `ant/pages.py` had said for
+months that "a follow-up should make the capture script import this one"; this was that follow-up. The
+script is now a thin wrapper over the package, down 458 → ~340 lines, and imports the seven shared
+`PAGE_*` constants (keeping `PAGE_WHEEL_TORQUE` / `PAGE_CRANK_TORQUE_FREQUENCY`, which are its own).
+**Equivalence proven by replaying 49,050 real capture records through both: byte-identical.** The
+module surface is unchanged, which matters because `02_capture_assioma.py`, `07_capture_multi.py` and
+`ride_wizard.py` load it by `spec_from_file_location` and reach into it.
+
+**Not real: the two CPS decoders.** They are two jobs wearing similar names:
+
+| | `06_capture_ble.py::decode_cp_measurement` | `ble/cps.py::decode_cps_measurement` |
+|---|---|---|
+| Returns | flat dict incl. `raw_hex`, `flags_hex`, `trailing_hex` | frozen `CpsMeasurement` |
+| Flags | **all 13** optional fields | **4** — the ones our meters set, deliberately |
+| Truncation | tolerant: partial dict, bytes always kept | **raises `ValueError`** |
+
+Merging them would have made the capture path raise on a malformed frame — directly violating "JSONL
+captures are the canonical lossless record". The same applies to `decode_cp_response`, which
+*interprets* response params per op (offset, crank length, sensor locations, sampling rate, factory cal
+date) where `decode_control_point` returns them raw for the proxy to act on.
+
+**What WAS duplicated there: the protocol bytes.** The script hardcoded the CPS flag bits (`flags &
+0x0004`) and the control-point op/result codes as bare hex — a genuine drift risk against the package's
+`F_*` / `CP_*` constants. Those are now imported, so each byte has one definition, while the two decode
+*functions* stay separate on purpose. Both files now carry the reasoning so the finding is not re-filed.
+
+Verification: replaying every Cycling Power Measurement frame in the committed BLE captures through the
+edited decoder reproduces the dict recorded beside it at capture time — **234/234 identical**; and
+HEAD-vs-edited over all 244 measurement + control-point frames differs on **0**. Pinned as golden
+vectors in `code/tests/test_capture_ble_decoders.py`, **mutation-verified** with three plausible
+mis-wirings (pedal-balance bit → torque bit: 45/234 frames diverge; crank-rev → wheel-rev: 234/234;
+balance-ref modifier → torque-source modifier: 45/234) — all caught.
+
+**A side finding, recorded because it corroborates #305.** Three archived `ble_cp_indication` records
+decode *differently today* than the dict stored beside them, and the decoder is right in both cases:
+it now recovers `crank_length_mm: 172.5` from the Stages non-standard `20 05 59 01` reply (the
+`20 05 <len16>` shape with no success byte — exactly the residue issue #305 tracks), and it stopped
+emitting an empty `sensor_locations: []` on an unsupported-op response. Captures are immutable, so the
+stored dicts stay as they are; the goldens above are taken from measurement frames only, which are
+stable.
+
+**A gap left deliberately open (issue filed, not fixed at 2am).** The capture decoder's tolerance is
+weaker than it reads: a truncated optional field is *silently omitted* with no marker — only
+`len(data) < 4` sets `error: "short payload"`, and `decode_error` fires only on an exception. It is
+still lossless in the sense that counts (`raw_hex` and `flags` always survive, so an analyst can spot a
+flag set with no field), but it is not self-describing. Changing what the canonical capture writer
+records is the owner's call, not an unsupervised one. The tests pin the contract **as it actually is**
+rather than as the docstring implied.
+
+**The observer copy was small and worth fixing anyway.** `ride_wizard.py` overrode `CaptureRunner._on_data`
+to remember power/cadence for its heartbeat, re-implementing the parent's two-line decode-and-log body.
+Two lines — but on the **ride-day** path, where a silently dropped log line is discovered only after the
+ride. `CaptureRunner` now calls `_on_decoded(kind, decoded)` (no-op by default) after logging, from both
+the broadcast and acknowledged callbacks; the wizard overrides only that. An override can no longer cost
+you the capture. Pinned by `code/tests/test_capture_runner_hook.py`, including an assertion that
+`_on_data` is *not* in the guided runner's `__dict__`.
+
+**Codegen scripts are now inside the lint gate.** `gen_bridge.py`, `gen_webjson.py`, `gen_spa_header.py`
+and `gen_tokens.py` produce committed wire-format artifacts but sat outside `ruff`. They are now in the
+CI lint scope (fixing one B007 and two UP031 in `gen_bridge.py`), with `E501` per-file-ignored rather
+than reflowing generator templates. **Generated output verified byte-identical afterwards** via
+`check_generated.py`. The `pytest` job has no path filter, so lint runs on every PR regardless of which
+paths changed — adding these targets creates no gap.
+
+Verification: Python **606 passed** / 3 skipped; ruff clean over the new CI scope; all four generated
+artifacts in sync.
