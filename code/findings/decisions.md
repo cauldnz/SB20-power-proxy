@@ -3695,3 +3695,43 @@ Also removed the five ⛔ SUPERSEDED `esp32s3-touch*` envs (37 → 32), leaving 
 rather than silently building a known boot-looping image. `USE_LCD=1` is still set by `esp32cyd*` and
 `esp32s3-pio*`, so `LcdDisplay` is *not* orphaned by the removal (design/ui-architecture-review.md §U0
 updated accordingly).
+
+## 2026-07-26 — "the analysis layer is undertested" was wrong; the real defect was a silent misroute
+
+Session 14, item 13. The 5-model review's F11 said `code/src/sb20proxy/analysis/` was undertested and
+asked for tests on four invariants. **Measured before building: the premise does not hold.** The package
+is at **88 % statement coverage** (723 stmts, 87 missed) across 7 test files, and three of the four named
+invariants are *already* asserted — `schema_version` (`test_schema_version_mismatch_is_refused`), the
+`power_sample` view mapping (`test_load_att_rows_decodes_into_tables_and_power_sample`), and re-import
+idempotency on **all three** importers (`test_load_fit_reimport_replaces`,
+`test_load_att_rows_reimport_replaces`, and the jsonl equivalent). Manufacturing coverage for the
+remaining 12 % would have been busy-work, so this records the measurement and does the real work found
+underneath it instead.
+
+The fourth invariant — `_CP_CHARS` routing — was the genuine finding, and it was worse than "untested":
+
+- **`pcap_sqlite._CP_CHARS` (was line 73) is dead code.** Defined, referenced nowhere in the repo, and it
+  *disagreed* with its live namesake in `jsonl_sqlite` (`cycling_power_control_point` vs
+  `control_point`). Two identically-named constants with different contents, one of them inert, is a trap
+  for the next reader. Deleted.
+- **`jsonl_sqlite._route_notification` checked the RAW char name against `_CP_CHARS`, then aliased it
+  afterwards.** So `_CP_CHARS` and `_CHAR_ALIASES` had to be kept in sync by hand: any spelling added to
+  the alias table without *also* being added to `_CP_CHARS` would have had its control-point responses
+  silently filed as ordinary notifications. No error, no warning — just CP responses missing from
+  `ble_control_point` in every later analysis.
+
+Fixed at the source rather than tested around, the same shape as R3a: **normalise first, then match**, so
+`_CP_CHARS` holds canonical names only (`{"control_point"}`) and a new alias routes correctly for free.
+Behaviour today is byte-identical — both previous members normalise to `control_point` — but the class of
+bug is gone rather than documented.
+
+Three tests lock it, parametrised over the **real** maps so a future alias is covered automatically. The
+routing test was **mutation-verified**: restoring the `raw_char` check makes
+`test_every_control_point_spelling_routes_to_the_cp_table[fitness_machine_control_point]` fail with
+`assert 0 == 1`, so the test provably catches the regression rather than merely passing beside it.
+
+Python suite: 487 → **491 passed**, 2 skipped; `ruff check src tests` clean.
+
+**Lesson (the reusable one): measure the premise before you act on a review finding.** Two of this
+session's items — the XIAO "just needs an RST press" and this one — were briefs that measurement
+contradicted. A finding that names a file is still a hypothesis until you run the numbers on it.
