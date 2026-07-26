@@ -3735,3 +3735,53 @@ Python suite: 487 → **491 passed**, 2 skipped; `ruff check src tests` clean.
 **Lesson (the reusable one): measure the premise before you act on a review finding.** Two of this
 session's items — the XIAO "just needs an RST press" and this one — were briefs that measurement
 contradicted. A finding that names a file is still a hypothesis until you run the numbers on it.
+
+## 2026-07-26 — one spoof target's captured bytes leave the general CPS codec; the Arduino macro hack gets a name
+
+Session 14, item 14 (second half; the env-deletion + flash-guard half shipped as PR #302).
+
+**`Cps.h` -> `spoofs/StagesSpm2.h`.** The most-included pure header mixed the Cycling Power Service
+codec with values captured from **one** crank. Moved out: `CPM_STAGES_FLAGS` (0x002F),
+`CP_FEATURE_STAGES` (0x0008030B), `SENSOR_LOCATION_OTHER` (0x00), and `encodeStagesCpsMeasurement`.
+
+The split had to be drawn carefully, and the obvious line was wrong. The five flag *bits* around the
+Stages block (`CPM_PEDAL_BALANCE_PRESENT` bit0 … `CPM_WHEEL_REV_DATA_PRESENT` bit4) sit under a comment
+that read "The REAL Stages SPM2 crank, captured 2026-06-17" — but they are **spec bits**, not captured
+values, and `crankRevDataOffset` + `decodeCpsBalance` (both generic, both used against the Assioma) read
+them. Moving them would have dragged the general decoder into a spoof header. **What is target-specific
+is the captured COMBINATION (0x2F), not the bits it is made of.** Only the combination moved; the bits
+stayed and their comment now says which is which.
+
+Dependency runs one way (`spoofs/StagesSpm2.h` -> `Cps.h`), so a second spoof target is a new file rather
+than more `Cps.h`, and a build that impersonates nothing (the meter-to-meter corrector) no longer
+compiles a Stages crank's bytes in. Three consumers updated: `firmware/src/ble/BleCrankPeripheral.cpp`,
+`firmware-nrf/src/main.cpp`, `firmware/test/test_proxy/test_main.cpp`.
+
+**KNOWN RESIDUE, now written down instead of implied:** `encodeRequestCrankLengthResponse` is
+Stages-shaped — it emits `20 05 <len>` with **no success byte**, mirroring the real SPM2 crank and
+deviating from the standard `20 05 01 <len>` (which is what the Assioma sends). It could not move,
+because the generic `handleControlPoint` dispatcher calls it and moving it would invert the one-way
+dependency. That means **the meter-to-meter corrector currently answers head units with a Stages-shaped
+crank-length reply.** Whether any head unit minds is unknown and not desk-testable, so it is R5b + an
+issue rather than a blind fix tonight.
+
+**The Python twin was NOT mirrored structurally, deliberately.** `code/src/sb20proxy/ble/cps.py` has
+exactly **one** target-specific symbol (`STAGES_FLAGS`) against the C++ side's four-plus-an-encoder. A
+`spoofs/` package for one constant is ceremony, not architecture. The *boundary* is documented in place
+instead, with a pointer to the C++ header and the rule for what goes where if it grows. Mirroring the
+C++ layout mechanically would have been cargo-culting the shape while adding nothing.
+
+**`arduino_compat.h`.** The Adafruit nRF core defines `abs`/`round`/`min`/`max`/`constrain` as macros
+that silently rewrite the `std::round` / `std::min<>` calls inside the shared pure headers — the error
+lands in the pure header and names nothing that would lead you to a macro three includes earlier. The
+fix was five bare `#undef`s in `firmware-nrf/src/main.cpp`. Now a named header carrying the reasoning,
+including why the tempting alternative (stop using `std::` in the pure header) is wrong: it would damage
+code shared with the ESP32 and the host tests to suit one toolchain.
+
+Guarded by `code/tests/test_arduino_compat_guard.py` — hermetic, no toolchain, parametrised per firmware
+source file so a failure names the offending file. **Mutation-verified**: prepending `#undef min` to
+`firmware-nrf/src/BridgeService.h` fails it with an actionable message pointing at the header.
+
+Verification: `pio test -e native` **252/252**; `esp32c3-oled-live-ota`, `xiao-sense` and
+`feather-nrf52840` all compile (the include resolves in both toolchains); Python **594 passed** / 3
+skipped; ruff clean.

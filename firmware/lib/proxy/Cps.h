@@ -39,20 +39,15 @@ constexpr uint16_t CPM_PRECEDING_DATA_BITS = 0x0015;
 // CPS Feature bits (uint32). Crank Revolution Data Supported = bit 3.
 constexpr uint32_t CP_FEATURE_CRANK_REV_SUPPORTED = 0x00000008;
 
-// --- The REAL Stages SPM2 crank, captured 2026-06-17 (findings/captures/G-crankL-ble-recon).
-// The spoof must reproduce this byte-for-byte: a minimal 0x20 frame paired with the SB20 but
-// showed NO power, so the SB20 wants the full Stages frame shape. ---
+// CPS Measurement optional-field flag bits (uint16) — spec bits, in ascending bit order. Each
+// present bit adds its field to the frame BEFORE any higher-bit field, which is what
+// `crankRevDataOffset` below walks. A specific captured COMBINATION of these belongs to one
+// meter, not to the spec — see `spoofs/StagesSpm2.h` for the Stages SPM2 crank's.
 constexpr uint16_t CPM_PEDAL_BALANCE_PRESENT  = 0x0001;  // bit0
 constexpr uint16_t CPM_PEDAL_BALANCE_REF_LEFT = 0x0002;  // bit1 (1 = reference left)
 constexpr uint16_t CPM_ACCUM_TORQUE_PRESENT   = 0x0004;  // bit2
 constexpr uint16_t CPM_ACCUM_TORQUE_SRC_CRANK = 0x0008;  // bit3 (1 = crank-based)
 constexpr uint16_t CPM_WHEEL_REV_DATA_PRESENT = 0x0010;  // bit4
-// The captured measurement flags: balance + ref-left + torque + src-crank + crank-rev.
-constexpr uint16_t CPM_STAGES_FLAGS = 0x002F;
-// The captured CP Feature value (char 0x2A65, raw LE 0b 03 08 00).
-constexpr uint32_t CP_FEATURE_STAGES = 0x0008030B;
-// The crank reports Sensor Location 0 ("other") — NOT 5 (left crank), despite being a left crank.
-constexpr uint8_t SENSOR_LOCATION_OTHER = 0x00;
 
 // Encode a power-only Cycling Power Measurement: flags (uint16 LE) + instantaneous power
 // (sint16 LE). Power is ALWAYS the first field after flags, so flags = 0 is valid.
@@ -80,24 +75,8 @@ inline std::vector<uint8_t> encodeCpsMeasurement(int16_t power_w, uint16_t crank
     };
 }
 
-// Encode the REAL Stages SPM2 measurement (flags 0x2F), byte-identical to the capture:
-//   flags(2) | power sint16 | balance uint8 (1/2 %) | accum torque uint16 (1/32 Nm) |
-//   cumulative crank revs uint16 | last crank event time uint16 (1/1024 s)  = 11 bytes.
-// Field order is fixed by ascending flag bit, matching how the real crank lays it out on the
-// wire; the SB20 parses power from this exact shape. Golden-tested against the captured bytes.
-inline std::vector<uint8_t> encodeStagesCpsMeasurement(int16_t power_w, uint8_t balanceHalfPct,
-                                                       uint16_t accumTorque, uint16_t crankRevs,
-                                                       uint16_t lastCrankEventTime) {
-    const uint16_t flags = CPM_STAGES_FLAGS;
-    return {
-        (uint8_t)(flags & 0xFF),     (uint8_t)(flags >> 8),
-        (uint8_t)(power_w & 0xFF),   (uint8_t)((power_w >> 8) & 0xFF),
-        balanceHalfPct,
-        (uint8_t)(accumTorque & 0xFF), (uint8_t)((accumTorque >> 8) & 0xFF),
-        (uint8_t)(crankRevs & 0xFF),   (uint8_t)((crankRevs >> 8) & 0xFF),
-        (uint8_t)(lastCrankEventTime & 0xFF), (uint8_t)((lastCrankEventTime >> 8) & 0xFF),
-    };
-}
+// Encode the REAL Stages SPM2 measurement — moved to `spoofs/StagesSpm2.h`, which holds every
+// captured Stages value. Include that header instead of adding spoof-target bytes here.
 
 // Instantaneous power lives at bytes 2-3 (sint16 LE) regardless of flags.
 inline int16_t decodeCpsPower(const uint8_t* d, size_t len) {
@@ -240,6 +219,12 @@ inline std::vector<uint8_t> encodeSetCrankLengthResponse() {
 // Request Crank Length (0x05) reply — MIRRORS the real Stages SPM2 crank, which OMITS the success
 // byte: `20 05 <len:uint16 LE>` (captured `20 05 59 01` = 0x0159 = 345 half-mm = 172.5 mm), unlike
 // the standard `20 05 01 <len>` (e.g. Assioma). len is in 1/2 mm.
+//
+// KNOWN RESIDUE: this is spoof-target-shaped but stays here because the generic `handleControlPoint`
+// dispatcher below calls it, and moving it would invert the one-way `Cps.h -> spoofs/` dependency.
+// Splitting it properly needs the dispatcher to take a per-target policy, which is a behavioural
+// change that must be validated against a head unit — the meter-to-meter corrector currently emits
+// the Stages shape to head units that expect the standard one. Tracked as its own issue.
 inline std::vector<uint8_t> encodeRequestCrankLengthResponse(uint16_t halfMm) {
     return {
         CP_OP_RESPONSE, CP_OP_REQUEST_CRANK_LENGTH,

@@ -18,18 +18,16 @@
 #include "board.h"  // board LED/IMU capability seam (XIAO Sense default; -DBOARD_FEATHER for generic)
 
 // The Adafruit nRF core's Arduino.h defines abs/round/min/max as MACROS, which break the
-// std::round / std::min<> inside the shared pure headers (CalibrationFit et al). Undo them
-// before those includes — the pure code wants the real std functions, not the Arduino macros.
-#undef abs
-#undef round
-#undef min
-#undef max
-#undef constrain
+// std::round / std::min<> inside the shared pure headers (CalibrationFit et al). This header
+// undoes them, and explains why — include it before any pure header in a TU that also includes
+// Arduino.h. CI guards that the workaround stays in that one named place.
+#include "arduino_compat.h"
 #include "CalibrationSession.h"  // pure on-device DUT->reference calibration (shared with ESP32)
 #include "Correction.h"    // pure (shared with the ESP32 builds via lib_extra_dirs)
 #include "ObcShifterSource.h"  // pure: SB20 shifter notification -> OBC ButtonState (shared w/ ESP32)
 #include "PeerRole.h"      // pure: which of the 4 concurrent central links is this? (lib/bridge)
 #include "Cps.h"           // pure CPS codec — the same bytes as the ESP32 + Python twins
+#include "spoofs/StagesSpm2.h"  // the captured Stages crank bytes the spoof mode reproduces
 #include "Ftms.h"          // pure FTMS codec (erg control point) — shared with ESP32 (P4)
 #include "IPowerSource.h"  // PowerReading
 #include "ImuCapture.h"    // pure capture buffer (lib/bridge)

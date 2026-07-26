@@ -174,7 +174,37 @@ forcing a translation layer (`renderConfigJson`/`getConfig`) and a mental map on
 
 ---
 
-## Explicitly NOT doing (essential divergence — leave alone)
+## R5 — Spoof-target bytes inside the general codec  🟢 clarity, low risk
+
+**Problem (5-model review, F3):** `firmware/lib/proxy/Cps.h` — the most-included pure header — mixed the
+general Cycling Power Service codec with values captured from **one** spoof target. A reader could not
+tell spec from observation, and the meter-to-meter corrector (which impersonates nothing) compiled the
+Stages crank's bytes in regardless.
+
+- [x] **R5a — split the captured Stages values into `lib/proxy/spoofs/StagesSpm2.h`** — `CPM_STAGES_FLAGS`,
+  `CP_FEATURE_STAGES`, `SENSOR_LOCATION_OTHER`, `encodeStagesCpsMeasurement`. The generic flag *bits*
+  stay in `Cps.h` (they are spec); only the captured *combination* moves. Dependency is one-way
+  (`spoofs/` → `Cps.h`), so a second spoof target is a new file rather than more `Cps.h`.
+  *done — PR #304.*
+- [ ] **R5b — give `handleControlPoint` a per-target policy** so `encodeRequestCrankLengthResponse` can
+  move too. It emits the Stages crank's non-standard `20 05 <len>` (no success byte) to *every*
+  consumer, including head units in meter-to-meter mode that expect the standard `20 05 01 <len>`.
+  Behavioural, so it needs head-unit validation — not a desk refactor. Tracked as its own issue.
+
+---
+
+## R6 — The Arduino macro workaround was an anonymous five-liner  🟢 clarity, low risk
+
+**Problem (5-model review, F2 honourable mention):** the Adafruit nRF core defines `abs`/`round`/`min`/
+`max`/`constrain` as macros that break the `std::` calls in the shared pure headers. The fix lived as
+five bare `#undef`s in `firmware-nrf/src/main.cpp`. Trivial to re-copy into the next TU, and worthless
+without the paragraph saying why the alternative fix (drop `std::` from the pure header) is wrong.
+
+- [x] **R6a — promote to `firmware-nrf/src/arduino_compat.h`** with the rationale, plus a hermetic CI
+  guard (`code/tests/test_arduino_compat_guard.py`) that fails if the `#undef`s reappear loose in any
+  firmware source. Mutation-verified. *done — PR #304.*
+
+---
 
 - The three config **serializers / storage backends** (NVS line vs GATT binary vs HTTP JSON) — justified
   by transport constraints; a single wire format would be worse on ≥2 of them.

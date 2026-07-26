@@ -13,6 +13,7 @@
 #include "ConfigPage.h"
 #include "Correction.h"
 #include "Cps.h"
+#include "spoofs/StagesSpm2.h"
 #include "DiagReport.h"
 #include "Ftms.h"
 #include "Obc.h"
