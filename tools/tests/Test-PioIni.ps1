@@ -188,13 +188,15 @@ foreach ($proj in @('firmware', 'firmware-nrf')) {
     if (-not (Test-Path $ini)) { continue }
 
     $real = $null
-    try { $real = Get-PioConfig -ProjectDir $dir } catch { $pioAvailable = $false }
+    $why = ''
+    try { $real = Get-PioConfig -ProjectDir $dir } catch { $pioAvailable = $false; $why = $_.Exception.Message }
     if (-not $real) {
         if ($RequireReal) {
-            $script:Failures += "$proj -- PlatformIO unavailable but -RequireReal was given"
+            $script:Failures += "$proj -- PlatformIO unavailable but -RequireReal was given: $why"
             Write-Host "  FAIL  $proj : PlatformIO unavailable but -RequireReal was given" -ForegroundColor Red
+            Write-Host "        $why" -ForegroundColor Red
         } else {
-            Write-Host "  SKIP  $proj : PlatformIO not available on this machine"
+            Write-Host "  SKIP  $proj : PlatformIO not available on this machine ($why)"
         }
         continue
     }

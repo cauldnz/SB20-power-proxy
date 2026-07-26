@@ -27,8 +27,13 @@ $script:PioConfigCache = @{}
 function Get-PioCommand {
     # A hashtable, not an array: PowerShell unrolls a single-element array on return, so a one-element
     # @($exe) comes back as a bare string and $exe[0] silently becomes its first *character*.
-    $penv = Join-Path $env:USERPROFILE ".platformio\penv\Scripts\pio.exe"
-    if (Test-Path $penv) { return @{ File = $penv; PreArgs = @() } }
+    # $env:USERPROFILE is unset off Windows and Join-Path throws on a null -Path, so this probe has to
+    # be guarded or the whole function dies before reaching the PATH fallback (which is how the CI
+    # runner reported "PlatformIO unavailable" while pio was installed and on PATH).
+    if ($env:USERPROFILE) {
+        $penv = Join-Path $env:USERPROFILE ".platformio\penv\Scripts\pio.exe"
+        if (Test-Path $penv) { return @{ File = $penv; PreArgs = @() } }
+    }
     $onPath = Get-Command pio -ErrorAction SilentlyContinue
     if ($onPath) { return @{ File = $onPath.Source; PreArgs = @() } }
     return @{ File = "python"; PreArgs = @("-m", "platformio") }   # the module in the active interpreter
