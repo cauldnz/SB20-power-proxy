@@ -12,7 +12,8 @@ Run it before you push (see `.githooks/pre-push`, installed by `tools/install-ho
     python code/scripts/check_generated.py            # verify, non-zero exit on drift
     python code/scripts/check_generated.py --fix      # regenerate in place, then re-verify
 
-Keep this list in sync with the `--check` invocations in `.github/workflows/tests.yml`.
+This script IS the CI gate (`.github/workflows/tests.yml`, job `bridge-parity`), so adding a
+generator here extends CI automatically — there is no second list to keep in sync.
 """
 
 from __future__ import annotations

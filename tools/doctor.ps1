@@ -106,6 +106,52 @@ except usb.core.USBError as e:
 Write-Host "SB20-proxy ride-readiness doctor" -ForegroundColor Cyan
 Write-Host "--------------------------------"
 
+# 0. Checkout path length (Windows MAX_PATH). LVGL's headers include each other through long chains
+# of unnormalised "..\" segments, and gcc on Windows opens the path AS WRITTEN — it does not collapse
+# the "..", so the 259-char MAX_PATH budget is spent on a path far longer than the real file's.
+# Measured 2026-07-26: in a worktree at C:\repos\<org>\<repo>\copilot-worktrees\<proj>\<branch>\ the
+# worst chain came to exactly 260 chars and every LVGL env failed with
+#   fatal error: ../lv_conf_internal.h: No such file or directory
+# while the same tree built clean through a short junction. One character. Catch it here rather than
+# after a four-minute compile, because the error names a missing file that is demonstrably present.
+$lvglWorstSuffix = "\firmware\.pio\libdeps\{0}\lvgl\src\widgets\property\..\keyboard\..\buttonmatrix\..\..\core\..\misc\..\font\..\draw\..\misc\..\stdlib\..\lv_conf_internal.h"
+# Only LVGL envs have these include chains, so measure the longest env name that actually pulls lvgl —
+# following `extends =` transitively, since most LVGL envs inherit lib_deps from a base section.
+$ini = Join-Path $repo "firmware\platformio.ini"
+$lvglEnvs = @()
+if (Test-Path $ini) {
+  $sections = @{}
+  $cur = $null
+  foreach ($line in Get-Content $ini) {
+    if ($line -match '^\s*\[(.+?)\]') { $cur = $Matches[1]; $sections[$cur] = @() }
+    elseif ($cur) { $sections[$cur] += $line }
+  }
+  function Test-UsesLvgl($name, $seen) {
+    if (-not $sections.ContainsKey($name) -or $seen -contains $name) { return $false }
+    $body = $sections[$name] -join "`n"
+    # Match the dependency/flag, not the word: [env:native] mentions "test_lvglui" in a comment.
+    if ($body -match 'lvgl/lvgl@' -or $body -match '-DUSE_LVGL=1') { return $true }
+    # (?m) is required — PowerShell's -match anchors to the whole string without it, so `extends`
+    # was only ever found when it happened to be the section's first line.
+    if ($body -match '(?m)^\s*extends\s*=\s*(.+?)\s*$') {
+      foreach ($p in ($Matches[1] -split ',')) { if (Test-UsesLvgl $p.Trim() ($seen + $name)) { return $true } }
+    }
+    return $false
+  }
+  $lvglEnvs = @($sections.Keys | Where-Object { $_ -like 'env:*' -and (Test-UsesLvgl $_ @()) } |
+                ForEach-Object { $_.Substring(4) })
+}
+$longestEnv = ($lvglEnvs | Sort-Object Length -Descending | Select-Object -First 1)
+if (-not $longestEnv) { $longestEnv = "esp32cyd-live-bench" }   # fallback if the ini can't be read
+$worstLen = $repo.Length + ($lvglWorstSuffix -f $longestEnv).Length
+if ($worstLen -lt 250) {
+  Result "Checkout path length" 'PASS' "-> worst LVGL include $worstLen chars via '$longestEnv' (limit 259)"
+} elseif ($worstLen -lt 260) {
+  Result "Checkout path length" 'WARN' "-> worst LVGL include $worstLen chars via '$longestEnv', limit 259 - almost no headroom; move the checkout shallower"
+} else {
+  Result "Checkout path length" 'FAIL' "-> worst LVGL include $worstLen chars via '$longestEnv' EXCEEDS 259; LVGL envs cannot build here. Clone shallower (e.g. C:\sb20) or build through a junction: New-Item -ItemType Junction -Path C:\sb20 -Target `"$repo`""
+}
+
 # 1. BLE venv + bleak (BLE captures)
 $blePy = Join-Path $repo "code\.venv\Scripts\python.exe"
 $bleakV = $null

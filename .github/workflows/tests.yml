@@ -3,7 +3,10 @@ name: tests
 # Hermetic unit tests for the sb20proxy library: codec round-trips against the
 # committed real captures, replay source, and ProxyCore wiring. No ANT+ stick or
 # SB20 is involved — hardware behaviour is verified manually at the bench (see
-# NEXT-BIKE-SESSION.md). Policy: CLAUDE.md §Validation.
+# sessions/PLAYBOOK.md). Policy: CLAUDE.md §Engineering disciplines.
+#
+# Third-party actions are pinned by commit SHA (the trailing comment says which release
+# that SHA was) so a re-tagged action can't silently change what runs on a protected branch.
 
 on:
   push:
@@ -11,20 +14,62 @@ on:
   pull_request:
 
 jobs:
+  # Which parts of the tree did this PR touch? Used to skip the ~9-minute firmware
+  # toolchain matrix on doc-only changes.
+  #
+  # NOTE: this is deliberately NOT an `on.pull_request.paths` filter. `firmware` is a
+  # REQUIRED status check on `main`; a path-filtered job never starts, never reports, and
+  # the PR is then blocked forever waiting for a check that will never arrive. Gating the
+  # *steps* keeps the job — and therefore the check name — always reporting.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      firmware: ${{ steps.filter.outputs.firmware }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect firmware-relevant changes
+        id: filter
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # Fails OPEN: any problem determining the diff runs the full matrix. A filter that
+          # errors must never be able to skip a required compile, and must never be able to
+          # strand a PR by failing this job (the `firmware` job `needs:` it).
+          set -uo pipefail
+          decide() { echo "firmware=$1" >> "$GITHUB_OUTPUT"; exit 0; }
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "push build — running the full matrix"; decide true
+          fi
+          base="$(git merge-base "origin/$BASE_REF" HEAD)" || { echo "no merge-base — failing open"; decide true; }
+          changed="$(git diff --name-only "$base" HEAD)" || { echo "diff failed — failing open"; decide true; }
+          echo "changed files:"; echo "$changed"
+          # web/ and ui-schema/ are in the set because the firmware embeds generated mirrors
+          # of both (WebSpa.h, WebJson.h, Proto.h).
+          if echo "$changed" | grep -qE '^(firmware/|firmware-nrf/|web/|ui-schema/|\.github/workflows/)'; then
+            decide true
+          fi
+          echo "no firmware-relevant paths touched — skipping the toolchain matrix"
+          decide false
+
   pytest:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.12"]
+        # 3.14 is what the bike laptop runs (tools/dev-env.lock) — without it in the matrix,
+        # CI green does not imply the machine that actually flashes boards is green.
+        python-version: ["3.10", "3.12", "3.14"]
     defaults:
       run:
         working-directory: code
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -43,24 +88,31 @@ jobs:
     # Host-side Unity tests for the ESP32 firmware's platform-agnostic core (lib/proxy):
     # CPS codec, correction, ProxyCore relay, status JSON, and the WiFi captive-portal pure
     # logic (page render / form parse / validation). No hardware — the native env builds and
-    # runs on the runner. Radio/BLE/portal glue is bench-tested (see NEXT-BIKE-SESSION.md).
+    # runs on the runner. Radio/BLE/portal glue is bench-tested (see sessions/PLAYBOOK.md).
+    needs: changes
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: firmware
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: needs.changes.outputs.firmware == 'true'
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        if: needs.changes.outputs.firmware == 'true'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
-      - name: Install PlatformIO
-        run: pip install platformio
+      # Pinned from tools/dev-env.lock so CI and the bike laptop cannot drift: a build that is
+      # green here is produced by the same PlatformIO that flashes the boards.
+      - name: Install PlatformIO (pinned by tools/dev-env.lock)
+        if: needs.changes.outputs.firmware == 'true'
+        run: pip install "$(grep -oE '^platformio==[0-9.]+' "$GITHUB_WORKSPACE/tools/dev-env.lock")"
 
       - name: Cache PlatformIO toolchains
-        uses: actions/cache@v4
+        if: needs.changes.outputs.firmware == 'true'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.platformio
           # Both platformio.ini files: this job builds the ESP32 envs AND the nRF board envs, so a
@@ -69,6 +121,7 @@ jobs:
           restore-keys: pio-${{ runner.os }}-
 
       - name: Test (native)
+        if: needs.changes.outputs.firmware == 'true'
         run: pio test -e native
 
       # Host LVGL UI tests: compile the REAL src/ui/LvglUi.cpp headless (against a tiny Arduino shim
@@ -77,6 +130,7 @@ jobs:
       # canvas reference renderer. lvgl renders fully in-memory; no display/SDL. See
       # findings/ui-unification.md §U5.
       - name: Test (native LVGL UI harness)
+        if: needs.changes.outputs.firmware == 'true'
         run: pio test -e native-lvgl
 
       # Link a real proxy ESP32 env so a multiple-definition / src_filter break (e.g. the FTMS
@@ -84,6 +138,7 @@ jobs:
       # src/ entirely, so it never catches a proxy-link regression. esp32c3-supermini is the
       # minimal proxy build (mock meter, no WiFi/OLED deps) and still links main.cpp + ble/*.
       - name: Compile proxy firmware (link guard)
+        if: needs.changes.outputs.firmware == 'true'
         run: pio run -e esp32c3-supermini
 
       # Compile the WiFi build (USE_WIFI=1) so the net/ + OTA + web-server code (WifiLink, the
@@ -91,13 +146,30 @@ jobs:
       # is actually built on CI. esp32c3-supermini is USE_WIFI=0, so without this none of that
       # code is compiled by CI — a break in it would only surface at the bench (2026-06-24).
       - name: Compile WiFi/OTA firmware (net + web + OTA code)
+        if: needs.changes.outputs.firmware == 'true'
         run: pio run -e esp32c3-wifi
 
+      # THE build that actually ships on the C3 proxy: live meter (USE_MOCK_METER=0) + OLED + OTA.
+      # Every env above holds at least one of those flags the other way, so the exact combination
+      # the rider flashes had no CI compile at all — a display/live-meter interaction break would
+      # only surface at the bench. See firmware/BENCH-FLASH.md.
+      - name: Compile shipping C3 build (OLED + live meter + OTA)
+        if: needs.changes.outputs.firmware == 'true'
+        run: pio run -e esp32c3-oled-live-ota
+
+      # The CYD head-unit board build: TFT_eSPI + LVGL + the touch driver linked against real src/.
+      # native-lvgl above tests the UI *logic* headless, but nothing compiled the board target — so a
+      # display-driver or pin-map regression stayed invisible until someone flashed a CYD.
+      - name: Compile CYD head-unit build (LVGL + display driver)
+        if: needs.changes.outputs.firmware == 'true'
+        run: pio run -e esp32cyd
+
       # Host-side Unity tests for the nRF52840 Sense bridge's pure wire-format core
-      # (firmware-nrf/lib/bridge: Proto.h + ImuCapture.h) — the byte-for-byte authority the Web
-      # Bluetooth app and Connect IQ app mirror. The native env is board-free, so it runs here
+      # (firmware-nrf/lib/bridge: Proto.h + ImuCapture.h + PeerRole.h) — the byte-for-byte authority
+      # the Web Bluetooth app and Connect IQ app mirror. The native env is board-free, so it runs here
       # (the on-board glue stays bench-verified over serial; see findings/nrf52-sense.md).
       - name: Test nRF bridge wire-format core (native)
+        if: needs.changes.outputs.firmware == 'true'
         working-directory: firmware-nrf
         run: pio test -e native
 
@@ -107,6 +179,7 @@ jobs:
       # compilation, while being the file every active nRF task edits. This is the nRF equivalent of
       # the esp32c3-supermini link guard above.
       - name: Compile nRF bridge firmware (link guard)
+        if: needs.changes.outputs.firmware == 'true'
         working-directory: firmware-nrf
         run: pio run -e xiao-sense
 
@@ -114,6 +187,7 @@ jobs:
       # XIAO's RGB-LED/IMU macros. Without compiling it, a XIAO-only regression in that seam is
       # invisible until someone flashes a Feather. Cheap: same platform/toolchain as the step above.
       - name: Compile nRF Feather variant (board-seam guard)
+        if: needs.changes.outputs.firmware == 'true'
         working-directory: firmware-nrf
         run: pio run -e feather-nrf52840
 
@@ -123,31 +197,29 @@ jobs:
       # the envs above compile the same tree with ANT excluded. ANT stays bench-verified.
 
   bridge-parity:
-    # The Bridge wire contract has one source (ui-schema/bridge.json). This job proves the generated
-    # mirrors are in sync (gen_bridge.py --check) and that the JS codec (web/bridge-codec.js) round-trips
-    # the golden vectors (Node). The C++ side (Proto.h == golden) is locked by the firmware-nrf native
-    # test above (test_golden_*). See design/ui-schema-design.md.
+    # Every generated artifact in the repo has exactly one source; this job proves none of the
+    # committed mirrors has drifted from it, and that the JS codec (web/bridge-codec.js) round-trips
+    # the golden vectors (Node). The C++ side (Proto.h == golden) is locked by the firmware-nrf
+    # native test above (test_golden_*). See design/ui-schema-design.md.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
 
-      - name: Bridge mirrors in sync with the schema
-        run: python code/scripts/gen_bridge.py --check
+      # One gate over all four generators (bridge.json -> Proto.h/.js/.mc, web/index.html ->
+      # WebSpa.h, web-json.json -> WebJson.h, tokens -> CSS/WebUi.h/LVGL). Replaces the two
+      # individual --check steps this job used to run, which covered only two of the four.
+      - name: Generated artifacts in sync with their sources
+        run: python code/scripts/check_generated.py
 
       - name: JS codec parity vs golden vectors
         run: node web/test/bridge-codec.test.mjs
-
-      # The web-JSON mirror (/scan /config /curve): WebJson.h (C++) + web/index.html (JS) must not drift
-      # from ui-schema/web-json.json. See findings/ui-unification.md §U2.
-      - name: Web JSON contract in sync (WebJson.h <-> web SPA)
-        run: python code/scripts/gen_webjson.py --check
