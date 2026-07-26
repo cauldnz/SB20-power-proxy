@@ -30,6 +30,21 @@ The 🟢 **READY-next** ride is:
 - **Hold-to-repeat on the SB20 buttons is built but never ridden** — validate first thing.
 - N0/N1/N2 (the nRF gates) never ran. The nRF and C3 **cannot both serve OBC** (reproduced twice).
 
+
+**⭐ Carried forward — SB20 compatibility facts to VERIFY on the bike** (feeds the qz device docs
+[PR #4852](https://github.com/cagnulein/qdomyos-zwift/pull/4852) and the Equipment Compatibility
+wiki row, which currently reads `Stages | ? | Yes | Yes | Yes | Yes | ? | No`):
+
+| # | Claim to test | Why it is not settled | How to test |
+|---|---|---|---|
+| V1 | **Is QZ's speed derived, or reported by the bike?** | The bike's `0x2AD2` flags are `0x00c5`; bit 0 set *should* mean instantaneous speed is absent — but the agent misread these flags once already this session (called `0x0011` a spec violation when the bike was simply sending a degraded frame). **Inference only — do not document until measured.** | Ride at a steady cadence, then change gear/resistance without changing cadence. If QZ's speed tracks power rather than anything wheel-like, it is derived. Cross-check the raw `0x2AD2` payload length against the flags. |
+| V2 | **HRM — does the SB20 relay a heart-rate strap?** | Never tried. Wiki says `?`; we should either fill it in or leave it honestly unknown. | Pair a HR strap to the bike in the Stages app, then see whether QZ shows HR **without** pairing the strap directly to QZ. |
+| V3 | **Zwift via QZ's virtual bike** | Untestable at the bench: the `-allow-nonroot` bench flag disables the virtual-device (BLE peripheral) role, which is exactly what Zwift needs. Needs a **root** QZ run. | Run QZ as root, pair QZ (not the bike) to Zwift, confirm power/cadence reach Zwift and that ERG/auto-resistance works through it. |
+| V4 | **Hold-to-repeat on the SB20 buttons** | Built and shipped in [PR #4850](https://github.com/cagnulein/qdomyos-zwift/pull/4850) but **never ridden** — flagged as untested in the PR itself. | Hold LEFT up ~3 s: expect ~13 actions (1 immediate, then every 200 ms after a 450 ms delay). Then a quick tap: expect exactly one. Report whether 450/200 ms *feels* right — they are named constants, chosen by guess. |
+
+**Already settled by the owner's day-to-day use (do NOT re-test):** auto-resistance/ERG is reliable,
+including QZ-managed Peloton Power Zone workouts; power and cadence are reliable in normal use.
+
 **How to run it well: read [`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md) first** — including the new
 **"Reason Bayesian-ly"** section: state your confidence, name the competing hypotheses, run the cheap
 discriminating test *before* asserting a cause, and prefer "my decode is wrong" over "the shipped
