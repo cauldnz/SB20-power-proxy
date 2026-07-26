@@ -149,14 +149,12 @@ void test_advert_sb20_shifter_only_when_sink_enabled(void) {
     TEST_ASSERT_EQUAL(PeerRole::Sb20Shifter, d.role);
 }
 
-void test_advert_empty_source_filter_makes_the_reference_unreachable(void) {
-    // PINS A LATENT BUG, NOT DESIRED BEHAVIOUR.
-    //
-    // The reference branch excludes names that also match the source filter — but it spells that
-    // as `strstr(name, srcFilter) == nullptr`, and strstr(name, "") always matches. So whenever
-    // srcFilter is EMPTY (the "accept any CPS advertiser" desk mode) the exclusion fires for every
-    // peer and no reference meter can ever be latched by the scanner. Calibration silently never
-    // starts. Found by extracting this ladder; see decisions.md.
+void test_advert_empty_source_filter_still_allows_the_reference(void) {
+    // REGRESSION GUARD for a fixed bug. The reference branch excludes names that also match the
+    // source filter, but that used to be spelled `strstr(name, srcFilter) == nullptr` — and
+    // strstr(x, "") always matches, so with an EMPTY srcFilter (the "accept any CPS advertiser"
+    // desk mode) the exclusion fired for every peer and no reference meter could ever be latched.
+    // Calibration silently never started, in exactly the mode it would be exercised in.
     PeerFilters f;
     f.reference = "XCADEY";
     f.source = "";  // any-CPS mode
@@ -164,11 +162,12 @@ void test_advert_empty_source_filter_makes_the_reference_unreachable(void) {
     s.calibrating = true;
 
     AdvertDecision d = classifyAdvert("XCADEY-X1", true, true, f, s);
-    TEST_ASSERT_NOT_EQUAL(PeerRole::Reference, d.role);
+    TEST_ASSERT_TRUE(d.connect);
+    TEST_ASSERT_EQUAL(PeerRole::Reference, d.role);
 
-    // With a source filter that simply doesn't match, the same peer IS taken as the reference.
-    f.source = "Assioma";
-    TEST_ASSERT_EQUAL(PeerRole::Reference, classifyAdvert("XCADEY-X1", true, true, f, s).role);
+    // ...and the exclusion still works when a source filter IS set and the name matches it.
+    f.source = "XCADEY";
+    TEST_ASSERT_EQUAL(PeerRole::Source, classifyAdvert("XCADEY-X1", true, true, f, s).role);
 }
 
 void test_advert_ladder_priority_trainer_then_reference_then_sb20(void) {
@@ -227,27 +226,52 @@ void test_connection_never_reclassifies_the_source_link(void) {
     TEST_ASSERT_EQUAL(PeerRole::Source, classifyConnection("Stages Bike 1234", f, s));
 }
 
-void test_connect_ladder_is_missing_two_reference_guards(void) {
-    // PINS A KNOWN DIVERGENCE, NOT DESIRED BEHAVIOUR.
-    //
-    // `classifyAdvert` refuses a reference when one is already connected, and when the name also
-    // matches the source filter. `classifyConnection` does neither. So a link scan-time would
-    // never have opened as a reference is still *classified* as one on connect — overwriting the
-    // existing reference handle and orphaning that link.
-    //
-    // Preserved verbatim so the seam extraction is behaviour-neutral. When this is fixed both
-    // assertions below flip to PeerRole::Source and this test should be deleted.
+void test_connect_ladder_now_agrees_with_the_scan_ladder(void) {
+    // REGRESSION GUARD for a fixed bug. The connect-time ladder used to be missing two guards the
+    // scan-time one has: `!refConnected`, and the "name also matches srcFilter" exclusion. A link
+    // the scanner would never have opened as a reference was still *classified* as one on connect,
+    // overwriting g_refConnHandle and orphaning the existing reference link.
     PeerFilters f;
     f.reference = "XCADEY";
     f.source = "XCADEY";
     PeerRoleState s;
     s.calibrating = true;
 
-    s.refConnected = true;  // scan-time would refuse; connect-time does not
-    TEST_ASSERT_EQUAL(PeerRole::Reference, classifyConnection("XCADEY-X1", f, s));
+    s.refConnected = true;  // a reference is already held — must not be replaced
+    TEST_ASSERT_EQUAL(PeerRole::Source, classifyConnection("XCADEY-X1", f, s));
 
-    s.refConnected = false;  // name also matches the source filter; scan-time excludes it
-    TEST_ASSERT_EQUAL(PeerRole::Reference, classifyConnection("XCADEY-X1", f, s));
+    s.refConnected = false;  // name also matches the source filter — must not be a reference
+    TEST_ASSERT_EQUAL(PeerRole::Source, classifyConnection("XCADEY-X1", f, s));
+}
+
+void test_scan_and_connect_ladders_agree_across_the_state_space(void) {
+    // The two ladders are now one function, and this proves it for every combination of the flags
+    // they branch on: whatever the scanner would have opened a link AS, the connect handler
+    // classifies it the same way. Previously impossible to state, because there were two ladders.
+    const char* names[] = {"SB20-FTMS-Server", "XCADEY-X1", "Stages Bike 1234", "Assioma 17039",
+                           "X Stages Bike", ""};
+    const char* srcFilters[] = {"", "Assioma", "XCADEY"};
+
+    for (unsigned n = 0; n < sizeof(names) / sizeof(names[0]); ++n) {
+        for (unsigned sf = 0; sf < sizeof(srcFilters) / sizeof(srcFilters[0]); ++sf) {
+            for (int bits = 0; bits < 32; ++bits) {
+                PeerFilters f;
+                f.trainer = "SB20-FTMS";
+                f.reference = "XCADEY";
+                f.source = srcFilters[sf];
+                PeerRoleState s;
+                s.calibrating = bits & 1;
+                s.sinkShifter = bits & 2;
+                s.ergConnected = bits & 4;
+                s.refConnected = bits & 8;
+                s.sb20Connected = bits & 16;
+
+                const AdvertDecision d = classifyAdvert(names[n], true, true, f, s);
+                if (d.connect && d.role != PeerRole::Source)
+                    TEST_ASSERT_EQUAL(d.role, classifyConnection(names[n], f, s));
+            }
+        }
+    }
 }
 
 void test_connection_with_empty_peer_name_is_a_source(void) {
@@ -279,13 +303,14 @@ int main(int, char**) {
     RUN_TEST(test_advert_trainer_wins_over_source);
     RUN_TEST(test_advert_trainer_not_taken_twice);
     RUN_TEST(test_advert_sb20_shifter_only_when_sink_enabled);
-    RUN_TEST(test_advert_empty_source_filter_makes_the_reference_unreachable);
+    RUN_TEST(test_advert_empty_source_filter_still_allows_the_reference);
     RUN_TEST(test_advert_ladder_priority_trainer_then_reference_then_sb20);
 
     RUN_TEST(test_connection_defaults_to_source);
     RUN_TEST(test_connection_classifies_trainer_reference_and_sb20);
     RUN_TEST(test_connection_never_reclassifies_the_source_link);
-    RUN_TEST(test_connect_ladder_is_missing_two_reference_guards);
+    RUN_TEST(test_connect_ladder_now_agrees_with_the_scan_ladder);
+    RUN_TEST(test_scan_and_connect_ladders_agree_across_the_state_space);
     RUN_TEST(test_connection_with_empty_peer_name_is_a_source);
     return UNITY_END();
 }

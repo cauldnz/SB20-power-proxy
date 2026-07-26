@@ -61,6 +61,33 @@ inline bool nameContains(const char* name, const char* needle) {
     return std::strstr(name, needle) != nullptr;
 }
 
+// The role ladder, shared by both call sites. Ordering is significant: a peer whose name matches
+// several filters is claimed by the most specific role first.
+//
+// `isSourceLink` short-circuits everything — the link we are already reading power from keeps its
+// role no matter what its name happens to match, or the bridge would tear down the very meter it
+// exists to read. It is only meaningful at connect time; scan-time callers leave it false.
+inline PeerRole classifyByName(const char* name, const PeerFilters& f, const PeerRoleState& s) {
+    if (s.isSourceLink) return PeerRole::Source;
+
+    // 1. The erg trainer, when configured and not already held.
+    if (f.trainer[0] && !s.ergConnected && nameContains(name, f.trainer)) return PeerRole::Trainer;
+
+    // 2. The calibration reference. Excluded when the name would *also* match the source filter, so
+    //    one meter can't be latched as both DUT and reference (the fit would compare it against
+    //    itself). The `f.source[0] &&` is load-bearing: strstr(x, "") matches everything, so without
+    //    it an empty source filter excluded *every* peer and no reference could ever be latched.
+    if (s.calibrating && !s.refConnected && f.reference[0] && nameContains(name, f.reference) &&
+        !(f.source[0] && nameContains(name, f.source)))
+        return PeerRole::Reference;
+
+    // 3. The SB20 itself, for the button sink.
+    if (s.sinkShifter && !s.sb20Connected && nameContains(name, kSb20PeerName))
+        return PeerRole::Sb20Shifter;
+
+    return PeerRole::Source;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Scan time: we have an advertisement. Should we connect, and as what?
 // ---------------------------------------------------------------------------------------------
@@ -77,63 +104,31 @@ struct AdvertDecision {
 
 inline AdvertDecision classifyAdvert(const char* name, bool haveName, bool advertisesCps,
                                      const PeerFilters& f, const PeerRoleState& s) {
-    // 1. The erg trainer, when configured and not already held.
-    if (f.trainer[0] && !s.ergConnected && haveName && nameContains(name, f.trainer))
-        return {true, PeerRole::Trainer};
+    // Every specific role is matched by name, so an unnamed advert can only ever be a source.
+    const PeerRole role = haveName ? classifyByName(name, f, s) : PeerRole::Source;
+    if (role != PeerRole::Source) return AdvertDecision(true, role);
 
-    // 2. The calibration reference. Excluded when the name would *also* match the source filter,
-    //    so a single meter can't be latched as both DUT and reference.
-    //
-    //    BUG PRESERVED: that exclusion is `strstr(name, srcFilter) == nullptr`, and strstr(x, "")
-    //    always matches — so with an EMPTY srcFilter ("accept any CPS advertiser", the desk mode)
-    //    the exclusion fires for every peer and no reference can ever be latched. Pinned by
-    //    `test_advert_empty_source_filter_makes_the_reference_unreachable`.
-    if (s.calibrating && !s.refConnected && f.reference[0] && haveName &&
-        nameContains(name, f.reference) && !nameContains(name, f.source))
-        return {true, PeerRole::Reference};
+    // Source already up — keep scanning (a reference may still be wanted) but connect nothing.
+    if (s.srcConnected) return AdvertDecision(false, PeerRole::Source);
 
-    // 3. The SB20 itself, for the button sink.
-    if (s.sinkShifter && !s.sb20Connected && haveName && nameContains(name, kSb20PeerName))
-        return {true, PeerRole::Sb20Shifter};
-
-    // 4. Source already up — keep scanning (a reference may still be wanted) but connect nothing.
-    if (s.srcConnected) return {false, PeerRole::Source};
-
-    // 5. Otherwise this is a source candidate. With a filter set we match on name; without one we
-    //    take any CPS advertiser. NB no `filterUuid` upstream: the name lives in the scan
-    //    RESPONSE while 0x1818 lives in the ADV packet, so a UUID filter would drop the very
-    //    reports a name filter needs.
+    // Otherwise this is a source candidate. With a filter set we match on name; without one we take
+    // any CPS advertiser. NB no `filterUuid` upstream: the name lives in the scan RESPONSE while
+    // 0x1818 lives in the ADV packet, so a UUID filter would drop the very reports a name filter
+    // needs.
     const bool take = f.source[0] ? (haveName && nameContains(name, f.source)) : advertisesCps;
-    return {take, PeerRole::Source};
+    return AdvertDecision(take, PeerRole::Source);
 }
 
 // ---------------------------------------------------------------------------------------------
 // Connect time: a central link just came up. What is it?
 // ---------------------------------------------------------------------------------------------
-//
-// !! This reproduces the connect-time ladder *exactly as it was written*, including two guards it
-// is missing relative to `classifyAdvert`:
-//
-//   * no `!refConnected` check — a second reference link overwrites the first, orphaning it;
-//   * no "name also matches the source filter" exclusion.
-//
-// Both look like oversights rather than intent (the scan side has them, and nothing documents the
-// difference). They are preserved here so the seam extraction is provably behaviour-neutral, and
-// pinned by `test_connect_ladder_is_missing_two_reference_guards` so the divergence cannot be
-// mistaken for correctness. Fixing it is a separate, separately-revertible change.
+// The same ladder, so the two can no longer disagree. They previously did: the connect-time copy
+// was missing the `!refConnected` check and the source-filter exclusion, so a link the scanner
+// would never have opened as a reference was still *classified* as one, overwriting the reference
+// handle and orphaning the existing link.
 inline PeerRole classifyConnection(const char* peerName, const PeerFilters& f,
                                    const PeerRoleState& s) {
-    if (f.trainer[0] && nameContains(peerName, f.trainer) && !s.ergConnected && !s.isSourceLink)
-        return PeerRole::Trainer;
-
-    if (s.calibrating && f.reference[0] && nameContains(peerName, f.reference) && !s.isSourceLink)
-        return PeerRole::Reference;
-
-    if (s.sinkShifter && !s.sb20Connected && nameContains(peerName, kSb20PeerName) &&
-        !s.isSourceLink)
-        return PeerRole::Sb20Shifter;
-
-    return PeerRole::Source;
+    return classifyByName(peerName, f, s);
 }
 
 }  // namespace bridge

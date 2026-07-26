@@ -82,9 +82,10 @@ last.** Extracting R1a–R1c removes ~700 lines and is the precondition that mak
   hand-rolled read→correct→relay in `measNotifyCb`. **Do last.** Ties into the nRF roadmap P4 radio seam.
   - [x] **R1d.1 — the peer-name dispatcher** is done: `lib/bridge/PeerRole.h` is the single pure
     statement of the four-role ladder, `scanCb`/`centralConnectCb` are now thin adapters over it, and
-    `test/test_peerrole/` (22 host tests) pins it. Behaviour-neutral by construction; it surfaced two
-    latent routing bugs and one host/device toolchain gap, all recorded in `decisions.md` (2026-07-26)
-    and pinned as-is so the fixes land separately.
+    `test/test_peerrole/` (23 host tests) pins it. The extraction surfaced two latent routing bugs
+    and one host/device toolchain gap; all three are fixed and recorded in `decisions.md`
+    (2026-07-26). The scan-time and connect-time ladders are now one function, and a host test
+    asserts they agree across the whole state space — a property that was not expressible before.
 - [ ] **R1e — ESP32 `LcdController`** (~590 lines: `firmware/src/main.cpp:240–828` — the LCD head-unit
   controller: `buildLcdViews`, `lcdExecute`, `lcdTask`, the touch-cal ritual, `lcdSerialConsole`). The
   ESP32's *one* fat tenant; everything else there is legitimate wiring. Start with the zero-risk
