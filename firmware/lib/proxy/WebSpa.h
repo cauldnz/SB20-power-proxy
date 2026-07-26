@@ -490,6 +490,8 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;"
 
 // ================= BleTransport (Web Bluetooth) =================
 const SVC = "53423230-0000-4bd9-a4ae-1b4e2c633a1d";
+// Cycling Power Service, written out in full — see the note on optionalServices in connect().
+const CPS_UUID = "00001818-0000-1000-8000-00805f9b34fb";
 const CH = { stat:"0001", cfg:"0002", rctl:"0003", rdat:"0004", curv:"0005", cal:"0006", scan:"0007", wk:"0008", btn:"0009" };
 const uuid = s => `53423230-${s}-4bd9-a4ae-1b4e2c633a1d`;
 const dec = b => new TextDecoder().decode(b).replace(/\0+$/, "");
@@ -503,14 +505,68 @@ class BleTransport {
     // the nRF follow-up. A capability, not a device-kind check (see the scalarCorrection note below).
     this.caps = { config:true, scan:true, calibration:true, workout:true, recording:true, buttons:true, antCapable:true, scalarCorrection:true, compare:false };
     this.dev = null; this.ch = {}; this.dl = null;
+    // Auto-reconnect state. On a phone head-unit a dropped link is NORMAL, not an error: iOS/WebKit
+    // suspends JS and tears down GATT whenever the browser backgrounds (confirmed in Bluefy,
+    // 2026-07-26). So we retry indefinitely with backoff, and never give up on our own.
+    this._userQuit = false; this._backoff = 0; this._retryTimer = null; this._wiredDev = null;
     this.onStatus = this.onScan = this.onCal = this.onWk = this.onRec = this.onRecDone =
       this.onConn = this.onLog = () => {};
   }
   async connect() {
     this.dev = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: "SB20" }], optionalServices: [SVC, 0x1818],
+      // optionalServices MUST use canonical UUID strings, not the 16-bit numeric shorthand.
+      // Bluefy (iOS Web Bluetooth) rejects `0x1818` outright — no picker, and it rejects with a
+      // non-Error value, so the catch below saw `undefined`. Chrome accepts both forms; iOS does
+      // not. Proven on-device 2026-07-26 (diag: numeric -> REJECTED, string -> picker OK).
+      filters: [{ namePrefix: "SB20" }], optionalServices: [SVC, CPS_UUID],
     });
-    this.dev.addEventListener("gattserverdisconnected", () => this.onConn(false, ""));
+    this._userQuit = false; this._backoff = 0;
+    await this._attach();
+  }
+
+  // Re-attach to a device we ALREADY have permission for — no picker, no user gesture required.
+  // Needs the "allow future background connections" grant the picker offers. Feature-detected:
+  // getDevices() is not universal, and without it we simply fall back to a manual tap.
+  async resume() {
+    if (this._userQuit || this.dev?.gatt?.connected) return false;
+    if (!navigator.bluetooth?.getDevices) return false;
+    let known = [];
+    try { known = await navigator.bluetooth.getDevices(); } catch (e) { return false; }
+    const d = known.find(x => (x.name || "").startsWith("SB20"));
+    if (!d) return false;
+    this.dev = d;
+    try { await this._attach(); return true; } catch (e) { this.onLog(`resume failed: ${errText(e)}`); return false; }
+  }
+
+  // Called when the tab becomes visible again: retry NOW rather than waiting out the backoff.
+  kick() {
+    if (this._userQuit || this.dev?.gatt?.connected) return;
+    this._backoff = 0;
+    clearTimeout(this._retryTimer); this._retryTimer = null;
+    if (this.dev) this._retry(); else this.resume();
+  }
+
+  _retry() {
+    if (this._userQuit || this._retryTimer || this.dev?.gatt?.connected) return;
+    const wait = Math.min(1000 * 2 ** this._backoff, 15000);
+    this._backoff++;
+    this._retryTimer = setTimeout(async () => {
+      this._retryTimer = null;
+      if (this._userQuit || this.dev?.gatt?.connected) return;
+      try { await this._attach(); }
+      catch (e) { this.onLog(`reconnect failed: ${errText(e)} — retrying`); this._retry(); }
+    }, wait);
+  }
+
+  async _attach() {
+    if (this._wiredDev !== this.dev) {          // one listener per device, not per connect
+      this.dev.addEventListener("gattserverdisconnected", () => {
+        this.onConn(false, "");
+        this.onLog("link dropped — reconnecting…");
+        this._retry();
+      });
+      this._wiredDev = this.dev;
+    }
     const server = await this.dev.gatt.connect();
     const svc = await server.getPrimaryService(SVC);
     const get = async key => (this.ch[key] = await svc.getCharacteristic(uuid(CH[key])));
@@ -526,10 +582,16 @@ class BleTransport {
     try { await get("curv"); } catch (e) { this.ch.curv = null; }  // read/write, no notify
     try { await get("btn"); } catch (e) { this.ch.btn = null; }    // SB20 buttons (read/write, no notify)
     if (this.ch.scan) { try { this.onScan(parseScan(await this.ch.scan.readValue())); } catch (e) {} }
+    this._backoff = 0;                          // a clean attach resets the backoff ladder
     this.onConn(true, this.dev.name || "");
     this.onLog(`connected to ${this.dev.name}`);
   }
-  disconnect() { this.dev?.gatt?.disconnect(); }
+  // An explicit user Disconnect must STICK — otherwise the reconnect loop fights the user.
+  disconnect() {
+    this._userQuit = true;
+    clearTimeout(this._retryTimer); this._retryTimer = null;
+    this.dev?.gatt?.disconnect();
+  }
   _w(key, bytes) { return this.ch[key]?.writeValueWithResponse(new Uint8Array(bytes)); }
   _wstr(key, cmd, str) {
     const s = new TextEncoder().encode(str.slice(0, 19));
@@ -759,6 +821,9 @@ async function pickTransport() {
 
 // ================= view =================
 let T = null;
+// Not every rejection is an Error — iOS/Bluefy rejects requestDevice with a bare value, which
+// made every failure read "connect failed: undefined". Always render something diagnosable.
+const errText = e => (e && (e.message || e.name)) || (e === undefined ? "undefined (no error object — on iOS/Bluefy this usually means a bad requestDevice argument, e.g. a numeric 16-bit UUID)" : String(e));
 const log = m => { const d = $("log"); d.innerHTML = `<div>${new Date().toLocaleTimeString()} ${esc(m)}</div>` + d.innerHTML; };
 PRESETS.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = p; $("wkPreset").appendChild(o); });
 
@@ -936,7 +1001,7 @@ $("curveFile").onchange = async e => {
   } catch (err) { log(`import failed: ${err.message}`); }
   e.target.value = "";
 };
-$("btnConnect").onclick = async () => { try { await T.connect(); } catch (e) { log(`connect failed: ${e.message}`); } };
+$("btnConnect").onclick = async () => { try { await T.connect(); } catch (e) { log(`connect failed: ${errText(e)}`); } };
 $("btnDisconnect").onclick = () => T.disconnect();
 $("btnApply").onclick = async () => {
   try {
@@ -953,7 +1018,7 @@ $("btnApply").onclick = async () => {
     log(T.kind === "http" ? "config saved — device restarting to apply"
         : modeChanged ? `mode set to ${c.spoof ? "SPOOF (Stages crank)" : "CORRECTOR"} — reboot to re-advertise the identity`
         : "config applied");
-  } catch (e) { log(`config failed: ${e.message}`); }
+  } catch (e) { log(`config failed: ${errText(e)}`); }
 };
 $("btnButtonsApply").onclick = async () => {
   try {
@@ -961,7 +1026,7 @@ $("btnButtonsApply").onclick = async () => {
     const b = await T.setButtons({ enabled: $("btnSink").checked, actions });
     if (b) { $("btnSink").checked = !!b.enabled; for (let i = 0; i < 6; i++) $("btnAct" + i).value = String(b.actions[i] ?? 0); }
     log("button actions applied");
-  } catch (e) { log(`buttons failed: ${e.message}`); }
+  } catch (e) { log(`buttons failed: ${errText(e)}`); }
 };
 $("btnRec").onclick = async () => { await T.recSetRate(+$("recRate").value); await T.recStart(); };
 $("btnStop").onclick = () => T.recStop();
@@ -1078,7 +1143,17 @@ async function refreshCompare() {
 (async () => {
   const t = await pickTransport();
   wire(t);
-  if (t.autoConnect) { $("connectCard").style.display = "none"; try { await t.connect(); } catch (e) { log(`connect failed: ${e.message}`); } }
+  if (t.autoConnect) { $("connectCard").style.display = "none"; try { await t.connect(); } catch (e) { log(`connect failed: ${errText(e)}`); } }
+
+  // Phone head-unit survival. iOS suspends JS + drops GATT whenever the browser backgrounds, so:
+  //  - on load, silently re-attach to an already-permitted device (no picker, no tap);
+  //  - on returning to the foreground, retry immediately instead of waiting out the backoff.
+  if (t.kind === "ble") {
+    try { if (await t.resume()) log("resumed previous device"); } catch (e) {}
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") t.kick();
+    });
+  }
   if (t.caps.compare) { refreshCompare(); setInterval(refreshCompare, 3000); }
 })();
 </script>
