@@ -28,6 +28,7 @@
 #include "CalibrationSession.h"  // pure on-device DUT->reference calibration (shared with ESP32)
 #include "Correction.h"    // pure (shared with the ESP32 builds via lib_extra_dirs)
 #include "ObcShifterSource.h"  // pure: SB20 shifter notification -> OBC ButtonState (shared w/ ESP32)
+#include "PeerRole.h"      // pure: which of the 4 concurrent central links is this? (lib/bridge)
 #include "Cps.h"           // pure CPS codec — the same bytes as the ESP32 + Python twins
 #include "Ftms.h"          // pure FTMS codec (erg control point) — shared with ESP32 (P4)
 #include "IPowerSource.h"  // PowerReading
@@ -260,13 +261,13 @@ static void scanCb(ble_gap_evt_adv_report_t* report) {
     // never match (cost a debug loop). Instead: with a name filter set, match the name report
     // and let CPS service discovery be the validator (a non-CPS name match just disconnects
     // and rescans); with no filter, take any 0x1818 advertiser (the desk fake meter).
-    bool take = false;
     uint8_t nameBuf[28] = {0};
     const bool haveName =
         Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME, nameBuf,
                                             sizeof(nameBuf) - 1) ||
         Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_SHORT_LOCAL_NAME, nameBuf,
                                             sizeof(nameBuf) - 1);
+    const bool advertisesCps = Bluefruit.Scanner.checkReportForService(report, clientCps);
 
     // Record every named advertiser into the picker list (P3): the pure addCandidate dedups by
     // address + keeps the strongest RSSI. checkReportForService tells us CPS/FTMS from the UUIDs.
@@ -279,7 +280,7 @@ static void scanCb(ble_gap_evt_adv_report_t* report) {
         c.address = addr;
         c.name = (const char*)nameBuf;
         c.rssi = report->rssi;
-        c.isCps = Bluefruit.Scanner.checkReportForService(report, clientCps);
+        c.isCps = advertisesCps;
         c.isFtms = Bluefruit.Scanner.checkReportForUuid(report, UUID16_SVC_FITNESS_MACHINE);
         c.isStagesCrank = (c.name.rfind("Stages ", 0) == 0);
         if (c.isCps || c.isFtms) {  // only meters/trainers matter to the picker
@@ -287,40 +288,46 @@ static void scanCb(ble_gap_evt_adv_report_t* report) {
             g_candDirty = true;
         }
     }
-    // Grab the erg TRAINER (its own central) when configured + not yet connected.
-    if (g_trainerFilter[0] && !g_ergConnected && haveName &&
-        strstr((const char*)nameBuf, g_trainerFilter) != nullptr) {
-        Serial.printf("[erg] trainer match '%s' - connecting\n", nameBuf);
-        Bluefruit.Central.connect(report);
+    // Route the advert through the pure ladder (lib/bridge/PeerRole.h) — one statement of the
+    // policy, host-tested, instead of the copy that used to live here and a second copy in
+    // centralConnectCb. This callback is now only the radio adapter: read state in, act out.
+    bridge::PeerFilters filters;
+    filters.trainer = g_trainerFilter;
+    filters.reference = g_refFilter;
+    filters.source = g_cfg.srcFilter;
+    bridge::PeerRoleState state;
+    state.calibrating = g_calibrating;
+    state.sinkShifter = g_sinkShifter;
+    state.ergConnected = g_ergConnected;
+    state.refConnected = g_refConnected;
+    state.sb20Connected = g_sb20Connected;
+    state.srcConnected = g_srcConnected;
+
+    const bridge::AdvertDecision decision =
+        bridge::classifyAdvert((const char*)nameBuf, haveName, advertisesCps, filters, state);
+
+    if (!decision.connect) {
+        Bluefruit.Scanner.resume();  // incl. "source already up" — keep scanning for a reference
         return;
     }
-    // During calibration, also grab the REFERENCE meter (2nd central) when it isn't yet connected.
-    if (g_calibrating && !g_refConnected && g_refFilter[0] && haveName &&
-        strstr((const char*)nameBuf, g_refFilter) != nullptr &&
-        strstr((const char*)nameBuf, g_cfg.srcFilter) == nullptr) {
-        Serial.printf("[cal] reference match '%s' - connecting\n", nameBuf);
-        Bluefruit.Central.connect(report);
-        return;
+    switch (decision.role) {
+        case bridge::PeerRole::Trainer:
+            Serial.printf("[erg] trainer match '%s' - connecting\n", nameBuf);
+            break;
+        case bridge::PeerRole::Reference:
+            Serial.printf("[cal] reference match '%s' - connecting\n", nameBuf);
+            break;
+        case bridge::PeerRole::Sb20Shifter:
+            Serial.printf("[shifter] SB20 match '%s' - connecting\n", nameBuf);
+            break;
+        case bridge::PeerRole::Source:
+            if (g_cfg.srcFilter[0] != '\0')
+                Serial.printf("[bridge] source match '%s' - connecting\n", nameBuf);
+            else
+                Serial.println("[bridge] CPS advertiser found - connecting");
+            break;
     }
-    // Sink the SB20's own shifter buttons -> OBC: grab the SB20 (its own central) when enabled.
-    if (g_sinkShifter && !g_sb20Connected && haveName &&
-        strstr((const char*)nameBuf, "Stages Bike") != nullptr) {
-        Serial.printf("[shifter] SB20 match '%s' - connecting\n", nameBuf);
-        Bluefruit.Central.connect(report);
-        return;
-    }
-    if (g_srcConnected) { Bluefruit.Scanner.resume(); return; }  // source already up; keep scanning for ref
-    if (g_cfg.srcFilter[0] != '\0') {
-        if (haveName) {
-            take = strstr((const char*)nameBuf, g_cfg.srcFilter) != nullptr;
-            if (take) Serial.printf("[bridge] source match '%s' - connecting\n", nameBuf);
-        }
-    } else {
-        take = Bluefruit.Scanner.checkReportForService(report, clientCps);
-        if (take) Serial.println("[bridge] CPS advertiser found - connecting");
-    }
-    if (take) Bluefruit.Central.connect(report);
-    else Bluefruit.Scanner.resume();
+    Bluefruit.Central.connect(report);
 }
 
 // Stages-spoof (0x2F) accumulated-torque state + the previous source crank sample it integrates
@@ -490,45 +497,58 @@ static void centralConnectCb(uint16_t connHandle) {
     char peer[24] = {0};
     BLEConnection* conn = Bluefruit.Connection(connHandle);
     if (conn) conn->getPeerName(peer, sizeof(peer) - 1);
-    // Trainer (erg): its name matches g_trainerFilter and it isn't the source/ref we already hold.
-    const bool isTrainer = g_trainerFilter[0] && strstr(peer, g_trainerFilter) != nullptr &&
-                           !g_ergConnected && connHandle != g_srcConnHandle;
-    if (isTrainer) {
-        Serial.printf("[erg] trainer '%s' connected\n", peer);
-        ergSetupOnConn(connHandle);
-        if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
-        return;
-    }
-    const bool isRef = g_calibrating && g_refFilter[0] && strstr(peer, g_refFilter) != nullptr &&
-                       connHandle != g_srcConnHandle;
-    if (isRef) {
-        if (!refCps.discover(connHandle) || !refMeas.discover()) {
-            Bluefruit.disconnect(connHandle);
+    // Same pure ladder as scanCb, connect-time variant (lib/bridge/PeerRole.h). NB it is
+    // deliberately NOT identical to the scan-time one — see classifyConnection's header comment
+    // for the two guards it is missing; preserved here so this extraction changes no behaviour.
+    bridge::PeerFilters filters;
+    filters.trainer = g_trainerFilter;
+    filters.reference = g_refFilter;
+    filters.source = g_cfg.srcFilter;
+    bridge::PeerRoleState state;
+    state.calibrating = g_calibrating;
+    state.sinkShifter = g_sinkShifter;
+    state.ergConnected = g_ergConnected;
+    state.refConnected = g_refConnected;
+    state.sb20Connected = g_sb20Connected;
+    state.srcConnected = g_srcConnected;
+    state.isSourceLink = (connHandle == g_srcConnHandle);
+
+    switch (bridge::classifyConnection(peer, filters, state)) {
+        case bridge::PeerRole::Trainer:
+            Serial.printf("[erg] trainer '%s' connected\n", peer);
+            ergSetupOnConn(connHandle);
+            if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
             return;
-        }
-        refMeas.enableNotify();
-        g_refConnHandle = connHandle;
-        g_refConnected = true;
-        Serial.printf("[cal] reference connected: '%s'\n", peer);
-        if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
-        return;
-    }
-    // The SB20 (sink shifter -> OBC): discover its vendor button service on this link + subscribe.
-    const bool isSb20 = g_sinkShifter && !g_sb20Connected && strstr(peer, "Stages Bike") != nullptr &&
-                        connHandle != g_srcConnHandle;
-    if (isSb20) {
-        if (!sb20VendorSvc.discover(connHandle) || !sb20Button.discover()) {
-            Bluefruit.disconnect(connHandle);  // not the SB20 vendor GATT after all
+
+        case bridge::PeerRole::Reference:
+            if (!refCps.discover(connHandle) || !refMeas.discover()) {
+                Bluefruit.disconnect(connHandle);
+                return;
+            }
+            refMeas.enableNotify();
+            g_refConnHandle = connHandle;
+            g_refConnected = true;
+            Serial.printf("[cal] reference connected: '%s'\n", peer);
+            if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
             return;
-        }
-        sb20Button.setNotifyCallback(sb20ButtonNotifyCb);
-        sb20Button.enableNotify();
-        g_sb20ConnHandle = connHandle;
-        g_sb20Connected = true;
-        g_shifterSrc.reset();
-        Serial.printf("[shifter] SB20 connected: '%s' (buttons -> OBC)\n", peer);
-        if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
-        return;
+
+        // The SB20 (sink shifter -> OBC): discover its vendor button service on this link + subscribe.
+        case bridge::PeerRole::Sb20Shifter:
+            if (!sb20VendorSvc.discover(connHandle) || !sb20Button.discover()) {
+                Bluefruit.disconnect(connHandle);  // not the SB20 vendor GATT after all
+                return;
+            }
+            sb20Button.setNotifyCallback(sb20ButtonNotifyCb);
+            sb20Button.enableNotify();
+            g_sb20ConnHandle = connHandle;
+            g_sb20Connected = true;
+            g_shifterSrc.reset();
+            Serial.printf("[shifter] SB20 connected: '%s' (buttons -> OBC)\n", peer);
+            if (!Bluefruit.Advertising.isRunning()) Bluefruit.Advertising.start(0);
+            return;
+
+        case bridge::PeerRole::Source:
+            break;  // falls through to the source path below
     }
 
     if (!clientCps.discover(connHandle)) {
