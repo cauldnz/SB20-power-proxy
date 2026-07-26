@@ -1,6 +1,9 @@
 # 🚴 Session 13 — qz as an OBC consumer + the SB20 handlebar buttons, on air
 
-**Status:** 🟢 READY (planned 2026-07-26) · **Bike:** Stages SB20 (`E4:AA:5A:D6:0E:D4`) ·
+**Status:** ✅ **DONE (2026-07-26)** · **Outcome:** G1 PASSED — all six SB20 handlebar buttons drive qz,
+one action per press; found+fixed the defect that silently dropped ~2/3 of presses (qz keyed on a `0x03`
+commit frame the bike sends only ~6% of the time). G2 BLOCKED by a discovery-ordering conflict (now
+understood, issue filed). · **Bike:** Stages SB20 (`E4:AA:5A:D6:0E:D4`) ·
 **Board:** C3-OLED `sb20proxy.local` / **192.168.1.165** · **Firmware branch:** `main` ·
 **nRF:** XIAO nRF52840 Sense `DE:F2:ED:C4:F3:FD` (`SB20 Bridge`) · **CYD:** `192.168.1.234` ·
 **qz branch:** `bench/obc-listener+sb20-buttons` (local bench merge, X270) ·
@@ -398,31 +401,96 @@ recorded — record it this time). If S2 ran, `POST http://192.168.1.234/obc/dev
 
 | Gate | Start | Result | Observed |
 |---|---|---|---|
-| G0 | | | |
-| G1 | | | |
-| G2 | | | |
-| G3 | | | |
-| N0 | | | |
-| N1 | | | |
-| N2 | | | |
-| G4/S1 | | | |
-| G4/S2 | | | |
+| G0 | 09:1x | ⚠️ then ✅ | C3 had dropped off WiFi (100% packet loss; CYD fine on same LAN) → power-cycle fixed. Bike awake. **Found a collision: the CYD was spoofing `Stages 62144`, the same identity as the real L crank** → powered off. |
+| G1 | 09:4x | ✅ **PASS** | All 6 buttons, correct masks, one action each. `LEFT up→Plus target_power`, `LEFT down→Minus target_power`, `LEFT 3rd→setGears -1`, `RIGHT up→Plus peloton_offset`, `RIGHT down→Minus peloton_offset`, `RIGHT 3rd→setGears 0`. End-to-end proof incl. FTMS write `05 05 00`→bike ACK `80 05 01 05 00` and felt resistance change. |
+| G1-B | 10:2x | ✅ 5/5 | LEFT up ×5 → target 205→210→215→220→225→230 W. Zero `0x03` commits in the phase — **all five would have been dropped pre-fix**. |
+| G1-C | 10:3x | ✅ 5/5 | LEFT down ×5 → 230→225→220→215→210→205 W. **Was 0-for-2 before the fix.** The headline before/after. |
+| G1-D | 10:4x | ⚠️→fixed | 3 s hold produced ONE action. Owner: long-press should repeat. Implemented hold-to-repeat (450 ms then 200 ms); built, **not yet ridden**. |
+| G2 | 11:0x | ❌ **BLOCKED** | `obclistener` attached to the C3 by **name** (`OBC-SB20`; advert carries no OBC UUID — validates `bfb84695f`). But the C3 could never read the shifter: it discovers the SB20 **by advertisement**, and qz's connection stops the SB20 advertising. Ordering deadlock. |
+| N0/N1/N2 | — | ⏭️ not run | Out of rider time. nRF was off for G2 (it latches the C3 and suppresses its OBC advert — reproduced twice). |
 
 **Deviation log:**
+- ANT stick found mid-prep → dual-radio restored (the earlier BLE-only deviation was superseded).
+- Bike telemetry was dead early on (`Current Watt: 0`, frozen CSC). Resolved after a cold start; **cause not established** — owner's Garmin-on-trainer-protocol hypothesis is the leading candidate. See #288.
+- **Agent error:** three orphaned qz processes were competing for the BLE adapter for part of the session (failed `kill`s). May have corrupted some intermediate readings.
+- **Agent error:** the Phase C/D sniffer capture was lost to the wrong venv (`.venv` vs `code/.venv`) — the session-12 trap. qz's log was the authoritative record regardless.
 
-**Captures banked:**
+**Captures banked** (`code/findings/captures/`):
+- `SNIFF-session13-sb20-app-wake-20260726.pcap` (29,339 pkts) — degraded telemetry + app connect
+- `SNIFF-session13-coldstart-qz-only.pcap` — healthy telemetry, qz sole consumer (the A/B pair for #288)
+- `SNIFF-session13-buttons.pcap`, `SNIFF-session13-phaseD.pcap`
+- `session13-qz-g1-buttons.log.gz` — the authoritative button-behaviour record
 
-**Outcome:**
+
 
 ---
 
 ## 10. Retro — mandatory before close-out
 
-- Went well:
-- Went wrong / slow / confusing (+ root cause):
-- Planned vs actual (per section, from the timestamps; + the delta & why):
-- Changes to make before next session (process / run-sheet / tooling):
-- Next gate + desk work that must precede it:
+### ⭐ Process change agreed mid-session: be Bayesian, together
+
+The agent repeatedly stated causal conclusions that the next measurement contradicted. The
+*measurements* were sound every time; the *interpretations* were premature. Owner: **"Let's be
+Bayesian together. We gather evidence to improve our confidence."**
+
+Four instances, and they were **not** the same error — each has a different fix:
+
+| Claim | Failure | The move that was skipped |
+|---|---|---|
+| "You're not pedalling" | 2 hypotheses, picked one | **Ask.** The discriminator cost one line and I owned it |
+| "SB20's FTMS flags are inconsistent with its payload" | n=8 → asserted a spec violation | **Prior was backwards.** A shipped device obeying spec is likelier than a hasty flag decode being right. (The bike was honest; it was sending a *degraded frame set*, `0x0011` vs `0x00c5`) |
+| "The Stages app woke the telemetry" | n=1 correlation → causation | **Name confounders before concluding.** Owner supplied the one I lacked: a Garmin paired over the *trainer* protocol |
+| "The fix double-fires" | miscounted a log that prints every line twice | **Validate the instrument before interpreting it.** Not a hypothesis error — a measurement error |
+
+**Rules to carry into the playbook:**
+1. State a claim's **confidence** and the **evidence that would falsify it**, before acting on it.
+2. When a cheap discriminating test exists (*ask the rider; look at one more field*), run it **first**.
+3. Prefer "my decode is wrong" over "the shipped device is wrong" until proven otherwise.
+4. **Check the measurement instrument** (duplicate log lines, wrong venv, self-matching `pkill`)
+   before drawing conclusions from it.
+5. The rider holds priors the agent cannot observe (their own rig, their own habits). **Surface
+   hypotheses to them early** rather than presenting conclusions.
+
+- **Went well:**
+  - G1 passed comprehensively, and the *fix* was found, written, built and validated **with the rider
+    on the bike** — a bench could never have found it (the bike only emits `0x03` ~6% of the time).
+  - Desk pre-stage paid for itself: qz-as-OBC-consumer, the iOS SPA, and both radios were all proven
+    before the rider sat down, so bike time went on things that genuinely needed a rider.
+  - The owner's domain priors repeatedly beat the agent's inference (ANT+ vs BLE radios; the
+    Garmin-on-trainer hypothesis; long-press should repeat). Surfacing hypotheses early worked.
+
+- **Went wrong / slow / confusing (+ root cause):**
+  - **No single reference document for how the system is meant to work.** The agent reverse-engineered
+    intended behaviour from source and logs over and over — which board serves which role, who
+    discovers whom, what the modes mean, what should be connected during which test. Nearly every
+    wrong turn today traces back to this. *(Owner, in-session: "You need a solid reference document to
+    refer to during our work on how everything is meant to work.")* **This is the #1 action.**
+  - **Premature causal claims** (4 of them) — see the Bayesian section above.
+  - **Agent process errors that corrupted evidence:** three orphaned qz processes competing for the
+    adapter; a capture lost to the wrong venv; `pkill` patterns self-matching the agent's own shell
+    (3x). All avoidable, all cost rider attention.
+  - **Discovery ordering is a real architectural problem, not a bench artifact** — see G2.
+
+- **Planned vs actual:** planned ~65 min / 6 must-dos. Actual ~2 h for G0+G1 only. The overrun was
+  almost entirely diagnosis-of-the-unexpected (dead telemetry, the CYD identity clash, the C3 dropping
+  off WiFi, the qz commit-frame bug) — i.e. investigation, which PLAYBOOK §1 says to budget as such.
+  **We budgeted these as verification steps; they were investigation.**
+
+- **Changes to make before next session:**
+  1. **Write the reference doc** (see the new issue). One page: boards, roles, who connects to whom,
+     what each mode means, and the legal configurations. Read it at session start.
+  2. **A pre-gate "expected topology" check** — before each gate, state which devices should be
+     connected to what, and verify it, rather than discovering mid-gate that a board latched something.
+  3. Agent hygiene: verify a process is dead before starting another; always `code/.venv`; never a
+     `pkill` pattern that matches the agent's own command line.
+  4. Fold the Bayesian rules (above) into PLAYBOOK.md.
+
+- **Next gate + desk work that must precede it:**
+  - **G2 needs the ordering problem solved first** (issue filed) — either a documented startup
+    sequence or the C3-proxies-everything design. **Do not re-attempt G2 on a rider's clock until
+    that decision is made.**
+  - **Hold-to-repeat is built but never ridden** — first thing to validate next session.
+  - N0/N1/N2 (nRF) never ran; the nRF and C3 cannot both serve OBC (reproduced twice).
 
 *Close-out (PLAYBOOK §close-out): flip Status to ✅ DONE + one-line Outcome, add/refresh the row in
 [`sessions/README.md`](README.md), promote durable findings to

@@ -511,3 +511,38 @@ don't re-learn each one on the rider's time. Citations are in *(parens)*.
   failure on the **agent's** side — that belongs to step 1, not the rider's time.
 - Default to **fewer, denser, better-prepared sessions**, not more frequent ones. Every trip you can avoid
   by derisking or capturing-for-later at the desk is a win.
+
+
+## Reason Bayesian-ly — state your certainty, and update your priors
+
+*(Added after session 13, 2026-07-26, where the agent made four confident causal claims that the next
+measurement contradicted. The measurements were sound every time; the interpretations were premature.
+Owner: "Let's be Bayesian together. We gather evidence to improve our confidence." and "Explicitly
+reason over your certainty/uncertainty. Where you have priors, review them and update.")*
+
+**The rule: never state a cause as fact. State it as a hypothesis with a confidence and a test.**
+
+Before asserting *why* something happened, say:
+1. **The claim**, and **how confident** you are — and why that number. n=1 correlation is not a cause.
+2. **The competing hypotheses** you have not excluded. Name them explicitly, including the boring ones
+   (nobody was pedalling; the process didn't restart; the instrument is lying).
+3. **What would falsify it** — and if that test is cheap, *run it before asserting anything*.
+
+**Priors worth holding (learned the hard way):**
+
+- **A shipped device obeying its spec is more likely than your hasty decode being right.** Session 13:
+  the agent claimed the SB20's FTMS flags contradicted its payload. They didn't — the bike was sending
+  a *degraded frame set*, honestly flagged. Prefer "my decode is wrong" until proven otherwise.
+- **The rider holds priors you cannot observe** — their own rig, habits, and history. Session 13: the
+  agent asserted the watch and the C3 were competing for the pedals; they use **different radios**
+  (ANT+ vs BLE) and the owner already knew this. **Surface hypotheses to the rider early**; they will
+  often kill a bad one in one line.
+- **Validate the instrument before interpreting it.** Session 13's phantom "double-fire" was a log that
+  prints every line twice. Also: orphaned processes competing for a radio, and a capture lost to the
+  wrong venv. **Check what you are measuring with before you trust what it says.**
+- **Correlation observed once, during a session where three other things changed, is close to
+  worthless.** Change one variable at a time, or say plainly that you cannot attribute the result.
+
+**When you are wrong, say so plainly and immediately**, name what the evidence actually shows, and
+update the record (the session doc, the issue, `decisions.md`). A wrong claim left standing in an
+issue costs the next reader more than the original error cost you.

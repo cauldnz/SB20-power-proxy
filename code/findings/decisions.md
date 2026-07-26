@@ -3354,3 +3354,67 @@ NVS `reboot_count` (4671) is the historical tally from the crash-loop era and su
 proof it's fixed is the monotonic uptime + `poweron` reset reason. **Lesson: on a no-PSRAM board, the LVGL
 failure mode is heap *fragmentation*, not exhaustion — build the widget tree lazily and watch
 `largest_block`, not just `free_heap`.**
+
+## 2026-07-26 — Session 13: SB20 handlebar buttons drive qz (G1 PASS); the `0x03` commit frame is unreliable
+
+**The defect, measured on hardware.** qz's `ftmsbike` keyed the SB20 handlebar buttons off the
+`0x03` "commit" frame on vendor char `0c46be60`. The bike emits that for only a fraction of presses:
+across a full session, **2 commits against 32 burst terminators (~6%)**. Everything else was silently
+dropped. Before the fix, on-bike: **LEFT down 0 of 2**, **LEFT up 4 of ~12**.
+
+**Protocol, now pinned.** A press streams `0x01` frames while held (~10–20/s) and ends with a
+terminator: **`0x04` after a burst that also sent a commit, `0x08` after one that did not.**
+`shifter-ble-protocol.md` listed the `04`-vs-`08` distinction as "not yet pinned" — this pins it.
+
+**The fix** (qz fork `bench/obc-listener+sb20-buttons`, commit `ec4d4ab75`): act on the **first
+`0x01` of a burst**; a terminator re-arms for the next press. After it, on-bike:
+- all six buttons → exactly one action per press
+- **LEFT down 5 of 5** (was 0 of 2); LEFT up 5 of 5, target laddering 205→230 W in clean 5 W steps
+- full chain proven: paddle → qz action → FTMS `05 05 00` → bike ACK `80 05 01 05 00` → felt resistance
+
+**Hold-to-repeat** added on the owner's design input (a 3 s hold produced one action; long-press
+should ramp): tap fires once, holding past 450 ms repeats every 200 ms. Built, **not yet ridden**.
+Motivated by a second measured fact: `powerJog` is a hardcoded 5 W step, **below the perceptual
+threshold at ride power** — holding to ramp is the usable interaction.
+
+**Mapping confirmed on hardware** (mask → action): `0x0001` LEFT-up → target power +; `0x0002`
+LEFT-down → target power −; `0x0004` LEFT-3rd → gear down; `0x0008` RIGHT-up → peloton offset +;
+`0x0010` RIGHT-down → peloton offset −; `0x0020` RIGHT-3rd → gear up.
+
+## 2026-07-26 — qz's OBC listener works on air; the `OBC-` name match is load-bearing
+
+`obclistener` attached to the C3 and decoded button presses, first at the desk (4/4: `0x30`→power_up,
+`0x01`→gear_up, `0x02`→gear_down, `0x35`→lap) and again on the bike. **It bound by NAME** — the C3's
+advert carries only `0x1818` + `d445fe01` and **no OBC service UUID** — which validates fork commit
+`bfb84695f`. A service-UUID-only matcher would not have found our own producer.
+
+⚠️ **`qz-upstream-contribution.md` §3 is stale**: it states the fork matches "service UUID only".
+`bfb84695f` added the name match afterwards; the branch matches both.
+
+⚠️ Which matcher fires can depend on **BlueZ cache state** — a cached service list from a prior
+connection can make the UUID path succeed where a live advert would not. On a cold cache the name
+match may be the only one that works.
+
+## 2026-07-26 — Discovery-ordering deadlock blocks the C3 shifter-sink → OBC → qz path (G2)
+
+The C3 finds the SB20 by **scanning for its advertised name**; a peripheral **stops advertising once
+connected**; qz must connect to the SB20 for telemetry/ERG. So qz-first ⇒ the C3 can never find the
+bike ⇒ `[shifter] SB20 central started` never fires. Symmetrical with qz's own constraint (its OBC
+block iterates the accumulated scan list, and discovery stops when the bike connects), so **whoever
+attaches first locks the other out**. Issue #291; options are documented ordering, connect-by-address,
+or the C3 proxying everything. **Not solvable by ordering alone for a shippable product.**
+
+## 2026-07-26 — Unresolved: SB20 telemetry was degraded, cause NOT established
+
+Early in the session, with qz connected and the rider pedalling, the bike published a **stripped
+5-byte Indoor-Bike-Data frame** (`11 00 6e 0c 00`, flags `0x0011`, no power) and a **frozen** CSC
+characteristic — qz correctly showed 0 W / 0 rpm. After a cold start it published the full
+**8-byte** frame (`c5 00 87 00 ca 00 00 00`, flags `0x00c5`, power present): 202 W, 66 rpm.
+
+**Cause not established.** Two changes were made together (the Garmin's trainer pairing was removed
+**and** the SB20 was power-cycled), so neither is attributable. The owner's hypothesis — a **Garmin
+paired over the trainer protocol** holding an FTMS-control connection and degrading other consumers —
+is the leading candidate and has a cheap single-variable A/B written up in #288. Two captures are
+banked as the A/B pair. **Earlier agent claims that the Stages app caused the wake, and that the
+bike's FTMS flags were internally inconsistent, were both wrong** — the flags were honest; the frame
+set was degraded.

@@ -1,39 +1,39 @@
 # 🟢 READ ME FIRST — bike-machine session cold-start
 
-**You are the assistant on the bike machine.** The 🟢 **READY-next** ride is:
+**You are the assistant on the bike machine.**
 
-- ⭐ **[Session 12 — the erg workout ride: prove the stack while you train](sessions/session-12-erg-workout-validation.md)** —
-  on the **SB20**. *The erg gate is the workout:* G2 front-loads a cheap FTMS go/no-go, which decides
-  whether the **40-min `4×8 Threshold`** runs erg-driven or manual; either way the ride soaks the spoof,
-  the workout engine, coex/heap, the OBC paddles, and the regenerated-codec web UI. ~75 min.
-  **Paste-able opening prompt + cold-start: [`session-12-LAPTOP-HANDOFF.md`](sessions/session-12-LAPTOP-HANDOFF.md).**
-  Desk-derisked 2026-07-25 (see the plan's §2).
-- Also 🟢 READY (independent, other bikes): **[Session 5](sessions/session-05-meter-calibration-capture.md)**
-  (track bike, meter-to-meter `/calibrate`) and **[Session 11](sessions/session-11-obc-bike-test.md)**
-  (OBC G2/G3 — folded into session 12 as an in-ride extra). Do whichever bike is ready.
+> ⭐ **BEFORE PLANNING ANY SESSION — read [issue #290](https://github.com/cauldnz/SB20-power-proxy/issues/290).**
+> Session 13's retro found the **#1 cause of lost time** is that no document says *how the system is
+> meant to work at runtime* — which board plays which role, who discovers whom, what each mode does,
+> which configurations are legal. Until that doc exists, expect to rediscover it the hard way.
 
-> **Session 9 ✅ DONE (2026-06-26)** — zero-reset → Assioma confirmed on air (`200c01ffff` SUCCESS = a real
-> zero) + phantom-R resolved (the SB20 needs *both* crank IDs findable). Don't re-run it; see the ledger +
-> `decisions.md` 2026-06-26.
+> ✅ **Session 13 DONE (2026-07-26)** — the SB20's handlebar buttons drive qz (G1 PASS); a real
+> dropped-press defect was found and fixed on the bike (qz keyed on a `0x03` commit frame the bike
+> sends ~6% of the time). qz proven as an **OBC consumer on air**, binding **by name**.
+> See [`sessions/session-13-...`](sessions/session-13-qz-obc-consumer-and-sb20-buttons.md).
 
-> **Session 8 (SB20 spoof calibrate handshake) is ✅ DONE (2026-06-25)** + the canonical reflash & OTA-path
-> validation are **done** (same day, pm — `decisions.md` 2026-06-25). The board now runs the **shippable
-> firmware** (security lockdown + 442 fix + zero-reset feature, all on `main`; PRs #136/#138), identity
-> `Stages 62145`, and is **OTA-recoverable via an authenticated push password** (`firmware/ota_secret.h`).
-> Open SB20 pieces (post session 9 ✅): the **bidirectional crank-length bridge** — still a real gap (the app
-> shows `--`; `forward-plan.md` §11) — plus the FTMS **workout driver** (drive it next ride) and the §12
-> **battery-out** variant. Don't re-run session 8 or 9.
+The 🟢 **READY-next** ride is:
 
-They're **independent** — do one, both, or whichever bike is ready. **Guide the rider live, one step at a
-time,** out of the chosen session doc; watch `/log` + the capture files as they narrate. Don't dump the
-whole sheet; walk it.
+- ⭐ **[Session 12 — the erg workout ride](sessions/session-12-erg-workout-validation.md)** — on the
+  **SB20**, ~75 min. Unchanged by session 13 and still the biggest single validation available.
+  Paste-able cold-start: [`session-12-LAPTOP-HANDOFF.md`](sessions/session-12-LAPTOP-HANDOFF.md).
 
-**How to run it well: read [`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md) first** — the rider's time and
-patience are the budget; one step at a time, explicit pass/fail, never send them to do something you
-haven't verified is ready, **⏱ timestamp from the start**, record every mid-session instruction change, and
-close with a retro. **Standing rule (pre-stage at the desk):** run the **always-on dual-radio capture** — an
-**nRF BLE sniffer + an ANT+ capture, both for the whole session** (PLAYBOOK §pre-flight) — so the ride's RF
-"exhaust" is replayable at the desk; verify both are *actually capturing* before the rider's at the bike.
+**⚠️ Two blockers to resolve at the DESK before any further OBC-on-bike work:**
+- **[#291](https://github.com/cauldnz/SB20-power-proxy/issues/291) — discovery-ordering deadlock.**
+  The C3 finds the SB20 by advertisement; qz's connection stops it advertising. Whoever attaches
+  first locks the other out. **Do not re-attempt G2 on a rider's clock until this is decided.**
+- **[#288](https://github.com/cauldnz/SB20-power-proxy/issues/288) — degraded telemetry, cause not
+  established.** The leading hypothesis (a Garmin paired over the *trainer* protocol) has a cheap
+  single-variable A/B written up. Worth running before a long ride.
+
+**Also carried forward from session 13:**
+- **Hold-to-repeat on the SB20 buttons is built but never ridden** — validate first thing.
+- N0/N1/N2 (the nRF gates) never ran. The nRF and C3 **cannot both serve OBC** (reproduced twice).
+
+**How to run it well: read [`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md) first** — including the new
+**"Reason Bayesian-ly"** section: state your confidence, name the competing hypotheses, run the cheap
+discriminating test *before* asserting a cause, and prefer "my decode is wrong" over "the shipped
+device is wrong".
 
 **Record as you go.** Write each step's result **back into the session doc** (`✅`/`❌`/`⚠️` + observed
 bytes / values / `/log` lines), not just chat. At the end set its `Status:` to `✅ DONE (date)` with a
