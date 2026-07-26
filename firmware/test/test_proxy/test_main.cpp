@@ -1133,6 +1133,95 @@ void test_strip_config_delims_protects_the_nvs_line() {
     TEST_ASSERT_EQUAL_STRING("Stages", c.spoofName.c_str());
 }
 
+void test_config_line_carries_a_version_tag() {
+    // The stored line is self-describing now — its meaning no longer has to be inferred from how
+    // many fields happen to be present ("count == age").
+    const std::string line = RuntimeConfig::defaults().toLine();
+    TEST_ASSERT_EQUAL_STRING("v2|", line.substr(0, 3).c_str());
+}
+
+void test_config_line_untagged_legacy_still_loads_as_v1() {
+    // Every device already in the field has an UNTAGGED line in NVS. It must keep loading exactly
+    // as before, or an OTA silently resets the rider's meter pairing.
+    RuntimeConfig c = RuntimeConfig::fromLine(
+        "aa:bb:cc:dd:ee:ff|ASSIOMA|1|Stages 62144|11821518|1|a1:a2:a3:a4:a5:a6|REF|100.0:0.9500");
+    TEST_ASSERT_EQUAL_STRING("aa:bb:cc:dd:ee:ff", c.meterAddress.c_str());
+    TEST_ASSERT_EQUAL_STRING("ASSIOMA", c.meterNameFilter.c_str());
+    TEST_ASSERT_TRUE(c.singleSidedDouble);
+    TEST_ASSERT_TRUE(c.mode == ProxyMode::Corrector);
+    TEST_ASSERT_EQUAL_STRING("a1:a2:a3:a4:a5:a6", c.refMeterAddress.c_str());
+    TEST_ASSERT_EQUAL_INT(1, (int)c.curve.points.size());
+}
+
+void test_config_line_tagged_and_untagged_parse_identically() {
+    // The tag is the ONLY difference between the two encodings — prove it field by field rather
+    // than trusting the count arithmetic to have been shifted correctly.
+    const std::string body =
+        "aa:bb:cc:dd:ee:ff|ASSIOMA|1|Stages 62144|11821518|1|a1:a2:a3:a4:a5:a6|REF|100.0:0.9500|1|KICKR|1|9999|1|1|up,down,x,y,z,w";
+    RuntimeConfig v1 = RuntimeConfig::fromLine(body);
+    RuntimeConfig v2 = RuntimeConfig::fromLine("v2|" + body);
+    TEST_ASSERT_EQUAL_STRING(v1.meterAddress.c_str(), v2.meterAddress.c_str());
+    TEST_ASSERT_EQUAL_STRING(v1.meterNameFilter.c_str(), v2.meterNameFilter.c_str());
+    TEST_ASSERT_EQUAL_STRING(v1.spoofName.c_str(), v2.spoofName.c_str());
+    TEST_ASSERT_EQUAL_STRING(v1.spoofSerial.c_str(), v2.spoofSerial.c_str());
+    TEST_ASSERT_EQUAL_STRING(v1.refMeterAddress.c_str(), v2.refMeterAddress.c_str());
+    TEST_ASSERT_EQUAL_STRING(v1.refMeterNameFilter.c_str(), v2.refMeterNameFilter.c_str());
+    TEST_ASSERT_EQUAL_STRING(v1.trainerNameFilter.c_str(), v2.trainerNameFilter.c_str());
+    TEST_ASSERT_EQUAL_INT((int)v1.obcPort, (int)v2.obcPort);
+    TEST_ASSERT_EQUAL_INT((int)v1.singleSidedDouble, (int)v2.singleSidedDouble);
+    TEST_ASSERT_EQUAL_INT((int)v1.calibrating, (int)v2.calibrating);
+    TEST_ASSERT_EQUAL_INT((int)v1.obcEnabled, (int)v2.obcEnabled);
+    TEST_ASSERT_EQUAL_INT((int)v1.obcDevmode, (int)v2.obcDevmode);
+    TEST_ASSERT_EQUAL_INT((int)v1.obcSinkShifter, (int)v2.obcSinkShifter);
+    TEST_ASSERT_EQUAL_STRING(v1.obcButtons.toString().c_str(), v2.obcButtons.toString().c_str());
+}
+
+void test_config_line_newer_version_still_parses_positionally() {
+    // OTA rollback: a line written by a NEWER build must not wipe the rider's pairing. Fields are
+    // append-only, so everything this build knows is still in the slot it expects.
+    RuntimeConfig c = RuntimeConfig::fromLine("v9|aa:bb:cc:dd:ee:ff|ASSIOMA|1|Stages 62144|11821518|extra|fields|here");
+    TEST_ASSERT_EQUAL_STRING("aa:bb:cc:dd:ee:ff", c.meterAddress.c_str());
+    TEST_ASSERT_EQUAL_STRING("Stages 62144", c.spoofName.c_str());
+}
+
+void test_config_line_version_tag_cannot_be_confused_with_an_address() {
+    // Slot 0 is meterAddress: empty, or a ':'-separated BLE address. Neither can look like "v<N>",
+    // which is what makes the untagged/tagged discriminator safe.
+    RuntimeConfig c = RuntimeConfig::fromLine("v2|||0");
+    TEST_ASSERT_EQUAL_STRING("", c.meterAddress.c_str());
+    // A field that merely STARTS with 'v' is not a tag and must stay in slot 0.
+    RuntimeConfig d = RuntimeConfig::fromLine("v2x|FILTER|0");
+    TEST_ASSERT_EQUAL_STRING("v2x", d.meterAddress.c_str());
+}
+
+void test_to_line_strips_delimiters_from_every_field_itself() {
+    // The delimiter invariant is the SERIALISER's job, not six form parsers'. Inject '|' directly
+    // into every free-text field — including meterAddress and refMeterAddress, which no caller
+    // ever stripped — and prove the line still round-trips with the field count intact.
+    RuntimeConfig c = RuntimeConfig::defaults();
+    c.meterAddress = "aa|bb:cc:dd:ee:ff";
+    c.meterNameFilter = "ASS|IOMA";
+    c.spoofName = "Stages|62144";
+    c.spoofSerial = "118|21518";
+    c.refMeterAddress = "a1|a2:a3:a4:a5:a6";
+    c.refMeterNameFilter = "R|EF";
+    c.trainerNameFilter = "KI|CKR";
+    c.mode = ProxyMode::Corrector;
+    c.obcPort = 4242;
+
+    RuntimeConfig back = RuntimeConfig::fromLine(c.toLine());
+    TEST_ASSERT_EQUAL_STRING("aabb:cc:dd:ee:ff", back.meterAddress.c_str());
+    TEST_ASSERT_EQUAL_STRING("ASSIOMA", back.meterNameFilter.c_str());
+    TEST_ASSERT_EQUAL_STRING("Stages62144", back.spoofName.c_str());
+    TEST_ASSERT_EQUAL_STRING("11821518", back.spoofSerial.c_str());
+    TEST_ASSERT_EQUAL_STRING("a1a2:a3:a4:a5:a6", back.refMeterAddress.c_str());
+    TEST_ASSERT_EQUAL_STRING("REF", back.refMeterNameFilter.c_str());
+    TEST_ASSERT_EQUAL_STRING("KICKR", back.trainerNameFilter.c_str());
+    // The fields AFTER the injection points are the ones a shift would corrupt — check them.
+    TEST_ASSERT_TRUE(back.mode == ProxyMode::Corrector);
+    TEST_ASSERT_EQUAL_INT(4242, (int)back.obcPort);
+}
+
 void test_curve_string_keeps_zero_factor_rejects_garbage() {
     // a legitimately-clamped low-power point (factor 0.0) must survive the round-trip, not be dropped
     CorrectionCurve k = curveFromString("50.0:0.0000,300.0:1.0500");
@@ -2786,6 +2875,12 @@ int runUnityTests() {
     RUN_TEST(test_runtime_config_old_line_keeps_default_identity);
     RUN_TEST(test_runtime_config_malformed_line_falls_back_to_defaults);
     RUN_TEST(test_strip_config_delims_protects_the_nvs_line);
+    RUN_TEST(test_config_line_carries_a_version_tag);
+    RUN_TEST(test_config_line_untagged_legacy_still_loads_as_v1);
+    RUN_TEST(test_config_line_tagged_and_untagged_parse_identically);
+    RUN_TEST(test_config_line_newer_version_still_parses_positionally);
+    RUN_TEST(test_config_line_version_tag_cannot_be_confused_with_an_address);
+    RUN_TEST(test_to_line_strips_delimiters_from_every_field_itself);
     RUN_TEST(test_curve_string_keeps_zero_factor_rejects_garbage);
     RUN_TEST(test_band_label_guards_short_edges);
     RUN_TEST(test_url_encode_roundtrips_with_decode);

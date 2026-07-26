@@ -140,11 +140,22 @@ easily-forgotten `stripConfigDelims`). A middle insert or a missed strip corrupt
 silently. Contained (one production round-trip, `ConfigStore`) — so this is a maintenance-hazard fix, not
 an active bug.
 
-- [ ] **R3a — add a leading version tag** to `toLine()`/`fromLine()` (e.g. `v2|…`), with `fromLine`
-  accepting the untagged legacy line as v1 (count-based, as today) so stored NVS keeps loading. Host-test
-  the v1-legacy + v2 round-trips. Low risk, removes the "count == age" fragility.
+- [x] **R3a — add a leading version tag** ✅ done (2026-07-26). `toLine()` emits `v2|…`; `fromLine()`
+  consumes a leading `v<digits>` field and otherwise parses the untagged legacy line as v1, count-based
+  exactly as before. The discriminator is safe because slot 0 is `meterAddress` — empty, or a
+  `':'`-separated BLE address, never `v2`. A tag *newer* than the build still parses positionally
+  (append-only), so an OTA rollback keeps the rider's pairing instead of silently reverting to defaults.
+  6 host tests, incl. field-by-field equivalence of the tagged and untagged encodings.
+- [x] **the delimiter injection is closed at the serialiser** ✅ (same change, and the more valuable
+  half). `stripConfigDelims` was applied by hand at six form-parsing sites, and `meterAddress` /
+  `refMeterAddress` had no strip at all — one forgotten call silently shifted every later field. It now
+  lives in `RuntimeConfig.h` beside the delimiter it protects, and `toLine()` applies it to every field
+  itself, so no caller can forget. Mutation-verified: removing one strip fails
+  `test_to_line_strips_delimiters_from_every_field_itself` and nothing else.
 - [ ] **R3b (optional)** — a tiny `field(name)` accessor / named-offset map so future fields can't be
-  read from the wrong slot; or leave positional but documented. Decide after R3a.
+  read from the wrong slot; or leave positional but documented. Decide after R3a. *Deferred: with the
+  version tag in place and the append-only rule now written into the header (and locked by a test),
+  the remaining risk is a middle insert — which is a deliberate act, not an accident.*
 
 ---
 
