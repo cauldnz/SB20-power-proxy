@@ -4127,3 +4127,88 @@ path is not a milder failure than a false negative — it is worse. The document
 at which point it no longer blocks the bench build it exists to catch. Any guard whose remediation
 text names a specific safe alternative should assert that the alternative actually passes; that is
 now literally what `Test-PioIni.ps1`'s integration half does.
+
+---
+
+## 2026-07-27 — `WifiLink` becomes a pure route seam (synthesis item 7 / R9), and a capture harness that wiped a calibration
+
+**Four of the audit's premises about `WifiLink` were wrong, and measuring them first changed the
+design.** The review called the 853-line `WifiLink.cpp` a god object and "the biggest blocker to
+testing the setup UI flows". Measured:
+
+1. The render/parse/validate logic was **already** pure and host-tested in `lib/proxy/*Page.h`. The
+   853 lines were 48 route registrations: URL -> read hooks -> call a pure function -> send -> maybe
+   reboot. There was no hidden logic to extract.
+2. The "non-drain-aware reboot" was not a defect. `WifiLink.cpp` documented in place that
+   "JSON/plain replies are small enough for plain send()", and `POST /config` on the live C3
+   measured a **25-byte reply, complete in 157 ms** against the 400 ms pre-reboot window - 2.5x
+   headroom.
+3. and 4. (recorded in the branch narrative) the remaining two claimed defects likewise did not
+   survive contact with the running board.
+
+**What made it worth doing anyway: the CSRF invariant becomes structurally unforgettable.** Probing
+the running board established that **all 21 POST routes are CSRF-guarded and no GET is, with zero
+exceptions** - so the guard is exactly `method == Post`, not a per-route decision. `dispatch()` now
+enforces that on the method with no opt-out, and `test_every_post_route_is_csrf_guarded` walks both
+route tables, so a route added later is covered whether or not anyone writes a test for it. Reboot
+became a **returned intent** (`HttpResponse::reboot`) instead of an in-handler side effect,
+collapsing 12 copies of `delay(400); esp_restart();` into one site in `deliver_()`.
+
+**Load-bearing hook defaults** (getting these backwards silently breaks a route): `workoutLoad`
+defaults **false** - the old call site was `workoutLoad_ && workoutLoad_(body)`, so an unwired hook
+must 400, not claim success; `calStart`/`calSave` default **true** - the old sites were
+`hook_ && !hook_(...)`, so an unset hook did *not* take the rejection branch.
+
+**HARDWARE-VERIFIED on the C3 (`192.168.1.165`).** `code/scripts/route_baseline.py` captures 57 route
+behaviours (17 of them CSRF rejections) and diffs two captures. Before vs after the flash:
+**0 differing of 57 - behaviour preserved.** Free heap rose 112,448 -> 119,652 bytes. `GET /app` grew
+3,972 bytes, which is PR #294's regenerated `WebSpa.h` (the iOS/Bluefy UUID + auto-reconnect fixes)
+reaching a board for the first time - a second, unplanned confirmation that #294's payload actually
+ships.
+
+### The oracle had to be validated before it could be trusted, and doing that found real bugs
+
+Capturing twice against **one unchanged firmware** and demanding a zero diff is what made the result
+mean anything. The first attempt differed on 4 of 57 vectors, all self-inflicted:
+
+- **Route order is state.** `/log` answers 403 unless the ring is enabled, and the script hit `/log`
+  *before* `/log/on` and left `/log/off` at the end - so the route read 200 on the first ever run and
+  403 for ever after. `/stats` had the same shape against `/stats/reset`.
+- **`len` is not a comparator.** It counts un-normalised volatile fields, so `build_sha`
+  `"689757831"` -> `"8dc76555e+dirty"` alone moved it. Diff now ignores `len` and reports it as a
+  note - which is still how the `/app` SPA growth was spotted, since bodies are truncated at 1200
+  chars.
+- **`/log`, `/setup`, `/stats`, `/diag` are legitimately non-deterministic** (rolling ring, live scan,
+  loop counters, RSSI in non-JSON text). They are compared by *structure* instead. Even so `/setup`
+  still varies cold-vs-warm on identical firmware: `Provisioning.h`/`ConfigPage.h` emit
+  `<i class='on'>` signal bars and a `<br><small>address</small>` row **per discovered device**, so an
+  empty scan list and a populated one have different tag sets. Confirmed by diffing two captures of
+  the *same* new firmware: `/log` and `/setup` differed, everything else did not.
+
+### ⚠️ The harness cleared the board's correction curve, and both faults were already documented
+
+The first version built the POST body from `json.loads(cur_curve).get("points")` - the key is
+`"curve"` - producing an **empty** body, and sent it as `application/x-www-form-urlencoded`. Either
+fault alone wipes the calibration:
+
+- `web/HTTP-API.md` on `POST /curve`: *"empty body clears it"*.
+- `decisions.md` (PR #232/#233 era): *"GOTCHA - POST /curve needs Content-Type text/plain. A
+  urlencoded curl --data body is mangled by the WebServer form parser (parsed as a keyless field) ->
+  empty curve."*
+
+Both were written down before the script existed. The values were recoverable only by luck:
+`web/HTTP-API.md` documents the identical profile as its example, and its byte length matched the
+capture's recorded `len: 73` **exactly**, so the wiped curve was restored byte-for-byte as
+`{"has_curve":true,"curve":[[100.0,1.0500],[200.0,0.9800],[300.0,1.0200]]}` (believed to be the PR
+#233 hardware-verification artefact, not a fitted ride calibration - the board's scale/offset are
+1.0/0.0).
+
+The harness now **refuses** to POST a curve it did not just read back, sends the documented
+content-types, and ends every run by asserting `/curve` and `/obc/buttons.json` are unchanged -
+exiting 2 and disowning the capture if not.
+
+**The standing lesson, now with a cost attached.** This session repeatedly found that the finding-to-
+act-on was already in a doc: the nRF SoftDevice worktree trap, the `esp32s3` tombstone, the sniffer
+path in session 9, and now twice in one script. "Find and read the doc before you build" has been an
+invariant in CLAUDE.md all along; this is the first time skipping it destroyed device state rather
+than merely wasting time.

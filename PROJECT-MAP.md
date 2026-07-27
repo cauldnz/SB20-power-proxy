@@ -108,6 +108,8 @@ Convergence work so the ESP32 web UI, the nRF Web Bluetooth app, and the LVGL de
 | ESP32 embeds + serves the same SPA at `GET /app` (the two web UIs are one file) | ✅ hardware-verified (C3 .165) | `web/gen_spa_header.py`→`WebSpa.h`, `WifiLink` `/app`, `code/tests/test_spa_sync.py` · PR #234 |
 | Portable calibration profiles — export/import a curve across the nRF, ESP32, and desk tooling | ✅ | ESP32 `/curve` (`WebJson.h`), nRF Curve GATT char, SPA profile card · PR #233 |
 | Same on-device calibration approach both builds (shared `CalibrationSession`→`CorrectionCurve`) | ✅ | `firmware/lib/proxy/CalibrationFit.h` (shared) · [nrf52-sense](code/findings/nrf52-sense.md) |
+| HTTP routes are a **pure** request→response layer; `WifiLink` is a thin adapter. CSRF is enforced on the *method*, so every POST is guarded with no per-route opt-out | ✅ | `firmware/lib/proxy/WebRoutes.h`, `firmware/test/test_webroutes/` · R9 |
+| **Route-behaviour oracle** — capture all 57 HTTP behaviours (incl. 17 CSRF rejections) from a running board and diff two captures, to prove a refactor changed nothing | ✅ hardware-proven (C3 .165, 0/57) | `code/scripts/route_baseline.py` (`capture` / `diff`) · R9b |
 
 ---
 

@@ -1,8 +1,12 @@
 // WiFi connectivity + observability + OTA + captive-portal provisioning, mirroring
-// cauldnz/raedian-probe's failsafe idiom. The ENTIRE body is compiled only when USE_WIFI=1
-// (the esp32c3-ota env), so the default build never pulls in WiFi. Note: WiFi + dual-role
-// NimBLE share the C3 radio (coex) — fine for OTA/observability; heavy concurrent use is a
-// later tuning job.
+// cauldnz/raedian-probe's failsafe idiom. The ENTIRE body is compiled only when USE_WIFI=1,
+// so the default build never pulls in WiFi. Note: WiFi + dual-role NimBLE share the C3 radio
+// (coex) — fine for OTA/observability; heavy concurrent use is a later tuning job.
+//
+// This file is the ARDUINO ADAPTER for the pure route layer in WebRoutes.h. It owns only the
+// things that need a radio: joining, the SoftAP + captive DNS, scanning, OTA, and translating
+// WebServer <-> HttpRequest/HttpResponse. It makes no routing decisions and contains no page
+// or JSON rendering — add or change routes in WebRoutes.h, where they are host-tested.
 #if defined(USE_WIFI) && USE_WIFI
 
 #include "net/WifiLink.h"
@@ -20,19 +24,12 @@
 #define HAVE_ESP_COEX 1
 #endif
 
-#include "Config.h"            // SETUP_PIN_SECRET (the setup-AP PIN derivation key)
-#include "HttpSecurity.h"      // pure same-origin (CSRF) check for state-changing routes (host-tested)
-#include "Provisioning.h"      // pure page render + form parse + validation (host-tested)
-#include "SetupPin.h"          // pure per-device setup-AP PIN derivation + SSID suffix (host-tested)
-
-#include <esp_mac.h>           // esp_read_mac — the efuse MAC, valid before any WiFi init
-#include "DiagReport.h"        // pure tester /diag report (config + status + raw meter frames)
-#include "WebApp.h"            // static streaming dashboard served at GET /ui (renders in the phone)
-#include "WorkoutPresets.h"    // built-in workouts (presetJson) for the /workout/preset route
-#include "WebJson.h"           // /scan + /config JSON for the shared SPA's HTTP transport
-#include "WebSpa.h"            // the shared SPA (web/index.html) embedded, served at GET /app
-#include "net/DebugLog.h"      // recent-log ring served at GET /log (serial is flaky on the C3)
-#include "net/WifiCreds.h"     // NVS-backed credential storage
+#include <esp_mac.h>       // esp_read_mac — the efuse MAC, valid before any WiFi init
+#include "Config.h"        // SETUP_PIN_SECRET (the setup-AP PIN derivation key)
+#include "SetupPin.h"      // pure per-device setup-AP PIN derivation + SSID suffix (host-tested)
+#include "WebSpa.h"        // the shared SPA (web/index.html) embedded, served at GET /app
+#include "net/DebugLog.h"  // recent-log ring served at GET /log (serial is flaky on the C3)
+#include "net/WifiCreds.h" // NVS-backed credential storage
 
 // wifi_secret.h is now OPTIONAL: NVS (the captive portal) is the source of truth. If the
 // file is present it only SEEDS the first boot; without it the build still compiles and the
@@ -43,7 +40,7 @@
 #endif
 
 // ota_secret.h is OPTIONAL and gitignored: if present it defines OTA_PASSWORD, which turns ON the
-// authenticated ArduinoOTA push path (a dev convenience). Absent ⇒ push OTA is DISABLED (fail-closed),
+// authenticated ArduinoOTA push path (a dev convenience). Absent => push OTA is DISABLED (fail-closed),
 // the device flashes over USB, and networked updates use the signed-pull path (see
 // code/findings/ota-update-plan.md). This replaces the old open /update form + open ArduinoOTA, which
 // let anyone on the LAN flash arbitrary firmware (2026-06-24 security review, Vuln 1).
@@ -64,15 +61,18 @@ using namespace sb20proxy;
                              // at runtime (apSsid() -> "Setup-A6E9") so multiple boards don't collide
 #endif
 
-static const char* kPortalUrl = Config::SETUP_PORTAL_URL;
+// How long to let a reply flush before a reboot or dropping the radio. Measured 2026-07-27: a
+// 25-byte JSON reply on the C3 completed in 157 ms, so this is ~2.5x headroom. Multi-KB pages
+// don't rely on it — they are written by the drain-aware writer, which returns only once the
+// body is out (or the client is gone).
+static const uint32_t kFlushDelayMs = 400;
 
 // Recover the POST body for our form routes. The ESP32 WebServer fills arg("plain") with the RAW
 // body ONLY when the content type is NOT application/x-www-form-urlencoded — but a real <form> POST
 // (and `curl --data`) sends exactly that, in which case the body is parsed into NAMED args and
 // arg("plain") is EMPTY. So: use the raw body when present (text/plain, fetch), else rebuild a
 // urlencoded body from the parsed named args, re-encoding the (already-decoded) values so the pure
-// parser (parseConfigForm / parseCalibrationForm) decodes them back correctly. (The captive-portal
-// save reads named args directly for the same reason — this generalises that fix to every form route.)
+// parsers decode them back correctly.
 static std::string formBody(WebServer* s) {
     const std::string plain(s->arg("plain").c_str());
     if (!plain.empty()) return plain;
@@ -94,28 +94,30 @@ static void bootGuardCb(void*) { esp_restart(); }
 static SerialProvisioningDisplay s_defaultDisplay;
 
 static void armBootGuard() {
-    esp_timer_create_args_t guardArgs = {};
-    guardArgs.callback = &bootGuardCb;
-    guardArgs.dispatch_method = ESP_TIMER_TASK;
-    guardArgs.name = "bootguard";
-    esp_timer_create(&guardArgs, &s_bootGuard);
-    esp_timer_start_once(s_bootGuard, (uint64_t)WIFI_HEALTH_DEADLINE_MS * 1000);
+    if (s_bootGuard) return;
+    const esp_timer_create_args_t a = {bootGuardCb, nullptr, ESP_TIMER_TASK, "bootguard", true};
+    if (esp_timer_create(&a, &s_bootGuard) == ESP_OK)
+        esp_timer_start_once(s_bootGuard, (uint64_t)WIFI_HEALTH_DEADLINE_MS * 1000ULL);
 }
 
 static void disarmBootGuard() {
-    if (s_bootGuard) {
-        esp_timer_stop(s_bootGuard);
-        esp_timer_delete(s_bootGuard);
-        s_bootGuard = nullptr;
-    }
+    if (!s_bootGuard) return;
+    esp_timer_stop(s_bootGuard);
+    esp_timer_delete(s_bootGuard);
+    s_bootGuard = nullptr;
 }
+
+// ---------------------------------------------------------------------------
+// Lifecycle
+// ---------------------------------------------------------------------------
 
 void WifiLink::begin(const char* hostname, StatusProvider provider,
                      IProvisioningDisplay* display) {
-    provider_ = provider;
+    if (provider) hooks_.status = std::move(provider);
     hostname_ = hostname;
     display_ = display ? display : &s_defaultDisplay;
     logEnabled_ = WifiCreds::logEnabled(/*dflt=*/true);  // persisted; on by default
+    wireDeviceHooks_();
 
 #ifdef HAVE_ESP_COEX
     // Radio-share preference: favour WiFi over BLE. On the classic ESP32 (CYD) the default
@@ -171,194 +173,149 @@ void WifiLink::begin(const char* hostname, StatusProvider provider,
     display_->showConnected(WiFi.localIP().toString().c_str());
 }
 
-// GET /log -> recent log lines (text/plain) when enabled; /log/on + /log/off flip the toggle
-// and persist it to NVS. Shared by both station and portal servers. Logs never carry secrets,
-// so this is safe to expose over the open setup AP.
-void WifiLink::addLogRoutes_() {
-    server_->on("/log", HTTP_GET, [this]() {
-        if (!logEnabled_) {
-            server_->send(403, "text/plain", "log disabled - enable at /log/on\n");
-            return;
-        }
-        server_->send(200, "text/plain", debugLog().text().c_str());
-    });
-    server_->on("/log/on", HTTP_GET, [this]() {
-        logEnabled_ = true;
-        WifiCreds::setLogEnabled(true);
-        logf("[wifi] /log enabled");
-        server_->send(200, "text/plain", "log enabled\n");
-    });
-    server_->on("/log/off", HTTP_GET, [this]() {
-        logEnabled_ = false;
-        WifiCreds::setLogEnabled(false);
-        server_->send(200, "text/plain", "log disabled\n");
-    });
+// The hooks that need Arduino: the log ring, NVS credentials, the portal's scan state, and the
+// embedded SPA. Everything else is wired by the public setters from main.
+void WifiLink::wireDeviceHooks_() {
+    hooks_.logText = [] { return debugLog().text(); };
+    hooks_.logEnabled = [this] { return logEnabled_; };
+    hooks_.setLogEnabled = [this](bool on) {
+        logEnabled_ = on;
+        WifiCreds::setLogEnabled(on);
+        if (on) logf("[wifi] /log enabled");
+    };
+    hooks_.clearCreds = [] { WifiCreds::clear(); };
+    hooks_.saveCreds = [](const WifiCredentials& c) { WifiCreds::save(c); };
+    hooks_.portalScan = [this] {
+        PortalScan s;
+        // Pick up a finished async rescan (and learn if one is still running) before rendering.
+        s.scanning = collectScan_();
+        s.networks = networks_;
+        return s;
+    };
+    hooks_.startRescan = [] {
+        // Non-blocking: a synchronous in-handler scan would stall the captive DNS.
+        if (WiFi.scanComplete() != WIFI_SCAN_RUNNING) WiFi.scanNetworks(/*async=*/true);
+    };
+    hooks_.spaHtml = [] { return webSpaHtml(); };
 }
 
-// OpenBikeControl (OBC) Devmode bring-up routes — a firmware-only test source for the OBC listener (qz).
-// Devmode advertises the board as an "OBC-…" controller (BleCrankPeripheral::setObcDevmode) so a listener
-// discovers + connects to it; /obc/press then fires virtual button presses through the OBC characteristic
-// with no shifter hardware. See code/findings/obc-protocol.md.
-void WifiLink::addObcRoute_() {
-    // GET /obc — status + curl usage (plain text; the bring-up cheat-sheet).
-    server_->on("/obc", HTTP_GET, [this]() {
-        const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
-        std::string s = "OpenBikeControl (OBC)\n";
-        s += std::string("devmode: ") + (cfg.obcDevmode ? "ON (advertising as OBC-SB20)\n" : "off\n");
-        s += std::string("sink SB20 shifter: ") + (cfg.obcSinkShifter ? "ON\n" : "off\n");
-        s += "\nSink the SB20's own shifter buttons -> OBC (the bike add-on; persists + reboots):\n";
-        s += "  curl -X POST http://sb20proxy.local/obc/shifter/on\n";
-        s += "  curl -X POST http://sb20proxy.local/obc/shifter/off\n";
-        s += "\nDevmode: advertise as OBC-SB20 for a listener test (persists + reboots):\n";
-        s += "  curl -X POST http://sb20proxy.local/obc/devmode/on\n";
-        s += "  curl -X POST http://sb20proxy.local/obc/devmode/off\n";
-        s += "\nFire a virtual button press (OBC id, hex or dec; optional &state=, default 1):\n";
-        s += "  curl 'http://sb20proxy.local/obc/press?id=0x30'   # ERG Up\n";
-        s += "  curl 'http://sb20proxy.local/obc/press?id=0x01'   # Shift Up\n";
-        s += "  ids: 0x01 ShiftUp  0x02 ShiftDown  0x30 ErgUp  0x31 ErgDown  0x35 Lap\n";
-        s += "\nBind each SB20 button to an action in the web app (http://sb20proxy.local/app),\n";
-        s += "or over the API: GET/POST http://sb20proxy.local/obc/buttons.json {enabled,actions[6]}\n";
-        server_->send(200, "text/plain", s.c_str());
-    });
-    // GET/POST /obc/buttons.json — the SB20-button binding + sink-enable for the shared web SPA's
-    // HttpTransport (same action-option indices as the nRF Bridge GATT Buttons char). The SPA served at
-    // /app owns the UI; there is no ESP-served HTML page for it.
-    server_->on("/obc/buttons.json", HTTP_GET, [this]() {
-        const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
-        server_->send(200, "application/json",
-                      buttonsToJson(cfg.obcSinkShifter, cfg.obcButtons).c_str());
-    });
-    server_->on("/obc/buttons.json", HTTP_POST, [this]() {
-        if (!csrfOk_()) return;
-        bool enabled = false;
-        Sb20ButtonMap m;
-        if (!buttonsFromJson(formBody(server_), enabled, m)) {
-            server_->send(400, "application/json", "{\"error\":\"expected {enabled,actions[6]}\"}");
-            return;
-        }
-        if (obcButtons_) obcButtons_(enabled, m);  // persist to NVS + apply live
-        server_->send(200, "application/json", buttonsToJson(enabled, m).c_str());
-    });
-    // GET /obc/press?id=0xNN[&state=N] — fire one virtual OBC button press (default state=1 pressed).
-    // GET (not POST) is intentional: it's a transient, harmless bring-up action meant to be curl-driven.
-    server_->on("/obc/press", HTTP_GET, [this]() {
-        if (!server_->hasArg("id")) {
-            server_->send(400, "text/plain", "missing ?id= (OBC button id, e.g. 0x30). See /obc\n");
-            return;
-        }
-        const long id = strtol(server_->arg("id").c_str(), nullptr, 0);  // base 0: accepts 0x30 or 48
-        const long st = server_->hasArg("state") ? strtol(server_->arg("state").c_str(), nullptr, 0) : 1;
-        if (id < 0 || id > 255 || st < 0 || st > 255) {
-            server_->send(400, "text/plain", "id/state out of range [0,255]\n");
-            return;
-        }
-        if (obcPress_) obcPress_((uint8_t)id, (uint8_t)st);
-        char msg[64];
-        std::snprintf(msg, sizeof(msg), "OBC press id=0x%02lX state=%ld sent\n", id & 0xFF, st);
-        server_->send(200, "text/plain", msg);
-    });
-    // POST /obc/devmode/{on,off} — toggle the OBC-controller advertising identity; persists + reboots
-    // (mirrors /setup/save). CSRF-guarded like the other state-changing config routes.
-    server_->on("/obc/devmode/on", HTTP_POST, [this]() {
-        if (!csrfOk_()) return;
-        RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
-        cfg.obcDevmode = true;
-        cfg.obcEnabled = true;  // Devmode implies the OBC service is present
-        if (configSave_) configSave_(cfg);
-        server_->send(200, "text/plain", "OBC Devmode ON - advertising as OBC-SB20, restarting.\n");
-        delay(400);
-        esp_restart();
-    });
-    server_->on("/obc/devmode/off", HTTP_POST, [this]() {
-        if (!csrfOk_()) return;
-        RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
-        cfg.obcDevmode = false;
-        if (configSave_) configSave_(cfg);
-        server_->send(200, "text/plain", "OBC Devmode off - restarting with the normal identity.\n");
-        delay(400);
-        esp_restart();
-    });
-    // POST /obc/shifter/{on,off} — sink the SB20's own shifter buttons and re-broadcast them as OBC
-    // (the bike add-on); persists + reboots (a central to the SB20 comes up only on the next boot).
-    server_->on("/obc/shifter/on", HTTP_POST, [this]() {
-        if (!csrfOk_()) return;
-        RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
-        cfg.obcSinkShifter = true;
-        if (configSave_) configSave_(cfg);
-        server_->send(200, "text/plain", "OBC sink-shifter ON - will read the SB20 buttons, restarting.\n");
-        delay(400);
-        esp_restart();
-    });
-    server_->on("/obc/shifter/off", HTTP_POST, [this]() {
-        if (!csrfOk_()) return;
-        RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
-        cfg.obcSinkShifter = false;
-        if (configSave_) configSave_(cfg);
-        server_->send(200, "text/plain", "OBC sink-shifter off - restarting.\n");
-        delay(400);
-        esp_restart();
-    });
+// ---------------------------------------------------------------------------
+// WebServer <-> pure layer
+// ---------------------------------------------------------------------------
+
+HttpRequest WifiLink::buildRequest_(HttpMethod m) const {
+    HttpRequest r;
+    r.method = m;
+    r.uri = std::string(server_->uri().c_str());
+    r.host = std::string(server_->hostHeader().c_str());
+    if (server_->hasHeader("Origin")) r.origin = std::string(server_->header("Origin").c_str());
+    if (server_->hasHeader("Referer")) r.referer = std::string(server_->header("Referer").c_str());
+    if (m == HttpMethod::Post) r.body = formBody(server_);
+    for (int i = 0; i < server_->args(); ++i) {
+        const std::string k(server_->argName(i).c_str());
+        if (k == "plain") continue;
+        r.args.emplace_back(k, std::string(server_->arg(i).c_str()));
+    }
+    return r;
 }
 
-// Drain-aware HTML page send. Arduino's WebServer::send() writes the body with WiFiClient::write
-// and IGNORES short writes — under lwIP memory pressure (the no-PSRAM CYD idles ~30 KB free with
+// Drain-aware body write. Arduino's WebServer::send() writes the body with WiFiClient::write and
+// IGNORES short writes — under lwIP memory pressure (the no-PSRAM CYD idles ~30 KB free with
 // WiFi+BLE+LVGL up) multi-KB pages get silently TRUNCATED mid-stream (2026-07-04). This streams
 // the body in small slices and, on a short write, waits for the TCP buffers to drain instead of
-// dropping the tail. JSON/plain replies are small enough for plain send().
-void WifiLink::sendHtml_(const std::string& body) {
-    server_->setContentLength(body.size());
+// dropping the tail.
+void WifiLink::writeStream_(const char* data, size_t len, uint32_t stallMs) {
+    server_->setContentLength(len);
     server_->send(200, "text/html", "");  // status + headers only; body streamed below
     WiFiClient c = server_->client();
     size_t off = 0;
     uint32_t lastProgress = millis();
-    while (off < body.size() && c.connected()) {
-        const size_t want = body.size() - off > 1024 ? 1024 : body.size() - off;
-        const size_t n = c.write(reinterpret_cast<const uint8_t*>(body.data()) + off, want);
+    while (off < len && c.connected()) {
+        const size_t want = (len - off > 1024) ? 1024 : (len - off);
+        const size_t n = c.write(reinterpret_cast<const uint8_t*>(data) + off, want);
         if (n > 0) {
             off += n;
             lastProgress = millis();
         } else {
-            if (millis() - lastProgress > 5000) break;  // client gone / stuck: give up
+            if (millis() - lastProgress > stallMs) break;  // client gone / stuck: give up
             delay(5);  // lwIP send buffers full — let the WiFi task drain them
         }
     }
 }
 
-// CSRF guard for state-changing routes (2026-06-24 security review, Vuln 2). The on-device web server
-// has no auth, so a malicious page the user opens on the same LAN could otherwise POST to us behind their
-// back (e.g. wipe creds, re-point the source). We reject any request whose Origin/Referer authority isn't
-// our own Host; requests with no Origin/Referer (curl, our tools) are allowed (decision logic + tests in
-// HttpSecurity.h). Returns true to proceed; on false it has already sent a 403, so the handler must return.
-bool WifiLink::csrfOk_() {
-    const std::string host(server_->hostHeader().c_str());
-    const std::string origin(server_->hasHeader("Origin") ? server_->header("Origin").c_str() : "");
-    const std::string referer(server_->hasHeader("Referer") ? server_->header("Referer").c_str() : "");
-    if (isSameOriginRequest(host, origin, referer)) return true;
-    logf("[sec] blocked cross-site %s (origin='%s' host='%s')", server_->uri().c_str(),
-         origin.c_str(), host.c_str());
-    server_->send(403, "text/plain", "cross-site request blocked\n");
-    return false;
+void WifiLink::deliver_(const HttpResponse& r) {
+    if (r.staticBody) {
+        // Straight from flash: the embedded SPA is ~34 KB and the C3's heap is tight beside BLE,
+        // so it must never be materialised as a std::string. 2 s stall budget (a phone that walks
+        // out of range shouldn't hold the loop for 5).
+        writeStream_(r.staticBody, strlen(r.staticBody), 2000);
+    } else if (r.stream) {
+        writeStream_(r.body.data(), r.body.size(), 5000);
+    } else {
+        if (!r.location.empty()) server_->sendHeader("Location", r.location.c_str(), true);
+        server_->send(r.status, r.contentType.c_str(), r.body.c_str());
+    }
+
+    // Effects the pure layer asked for, applied in one place instead of scattered through the
+    // handlers. Both reply FIRST, then act.
+    if (r.reboot) {
+        delay(kFlushDelayMs);
+        esp_restart();
+    }
+    if (r.radioOff) {
+        delay(kFlushDelayMs);
+        enterRideMode_();
+    }
 }
 
-// Tell the WebServer to retain the Origin/Referer request headers (it drops all headers by default), so
-// csrfOk_() can read them. Called once per server, before begin(). Shared by station + portal.
+// Ride mode: turn WiFi off so the board is BLE-only for the ride (frees the radio; avoids the rare
+// WiFi+BLE+OLED coex freeze). Opt-in + reversible — a power-cycle brings WiFi back.
+void WifiLink::enterRideMode_() {
+    if (otaEnabled_) ArduinoOTA.end();
+    WiFi.disconnect(true, false);
+    WiFi.mode(WIFI_OFF);
+    radioOff_ = true;
+    logf("[wifi] ride mode: WiFi off (BLE-only) until power-cycle");
+}
+
+// Register a whole table. Every request goes through dispatch(), which is where the CSRF guard
+// lives — so a route physically cannot be registered without it.
+void WifiLink::installRoutes_(const std::vector<Route>& table) {
+    for (const Route& r : table) {
+        const Route* route = &r;  // the tables are function-local statics: stable for the run
+        server_->on(r.path, r.method == HttpMethod::Get ? HTTP_GET : HTTP_POST, [this, route]() {
+            deliver_(dispatch(*route, hooks_, buildRequest_(route->method)));
+        });
+    }
+}
+
+void WifiLink::installWorkoutVerbs_() {
+    for (const char* v : workoutVerbs()) {
+        const std::string path = std::string("/workout/") + v;
+        const std::string verb = v;
+        server_->on(path.c_str(), HTTP_POST, [this, verb]() {
+            const HttpRequest req = buildRequest_(HttpMethod::Post);
+            // Same guard the table routes get; the verbs share one hook rather than one entry.
+            if (!isSameOriginRequest(req.host, req.origin, req.referer)) {
+                logf("[sec] blocked cross-site %s", req.uri.c_str());
+                deliver_(csrfRejection());
+                return;
+            }
+            deliver_(workoutControl(hooks_, verb));
+        });
+    }
+}
+
+// Tell the WebServer to retain the Origin/Referer request headers (it drops all headers by
+// default), so the CSRF guard in dispatch() can see them.
 void WifiLink::collectCsrfHeaders_() {
     static const char* kHeaders[] = {"Origin", "Referer"};
     server_->collectHeaders(kHeaders, 2);
 }
 
-void WifiLink::addForgetRoute_(const char* msg) {
-    // POST /forget: wipe stored creds and reboot. POST (not GET) + the CSRF guard so a cross-site <img>/
-    // form can't wipe a tester's WiFi config (Vuln 2). `msg` is the only thing the station and portal
-    // versions differed by, so both share this installer. CLI: curl -X POST http://<ip>/forget
-    server_->on("/forget", HTTP_POST, [this, msg]() {
-        if (!csrfOk_()) return;
-        WifiCreds::clear();
-        server_->send(200, "text/plain", msg);
-        delay(400);
-        esp_restart();
-    });
-}
+// ---------------------------------------------------------------------------
+// Station mode
+// ---------------------------------------------------------------------------
 
 void WifiLink::startStationServer_() {
     // Push OTA is OFF unless a build-time OTA_PASSWORD is set (ota_secret.h) — fail-closed. Without it
@@ -371,315 +328,22 @@ void WifiLink::startStationServer_() {
     otaEnabled_ = true;
     logf("[ota] authenticated push OTA enabled (ArduinoOTA :3232)");
 #else
-    logf("[ota] push OTA DISABLED (no ota_secret.h) — flash over USB; networked updates use signed pull");
+    logf("[ota] push OTA DISABLED (no ota_secret.h) - flash over USB; networked updates use signed pull");
 #endif
 
-    server_ = new WebServer(80);
-    collectCsrfHeaders_();  // so csrfOk_() can read Origin/Referer on the mutating POST routes
-    // GET / -> the dashboard (what a tester sees opening the board's IP); /ui is kept as an alias.
-    auto serveDash = [this]() { sendHtml_(appPageHtml()); };
-    server_->on("/", HTTP_GET, serveDash);
-    server_->on("/ui", HTTP_GET, serveDash);
-    // GET /more -> the Settings / "More" tab (status summary + nav hub; fills from /status client-side).
-    server_->on("/more", HTTP_GET, [this]() { sendHtml_(settingsPageHtml()); });
-    // GET /status -> the status JSON the dashboard polls (was GET /; tools that curled / should
-    // use /status now). Kept compact + unchanged in shape.
-    server_->on("/status", HTTP_GET, [this]() {
-        std::string j = provider_ ? renderStatusJson(provider_()) : std::string("{}");
-        server_->send(200, "application/json", j.c_str());
-    });
-    // GET /app -> the shared web SPA: the SAME index.html the nRF serves from GitHub Pages, embedded
-    // via WebSpa.h. Streamed straight from flash in 1 KB chunks (no ~34 KB heap copy — the C3's heap
-    // is tight beside BLE). Served same-origin so the page's HttpTransport can reach this board's JSON
-    // API over http (a GitHub-Pages copy can't: https->http is a mixed-content block).
-    server_->on("/app", HTTP_GET, [this]() {
-        const char* html = webSpaHtml();
-        const size_t len = strlen(html);
-        server_->setContentLength(len);
-        server_->send(200, "text/html", "");  // headers only; body streamed below
-        WiFiClient c = server_->client();
-        size_t off = 0;
-        uint32_t last = millis();
-        while (off < len && c.connected()) {
-            const size_t want = (len - off > 1024) ? 1024 : (len - off);
-            const size_t n = c.write(reinterpret_cast<const uint8_t*>(html) + off, want);
-            if (n > 0) { off += n; last = millis(); }
-            else if (millis() - last > 2000) break;  // client stalled — give up
-            else delay(1);
-        }
-    });
-    // Perf observability (Phase A): loop timing, heap/frag, stack, idle, reboot evidence.
-    server_->on("/stats", HTTP_GET, [this]() {
-        std::string j = perfProvider_ ? perfProvider_() : std::string("{}");
-        server_->send(200, "application/json", j.c_str());
-    });
-    server_->on("/compare", HTTP_GET, [this]() {   // #10 A/B deep-dive JSON for the web Compare view
-        std::string j = compareProvider_ ? compareProvider_() : std::string("{\"valid\":false}");
-        server_->send(200, "application/json", j.c_str());
-    });
-    server_->on("/stats/reset", HTTP_GET, [this]() {  // zero the window (perf_soak calls this)
-        if (perfReset_) perfReset_();
-        server_->send(200, "text/plain", "perf window reset\n");
-    });
     // NOTE: the old unauthenticated `POST /update` firmware-upload form was REMOVED (2026-06-24 security
     // review, Vuln 1) — it let anyone on the LAN, or any website via CSRF, flash arbitrary firmware. There
-    // is deliberately no browser-reachable flash route. Networked updates come from the signed-pull path
-    // (code/findings/ota-update-plan.md); dev push uses authenticated ArduinoOTA above (USB otherwise).
-    // Re-provision from the station too: forget creds, reboot into the portal.
-    addForgetRoute_("credentials cleared - rebooting into setup\n");
-    addConfigRoutes_();  // GET /setup picker + POST /setup/save + GET /setup/scan
-    addCalibrationRoutes_();  // GET /calibrate + POST start/finish/save/cancel — the meter-to-meter wizard
-    addRideModeRoute_();  // GET/POST /wifi/off — turn WiFi off for a BLE-only ride
-    addWorkoutRoutes_();  // GET /workout (+ /state) + POST /workout/{load,preset,controls}
-    addLogRoutes_();
-    addObcRoute_();  // GET /obc + /obc/press + POST /obc/devmode/{on,off} — OBC listener bring-up test
+    // is deliberately no browser-reachable flash route.
+    server_ = new WebServer(80);
+    collectCsrfHeaders_();
+    installRoutes_(stationRoutes());
+    installWorkoutVerbs_();
     server_->begin();
 }
 
-// Ride mode: turn WiFi off so the C3 is BLE-only for the ride (frees the radio; avoids the rare
-// WiFi+BLE+OLED coex freeze). Opt-in + reversible — a power-cycle brings WiFi back. We reply first,
-// then power the radio down; handle() then no-ops so nothing touches the dead network.
-void WifiLink::addRideModeRoute_() {
-    server_->on("/wifi/off", HTTP_GET, [this]() {
-        sendHtml_(rideModeConfirmHtml());
-    });
-    server_->on("/wifi/off", HTTP_POST, [this]() {
-        if (!csrfOk_()) return;
-        sendHtml_(rideModeDoneHtml());
-        delay(400);            // let the reply flush before the radio drops
-        if (otaEnabled_) ArduinoOTA.end();
-        WiFi.disconnect(true, false);
-        WiFi.mode(WIFI_OFF);
-        radioOff_ = true;
-        logf("[wifi] ride mode: WiFi off (BLE-only) until power-cycle");
-    });
-}
-
-// The Workout screen: GET /workout serves the page (pure workoutPageHtml), GET /workout/state the
-// live cursor JSON the page polls, and the POSTs drive the engine via hooks. Loading is live (no
-// reboot) — a workout is data, not identity. Presets are resolved here (WorkoutPresets.h) and fed
-// through the same load hook as a pasted workout.
-void WifiLink::addWorkoutRoutes_() {
-    server_->on("/workout", HTTP_GET, [this]() {
-        sendHtml_(workoutPageHtml());
-    });
-    server_->on("/workout/state", HTTP_GET, [this]() {
-        const std::string j = workoutState_ ? workoutState_() : std::string("{\"loaded\":false}");
-        server_->send(200, "application/json", j.c_str());
-    });
-    server_->on("/workout/load", HTTP_POST, [this]() {
-        if (!csrfOk_()) return;
-        const bool ok = workoutLoad_ && workoutLoad_(formBody(server_));
-        server_->send(ok ? 200 : 400, "text/plain", ok ? "loaded\n" : "bad workout\n");
-    });
-    server_->on("/workout/preset", HTTP_POST, [this]() {
-        if (!csrfOk_()) return;
-        const std::string j = presetJson(std::string(server_->arg("key").c_str()));
-        const bool ok = !j.empty() && workoutLoad_ && workoutLoad_(j);
-        server_->send(ok ? 200 : 400, "text/plain", ok ? "loaded\n" : "unknown preset\n");
-    });
-    // The control verbs all share one hook; register them from a small table.
-    static const char* kVerbs[] = {"start", "pause", "resume", "skip", "stop"};
-    for (const char* v : kVerbs) {
-        const std::string path = std::string("/workout/") + v;
-        const std::string verb = v;
-        server_->on(path.c_str(), HTTP_POST, [this, verb]() {
-            if (!csrfOk_()) return;
-            if (workoutControl_) workoutControl_(verb);
-            server_->send(200, "text/plain", "ok\n");
-        });
-    }
-}
-
-// The source-setup UI: pick which power meter / surviving crank the proxy reads, over WiFi. The
-// page + form parse + validation are the pure, host-tested ConfigPage.h; here we just wire the
-// hooks (current config, discovered sources, persist, rescan) and reboot on save to apply it.
-void WifiLink::addConfigRoutes_() {
-    server_->on("/setup", HTTP_GET, [this]() {
-        const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
-        const std::vector<SourceCandidate> srcs = sourcesProvider_ ? sourcesProvider_()
-                                                                    : std::vector<SourceCandidate>{};
-        // Live status banner so the tester can verify the source is connected before riding.
-        std::string status;
-        if (provider_) {
-            const ProxyStatus st = provider_();
-            if (st.mock) status = "Running a simulated meter (test build).";
-            else if (st.sourceConnected)
-                status = "Reading " + (st.srcName.empty() ? std::string("your source") : st.srcName) +
-                         " \xE2\x9C\x93";  // checkmark
-            else status = "Searching for your source\xE2\x80\xA6";  // ellipsis
-        }
-        sendHtml_(renderConfigPage(cfg, srcs, std::string(), false, -1, status));
-    });
-    server_->on("/setup/scan", HTTP_GET, [this]() {  // clear + let the central refill, back to /setup
-        if (configScan_) configScan_();
-        server_->sendHeader("Location", "/setup");
-        server_->send(303, "text/plain", "scanning\n");
-    });
-    server_->on("/setup/save", HTTP_POST, [this]() {
-        if (!csrfOk_()) return;
-        const std::string body = formBody(server_);
-        // Merge onto the STORED config so this page — which owns only the source, spoof identity, and
-        // trainer — can't wipe the broadcast mode, fitted curve, or reference meter that the SPA /
-        // calibration wizard set (mergeSetupForm also handles the trainer absent=preserve rule).
-        const RuntimeConfig cur = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
-        RuntimeConfig cfg = mergeSetupForm(cur, body);
-        const char* err = configValidationError(cfg);
-        if (err) {
-            const std::vector<SourceCandidate> srcs =
-                sourcesProvider_ ? sourcesProvider_() : std::vector<SourceCandidate>{};
-            sendHtml_(renderConfigPage(cfg, srcs, err));
-            return;
-        }
-        if (configSave_) configSave_(cfg);  // persist to NVS
-        sendHtml_(renderConfigSavedPage(cfg));
-        delay(400);
-        esp_restart();  // reboot to apply the new source (mirrors /update)
-    });
-    // POST /setup/reset -> clear the saved source + identity back to the shipped defaults (recovery
-    // for a tester who mis-picked). Persisting defaults() == clearing: next boot loads the defaults.
-    server_->on("/setup/reset", HTTP_POST, [this]() {
-        if (!csrfOk_()) return;
-        if (configSave_) configSave_(RuntimeConfig::defaults());
-        server_->send(200, "text/html",
-                      "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' "
-                      "content='width=device-width,initial-scale=1'><body style='font-family:"
-                      "system-ui,sans-serif;max-width:480px;margin:0 auto;padding:16px'>"
-                      "<h1>Reset &#10003;</h1><p>Source and crank identity restored to defaults &mdash; "
-                      "restarting. Open <a href='/'>the dashboard</a> in a moment to set up again.</p>");
-        delay(400);
-        esp_restart();
-    });
-    // GET /scan + /config -> JSON for the shared web SPA's HTTP transport (web/HTTP-API.md). The
-    // ESP32 serves the same index.html the nRF build does; over HTTP it polls these instead of GATT.
-    server_->on("/scan", HTTP_GET, [this]() {
-        const std::vector<SourceCandidate> srcs =
-            sourcesProvider_ ? sourcesProvider_() : std::vector<SourceCandidate>{};
-        server_->send(200, "application/json", renderScanJson(srcs).c_str());
-    });
-    server_->on("/config", HTTP_GET, [this]() {
-        const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
-        server_->send(200, "application/json", renderConfigJson(cfg).c_str());
-    });
-    // POST /config -> the shared SPA's "Correction & identity" Apply (incl. the spoof/corrector mode
-    // selector). Unlike /setup/save it MERGES onto the current config (mergeSpaConfigForm), so it never
-    // wipes the fitted curve / reference meter / trainer. Persists + reboots to apply the identity (the
-    // crank DIS/services are built at boot, like /setup/save). Same-origin CSRF guard as the others.
-    server_->on("/config", HTTP_POST, [this]() {
-        if (!csrfOk_()) return;
-        const RuntimeConfig cur = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
-        RuntimeConfig cfg = mergeSpaConfigForm(cur, formBody(server_));
-        const char* err = configValidationError(cfg);
-        if (err) {
-            server_->send(400, "application/json",
-                          (std::string("{\"error\":\"") + err + "\"}").c_str());
-            return;
-        }
-        if (configSave_) configSave_(cfg);  // persist to NVS
-        server_->send(200, "application/json", "{\"ok\":true,\"reboot\":true}");
-        delay(400);
-        esp_restart();  // reboot to apply the mode/identity/source (mirrors /setup/save)
-    });
-    // GET/POST /curve: export/import a portable correction curve (a calibration profile fitted on the
-    // OTHER device, or the desk tooling). GET returns the breakpoints; POST loads a curve LIVE (no
-    // reboot) from the compact "power:factor,..." form (empty body clears it). The SPA does the
-    // portable-profile JSON <-> compact-string conversion, so the ESP32 needs no JSON parser.
-    server_->on("/curve", HTTP_GET, [this]() {
-        const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
-        server_->send(200, "application/json", renderCurveJson(cfg.curve).c_str());
-    });
-    server_->on("/curve", HTTP_POST, [this]() {
-        if (!csrfOk_()) return;
-        const CorrectionCurve curve = curveFromString(formBody(server_));
-        if (curveSet_) curveSet_(curve);
-        server_->send(200, "application/json", renderCurveJson(curve).c_str());
-    });
-    // GET /diag -> the plain-text tester report (config + status + raw meter frames). A tester saves
-    // it and sends it when their meter isn't recognised, so we add support offline (real-data-first).
-    server_->on("/diag", HTTP_GET, [this]() {
-        const RuntimeConfig cfg = configProvider_ ? configProvider_() : RuntimeConfig::defaults();
-        const ProxyStatus st = provider_ ? provider_() : ProxyStatus{};
-        const std::vector<std::string> frames = diagFrames_ ? diagFrames_() : std::vector<std::string>{};
-        server_->send(200, "text/plain", renderDiagReport(cfg, st, frames).c_str());
-    });
-    // GET /report -> the tester-facing "review & send" page. Consent-first: it fetches /diag, shows it
-    // for review, and offers Download / Copy / Email — nothing leaves the device until the tester acts.
-    server_->on("/report", HTTP_GET, [this]() {
-        sendHtml_(diagReportPageHtml());
-    });
-}
-
-// The meter-to-meter calibration wizard (GET /calibrate + the POST actions). Pure render/parse live
-// in CalibrationPage.h; here we route + bridge to the BLE/session hooks. start/save/cancel persist
-// then REBOOT (the wizard moves in/out of a dedicated calibration boot — see main); finish fits in
-// place (no reboot) so the rider can review before saving.
-void WifiLink::addCalibrationRoutes_() {
-    auto render = [this](const std::string& message) {
-        CalWizardView v = calView_ ? calView_() : CalWizardView{};
-        if (!message.empty()) v.message = message;
-        sendHtml_(renderCalibrationPage(v));
-    };
-    server_->on("/calibrate", HTTP_GET, [this, render]() { render(""); });
-    server_->on("/calibrate/scan", HTTP_GET, [this]() {
-        if (calScan_) calScan_();
-        server_->sendHeader("Location", "/calibrate");
-        server_->send(303, "text/plain", "scanning\n");
-    });
-    server_->on("/calibrate/start", HTTP_POST, [this, render]() {
-        if (!csrfOk_()) return;
-        const CalForm f = parseCalibrationForm(formBody(server_));
-        const char* err = calibrationStartError(f);
-        if (err) { render(err); return; }
-        if (calStart_ && !calStart_(f.dutAddr, f.refAddr)) {  // rejected (already calibrating)
-            render("A calibration is already in progress \xE2\x80\x94 reopen the wizard to continue it.");
-            return;
-        }
-        server_->send(200, "text/html",
-                      "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' "
-                      "content='width=device-width,initial-scale=1'><body style='font-family:"
-                      "system-ui,sans-serif;max-width:480px;margin:0 auto;padding:16px'>"
-                      "<h1>Starting calibration&hellip;</h1><p>Connecting to both meters &mdash; the "
-                      "device is restarting. Reopen <a href='/calibrate'>the wizard</a> in a moment "
-                      "and start your power sweep.</p>");
-        delay(400);
-        esp_restart();
-    });
-    server_->on("/calibrate/finish", HTTP_POST, [this, render]() {
-        if (!csrfOk_()) return;
-        if (calFinish_) calFinish_();  // fit (or no-op if too few pairs); the view shows the result
-        server_->sendHeader("Location", "/calibrate");
-        server_->send(303, "text/plain", "fitting\n");
-    });
-    server_->on("/calibrate/save", HTTP_POST, [this, render]() {
-        if (!csrfOk_()) return;
-        const CalForm f = parseCalibrationForm(formBody(server_));
-        if (calSave_ && !calSave_(f.deviceName)) {  // rejected (not fitted yet) — don't reboot
-            render("Finish the calibration first \xE2\x80\x94 there's no fitted correction to save yet.");
-            return;
-        }
-        server_->send(200, "text/html",
-                      "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' "
-                      "content='width=device-width,initial-scale=1'><body style='font-family:"
-                      "system-ui,sans-serif;max-width:480px;margin:0 auto;padding:16px'>"
-                      "<h1>Saved &#10003;</h1><p>Switching to corrector mode &mdash; restarting. Now "
-                      "remove the reference meter; the corrected meter is rebroadcast under your "
-                      "chosen name. Open <a href='/'>the dashboard</a> in a moment.</p>");
-        delay(400);
-        esp_restart();
-    });
-    server_->on("/calibrate/cancel", HTTP_POST, [this]() {
-        if (!csrfOk_()) return;
-        if (calCancel_) calCancel_();  // clear the calibration marker
-        server_->send(200, "text/html",
-                      "<!DOCTYPE html><meta charset='utf-8'><meta name='viewport' "
-                      "content='width=device-width,initial-scale=1'><body style='font-family:"
-                      "system-ui,sans-serif;max-width:480px;margin:0 auto;padding:16px'>"
-                      "<h1>Calibration cancelled</h1><p>Restarting. Open <a href='/'>the dashboard</a> "
-                      "in a moment.</p>");
-        delay(400);
-        esp_restart();
-    });
-}
+// ---------------------------------------------------------------------------
+// Setup portal
+// ---------------------------------------------------------------------------
 
 // Turn a finished WiFi scan (n entries; n<0 = scan failed) into the portal's picker model: skip
 // hidden SSIDs, record signal (RSSI) and whether the AP is secured. Dedup/sort happen in the
@@ -732,10 +396,10 @@ void WifiLink::startPortal_() {
     // keeps auto-reconnecting to the absent stored network in the background, and on the ESP32-C3
     // that thrashes the single shared 2.4 GHz radio: the SoftAP never holds a channel long enough to
     // beacon (the AP is "up" but invisible/unconnectable) and even the picker scan comes back "0
-    // networks" (confirmed on hardware 2026-07-11 — the boot log showed the portal up but 0 scanned).
-    // A fresh onboarding portal has no stored creds so it never thrashes — which is why fresh worked
-    // and the join-fail recovery didn't. Keep the radio on (AP + the one-shot scan below still need
-    // it) and keep the stored creds (a Save reboots to apply); just stop the background retry.
+    // networks" (confirmed on hardware 2026-07-11). A fresh onboarding portal has no stored creds so
+    // it never thrashes — which is why fresh worked and the join-fail recovery didn't. Keep the radio
+    // on (AP + the one-shot scan below still need it) and keep the stored creds (a Save reboots to
+    // apply); just stop the background retry.
     WiFi.setAutoReconnect(false);
     WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/false);
     // The setup AP is WPA2-protected (closes the cleartext-PSK window when the user types their home
@@ -769,70 +433,22 @@ void WifiLink::startPortal_() {
     dns_->start(53, "*", apIP);
 
     server_ = new WebServer(80);
-    collectCsrfHeaders_();  // retain Origin/Referer so the /save + /forget POSTs are CSRF-guarded
-
-    // 302 back to the setup page; reused by the OS captive-portal probes, the catch-all, and the
-    // Rescan button below.
-    auto redirect = [this]() {
-        server_->sendHeader("Location", kPortalUrl, true);
-        server_->send(302, "text/plain", "");
-    };
-
-    auto renderRoot = [this](const std::string& message) {
-        // Pick up a finished async rescan (and learn if one is still running) before rendering.
-        bool scanning = collectScan_();
-        std::string body =
-            renderProvisioningPage(networks_, message, logEnabled_ ? 1 : 0, scanning);
-        sendHtml_(body);
-    };
-
-    server_->on("/", HTTP_GET, [renderRoot]() { renderRoot(std::string()); });
-
-    // Kick off a non-blocking rescan and bounce back to '/', which shows "Scanning..." and
-    // auto-refreshes until collectScan_ harvests the results (avoids stalling the captive DNS the
-    // way a synchronous in-handler scan would).
-    server_->on("/rescan", HTTP_GET, [this, redirect]() {
-        if (WiFi.scanComplete() != WIFI_SCAN_RUNNING) WiFi.scanNetworks(/*async=*/true);
-        redirect();
-    });
-
-    server_->on("/save", HTTP_POST, [this, renderRoot]() {
-        if (!csrfOk_()) return;
-        // WebServer parses urlencoded form fields itself; fall back to the raw body parser
-        // (host-tested in Provisioning.h) if it didn't.
-        WifiCredentials c;
-        if (server_->hasArg("ssid")) {
-            c.ssid = std::string(server_->arg("ssid").c_str());
-            c.pass = std::string(server_->arg("pass").c_str());
-        } else {
-            c = parseFormUrlEncoded(std::string(server_->arg("plain").c_str()));
-        }
-        if (const char* err = credValidationError(c)) {
-            renderRoot(err);
-            return;
-        }
-        WifiCreds::save(c);
-        std::string ok = renderSavedPage(c.ssid);
-        sendHtml_(ok);
-        delay(500);
-        esp_restart();
-    });
-
-    addForgetRoute_("credentials cleared - restarting\n");
+    collectCsrfHeaders_();
+    installRoutes_(portalRoutes());
 
     // OS captive-portal probes -> redirect to the setup page (drives the auto-popup), and a
     // catch-all so any other URL the phone tries lands on setup too.
-    const char* probes[] = {"/generate_204", "/gen_204",      "/hotspot-detect.html",
-                            "/ncsi.txt",     "/connecttest.txt", "/redirect"};
-    for (const char* p : probes) server_->on(p, HTTP_GET, redirect);
-    addLogRoutes_();
+    auto redirect = [this]() { deliver_(routes::portalRedirect(hooks_, buildRequest_(HttpMethod::Get))); };
+    for (const char* p : portalProbes()) server_->on(p, HTTP_GET, redirect);
     server_->onNotFound(redirect);
     server_->begin();
 
     logf("[wifi] setup portal up: AP '%s' (WPA2; %d networks scanned)", apSsid(),
          (int)networks_.size());
-    display_->showPortal(apSsid(), kPortalUrl, setupPin_.c_str());
+    display_->showPortal(apSsid(), Config::SETUP_PORTAL_URL, setupPin_.c_str());
 }
+
+// ---------------------------------------------------------------------------
 
 void WifiLink::handle() {
     if (radioOff_) return;  // ride mode: WiFi is down, BLE-only — nothing to service

@@ -294,6 +294,40 @@ created to stop.
 
 ---
 
+## R9 — `WifiLink` route registration: a pure request→response seam  ✅ done
+
+**Problem (audit — Gemini F1, synthesis item 7):** `WifiLink.cpp` was 853 lines registering 48 routes,
+described as a "god object" and "the biggest blocker to testing the setup UI flows".
+
+**What measurement actually found — four of the audit's premises were wrong.** All the render / parse /
+validate logic was *already* pure and host-tested in `lib/proxy/*Page.h`; the 853 lines were URL →
+read hooks → call the pure function → send → maybe reboot. The claimed "non-drain-aware reboot" defect
+was a documented deliberate choice, and `POST /config` was measured on the live board at a **25-byte
+reply completing in 157 ms** against a 400 ms window. So this was not a god object hiding logic; it was
+a wide, repetitive adapter.
+
+**What it was still worth doing for — the CSRF invariant becomes structural.** Measured against the
+running board: **all 21 POST routes are CSRF-guarded and no GET is, with zero exceptions**, so the
+guard is exactly `method == Post`. `dispatch()` now enforces that on the *method*, with no per-route
+opt-out to forget, and `test_every_post_route_is_csrf_guarded` walks both route tables — a route added
+next year is covered without anyone remembering to write a test. Reboot became **returned intent**
+rather than an in-handler side effect, collapsing 12 copies of `delay(400); esp_restart();` into one
+place, and ~40 `hook_ ? hook_() : default` ternaries disappeared into `DeviceHooks` defaults.
+
+- [x] **R9a — `lib/proxy/WebRoutes.h`**: `HttpRequest`/`HttpResponse`/`DeviceHooks`, ~45 pure handlers,
+  the four route tables, and `dispatch()`. `WifiLink` reduced 853 → ~420 lines of pure adapter; its
+  public API is byte-identical, so `main.cpp` is untouched. Host tests 262 → **300**.
+- [x] **R9b — proven on hardware, not asserted.** `code/scripts/route_baseline.py` captures 57 route
+  behaviours (including 17 CSRF rejections) from a running board and diffs two captures. C3
+  `192.168.1.165`, before vs after the flash: **0 differing of 57 — behaviour preserved**. Free heap
+  rose 7 KB. The oracle was validated first by capturing twice against one unchanged firmware and
+  requiring a zero diff before it was trusted.
+- [x] **R9c — `/app` still streams the ~34 KB SPA straight from flash**, never through a
+  `std::string`; the C3's heap is tight beside BLE. Preserved via `HttpResponse::staticBody` and
+  pinned by `test_spa_route_streams_from_flash_not_the_heap`.
+
+---
+
 - The three config **serializers / storage backends** (NVS line vs GATT binary vs HTTP JSON) — justified
   by transport constraints; a single wire format would be worse on ≥2 of them.
 - The scalar-vs-curve **correction model** difference — a product decision (nRF exposes scalar knobs, the
