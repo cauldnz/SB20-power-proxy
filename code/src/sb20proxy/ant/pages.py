@@ -437,10 +437,15 @@ def decode_page(data: bytes) -> dict[str, Any]:
 
     # Extended-message tail (when ext RX messages are enabled): source channel ID
     # appended after the 8 data bytes. Purely additive; page fields live in 0-7.
+    # A tail that started but did not finish (9..12 bytes) is truncation, not a plain
+    # non-extended message -- mark it rather than silently dropping it (issue #306).
     if len(data) >= 13:
         decoded["ext_flag"] = data[8]
         decoded["ext_device_number"] = int.from_bytes(data[9:11], "little")
         decoded["ext_device_type"] = data[11]
         decoded["ext_transmission_type"] = data[12]
+    elif len(data) > 8:
+        decoded["truncated_at_field"] = "ext_channel_id"
+        decoded["truncated_missing_bytes"] = 13 - len(data)
 
     return decoded

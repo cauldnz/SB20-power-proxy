@@ -111,6 +111,10 @@ def decode_fec_page(data: bytes) -> dict[str, Any]:
         out["ext_device_number"] = int.from_bytes(data[9:11], "little")
         out["ext_device_type"] = data[11]
         out["ext_transmission_type"] = data[12]
+    elif len(data) > 8:
+        # A started-but-unfinished extended tail, not a plain non-extended message (issue #306).
+        out["truncated_at_field"] = "ext_channel_id"
+        out["truncated_missing_bytes"] = 13 - len(data)
     return out
 
 

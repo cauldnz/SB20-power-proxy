@@ -56,7 +56,12 @@ from typing import Any
 #   * this script is TOLERANT — a truncated or malformed frame yields a partial dict with a
 #     `decode_error` key, because a capture must never drop a record ("JSONL captures are the
 #     canonical lossless record", CLAUDE.md). The package decoder RAISES, which is right for the
-#     runtime path and wrong here;
+#     runtime path and wrong here. Tolerant does not mean silent: a field the flags advertised
+#     but the frame was too short to carry is named in `truncated_at_field` (+ how many bytes
+#     were missing), so the record is self-describing rather than looking like a clean decode of
+#     a meter that never set the flag (issue #306). The marker only ever appears on malformed
+#     frames — pinned by test_no_real_frame_is_ever_marked_as_truncated over all 2,437 frames in
+#     the committed captures;
 #   * `decode_cp_response` here INTERPRETS the response params per op (offset, crank length,
 #     sensor locations, sampling rate, factory cal date) including the Assioma-vs-Stages
 #     trailing-bytes subtlety; `decode_control_point` returns them raw for the proxy to act on.
@@ -152,10 +157,16 @@ def decode_cp_measurement(data: bytes) -> dict[str, Any]:
     out["flags_hex"] = f"0x{flags:04X}"
     out["instantaneous_power_w"] = int.from_bytes(data[2:4], "little", signed=True)
     i = 4
+    # Records the FIRST field the flags advertised but the frame was too short to carry. Without
+    # this a truncated frame decodes to something indistinguishable from a meter that simply did
+    # not set those flags -- except the flags say otherwise (issue #306).
+    truncated: tuple[str, int] | None = None
 
-    def take(n: int) -> bytes | None:
-        nonlocal i
+    def take(n: int, field: str) -> bytes | None:
+        nonlocal i, truncated
         if i + n > len(data):
+            if truncated is None:
+                truncated = (field, n - (len(data) - i))
             return None
         chunk = data[i:i + n]
         i += n
@@ -163,57 +174,59 @@ def decode_cp_measurement(data: bytes) -> dict[str, Any]:
 
     try:
         if flags & _cps.F_PEDAL_BALANCE:
-            b = take(1)
+            b = take(1, "pedal_power_balance")
             if b is not None:
                 out["pedal_power_balance_pct"] = b[0] / 2.0
                 out["balance_reference_left"] = bool(flags & _cps.F_BALANCE_REF_LEFT)
         if flags & _cps.F_ACCUM_TORQUE:  # 1/32 Nm
-            b = take(2)
+            b = take(2, "accumulated_torque")
             if b is not None:
                 out["accumulated_torque_raw"] = int.from_bytes(b, "little")
                 out["accumulated_torque_source_crank"] = bool(flags & _cps.F_TORQUE_SOURCE_CRANK)
         if flags & _cps.F_WHEEL_REV:
-            b = take(6)
+            b = take(6, "wheel_rev")
             if b is not None:
                 out["cumulative_wheel_revs"] = int.from_bytes(b[0:4], "little")
                 out["last_wheel_event_time_2048s"] = int.from_bytes(b[4:6], "little")
         if flags & _cps.F_CRANK_REV:
-            b = take(4)
+            b = take(4, "crank_rev")
             if b is not None:
                 out["cumulative_crank_revs"] = int.from_bytes(b[0:2], "little")
                 out["last_crank_event_time_1024s"] = int.from_bytes(b[2:4], "little")
         if flags & _cps.F_EXTREME_FORCE:
-            b = take(4)
+            b = take(4, "extreme_force")
             if b is not None:
                 out["max_force_n"] = int.from_bytes(b[0:2], "little", signed=True)
                 out["min_force_n"] = int.from_bytes(b[2:4], "little", signed=True)
         if flags & _cps.F_EXTREME_TORQUE:  # 1/32 Nm
-            b = take(4)
+            b = take(4, "extreme_torque")
             if b is not None:
                 out["max_torque_raw"] = int.from_bytes(b[0:2], "little", signed=True)
                 out["min_torque_raw"] = int.from_bytes(b[2:4], "little", signed=True)
         if flags & _cps.F_EXTREME_ANGLES:  # uint24: two 12-bit angles
-            b = take(3)
+            b = take(3, "extreme_angles")
             if b is not None:
                 packed = int.from_bytes(b, "little")
                 out["max_angle_deg"] = packed & 0xFFF
                 out["min_angle_deg"] = (packed >> 12) & 0xFFF
         if flags & _cps.F_TOP_DEAD_SPOT:
-            b = take(2)
+            b = take(2, "top_dead_spot")
             if b is not None:
                 out["top_dead_spot_angle_deg"] = int.from_bytes(b, "little")
         if flags & _cps.F_BOTTOM_DEAD_SPOT:
-            b = take(2)
+            b = take(2, "bottom_dead_spot")
             if b is not None:
                 out["bottom_dead_spot_angle_deg"] = int.from_bytes(b, "little")
         if flags & _cps.F_ACCUM_ENERGY:  # kJ
-            b = take(2)
+            b = take(2, "accumulated_energy")
             if b is not None:
                 out["accumulated_energy_kj"] = int.from_bytes(b, "little")
         out["offset_compensation_indicator"] = bool(flags & _cps.F_OFFSET_COMP_IND)
     except Exception as e:  # never let a decode bug drop a record
         out["decode_error"] = str(e)
 
+    if truncated is not None:
+        out["truncated_at_field"], out["truncated_missing_bytes"] = truncated
     if i < len(data):
         out["trailing_hex"] = data[i:].hex()
     return out
@@ -228,14 +241,23 @@ def decode_csc_measurement(data: bytes) -> dict[str, Any]:
     flags = data[0]
     out["flags"] = flags
     i = 1
-    if flags & 0x01 and len(data) >= i + 6:
-        out["cumulative_wheel_revs"] = int.from_bytes(data[i:i + 4], "little")
-        out["last_wheel_event_time_1024s"] = int.from_bytes(data[i + 4:i + 6], "little")
-        i += 6
-    if flags & 0x02 and len(data) >= i + 4:
-        out["cumulative_crank_revs"] = int.from_bytes(data[i:i + 2], "little")
-        out["last_crank_event_time_1024s"] = int.from_bytes(data[i + 2:i + 4], "little")
-        i += 4
+    truncated: tuple[str, int] | None = None
+    if flags & 0x01:
+        if len(data) >= i + 6:
+            out["cumulative_wheel_revs"] = int.from_bytes(data[i:i + 4], "little")
+            out["last_wheel_event_time_1024s"] = int.from_bytes(data[i + 4:i + 6], "little")
+            i += 6
+        else:
+            truncated = ("wheel_rev", 6 - (len(data) - i))
+    if flags & 0x02:
+        if truncated is None and len(data) >= i + 4:
+            out["cumulative_crank_revs"] = int.from_bytes(data[i:i + 2], "little")
+            out["last_crank_event_time_1024s"] = int.from_bytes(data[i + 2:i + 4], "little")
+            i += 4
+        elif truncated is None:
+            truncated = ("crank_rev", 4 - (len(data) - i))
+    if truncated is not None:
+        out["truncated_at_field"], out["truncated_missing_bytes"] = truncated
     return out
 
 
@@ -269,6 +291,22 @@ def decode_cp_response(data: bytes) -> dict[str, Any]:
             out["sampling_rate_hz"] = params[0]
         elif req == 0x0F and len(params) >= 7:         # factory calibration date
             out["factory_cal_date_hex"] = params[0:7].hex()
+        # A value-returning op that succeeded but carried no room for its value is truncated, not
+        # a meter declining to answer -- say so rather than leaving an absent key (issue #306).
+        # "Not supported" is a legitimate 3-byte reply and is never marked.
+        elif not not_supported:
+            if req in (0x0C, 0x10):
+                out["truncated_at_field"] = "offset"
+                out["truncated_missing_bytes"] = 5 - len(data)
+            elif req == 0x05:
+                out["truncated_at_field"] = "crank_length"
+                out["truncated_missing_bytes"] = 5 - len(data)
+            elif req == 0x0E:
+                out["truncated_at_field"] = "sampling_rate"
+                out["truncated_missing_bytes"] = 1
+            elif req == 0x0F:
+                out["truncated_at_field"] = "factory_cal_date"
+                out["truncated_missing_bytes"] = 7 - len(params)
     except Exception as e:
         out["decode_error"] = str(e)
     return out
