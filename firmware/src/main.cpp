@@ -220,12 +220,12 @@ static void oledTask(void*) {
     std::array<std::string, 4> last = {};
     for (;;) {
         // Fill the SHARED view-model (the same RideView/ProvisionView the LCD boards fill) and
-        // project it to the 4 OLED rows — one model feeds both panel families (U3).
+        // project it to the 4 OLED rows — one model feeds both panel families (U3). The projection
+        // itself is the shared pure projectRideView(), so this panel and the LCD cannot drift.
         RideView ride;
-        ride.watts = proxy.lastOutput().power_w;
-        ride.cadence = proxy.lastOutput().cadence_rpm;
-        ride.balancePct = proxy.lastSource().balance_half_pct >= 0
-                              ? proxy.lastSource().balance_half_pct / 2 : -1;  // left %, -1 = none
+        RideInputs ri;
+        ri.out = proxy.lastOutput();
+        ri.src = proxy.lastSource();
         ProvisionView prov;
         std::string ip;
         bool wifiUp = true;  // no-WiFi build: treat as connected (show power/cadence)
@@ -237,8 +237,10 @@ static void oledTask(void*) {
             prov.pin = wifi.setupPin();       // shown so the rider can join the AP
         }
         ip = wifiUp ? std::string(WiFi.localIP().toString().c_str()) : std::string();
-        ride.wifiRssi = wifiUp ? WiFi.RSSI() : 0;
+        ri.wifiUp = wifiUp;
+        ri.rssi = WiFi.RSSI();
 #endif
+        projectRideView(ri, ride);
         auto lines = formatOledLines(prov, ride, wifiUp, ip);
         if (lines != last) {
             oled.drawLines(lines);
@@ -479,28 +481,30 @@ static CompareService g_cmpSvc = []() {
 
 static void buildLcdViews(LcdViews& v) {
     RideView& r = v.ride;
-    r.outName = g_lcdIdentity;
+    RideInputs ri;
+    ri.out = proxy.lastOutput();
+    ri.src = proxy.lastSource();
+    ri.identity = g_lcdIdentity;
+#if USE_MOCK_METER
+    ri.meterConnected = true;
+    ri.meterName = "mock meter";
+#else
+    ri.meterConnected = meter.connected();
+    if (ri.meterConnected) ri.meterName = meter.sourceName();
+#endif
+#if USE_WIFI
+    ri.wifiUp = wifi.isUp();
+    ri.rssi = WiFi.RSSI();
+#endif
+    projectRideView(ri, r);  // shared with the OLED task — see UiModel.h
+
     r.version = std::string(Config::FIRMWARE_VERSION) + " " + Config::BUILD_SHA;  // semver + git SHA
-    r.watts = proxy.lastOutput().power_w;
-    r.srcWatts = proxy.lastSource().power_w;
-    r.cadence = proxy.lastOutput().cadence_rpm;
-    r.balancePct = proxy.lastOutput().balance_half_pct >= 0
-                       ? proxy.lastOutput().balance_half_pct / 2 : -1;
     r.hist = g_lcdHist;
     r.nHist = g_lcdHistN;
     r.histMax = 300;
     r.freeHeap = ESP.getFreeHeap();
     r.uptimeMs = millis();
-    r.outOn = true;
-#if USE_MOCK_METER
-    r.srcName = "mock meter";
-    r.srcOn = true;
-#else
-    r.srcOn = meter.connected();
-    r.srcName = meter.connected() ? meter.sourceName() : std::string("searching...");
-#endif
 #if USE_WIFI
-    r.wifiRssi = WiFi.RSSI();
     v.more.ip = wifi.isUp() ? std::string(WiFi.localIP().toString().c_str()) : std::string("no wifi");
     // Captive portal up -> the LCD shows the QR onboarding screen instead of the normal UI
     v.prov.portal = wifi.inPortal();
@@ -560,32 +564,22 @@ static void buildLcdViews(LcdViews& v) {
     m.version = std::string(Config::FIRMWARE_VERSION);
     m.brightness = g_lcdUi.brightness;
 
-    // Calibrate wizard view (live builds carry the session; bench shows the idle prompt)
-    CalWizardView& cal = v.cal;
+    // Calibrate wizard view (live builds carry the session; bench shows the idle prompt).
+    // Shared projection with GET /calibrate — see CalibrationPage.h::projectCalWizard.
 #if !USE_MOCK_METER
-    // g_calibrating mirrors the NVS flag; reading ConfigStore here meant an nvs_open per
-    // 200 ms frame (5 flash reads/s + a NOT_FOUND error log each on never-configured boards).
-    if (g_calibrating) {
-        if (g_cal.fitted()) {
-            cal.state = CalState::Fitted;
-            const Correction& fit = g_cal.fit();
-            cal.residualW = g_cal.residualW();
-            if (fit.curve.empty()) { cal.linear = true; cal.scale = fit.scale; cal.offset = fit.offset; }
-            else cal.curve = fit.curve;
-        } else {
-            cal.state = CalState::Collecting;
-            cal.dutConnected = meter.connected();
-            cal.refConnected = refMeter.connected();
-            cal.pairCount = (int)g_cal.pairCount();
-            cal.minPairs = g_cal.minPairs();
-            cal.enoughToFit = g_cal.enoughToFit();
-            cal.coverage = g_cal.coverage();
-        }
-    } else {
-        cal.state = CalState::Idle;
-        cal.devices = meter.candidates();
+    {
+        // g_calibrating mirrors the NVS flag; reading ConfigStore here meant an nvs_open per
+        // 200 ms frame (5 flash reads/s + a NOT_FOUND error log each on never-configured boards).
+        CalWizardInputs ci;
+        ci.calibrating = g_calibrating;
+        ci.session = &g_cal;
+        ci.dutConnected = meter.connected();
+        ci.refConnected = refMeter.connected();
+        const std::vector<SourceCandidate> cands = meter.candidates();
+        ci.devices = &cands;
         // DUT/Ref selection from the LCD lands with the erg/calibrate-action PR; use the phone
         // wizard (/calibrate) meanwhile.
+        projectCalWizard(ci, v.cal);
     }
 #endif
 }
@@ -1292,25 +1286,14 @@ void setup() {
     wifi.setCalibrationUi(
         []() {  // build the wizard view from the live session + meter state
             CalWizardView v;
-            const RuntimeConfig c = ConfigStore::load();
-            if (!c.calibrating) {
-                v.state = CalState::Idle;
-                v.devices = meter.candidates();
-            } else if (g_cal.fitted()) {
-                v.state = CalState::Fitted;
-                const Correction& fit = g_cal.fit();
-                v.residualW = g_cal.residualW();
-                if (fit.curve.empty()) { v.linear = true; v.scale = fit.scale; v.offset = fit.offset; }
-                else { v.curve = fit.curve; }
-            } else {
-                v.state = CalState::Collecting;
-                v.dutConnected = meter.connected();
-                v.refConnected = refMeter.connected();
-                v.pairCount = (int)g_cal.pairCount();
-                v.minPairs = g_cal.minPairs();
-                v.enoughToFit = g_cal.enoughToFit();
-                v.coverage = g_cal.coverage();
-            }
+            CalWizardInputs ci;
+            ci.calibrating = ConfigStore::load().calibrating;
+            ci.session = &g_cal;
+            ci.dutConnected = meter.connected();
+            ci.refConnected = refMeter.connected();
+            const std::vector<SourceCandidate> cands = meter.candidates();
+            ci.devices = &cands;
+            projectCalWizard(ci, v);  // shared with the LCD frame builder
             return v;
         },
         [](const std::string& dut, const std::string& ref) -> bool {  // start: persist a calibration boot

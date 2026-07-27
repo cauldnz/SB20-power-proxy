@@ -116,7 +116,37 @@ last.** Extracting R1a–R1c removes ~700 lines and is the precondition that mak
     `test/test_touchcal/` cover press averaging, dropout ride-through, blip rejection, fit rejection +
     restart, and the success-screen timing — none of which could be exercised without a screen before.
     `esp32cyd` compiles (RAM −8 B, flash +212 B); `pio test -e native` 262/262.
-  - [ ] **R1e.2 — `buildLcdViews` / `lcdExecute` / `lcdTask`** — the remaining ~500 lines.
+  - [x] **R1e.2 — the shared view projections are out; the seam deliberately stays.** Scoped down after
+    measuring the premise, with owner approval. The review framed this as "move ~500 lines out", but the
+    *rendering* is already host-tested (the `native-lvgl` env renders the real `src/ui/LvglUi.cpp`
+    headless — pixels and tap→`UiAction` included), `lcdTask` is LVGL/FreeRTOS plumbing that cannot leave
+    the hardware seam, and `lcdExecute` is a switch delegating one-liners to objects that already have
+    their own tests. Moving those buys indirection and no test. What was genuinely untested — and, it
+    turned out, genuinely *wrong* — was the projection from device state into the shared view models,
+    hand-written once per surface. Three defects, all found by reading the copies side by side:
+    1. **The same field filled from two different readings.** The OLED read `balancePct` from
+       `lastSource()`, the LCD from `lastOutput()` — one struct field, two sources, no note anywhere
+       saying which was meant. Invisible today and provably so (`Correction::apply()` takes the reading
+       by value and writes only `power_w`, so balance passes through untouched on every path), but the
+       single-sided ×2 is exactly the correction that would break it: a doubled one-legged reading
+       carries no real left/right split. Now projected from the *received* reading, once, for both
+       panels — balance is a property of the meter's measurement, not of our correction.
+    2. **The calibrate wizard's three-state machine existed twice**, verbatim: the LCD frame builder and
+       `GET /calibrate`. Two copies that must agree is drift waiting to happen.
+    3. **…and they had already diverged.** The LCD reuses one `LcdViews` across frames and never clears
+       it, so a finished fit's curve, residual and pair counts survived into the next Idle screen, while
+       the web route — which builds a fresh view per request — showed them empty. Same session, two
+       answers. `projectCalWizard()` now assigns every field it owns on every path.
+    Shipped as `projectRideView()` in `lib/proxy/UiModel.h` (next to the structs it fills, so the OLED
+    builds get it without pulling in any LCD header) and `projectCalWizard()` in
+    `lib/proxy/CalibrationPage.h` (the wizard's pure half already lives there). 20 host tests in
+    `test/test_uiproject/`; all six mutations of the invariants are caught (five by assertion, one by the
+    access violation the null-session guard exists to prevent). `native` 342/342, and
+    `esp32c3-oled-live-ota` + `esp32cyd` + `esp32cyd-live` all compile. **Not hardware-verified:** the
+    CYD screen sweep still wants the owner's eyes.
+  - [ ] **R1e.3 — the rest of the LCD block stays in `main.cpp`, on purpose.** `lcdTask`,
+    `lcdSerialConsole`, `lcdExecute` and the frame/canvas plumbing are hardware seam and delegation.
+    Reopen this only if a specific behaviour there turns out to need a test, not on line count.
 
 ---
 
