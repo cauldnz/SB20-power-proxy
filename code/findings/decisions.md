@@ -4077,3 +4077,53 @@ is already advertising, i.e. flash/reboot the board *after* starting the meter.
 not done.** R1d.2 removed the protocol logic from that surface; what remains is genuine Bluefruit
 wiring, which is lower value per line and cannot be host-tested without a fake Bluefruit. It stays
 open in `architecture-remediation.md` to be done only if it buys something concrete.
+
+---
+
+## 2026-07-27 — the flash ride-guard cried wolf on every C3 ride build (a regression I shipped)
+
+`flash.ps1 -Env esp32c3-oled-live-ota` refused to flash, reporting *"not a shippable build: marked
+SUPERSEDED in platformio.ini (via [env:esp32c3-wifi])"* — while its own remediation text in the same
+breath said *"pick a ride build (e.g. esp32c3-oled-live-ota)"*. A guard that recommends the env it
+just rejected is self-evidently broken.
+
+**Root cause.** `tools/PioIni.ps1`'s `Get-PioSectionBanner` treated a blank line as "keep
+accumulating" (`elseif ($line -match '^\s*$') { }  # blanks do not break the block`). PR #302 (D7)
+deleted the five `esp32s3-touch` envs and left a REMOVED tombstone comment in their place. That
+tombstone contains the word *"Superseded"*, sits a single blank line above `[env:esp32c3-wifi]`, and
+so was returned as **that** section's banner. Every C3 env extends `esp32c3-wifi`, and the blocker
+check walks the `extends` lineage — so **all 15 C3 envs, including every ride build, were marked
+SUPERSEDED**. Measured before the fix:
+
+```
+esp32c3-oled  esp32c3-oled-live  esp32c3-oled-live-ota  esp32c3-oled-ota  esp32c3-oled96-live
+esp32c3-oled96-live-ota  esp32c3-oled96sh-live  esp32c3-oled96sh-live-ota  esp32c3-ota
+esp32c3-wifi  esp32c3-wifi-corrector-bench  esp32c3-wifi-live  esp32c3-wifi-live-bench
+esp32c3-wifi-live-bench-ota  esp32c3-wifi-live-ota
+```
+
+After the fix (a blank line **ends** a banner): **zero** envs flagged superseded, which is correct —
+the tombstone describes env names that no longer exist as sections, so it should attach to nothing.
+Discrimination is restored: `esp32c3-oled-live-ota` / `esp32c3-oled-live` / `esp32cyd-live` /
+`xiao-sense` are SHIPPABLE; `esp32c3-wifi` (`USE_MOCK_METER=1`), `esp32c3-wifi-live-bench`
+(`METER_MATCH_ANY_CPS=1`), `c3-oled-probe` and `native` are still refused.
+
+The function's own doc comment already stated the correct rule — *"A contiguous comment block
+immediately preceding a header describes THAT section, not the one above it — getting this backwards
+marks a good build superseded and lets the superseded one through"* — and the code contradicted it.
+The docs predicted the exact failure mode; nothing executed the claim.
+
+**Why it shipped: the guard had no test and CI could not see it.** `tools/` was absent from the
+`changes` path filter, so a PR touching only `tools/` skipped the firmware matrix entirely. Both
+holes are now closed: `tools/tests/Test-PioIni.ps1` (20 checks, no Pester — `pwsh` is preinstalled on
+the runner, so it costs no new dependency) runs in the firmware job with `-RequireReal`, and `tools/`
+is in the path filter. The test was verified to be a real regression test: against the old
+blank-line rule it fails 3 of 20, including the two real-`platformio.ini` assertions that
+`esp32c3-oled-live-ota` and `esp32c3-oled-live` are flashable without `-Force`.
+
+**The lesson worth keeping is about safety guards specifically.** A false positive on the *good*
+path is not a milder failure than a false negative — it is worse. The documented escape hatch is
+`-Force`, so a guard that fires on every ride build trains the rider to pass `-Force` reflexively,
+at which point it no longer blocks the bench build it exists to catch. Any guard whose remediation
+text names a specific safe alternative should assert that the alternative actually passes; that is
+now literally what `Test-PioIni.ps1`'s integration half does.

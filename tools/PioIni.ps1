@@ -27,8 +27,13 @@ $script:PioConfigCache = @{}
 function Get-PioCommand {
     # A hashtable, not an array: PowerShell unrolls a single-element array on return, so a one-element
     # @($exe) comes back as a bare string and $exe[0] silently becomes its first *character*.
-    $penv = Join-Path $env:USERPROFILE ".platformio\penv\Scripts\pio.exe"
-    if (Test-Path $penv) { return @{ File = $penv; PreArgs = @() } }
+    # $env:USERPROFILE is unset off Windows and Join-Path throws on a null -Path, so this probe has to
+    # be guarded or the whole function dies before reaching the PATH fallback (which is how the CI
+    # runner reported "PlatformIO unavailable" while pio was installed and on PATH).
+    if ($env:USERPROFILE) {
+        $penv = Join-Path $env:USERPROFILE ".platformio\penv\Scripts\pio.exe"
+        if (Test-Path $penv) { return @{ File = $penv; PreArgs = @() } }
+    }
     $onPath = Get-Command pio -ErrorAction SilentlyContinue
     if ($onPath) { return @{ File = $onPath.Source; PreArgs = @() } }
     return @{ File = "python"; PreArgs = @("-m", "platformio") }   # the module in the active interpreter
@@ -144,8 +149,14 @@ function Get-PioSectionBanner {
             $pending = @()
         }
         elseif ($line -match '^\s*[;#]') { $pending += $line }
-        elseif ($line -match '^\s*$') { }              # blanks do not break the block
-        else { $pending = @() }                        # a real option does
+        # A blank line ENDS a banner. Without this, a comment block written for one section
+        # bleeds across the blank separator into the next one -- which is exactly what happened
+        # on 2026-07-27: the `esp32s3-touch` REMOVED tombstone leaked into [env:esp32c3-wifi]
+        # and, via `extends` lineage, marked all 15 C3 envs "SUPERSEDED", so flash.ps1 refused
+        # to flash every ride build without -Force. A guard that cries wolf on the good build
+        # trains you to always pass -Force, which is worse than having no guard.
+        elseif ($line -match '^\s*$') { $pending = @() }
+        else { $pending = @() }                        # a real option does too
     }
     return ""
 }
