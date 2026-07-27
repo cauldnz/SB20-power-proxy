@@ -122,6 +122,13 @@ handled and pinned by a test:
 - **Decoded ANT power can carry artefacts** (a stray `13567 W` frame in the QUICK multi-capture). The
   `source` channel label is the reliable stream key; `reconcile()`'s `min_power/max_power` gate drops
   artefacts and idle samples. `raw_hex` remains authoritative.
+- **A truncated frame says so.** Since issue #306 a field the flags advertised but the frame was too
+  short to carry is named in `truncated_at_field` (+ `truncated_missing_bytes`) rather than just
+  leaving the key absent — so a malformed frame no longer looks like a clean decode of a meter that
+  never set the flag. Only ever present on malformed frames (verified across all 2,437 frames in the
+  committed captures), so ingest is unaffected; treat its presence as a reason to distrust the
+  decoded fields *after* the named one and go back to `raw_hex`. Older captures were written before
+  the marker existed, so its absence is not proof a frame was complete — cross-check the flags.
 
 ## Build & use
 

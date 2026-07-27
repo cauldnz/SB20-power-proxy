@@ -4269,3 +4269,64 @@ globals for 2 typed ones.
 was mutation-tested before being trusted: firing the zero before the reply, draining DUT before ref,
 turning the edge detector into a level detector, and giving the flag counter semantics. Six distinct
 failures across three mutations; all four invariants are genuinely pinned.
+
+---
+
+## 2026-07-27 — Truncated capture fields are now named, and the capture corpus was wider than its tests (issue #306)
+
+`06_capture_ble.py`'s decoders handled a truncated optional field by silently omitting its key.
+The result decoded to something indistinguishable from a meter that simply never set the flag -
+except the flags said otherwise. `raw_hex` always survived, so nothing was unrecoverable, but the
+record was not self-describing, and CLAUDE.md's "JSONL captures are the canonical lossless record"
+read like a stronger promise than the writer delivered.
+
+**The change.** When a field the flags advertised does not fit, the record now says so:
+`truncated_at_field: "crank_rev"` plus `truncated_missing_bytes: 4`. Only the FIRST shortfall is
+named - everything after it is missing for the same reason, and what an analyst needs is where the
+frame stopped being trustworthy. Applied to `decode_cp_measurement`, `decode_csc_measurement` and
+`decode_cp_response`, and to the ANT+ side (`ant/pages.py`, `ant/fec.py`) at the owner's direction.
+
+**The ANT+ case is different, and the difference matters.** ANT+ pages are a fixed 8 bytes, so a
+runt page was already caught by the existing `error: "short payload"` guard - there is no
+advertise-then-truncate pattern to fix. The real gap was the optional 5-byte extended channel-ID
+tail: 8 bytes is a normal non-extended message, 13 is a complete extended one, and **9-12 is a tail
+that stopped mid-way** and used to decode identically to an ordinary broadcast. That window is now
+marked.
+
+**A "not supported" reply is never marked.** `0x02` with a 3-byte body is a legitimate answer, not a
+short frame. Marking it would cry wolf on every meter that simply does not implement an op - the
+same failure mode as the flash ride-guard earlier in this session, where a false positive on the
+good path trained the operator to ignore the guard.
+
+**Verification, and what it turned up.** The claim that this is additive - that every committed
+capture decodes exactly as before - was measured, not asserted: all **2,437** real frames in the 29
+committed captures were re-decoded and routed by characteristic. **Zero** were marked. That check is
+now a permanent test (`test_no_real_frame_is_ever_marked_as_truncated`), so a future decoder change
+cannot start flagging good data unnoticed.
+
+The first attempt at that verification was wrong in an instructive way: it fed every hex blob to
+every decoder and reported 194 truncations. A CSC frame handed to the CPS decoder of course looks
+truncated. The harness had to be fixed to route by `char` before its answer meant anything - the
+same lesson as the route-baseline oracle earlier this session, which also had to be validated
+against unchanged code before it could be trusted to judge a change.
+
+**Finding: three committed frames decode differently than when they were recorded.** Confirmed
+present on `origin/main` too, so this predates today's change and is drift from earlier decoder
+improvements:
+
+| capture | frame | recorded then | decodes now |
+|---|---|---|---|
+| `G-assioma17039-ble-20260615-065730` | `200302` | `sensor_locations: []` | key absent |
+| `G-crank62144-ble-20260615-065556` | `200302` | `sensor_locations: []` | key absent |
+| `G-crank62144-ble-20260615-065556` | `20055901` | no crank length | `crank_length_mm: 172.5` |
+
+Both are the decoder getting *better* (not emitting an empty list for an unsupported op; reading the
+Stages crank's success-byte-less crank-length reply). Nothing to fix - captures are never edited, and
+`raw_hex` is the canonical record, so the `data` block is only ever a convenience view. Recorded
+because it explains why the corpus test asserts "never marked as truncated" rather than exact
+equality for control-point frames.
+
+**Why it went unnoticed: the golden corpus test only covered one characteristic.**
+`test_every_real_measurement_frame_decodes_to_its_recorded_dict` walks `cycling_power_measurement`
+only - the control-point and CSC decoders had no corpus coverage at all. That is now closed for the
+truncation property across all three.

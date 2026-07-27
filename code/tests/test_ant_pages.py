@@ -126,3 +126,35 @@ def test_out_of_range_value_fails_loudly():
 def test_missing_field_fails_loudly():
     with pytest.raises(KeyError):
         encode_page({"page": 0x10, "event_count": 1})  # no power fields
+
+
+def test_partial_extended_tail_is_marked_not_silently_dropped():
+    """A started-but-unfinished extended tail is truncation, not a plain broadcast (issue #306).
+
+    An ANT+ page is a fixed 8 bytes; with extended RX messages enabled a 5-byte channel-ID tail
+    follows. Anything between those two lengths is a frame that stopped mid-tail, and used to
+    decode identically to an ordinary non-extended message.
+    """
+    page = bytes([0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+
+    plain = decode_page(page)
+    assert "truncated_at_field" not in plain, "8 bytes is a normal non-extended message"
+    assert "ext_flag" not in plain
+
+    full = decode_page(page + bytes([0x80, 0x34, 0x12, 0x0B, 0x05]))
+    assert "truncated_at_field" not in full, "13 bytes is a complete extended message"
+    assert full["ext_device_number"] == 0x1234
+
+    for n in (1, 2, 3, 4):
+        partial = decode_page(page + bytes([0x80, 0x34, 0x12, 0x0B, 0x05])[:n])
+        assert partial["truncated_at_field"] == "ext_channel_id", f"{8 + n} bytes"
+        assert partial["truncated_missing_bytes"] == 5 - n
+        assert "ext_device_number" not in partial, "no half-read device number is reported"
+
+
+def test_a_short_page_still_reports_short_payload_not_truncation():
+    """Below the fixed 8-byte page there is nothing to decode, and that already said so."""
+    out = decode_page(bytes([0x10, 0x00]))
+    assert out["error"] == "short payload"
+    assert "truncated_at_field" not in out
+    assert out["raw_hex"] == "1000"

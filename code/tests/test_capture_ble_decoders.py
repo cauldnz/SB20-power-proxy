@@ -125,18 +125,78 @@ _REAL_FRAME = bytes.fromhex("23007100526204f2e5")
 def test_capture_decoder_is_tolerant_of_truncation(capture_ble):
     """A short frame must still be recorded - never dropped, never raised away.
 
-    Note what is and is not promised. The bytes and the flags always survive, so an analyst can
-    always tell that a field was advertised but did not arrive. There is no explicit truncation
-    marker: an absent key is the only signal. That is weaker than it could be (see the linked
-    issue) but it is the contract today, and it is losslessness where it counts - `raw_hex` is
-    the record, everything else is a convenience view over it.
+    The bytes and the flags always survive, so `raw_hex` remains the record and everything else
+    is a convenience view over it. Since issue #306 the record is also self-describing: a field
+    the flags advertised but the frame could not carry is named explicitly, rather than leaving
+    an absent key that looks identical to a meter that never set the flag.
     """
     truncated = _REAL_FRAME[:5]
     out = capture_ble.decode_cp_measurement(truncated)
     assert out["raw_hex"] == truncated.hex(), "the raw bytes survive regardless"
     assert out["flags"] == 0x0023, "the flags survive, so the missing field is detectable"
     assert out["instantaneous_power_w"] == 113, "the fields that did arrive are still decoded"
-    assert "cumulative_crank_revs" not in out, "the field that did not arrive is simply absent"
+    assert "cumulative_crank_revs" not in out, "the field that did not arrive is still absent"
+    assert out["truncated_at_field"] == "crank_rev", "and now it says WHICH field went missing"
+    assert out["truncated_missing_bytes"] == 4, "5 bytes present, crank rev needed 4 more"
+
+
+def test_a_complete_frame_carries_no_truncation_marker(capture_ble):
+    """The marker must only ever appear on malformed frames.
+
+    This is what makes the change additive: every committed capture and every golden vector
+    decodes exactly as before.
+    """
+    out = capture_ble.decode_cp_measurement(_REAL_FRAME)
+    assert "truncated_at_field" not in out
+    assert "truncated_missing_bytes" not in out
+    assert out["cumulative_crank_revs"] is not None
+
+
+def test_truncation_marker_names_the_first_missing_field_only(capture_ble):
+    """With several fields advertised, the first shortfall is the one that matters.
+
+    Everything after it is missing for the same reason, so naming them all would be noise; the
+    analyst needs to know where the frame stopped being trustworthy.
+    """
+    # flags 0x0033 = pedal balance + crank revs + wheel revs; payload stops after the balance byte
+    frame = bytes.fromhex("33007100" "52")
+    out = capture_ble.decode_cp_measurement(frame)
+    assert out["pedal_power_balance_pct"] == 41.0, "the field that fitted is decoded"
+    assert out["truncated_at_field"] == "wheel_rev", "wheel revs precede crank revs in flag order"
+    assert out["truncated_missing_bytes"] == 6, "none of the 6 wheel-rev bytes arrived"
+
+
+def test_csc_truncation_is_marked(capture_ble):
+    """The CSC decoder gains the same marker as the CPS one."""
+    complete = bytes.fromhex("03" "01000000" "0000" "0200" "0000")
+    assert "truncated_at_field" not in capture_ble.decode_csc_measurement(complete)
+
+    out = capture_ble.decode_csc_measurement(bytes.fromhex("03" "01000000"))
+    assert out["flags"] == 0x03, "wheel AND crank advertised"
+    assert out["truncated_at_field"] == "wheel_rev"
+    assert out["truncated_missing_bytes"] == 2
+
+
+def test_control_point_value_reply_truncation_is_marked(capture_ble):
+    """A value-returning op whose value did not arrive is truncation, not a declined request."""
+    # Real Stages crank-length reply: 20 05 59 01 -> 345 half-mm = 172.5 mm
+    ok = capture_ble.decode_cp_response(bytes.fromhex("20055901"))
+    assert ok["crank_length_mm"] == 172.5
+    assert "truncated_at_field" not in ok
+
+    short = capture_ble.decode_cp_response(bytes.fromhex("200501"))
+    assert short["truncated_at_field"] == "crank_length"
+
+
+def test_not_supported_reply_is_never_marked_as_truncated(capture_ble):
+    """`0x02 = not supported` is a legitimate 3-byte reply, not a short frame.
+
+    Marking it would cry wolf on every meter that simply does not implement an op.
+    """
+    out = capture_ble.decode_cp_response(bytes.fromhex("200502"))
+    assert out["result_name"] is not None
+    assert "truncated_at_field" not in out
+    assert "crank_length_mm" not in out
 
 
 def test_capture_decoder_records_a_runt_frame_rather_than_raising(capture_ble):
@@ -177,3 +237,63 @@ def test_capture_decoder_covers_flags_the_runtime_decoder_does_not(capture_ble):
     assert runtime.power_w == out["instantaneous_power_w"] == 200
     assert runtime.cumulative_crank_revs == out["cumulative_crank_revs"]
     assert runtime.last_crank_event_time == out["last_crank_event_time_1024s"]
+
+
+# --- the truncation marker must never fire on real data -----------------------------------------
+
+def _all_frames_by_char() -> dict[str, list[str]]:
+    """Every recorded frame in the committed BLE captures, grouped by characteristic.
+
+    Wider than `_measurement_frames()` above, which covers only cycling_power_measurement -- the
+    control-point and CSC decoders had no corpus coverage at all until issue #306.
+    """
+    out: dict[str, list[str]] = {}
+    for path in sorted((_ROOT / "findings" / "captures").glob("*.jsonl")):
+        with path.open(encoding="utf-8", errors="ignore") as fh:
+            for line in fh:
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                data = rec.get("data")
+                char = rec.get("char")
+                if isinstance(data, dict) and data.get("raw_hex") and char:
+                    out.setdefault(char, []).append(data["raw_hex"])
+    return out
+
+
+_BY_CHAR = _all_frames_by_char()
+
+
+def test_the_wider_corpus_is_present():
+    """Guard against this whole section passing vacuously if the captures move."""
+    assert _BY_CHAR.get("cycling_power_measurement"), "no CPS measurement frames found"
+    assert _BY_CHAR.get("cycling_power_control_point"), "no control-point frames found"
+
+
+def test_no_real_frame_is_ever_marked_as_truncated(capture_ble):
+    """The marker added for issue #306 must only appear on malformed frames.
+
+    That is the whole basis for calling the change additive: every committed capture and every
+    golden vector must decode exactly as before. Verified when the marker landed -- 2,437 real
+    frames re-decoded, zero marked -- and pinned here so a future decoder change cannot start
+    crying wolf on good data without a test failing.
+    """
+    routes = {
+        "cycling_power_measurement": capture_ble.decode_cp_measurement,
+        "cycling_power_control_point": capture_ble.decode_cp_response,
+        "csc_measurement": capture_ble.decode_csc_measurement,
+    }
+    marked = []
+    checked = 0
+    for char, decode in routes.items():
+        for raw_hex in _BY_CHAR.get(char, []):
+            checked += 1
+            got = decode(bytes.fromhex(raw_hex))
+            if "truncated_at_field" in got:
+                marked.append((char, raw_hex, got["truncated_at_field"]))
+    assert checked > 2000, f"expected the full corpus, checked only {checked}"
+    assert not marked, (
+        f"{len(marked)} of {checked} REAL frames were flagged as truncated; the marker is only "
+        f"ever meant to fire on malformed frames. First: {marked[0]}"
+    )

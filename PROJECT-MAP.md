@@ -82,6 +82,7 @@ Status key: ✅ built & working · ⚙ partial / hardening · 🔒 built but blo
 |---|---|---|
 | nRF BLE sniffer (app↔SB20 passive) | ✅ | `scripts/sniff_ble.py` · [nrf-sniffer](code/findings/nrf-sniffer.md) |
 | ANT+ + BLE capture tooling | ✅ | `scripts/0[1267]_capture_*.py`,`capture_*.py` · [wsl-capture-runbook](code/findings/wsl-capture-runbook.md), [traffic-observability](code/findings/traffic-observability.md) |
+| Capture records are **self-describing about damage** — a field the flags advertised but the frame could not carry is named (`truncated_at_field`), never silently omitted | ✅ | `scripts/06_capture_ble.py`, `ant/pages.py`, `ant/fec.py` · `tests/test_capture_ble_decoders.py` (guards all 2,437 committed frames) · issue #306 |
 | Rebuildable SQLite index over captures | ✅ | `analysis/pcap_sqlite.py`,`jsonl_sqlite.py`, `scripts/13_build_sqlite.py` · [sqlite-analysis-layer](code/findings/sqlite-analysis-layer.md) |
 | Dev toolchain + capture-rig gate; Infisical secrets | ✅ | [`tools/`](tools/README.md) (`provision-dev-env.ps1`,`doctor.ps1`,`secrets-*.ps1`) · [shared-services-adoption](code/findings/shared-services-adoption.md) |
 
