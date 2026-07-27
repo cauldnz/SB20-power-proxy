@@ -110,6 +110,8 @@ Convergence work so the ESP32 web UI, the nRF Web Bluetooth app, and the LVGL de
 | Same on-device calibration approach both builds (shared `CalibrationSession`→`CorrectionCurve`) | ✅ | `firmware/lib/proxy/CalibrationFit.h` (shared) · [nrf52-sense](code/findings/nrf52-sense.md) |
 | HTTP routes are a **pure** request→response layer; `WifiLink` is a thin adapter. CSRF is enforced on the *method*, so every POST is guarded with no per-route opt-out | ✅ | `firmware/lib/proxy/WebRoutes.h`, `firmware/test/test_webroutes/` · R9 |
 | **Route-behaviour oracle** — capture all 57 HTTP behaviours (incl. 17 CSRF rejections) from a running board and diff two captures, to prove a refactor changed nothing | ✅ hardware-proven (C3 .165, 0/57) | `code/scripts/route_baseline.py` (`capture` / `diff`) · R9b |
+| Control-point results are applied in the order the SB20 demands (reply **before** the source zero — an unanswered CP write drops the link, reason 531) | ✅ | `firmware/lib/proxy/CpApply.h` (`applyCpResult`/`ICpSink`), `firmware/test/test_loopdrain/` · R10a |
+| BLE-task→`loop()` handoff is one tested type, not hand-rolled `volatile` globals — coalescing, ref-before-dut drain order, and the meter-dropped edge are named invariants | ✅ | `firmware/lib/proxy/LoopDrain.h` (`PendingSlot`/`PendingFlag`/`CalibrationDrain`/`FallingEdge`) · R10b–d |
 
 ---
 

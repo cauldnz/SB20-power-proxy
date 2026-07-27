@@ -4212,3 +4212,60 @@ act-on was already in a doc: the nRF SoftDevice worktree trap, the `esp32s3` tom
 path in session 9, and now twice in one script. "Find and read the doc before you build" has been an
 invariant in CLAUDE.md all along; this is the first time skipping it destroyed device state rather
 than merely wasting time.
+
+---
+
+## 2026-07-27 — The chain between the codec and the radio had no test (item 5 / R10)
+
+The five-model review's only **unanimous** finding was that this repo tests its pure codecs and its
+pure cores well, and does not test the wiring between them and the hardware. Measured rather than
+assumed, that turned out to be exactly right for the ESP32 zero-reset path, and the specifics are
+worth recording because two of them are protocol facts that were being held by nothing.
+
+**What was already tested.** `handleControlPoint` is thoroughly covered, including that CP `0x0C`
+and `0x10` set `requestSourceZero` and that the crank-length ops `0x04`/`0x05` do not. That is the
+decision; it was never the risk.
+
+**What was not.** The three steps after it. `BleCrankPeripheral::onWrite` applied the `CpResult` as
+three adjacent statements inside a NimBLE callback, `main.cpp` stashed a `volatile bool`, and
+`loop()` drained it into `meter.requestZeroOffset()`. None of that could be observed by a test, and
+it carries two facts that cost real bike sessions to learn:
+
+1. **Reply before zero.** The SB20 terminates the link (reason 531) if a CP write goes unanswered,
+   and the Assioma's zero takes ~3.6 s - so the indication must go out before the source meter is
+   touched. Reversing two adjacent lines reintroduces the disconnect, and nothing said so.
+2. **Ref before DUT.** `loop()` drained the reference sample before the DUT sample so the
+   accumulator has a reference to pair against. That was a code comment with nothing behind it.
+
+**What changed.** `CpApply.h` turns the apply order into data: `applyCpResult(result, sink)` drives
+an `ICpSink` in the order crank-length -> reply -> zero, and `BleCrankPeripheral` implements that
+sink. `LoopDrain.h` holds the handoff protocol that `main.cpp` had hand-rolled three times:
+`PendingSlot<T>`/`PendingFlag` (publish from the BLE task, take from `loop()`), `CalibrationDrain`
+(the ref-before-dut order), and `FallingEdge` (the meter-dropped edge). 22 host tests in
+`test_loopdrain`, including the whole chain driven end to end through fakes: real captured `0x10`
+bytes -> reply -> flag -> drain -> a fake source meter zeroed exactly once.
+
+**Numbers.** ESP32 native suite 300 -> 322 tests, 8 suites. `main.cpp` shed 7 lines of `volatile`
+globals for 2 typed ones.
+
+**Two findings from doing it.**
+
+- **A double-tap used to forward two zeros.** The old `volatile bool` and the new `PendingFlag`
+  both coalesce, so this was already correct - but only by accident of the representation, and
+  nothing said it was intended. Each zero stalls the source meter ~3.6 s, so an impatient rider
+  tapping Calibrate twice is a real case. It is now a named invariant with a test.
+- **The drain had a lost-vs-duplicated choice nobody had made.** `main.cpp` cleared the pending flag
+  *before* reading the payload. Without atomics a publish landing mid-take is either lost or
+  duplicated, and clear-then-read chooses duplicated: the consumer reads the new payload, the flag
+  stays raised, and the same sample is delivered again next loop. For calibration accumulation a
+  duplicate biases the fit toward one point whereas a dropped sample is one of hundreds, so
+  read-then-clear is the better trade and is what `PendingSlot` does. Recorded honestly: that window
+  is between the BLE task and `loop()`, so a single-threaded host test cannot observe it. The tests
+  pin what is observable - deliver-once, coalescing, and a re-entrant publish landing on the next
+  drain. The ordering itself rests on the reasoning above. Atomics remain available if a duplicate
+  sample is ever suspected in a fit.
+
+**Method note.** Every one of these tests passed the moment it was written, which proves nothing. It
+was mutation-tested before being trusted: firing the zero before the reply, draining DUT before ref,
+turning the edge detector into a level detector, and giving the flag counter semantics. Six distinct
+failures across three mutations; all four invariants are genuinely pinned.
