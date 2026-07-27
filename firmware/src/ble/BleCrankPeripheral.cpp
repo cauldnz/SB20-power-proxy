@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "Config.h"
+#include "CpApply.h"  // applyCpResult — the mandated reply-then-zero order, host-tested
 #include "Cps.h"
 #include "spoofs/StagesSpm2.h"  // the captured Stages crank bytes this peripheral impersonates
 #include "Obc.h"           // OBC BLE service/characteristic UUIDs
@@ -20,7 +21,11 @@ using namespace sb20proxy;
 // mfg company id) for the 0x10 the Stages app actually sends (bike-session 3: the old 0x0C-shaped 0x10
 // reply left the calibrate UI spinning), set/return crank length (0x04/0x05), "not supported" for the
 // rest. Every write is logged raw first — that's how we capture the SB20's handshake (un-sniffable otherwise).
-class ControlPointCallbacks : public NimBLECharacteristicCallbacks {
+//
+// This class is the ICpSink (CpApply.h): applyCpResult drives it in the order the SB20 demands —
+// persist crank length, THEN indicate the reply, THEN forward the zero. That order used to be three
+// adjacent statements here where no test could see it; it is now pinned by test_loopdrain.
+class ControlPointCallbacks : public NimBLECharacteristicCallbacks, public ICpSink {
  public:
     ControlPointCallbacks(uint16_t* crankLenHalfMm, std::function<void()>* onZeroReset)
         : crankLen_(crankLenHalfMm), onZeroReset_(onZeroReset) {}
@@ -35,16 +40,29 @@ class ControlPointCallbacks : public NimBLECharacteristicCallbacks {
         CpResult r = handleControlPoint(v.data(), v.size(), *crankLen_,
                                         (int16_t)Config::SPOOF_CAL_OFFSET,
                                         Config::SPOOF_MFG_COMPANY_ID, mfgData);
-        if (r.crankLengthChanged) {
-            *crankLen_ = r.crankLengthHalfMm;
-            logf("[cp] crank length set = %u (1/2 mm)", (unsigned)*crankLen_);
-        }
-        // Answer the SB20 FIRST (it drops an unanswered CP write — reason 531), THEN fire-and-forget a
-        // REAL zero to the source meter on an offset-comp/zero-reset (0x0C/0x10). The handler only flags
-        // work for loop() — never a re-entrant central BLE op from this NimBLE host-task callback.
-        c->setValue(r.response.data(), r.response.size());
-        c->indicate();
-        if (r.requestSourceZero && onZeroReset_ && *onZeroReset_) {
+        // Order is protocol, not style — see CpApply.h. Answer the SB20 FIRST (it drops an
+        // unanswered CP write, reason 531), THEN fire-and-forget a REAL zero to the source meter.
+        cp_ = c;
+        applyCpResult(r, *this);
+        cp_ = nullptr;
+    }
+
+    // --- ICpSink -------------------------------------------------------------------------------
+    void setCrankLength(uint16_t halfMm) override {
+        *crankLen_ = halfMm;
+        logf("[cp] crank length set = %u (1/2 mm)", (unsigned)halfMm);
+    }
+
+    void reply(const uint8_t* data, size_t len) override {
+        if (!cp_) return;
+        cp_->setValue(data, len);
+        cp_->indicate();
+    }
+
+    void requestSourceZero() override {
+        // The handler only flags work for loop() — never a re-entrant central BLE op from this
+        // NimBLE host-task callback.
+        if (onZeroReset_ && *onZeroReset_) {
             logf("[cp] offset-comp -> forwarding zero to source meter");
             (*onZeroReset_)();
         }
@@ -53,6 +71,7 @@ class ControlPointCallbacks : public NimBLECharacteristicCallbacks {
  private:
     uint16_t* crankLen_;
     std::function<void()>* onZeroReset_;
+    NimBLECharacteristic* cp_ = nullptr;  // valid only for the duration of one onWrite
 };
 
 // The Stages proprietary control char (fe02) — opaque protocol. We don't yet know what the SB20

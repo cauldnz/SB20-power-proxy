@@ -341,3 +341,41 @@ place, and ~40 `hook_ ? hook_() : default` ternaries disappeared into `DeviceHoo
 *Maintenance: tick a box in the same PR that lands the slice. When an item completes, add a one-line
 "done — commit `<sha>`" next to it. Promote any durable finding to `decisions.md`. If we later prefer
 GitHub issues, mirror the unchecked R-items there and link back here.*
+
+
+## R10 — The chain between the codec and the radio  ✅ done
+
+**Consensus: 5/5 models** — the only unanimous finding in the review. The pure codecs and the pure
+cores are well tested; the wiring between them and the hardware was not tested at all.
+
+Measured scope for the ESP32 zero-reset path: `handleControlPoint` was well covered (including
+`requestSourceZero` for `0x0C`/`0x10` and its absence for `0x04`/`0x05`), but the three steps after
+it were not, and they carried two capture-grounded protocol facts that nothing enforced.
+
+- [x] **R10a — the control-point apply order.** `CpApply.h`: `applyCpResult(result, ICpSink&)` drives
+      crank-length → reply → zero. The SB20 drops the link (reason 531) on an unanswered CP write and
+      the Assioma's zero takes ~3.6 s, so reply-before-zero is protocol, not style. Was three adjacent
+      statements in a NimBLE callback; now pinned by `test_zero_reset_replies_before_forwarding_the_zero`.
+- [x] **R10b — the pending-slot handoff.** `LoopDrain.h`: `PendingSlot<T>` / `PendingFlag` replace the
+      seven `volatile` globals `main.cpp` hand-rolled three times. Coalescing is now a named invariant
+      with a test (an impatient double-tap on Calibrate must forward **one** zero, not two).
+- [x] **R10c — the ref-before-dut drain order.** `CalibrationDrain` enforces what was previously only
+      a code comment: the reference sample lands before the DUT sample so the accumulator has
+      something to pair against.
+- [x] **R10d — the meter-dropped edge.** `FallingEdge` fires once per transition, never on a boot that
+      starts disconnected.
+- [x] **R10e — the chain end to end.** `test_loopdrain` drives real captured `0x10` bytes through
+      decode → apply → flag → drain → a fake source meter, asserting the reply precedes the zero and
+      the meter is zeroed exactly once. Only NimBLE is faked.
+
+**Result:** ESP32 native suite 300 → 322 tests across 8 suites. All four invariants mutation-tested
+(fire-zero-first, drain-dut-first, edge→level, flag→counter) — six distinct failures across three
+mutations, so these are genuine regression tests rather than tests that merely happened to pass.
+
+**Known limit, recorded not hidden:** the publish/take race is between the BLE task and `loop()`, so
+a single-threaded host test cannot observe it. `PendingSlot` chooses read-then-clear (drop a sample
+rather than duplicate one, since a duplicate biases a calibration fit); that choice rests on
+reasoning, not on a test. Atomics remain available if a duplicate is ever suspected in a fit.
+
+**Not done here:** the equivalent nRF chain. `SourceRelay` (R1d.2, PR #312) already carries 81 host
+tests over the nRF relay, so the gap there is narrower; revisit if the nRF grows its own CP path.

@@ -24,21 +24,22 @@
 #else
   #include "ble/BleMeterClient.h"
   #include "CalibrationSession.h"  // on-device meter-to-meter calibration orchestration
+  #include "LoopDrain.h"           // pending-slot handoff + the ref-before-dut drain (host-tested)
   static sb20proxy::BleMeterClient meter;
   static sb20proxy::BleMeterClient refMeter;    // calibration REFERENCE (2nd BLE central; live only)
   static sb20proxy::CalibrationSession g_cal;    // the wizard's session (Idle/Collecting/Fitted)
   static bool g_calibrating = false;             // this boot is a live calibration session
   // The DUT/ref readings arrive on the NimBLE host task; g_cal is otherwise only touched from loop()
   // (the drain below + the HTTP handlers, which run inside wifi.handle()). So the notify callbacks just
-  // stash the latest sample in these single-writer/single-reader volatiles and the loop drains them
+  // publish the latest sample into these single-writer/single-reader slots and the loop drains them
   // into g_cal — keeping ALL g_cal access on the loop context (no cross-task race on its pairs vector).
-  static volatile bool g_pendDut = false, g_pendRef = false;
-  static volatile int16_t g_pendDutP = 0, g_pendRefP = 0;
-  static volatile uint32_t g_pendDutT = 0, g_pendRefT = 0;
+  // CalibrationDrain also enforces ref-before-dut, which used to be a comment with nothing behind it.
+  static sb20proxy::CalibrationDrain g_calDrain;
   // Set by the crank peripheral's CP-write callback when the SB20/app asks for a zero-reset (0x0C/0x10);
   // loop() drains it into meter.requestZeroOffset() so the REAL source meter (Assioma) gets zeroed —
-  // off the BLE callback context, never a re-entrant central op. forward-plan §10.
-  static volatile bool g_pendZeroReset = false;
+  // off the BLE callback context, never a re-entrant central op. forward-plan §10. Coalescing: an
+  // impatient double-tap forwards ONE zero, not one per write (each stalls the meter ~3.6 s).
+  static sb20proxy::PendingFlag g_pendZeroReset;
 #endif
 
 #if USE_WIFI
@@ -1093,15 +1094,15 @@ void setup() {
 
     // The SB20/app's calibrate (CP 0x10) should perform a REAL zero on the source meter. The crank
     // peripheral's CP callback flags it; loop() drains it into meter.requestZeroOffset() (forward-plan §10).
-    crank.setZeroResetHandler([]() { g_pendZeroReset = true; });
+    crank.setZeroResetHandler([]() { g_pendZeroReset.publish(); });
 
     // Calibration wiring: the DUT (primary meter) feeds the session via the proxy tap; the reference
     // (2nd central) feeds it directly. Both no-op unless a session is collecting, so this is inert in
     // normal spoof/corrector runs. On a calibration boot (cfg.calibrating, set by /calibrate/start)
     // the reference is pinned + begun and the session starts — both meters then stream into it.
     // Stash each reading (NimBLE-task context) for the loop to drain into g_cal — never touch g_cal here.
-    proxy.setTap([](const PowerReading& r) { g_pendDutP = r.power_w; g_pendDutT = r.t_ms; g_pendDut = true; });
-    refMeter.onReading([](const PowerReading& r) { g_pendRefP = r.power_w; g_pendRefT = r.t_ms; g_pendRef = true; });
+    proxy.setTap([](const PowerReading& r) { g_calDrain.publishDut(r.power_w, r.t_ms); });
+    refMeter.onReading([](const PowerReading& r) { g_calDrain.publishRef(r.power_w, r.t_ms); });
     g_calibrating = cfg.calibrating;
     if (g_calibrating) {
         refMeter.setMatch(cfg.refMeterAddress, cfg.refMeterNameFilter);
@@ -1453,14 +1454,13 @@ void loop() {
     if (g_calibrating) {
         refMeter.loop();  // service the 2nd central during a calibration session
         // Drain the meters' stashed readings into g_cal HERE (loop context), before wifi.handle()
-        // reads it — ref first so the accumulator has a reference when the DUT sample pairs.
-        if (g_pendRef) { g_pendRef = false; g_cal.onRef(g_pendRefP, g_pendRefT); }
-        if (g_pendDut) { g_pendDut = false; g_cal.onDut(g_pendDutP, g_pendDutT); }
+        // reads it — CalibrationDrain applies ref first so the accumulator has a reference when the
+        // DUT sample pairs.
+        g_calDrain.drain(g_cal);
     }
     // Drain a pending zero-reset: the SB20/app asked our spoof to calibrate -> forward a REAL zero to the
     // source meter HERE in loop() (off the CP-write callback, so no re-entrant central BLE op).
-    if (g_pendZeroReset) {
-        g_pendZeroReset = false;
+    if (g_pendZeroReset.take()) {
         meter.requestZeroOffset();
     }
 #endif
@@ -1468,10 +1468,10 @@ void loop() {
 #if !USE_MOCK_METER
     // Meter just dropped -> clear the last readings so the OLED / /stats don't show stale numbers
     // (source already flips to "searching"; this stops a stale power_w lingering alongside it).
-    static bool wasConnected = false;
-    const bool nowConnected = meter.connected();
-    if (wasConnected && !nowConnected) proxy.reset();
-    wasConnected = nowConnected;
+    // FallingEdge fires once per transition — not every loop while disconnected, and not on a boot
+    // that starts disconnected (LoopDrain.h, host-tested).
+    static FallingEdge meterDropped;
+    if (meterDropped.update(meter.connected())) proxy.reset();
 #endif
 
 #if USE_WIFI
