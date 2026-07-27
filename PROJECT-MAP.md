@@ -113,6 +113,8 @@ Convergence work so the ESP32 web UI, the nRF Web Bluetooth app, and the LVGL de
 | **Route-behaviour oracle** — capture all 57 HTTP behaviours (incl. 17 CSRF rejections) from a running board and diff two captures, to prove a refactor changed nothing | ✅ hardware-proven (C3 .165, 0/57) | `code/scripts/route_baseline.py` (`capture` / `diff`) · R9b |
 | Control-point results are applied in the order the SB20 demands (reply **before** the source zero — an unanswered CP write drops the link, reason 531) | ✅ | `firmware/lib/proxy/CpApply.h` (`applyCpResult`/`ICpSink`), `firmware/test/test_loopdrain/` · R10a |
 | BLE-task→`loop()` handoff is one tested type, not hand-rolled `volatile` globals — coalescing, ref-before-dut drain order, and the meter-dropped edge are named invariants | ✅ | `firmware/lib/proxy/LoopDrain.h` (`PendingSlot`/`PendingFlag`/`CalibrationDrain`/`FallingEdge`) · R10b–d |
+| Device state → view model is projected **once for both panel families**, not hand-written per surface. Balance comes from the *received* reading (it is the meter's measurement, not our correction) | ✅ | `firmware/lib/proxy/UiModel.h` (`projectRideView`), `firmware/test/test_uiproject/` · R1e.2 |
+| The calibrate wizard's Idle→Collecting→Fitted projection is written once and shared by the LCD frame and `GET /calibrate` — and clears every field it owns, so a finished fit can't leak into the next Idle screen | ✅ | `firmware/lib/proxy/CalibrationPage.h` (`projectCalWizard`), `firmware/test/test_uiproject/` · R1e.2 |
 
 ---
 

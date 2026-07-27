@@ -44,6 +44,72 @@ struct CalWizardView {
     bool scanning = false;
 };
 
+// What the seam knows about a calibration run, transposed off the device globals. `calibrating` is
+// "a calibration boot is in progress" — the LCD reads a RAM mirror of the NVS flag rather than the
+// flag itself, because an nvs_open per 200 ms frame is 5 flash reads/s plus a NOT_FOUND error log
+// each on never-configured boards; the web route reads NVS directly, which is fine per request.
+struct CalWizardInputs {
+    bool calibrating = false;
+    const CalibrationSession* session = nullptr;  // null is treated as Idle
+    bool dutConnected = false;
+    bool refConnected = false;
+    const std::vector<SourceCandidate>* devices = nullptr;  // Idle only: the DUT/reference pickers
+};
+
+// Project a calibration run into the wizard's view. Written once and called from BOTH surfaces —
+// the LCD frame builder and GET /calibrate — because they were two verbatim copies of the same
+// three-state machine, and two copies of a state machine that must agree is a drift waiting to
+// happen: add a field to the Collecting branch and the phone and the screen disagree about the
+// same session until someone notices.
+//
+// It assigns EVERY field it owns on every path, including clearing the ones the current state does
+// not use. That is not tidiness — the LCD reuses one LcdViews across frames and never clears it, so
+// leaving a field alone meant the fitted curve, residual and pair counts survived into the next
+// Idle screen, while the web route (which builds a fresh view per request) showed them empty. Same
+// state, two answers. The surface still owns the fields this cannot know: dutAddr/refAddr (the
+// pending picks), deviceName, message, scanning and the coverage edges.
+inline void projectCalWizard(const CalWizardInputs& in, CalWizardView& v) {
+    v.devices.clear();
+    v.dutConnected = false;
+    v.refConnected = false;
+    v.pairCount = 0;
+    v.enoughToFit = false;
+    v.coverage.clear();
+    v.curve.points.clear();
+    v.linear = false;
+    v.scale = 1.0f;
+    v.offset = 0.0f;
+    v.residualW = 0.0f;
+    v.minPairs = in.session ? in.session->minPairs() : 30;
+
+    if (!in.calibrating || in.session == nullptr) {
+        v.state = CalState::Idle;
+        if (in.devices) v.devices = *in.devices;
+        return;
+    }
+    if (in.session->fitted()) {
+        v.state = CalState::Fitted;
+        const Correction& fit = in.session->fit();
+        v.residualW = in.session->residualW();
+        // A curve and a linear scale/offset are alternatives, never both: an empty curve means the
+        // fitter fell back to linear, and the view says which so the page does not have to guess.
+        if (fit.curve.empty()) {
+            v.linear = true;
+            v.scale = fit.scale;
+            v.offset = fit.offset;
+        } else {
+            v.curve = fit.curve;
+        }
+        return;
+    }
+    v.state = CalState::Collecting;
+    v.dutConnected = in.dutConnected;
+    v.refConnected = in.refConnected;
+    v.pairCount = (int)in.session->pairCount();
+    v.enoughToFit = in.session->enoughToFit();
+    v.coverage = in.session->coverage();
+}
+
 // Parsed wizard form. `action` ∈ {start, finish, save, cancel, scan}; the rest are the fields each
 // action needs. Keys: action, dut, ref, name.
 struct CalForm {

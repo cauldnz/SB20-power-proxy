@@ -4330,3 +4330,80 @@ equality for control-point frames.
 `test_every_real_measurement_frame_decodes_to_its_recorded_dict` walks `cycling_power_measurement`
 only - the control-point and CSC decoders had no corpus coverage at all. That is now closed for the
 truncation property across all three.
+---
+
+## 2026-07-27 - R1e.2: two panels, one view model, three ways of disagreeing
+
+Item 6 of the five-model architecture synthesis was "extract the LCD block (~500 lines) out of
+`firmware/src/main.cpp`". Measured the premise before building it, and most of it did not survive
+contact:
+
+- the **rendering** is already host-tested - the `native-lvgl` env renders the real
+  `src/ui/LvglUi.cpp` headless, pixels and tap->`UiAction` included;
+- `lcdTask` is LVGL + FreeRTOS plumbing that cannot leave the hardware seam;
+- `lcdExecute` is a switch delegating one-liners to objects that already have their own tests.
+
+Moving those buys indirection and no test. Owner approved narrowing the item to the part that was
+genuinely untested: the projection from device state into the shared view models, which was
+hand-written once per surface. Reading the two copies side by side turned up three defects.
+
+**1. One struct field, filled from two different readings.** `RideView::balancePct` is written by
+the OLED task and by the LCD frame builder. The OLED read it from `proxy.lastSource()`, the LCD from
+`proxy.lastOutput()`. Nothing anywhere said which was meant.
+
+It is invisible today, and provably so: `Correction::apply()` takes the `PowerReading` **by value**
+and writes only `power_w`, so `balance_half_pct` is passed through untouched and the two are equal on
+every path - including after `ProxyCore::reset()`, where both are a default-constructed reading. So
+this is a latent divergence, not a live bug.
+
+The correction that would break it is one we already intend to ship: the **single-sided x2**. A
+doubled one-legged reading carries no real left/right split, so whatever that correction eventually
+does to balance, the two panels would then disagree about the same pedal stroke. Resolved by
+projecting from the **received** reading: balance is a property of the meter's measurement, not of
+our correction. One function now decides for both panels.
+
+**2. The calibrate wizard's three-state machine existed twice, verbatim** - once in `buildLcdViews`
+(the LCD frame) and once in the `setCalibrationUi` view lambda (`GET /calibrate`). Same Idle ->
+Collecting -> Fitted branching, same linear-vs-curve fallback, ~25 lines each. Add a field to the
+Collecting branch and the phone and the screen disagree about the same session until someone notices.
+
+**3. ...and they had already diverged, in a way that is visible.** The LCD task declares
+`LcdViews views;` **once, outside its frame loop** (`lcdTask`), and `buildLcdViews` only ever
+assigns - it never clears. The web route builds a fresh `CalWizardView` per request. So after a fit
+finished and the rider cancelled back to Idle, the LCD still carried the fitted curve, residual and
+pair counts in the view while `/calibrate` showed them empty. Same session, two answers, depending
+which surface you looked at.
+
+**Shipped:**
+
+- `projectRideView()` in `lib/proxy/UiModel.h` - beside the structs it fills, so the OLED builds get
+  it without pulling in any LCD header. Owns watts/srcWatts/cadence/balance/link names/RSSI; the
+  caller keeps the device-specific fields (history ring, uptime, heap, version, workout strip).
+  Also unified the RSSI treatment: the OLED zeroed it when WiFi was down, the LCD reported it
+  unconditionally, and a stale RSSI reads as a plausible signal strength rather than as "no link".
+- `projectCalWizard()` in `lib/proxy/CalibrationPage.h` - the wizard's pure half already lived there.
+  It assigns **every** field it owns on every path, including clearing the ones the current state
+  does not use, which is what closes defect 3.
+
+**Verification.** 20 host tests in `firmware/test/test_uiproject/`; `pio test -e native` 342/342 (was
+322); `esp32c3-oled-live-ota`, `esp32cyd` and `esp32cyd-live` all compile - the last two matter
+because `buildLcdViews` has a `#if USE_MOCK_METER` fork and only `esp32cyd-live` takes the `#else`.
+
+**Mutation-checked, and the harness lied first.** Six mutations of the invariants; the first run
+reported **all six uncaught**. That was the harness, not the tests: Unity prints
+`<file>:<line>: <name>: Expected 0 Was -57\t[FAILED]`, and the regex looked for whitespace directly
+between the test name and `[FAILED]`, so it matched nothing. Fixed, the real result is **6/6 caught**
+- five by assertion (8 distinct failures) and one by an access violation (`0xC0000005`) at exactly
+the test for the null-session guard, which is precisely the crash that guard exists to prevent.
+
+That is the fourth time this session a measurement harness had to be validated against unchanged
+code before its verdict meant anything. **A tool that reports "no problems found" is making a claim
+about itself first.**
+
+**Not hardware-verified.** The owner is away from the bike; the CYD screen sweep still wants eyes on
+it. Behaviour-preserving on the OLED path by construction, and the two LCD changes (balance source,
+wizard clearing) are the fixes described above.
+
+**Explicitly not done:** `lcdTask` / `lcdSerialConsole` / `lcdExecute` stay in `main.cpp`. Recorded
+as R1e.3 in `architecture-remediation.md` so the next reader knows it was a decision, not an
+oversight. Reopen it if a specific behaviour there needs a test - not on line count.

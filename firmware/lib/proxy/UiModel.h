@@ -11,7 +11,8 @@
 #include <cstdint>
 #include <string>
 
-#include "MeterCompare.h"  // MeterBand + kTorqueBands (CompareView's torque domain)
+#include "MeterCompare.h"   // MeterBand + kTorqueBands (CompareView's torque domain)
+#include "PowerReading.h"   // the source/output readings projectRideView() reads
 
 namespace sb20proxy {
 
@@ -24,7 +25,8 @@ struct RideView {
     int16_t watts = 0;        // broadcast power (the hero)
     int16_t srcWatts = 0;     // received power (details)
     int16_t cadence = -1;
-    int16_t balancePct = -1;  // left %
+    int16_t balancePct = -1;  // left %, -1 = unknown. Projected from the RECEIVED reading, never the
+                              // broadcast one — see projectRideView() for why that distinction bites.
     const int16_t* hist = nullptr;  // power history ring, oldest first
     int nHist = 0;
     int16_t histMax = 300;
@@ -39,6 +41,50 @@ struct RideView {
     int16_t wkTarget = -1;
     long wkRemainS = 0;
 };
+
+// What the seam knows about the live link, transposed off the device globals so the projection
+// below is a pure function of it. Everything here is read straight from ProxyCore / the meter
+// client / WiFi with no logic in between; all the logic lives in projectRideView().
+struct RideInputs {
+    PowerReading out;             // the reading we BROADCAST (post-correction)
+    PowerReading src;             // the reading we RECEIVED (pre-correction)
+    bool meterConnected = false;  // (mock-meter builds report true with meterName = "mock meter")
+    std::string meterName;        // only meaningful while connected
+    std::string identity;         // the name we advertise, e.g. "Stages 62144"
+    bool wifiUp = false;
+    int32_t rssi = 0;             // only meaningful while wifiUp
+};
+
+// Project the live link into the shared ride view. Called by BOTH panel families — the C3's OLED
+// task and the LCD boards' frame builder — because when they were two hand-written copies they had
+// already drifted: the OLED read balance from lastSource() and the LCD from lastOutput(), the same
+// field of the same struct filled from two different readings.
+//
+// That drift is invisible today, and provably so: Correction::apply() takes the reading BY VALUE and
+// writes only power_w, so balance_half_pct is passed through untouched and the two sources are equal
+// on every path (including after ProxyCore::reset(), where both are a default PowerReading). It is
+// still the wrong shape, because balance is a property of the METER'S measurement, not of our
+// correction — and the moment a correction does synthesise power (the single-sided x2 is the obvious
+// candidate: a doubled one-legged reading carries no real left/right split) the two surfaces would
+// silently disagree. So this projects from src, and one function decides for both panels.
+//
+// The caller still owns the fields that are genuinely device-specific: the history ring, uptime,
+// free heap, firmware version and the live-workout strip.
+inline void projectRideView(const RideInputs& in, RideView& v) {
+    v.watts = in.out.power_w;
+    v.srcWatts = in.src.power_w;
+    v.cadence = in.out.cadence_rpm;
+    // balance_half_pct is left% x 2 (0..200) with -1 for "no split reported"; the sentinel has to
+    // survive the halving, so it is tested for rather than divided.
+    v.balancePct = in.src.balance_half_pct >= 0 ? (int16_t)(in.src.balance_half_pct / 2) : (int16_t)-1;
+    v.srcOn = in.meterConnected;
+    v.srcName = in.meterConnected ? in.meterName : std::string("searching...");
+    v.outName = in.identity;
+    v.outOn = true;
+    // A stale RSSI reads as a plausible signal strength rather than as "no link", so it is zeroed
+    // when WiFi is down instead of being left at whatever the radio last reported.
+    v.wifiRssi = in.wifiUp ? in.rssi : 0;
+}
 
 // WiFi onboarding (the captive setup portal): when active, the LCD boards replace the normal UI
 // with a join-this-AP screen (QR + SSID/PIN); the C3's OLED shows the same facts as text.
