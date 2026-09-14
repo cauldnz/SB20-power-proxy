@@ -49,7 +49,10 @@ mcp = [
     # The Model Context Protocol SDK, for the agent-drivable workout server
     # (scripts/mcp_workout_server.py / sb20proxy.mcp). Optional — the workout *core*
     # (sb20proxy.workout) and the drive loop (sb20proxy.mcp.driver) need none of it.
-    "mcp>=1.0",
+    # Pinned <2: mcp 2.x renamed mcp.server.fastmcp -> mcp.server.mcpserver (and changed
+    # other APIs), which breaks sb20proxy.mcp's v1 code. A fresh install (e.g. CI) otherwise
+    # pulls 2.x and fails collection. Lift the cap when sb20proxy.mcp is ported to the 2.x API.
+    "mcp>=1.0,<2",
 ]
 
 [project.scripts]
