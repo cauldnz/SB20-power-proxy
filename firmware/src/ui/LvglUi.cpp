@@ -742,6 +742,17 @@ void lvglUiInit(const LvglDriverHooks& hooks, int hor, int ver) {
     lv_init();
     lv_tick_set_cb([]() -> uint32_t { return millis(); });
     lv_display_t* d = lv_display_create(hor, ver);
+#if defined(LCD_LVGL_FULL_REFRESH) && LCD_LVGL_FULL_REFRESH
+    // Some QSPI panels (the Guition JC3248W535's AXS15231B) render correctly ONLY in full-refresh
+    // mode — partial/windowed flushes are broken on that silicon. These boards have PSRAM, so a
+    // whole-frame buffer (320x480x2 = 300 KB) is cheap: allocate it in PSRAM and let LVGL redraw
+    // the full frame each flush. Single-buffered — the QSPI blit is synchronous, so no tearing.
+    static uint8_t* buf = nullptr;
+    const size_t bufSz = (size_t)hor * ver * 2;
+    if (!buf) buf = (uint8_t*)heap_caps_malloc(bufSz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf) buf = (uint8_t*)malloc(bufSz);
+    lv_display_set_buffers(d, buf, nullptr, (uint32_t)bufSz, LV_DISPLAY_RENDER_MODE_FULL);
+#else
     // Partial render buffer: 1/8 frame with PSRAM headroom, 1/16 without — on the no-PSRAM CYD
     // every KB of internal DRAM matters (lwIP needs ~11 KB of TCP buffers per HTTP socket; at
     // ~27 KB free the web pages stalled, 2026-07-04). Smaller buffer = more flush chunks, which
@@ -752,6 +763,7 @@ void lvglUiInit(const LvglDriverHooks& hooks, int hor, int ver) {
     if (!buf) buf = (uint8_t*)heap_caps_malloc(bufSz, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
     if (!buf) buf = (uint8_t*)malloc(bufSz);
     lv_display_set_buffers(d, buf, nullptr, (uint32_t)bufSz, LV_DISPLAY_RENDER_MODE_PARTIAL);
+#endif
     lv_display_set_flush_cb(d, lvFlushCb);
     lv_indev_t* in = lv_indev_create();
     lv_indev_set_type(in, LV_INDEV_TYPE_POINTER);

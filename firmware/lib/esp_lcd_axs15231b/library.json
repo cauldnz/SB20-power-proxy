@@ -1,0 +1,10 @@
+{
+  "name": "esp_lcd_axs15231b",
+  "version": "1.0.1+sb20-display-only",
+  "description": "Espressif AXS15231B esp_lcd panel driver (QSPI/SPI display), vendored from esp-iot-solution (Apache-2.0). The MIPI-DSI variant and the I2C touch driver are omitted (arduino-esp32 doesn't bundle the esp_lcd_touch component; this board's touch is hand-rolled in GuitionDisplay.h). Used by the esp32-guition envs. See license.txt.",
+  "keywords": "esp_lcd, axs15231b, qspi, display, guition",
+  "license": "Apache-2.0",
+  "frameworks": "arduino",
+  "platforms": "espressif32",
+  "headers": "esp_lcd_axs15231b.h"
+}

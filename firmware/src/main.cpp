@@ -61,6 +61,8 @@
   #if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
     #include "TouchCalRitual.h"   // pure, host-tested sequencing for the resistive touch cal
     #include "disp/CydDisplay.h"  // ILI9341/ST7789 + XPT2046 seam (ESP32-2432S028R "CYD")
+  #elif defined(LCD_DRIVER_GUITION) && LCD_DRIVER_GUITION
+    #include "disp/GuitionDisplay.h"  // AXS15231B QSPI + AXS15231B I2C touch (Guition JC3248W535)
   #else
     #include "disp/LcdDisplay.h"  // JD9853 LCD + AXS5106 touch seam (S3-Touch board)
   #endif
@@ -259,6 +261,8 @@ static void oledTask(void*) {
 // tap and an HTTP control can't race.
 #if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
 using PanelDisplay = CydDisplay;
+#elif defined(LCD_DRIVER_GUITION) && LCD_DRIVER_GUITION
+using PanelDisplay = GuitionDisplay;
 #else
 using PanelDisplay = LcdDisplay;
 #endif
@@ -1391,6 +1395,9 @@ void setup() {
             g_tcal.start();
         }
     }
+#elif defined(LCD_DRIVER_GUITION) && LCD_DRIVER_GUITION
+    Serial.printf("[lcd] AXS15231B %dx%d QSPI up; touch(AXS15231B)=%s\n", LCD_W, LCD_H,
+                  lcd.touchAlive() ? "alive" : "DEAD");
 #else
     Serial.printf("[lcd] JD9853 %dx%d up; touch(AXS5106)=%s\n", LCD_W, LCD_H,
                   lcd.touchAlive() ? "alive" : "DEAD");
