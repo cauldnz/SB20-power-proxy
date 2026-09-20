@@ -38,6 +38,16 @@ The per-device WiFi **setup-AP SSID is `Setup-XXXX`** where `XXXX` = the last 2 
 - **ESP32 native-USB flashing** (C3 + S3) needs **esptool ≥ 4.11** (the bundled 4.5.1 wedges the USB-JTAG);
   `code/scripts/flash_c3.py` auto-picks a good one. The S3 must build on the **pioarduino** platform
   (`esp32s3-pio*`) — the stock `esp32s3-touch` env boot-looped and was **removed 2026-07-26**.
+- **📷 Bench camera — verify screens without eyes on them (2026-09-18).** A **UC70** USB camera
+  (`0AC8:3420`, Camera class) is aimed at the head-units, and **ffmpeg is installed**
+  (`C:\ProgramData\chocolatey\bin\ffmpeg.exe`), so a session can *see* what a panel is actually showing
+  instead of asking the owner to describe it. Grab a frame:
+  `ffmpeg -f dshow -rtbufsize 512M -video_size 3840x2160 -i video="UC70" -t 3 -update 1 -q:v 2 -y shot.jpg`
+  (`-t` lets auto-exposure settle; `-update 1` keeps the last frame). Crop/rotate per board with
+  `-vf "crop=w:h:x:y,transpose=N"` — the boards sit rotated, and the **CYD and Guition are rotated
+  opposite ways** (`transpose=1` vs `transpose=2`). Record across a reboot (`ffmpeg -t 16` while resetting
+  with `python -m esptool --port COMxx --after hard_reset chip-id`) to catch boot-time screens. This closed
+  the Guition bring-up loop: build → flash → capture → judge, no human in the loop.
 - **Building the LVGL envs on Windows** (`esp32cyd*`, `esp32s3-pio*`): LVGL's relative include chains can
   cross the `MAX_PATH` 260-char limit from a deep worktree path and fail to compile. Shorten the root with a
   directory junction — `cmd /c mklink /J C:\sbw <repo-root>` — and build from there. No admin rights, no

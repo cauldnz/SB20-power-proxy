@@ -98,14 +98,77 @@ moononournation/Arduino_GFX (see Sources):
 - **Flash mode.** Set `memory_type = qio_opi` (N16R8 = QIO flash + OPI/octal PSRAM). If a unit boot-loops
   at the 2nd-stage bootloader, try `dio_opi` (the fallback the S3-Touch needed).
 
+## Bring-up on hardware: blank screen → clean image (2026-09-16)
+
+The first flashed build booted clean (`[lcd] AXS15231B 320x480 QSPI up`, LVGL alive, no errors) but the
+panel was **blank with the backlight on**. Each fix below was grounded in evidence, not guessed:
+
+1. **The driver's default init table blacks the screen.** Symptom: boot noise (uninitialised panel RAM),
+   then black. `esp_lcd_axs15231b`'s built-in `vendor_specific_init_default` targets a *different*
+   AXS15231B panel (different timing values) and **ends with `0x22` ALLPOFF** ("all pixels off"), with
+   nothing restoring normal display. **Fix:** pass this board's own table via `vendor_config.init_cmds` —
+   `firmware/src/disp/GuitionInitCmds.h`, generated from the vendor BSP and cross-checked byte-for-byte
+   against Arduino_GFX 1.6.0 (29/29 register writes identical except `D0` bytes 10–11). It ends
+   `0x13 NORON → 0x11 SLPOUT → 0x2C`, then `begin()` sends DISPON.
+2. **A boot colour-bar self-test** (`GUITION_PANEL_SELFTEST`: red/green/blue/white bands, 1.5 s) then showed
+   correct **R/G/B/W** → init, QSPI link, colour order, byte order (`GUITION_RGB565_SWAP=1`, matching the
+   vendor's `LV_COLOR_16_SWAP`), orientation and row continuation all correct. **Lesson: solid bars hide
+   horizontal/within-row faults** — the UI still came out mangled.
+3. **Async strip race.** esp_lcd queues colour transfers asynchronously, so reusing one DMA strip buffer
+   lets the next strip overwrite one still on the wire. **Fix (mirrors the vendor `lv_port.c`):** two
+   internal-DMA strip buffers used alternately + an `on_color_trans_done` ISR/semaphore so each strip is
+   queued only after the previous finished.
+4. **Proving LVGL wasn't the problem.** The firmware's serial `SCREEN` command dumps every flush as
+   `<AREA x1 y1 x2 y2 base64-RGB565>`; reassembled, it showed **one full-frame flush `(0,0,319,479)`** and a
+   **pixel-perfect** render. So FULL mode was active and the corruption was between the buffer and the glass.
+5. **Tear-effect (TE) sync removed the corruption band.** Symptom: a full-height light band with sharp
+   edges exactly at the white QR card's columns (x 75–245). The vendor esp_lcd BSP — same driver, same
+   per-strip framing — differs from ours only by starting each frame on the panel's **TE falling edge
+   (GPIO38)**; a community thread on this panel reports "no image, partial image, garbled image" without
+   tear avoidance. **Fix:** `GUITION_TE_SYNC` — falling-edge ISR, drain any stale edge, wait (≤40 ms) for
+   a fresh one before the first strip. Boot log proves the wiring: `[lcd] guition TE edges in 100 ms: 6`
+   (~60 Hz, matching the vendor's `Tvdl=13 ms`/`Tvdh=3 ms`). Result: band gone, image correctly placed.
+
+### Residual: faint alternate-row striping on bright content (open)
+
+After the fixes above the image is correct, but **bright areas (the white QR card, white text) show a faint
+horizontal line texture** — alternate rows differing slightly in brightness, visible by eye. Established:
+
+- **It isn't our pixels.** The serial `SCREEN` dump, reassembled, shows every white-margin row *byte-identical*
+  pure white and the background a single colour — so the variation is introduced panel-side.
+- **It isn't repeated redraws.** Instrumentation shows `frames 1` on a static screen: one frame is pushed
+  and nothing re-pushes, so this isn't accumulated tearing.
+- **⭐ It survives a once-written solid white frame.** With `-DGUITION_PANEL_SELFTEST=1` the board holds a
+  solid white screen (written once, never redrawn). Captured on camera, it covers the panel completely —
+  no stale content — **and still shows the line texture**. Since no SPI activity happens at all after that
+  write, this also rules out pixel clock, write cadence and TE timing as causes *without* a test build.
+  Combined with our init registers being byte-identical to two independently-working sources, the
+  remaining explanation is the panel's own analog drive (VCOM / line inversion). Note atomic14 warns some
+  batches of this board are suspected **non-genuine AXS15231B silicon**.
+- **Frame writes span ~2 refreshes.** Measured `TE wait ~2.3 ms, xfer ~25 ms` against the panel's ~13 ms
+  `Tvdl`. The byte-swap was moved out of the post-TE window to shorten this.
+- **Two candidate fixes tried and refuted (don't repeat):**
+  - `D0` bytes 10–11 swapped to the Arduino_GFX order (`C2 42` instead of the BSP's `42 C2`): **no change**.
+    Reverted to the BSP order.
+  - Prepending `DISPOFF`+`SLPIN` so the analog registers are programmed while the panel sleeps (as
+    Arduino_GFX does): **panel stays black**. Reverted. Note Arduino_GFX **1.6.1 added that preamble** and
+    1.6.1 is the release reported broken on this panel (#803) — the preamble may well *be* that regression.
+
+Everything else about the panel's drive registers is byte-identical to two independent working sources, so
+the remaining lead is analog (VCOM / line-inversion) or the write still crossing the refresh. It is cosmetic
+and least visible on the dark ride UI.
+
 ## Open items / to verify on hardware (Phase-1 validation)
 
-- **Colour byte order** — the seam byte-swaps by default (`GUITION_RGB565_SWAP=1`). If hues come out
-  inverted (red/blue swapped) on hardware, rebuild with `-DGUITION_RGB565_SWAP=0`.
+- ✅ **Colour order, byte order, orientation** — verified by the boot colour bars (R/G/B/W top→bottom)
+  and the Wi-Fi QR screen: `GUITION_RGB565_SWAP=1`, `LCD_RGB_ELEMENT_ORDER_RGB`, rotation 0, no mirror.
 - **Touch orientation** — the AXS15231B reports native portrait coords; confirm no X/Y mirror is needed
   (the S3 needed `x = (LCD_W-1) - rawX`). Tune in `GuitionDisplay::readTouchState` after seeing a tap land.
-- **Panel orientation / colour order** — if the image is mirrored or wrong-coloured, adjust via
-  `esp_lcd_panel_mirror` / `esp_lcd_panel_swap_xy` after init, or flip `rgb_ele_order` to BGR.
+- **Touch INT/RST pins disagree across sources.** The seam drives **RST=GPIO12** (pulse) / reads
+  **INT=GPIO11** per the F1ATB guide, but the vendor BSP has touch RST/INT = **-1** (not connected) and the
+  LVGL v9 test repo (byte-me404/JC3248W535_lvgl_test) uses **INT=GPIO3**, no RST. Touch works either way
+  (polled I2C), but GPIO11/12 may belong to something else (e.g. the SD slot) — stop driving them once
+  confirmed.
 - **mDNS hostname** — the C3 already claims `sb20proxy.local`; give the Guition its own per-board
   hostname (like `-cyd`/`-s3`) so it doesn't collide on the LAN.
 
