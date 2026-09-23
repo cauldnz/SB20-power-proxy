@@ -123,4 +123,4 @@ capture; produce a new analysis). Conclusions drawn from these live in
 
 ## Perf soaks
 
-The `perf/soak-*.jsonl` runs behind [`perf-results.md`](../perf-results.md) live in `../perf/`, not here.
+The soak-run JSONL files behind [`perf-results.md`](../perf-results.md) live in `../perf/`, not here.

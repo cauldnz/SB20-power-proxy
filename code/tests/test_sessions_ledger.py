@@ -1,8 +1,8 @@
 """The session ledger (`sessions/README.md`) must list every session document.
 
-The **freshness mechanism** for the physical-session record. PROJECT-MAP delegates `sessions/` to the
-ledger the way it delegates `findings/` to the findings index, so the ledger has to be complete: a
-session doc that exists but has no ledger row is a plan or a result nobody will find.
+The **freshness mechanism** for the physical-session record. PROJECT-MAP delegates `sessions/`
+to the ledger the way it delegates `findings/` to the findings index, so the ledger has to be
+complete: a session doc that exists but has no ledger row is a plan or a result nobody will find.
 
 (2026-09-23 review: four session docs — the nRF S340 bring-up, both `CAPTURE-*` runs and the
 laptop hand-off — had no ledger row while the map claimed CI enforced `sessions/` coverage.)

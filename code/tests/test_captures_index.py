@@ -35,7 +35,7 @@ def test_every_capture_file_is_indexed() -> None:
     assert not missing, (
         "captures/README.md is missing rows for: "
         + ", ".join(missing)
-        + " - add a row (file, device, what it is, which session) in the same change as the capture."
+        + " - add a row (file, device, what, which session) in the same change as the capture."
     )
 
 
