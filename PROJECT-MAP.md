@@ -120,6 +120,10 @@ Convergence work so the ESP32 web UI, the nRF Web Bluetooth app, and the LVGL de
 
 ## B. Where every doc lives (the doc-area map)
 
+- **[`docs/reviews/`](docs/reviews/2026-09-23-review-synthesis.md)** — dated review records:
+  the **2026-09-23 synthesis** reconciles the July five-model review with landed remediation and
+  September changes; its [source register](docs/reviews/2026-09-23-review-sources.md) attributes the
+  original reports and archive limitations. Historical snapshots, not a second implementation backlog.
 - **[`code/findings/`](code/findings/README.md)** — **the source of truth** (28 docs): captures, protocol
   specs, decisions, plans. **Its own index [`code/findings/README.md`](code/findings/README.md) is the deep
   map** (grouped by subsystem, CI-guarded). Start there for any protocol/measurement question. Key entries:
