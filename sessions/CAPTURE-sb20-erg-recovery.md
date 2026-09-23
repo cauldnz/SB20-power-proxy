@@ -1,6 +1,6 @@
 # 🎯 SB20 erg — the recovery capture (after the 2026-07-06 qdomyos ride missed the control channel)
 
-**Status: 🟢 READY** — ~5–10 min of rider time. Small, focused follow-up to the 2026-07-06 passive ride
+**Status: folded into [session 14](session-14-two-bike-first-rides.md) gate G2a (2026-09-23)** — ~5–10 min of rider time. Small, focused follow-up to the 2026-07-06 passive ride
 (`CAPTURE-qdomyos-sb20-passive.md`), which captured the bike's FTMS surface cleanly but **missed the
 control channel**. Read the two desk-analysis entries in `code/findings/decisions.md` (2026-07-06 desk
 analysis) first — they change what's worth doing.

@@ -19,8 +19,9 @@ CLAUDE.md → *Session plans & the session ledger* (record Actual against Plan, 
 > **OTA-recoverable** via an authenticated push password (`ota_secret.h`); the OTA path was tested both ways
 > (unauth → rejected, auth → flashes). **Next up: 🟢 session 14** — the two-bike first rides (session 12
 > superseded, its gates reused; 11 blocked on #291; 10 superseded; 5 deferred). Open SB20 desk items: the FTMS **workout driver** (async fix
-> landed; drive it next time), the §12 battery-out variant, the **crank-length bridge** (§11), the **nRF sniffer**.
-> · cold-start: [BIKE-SESSION-READY.md](../BIKE-SESSION-READY.md)
+> landed; drive it next time), the §12 battery-out variant, the **crank-length bridge** (§11).
+> · cold-start: [session 14 §2 (G0)](session-14-two-bike-first-rides.md) + the paste-able
+> [laptop hand-off](session-12-LAPTOP-HANDOFF.md) (re-verify it against current `main` before use)
 
 | # | Date | Status | Session (Plan + Actual) | Outcome |
 |---|------|--------|--------------------------|---------|
@@ -38,6 +39,10 @@ CLAUDE.md → *Session plans & the session ledger* (record Actual against Plan, 
 | 3 | 2026-06-19 | ✅ DONE | [verify PR #5 fixes + map the shifters](../BIKE-SESSION-3.md) | A3 reconnect + A4 handshake ✅; A1 zero-reset ❌ + A2 crank-length ⚠️ (Stages app bypasses standard CP — desk fix); **full 6-button shifter map** captured (one-hot `0c46be60`, **stateless** → Zwift-Click-ready); silent chans likely aero-remote pods |
 | 2 | 2026-06-18 | ✅ DONE | [does the SB20 read the faithful spoof? + capture handshake](../BIKE-SESSION-2.md) | SB20 accepted power **and** cadence, crank-free; control-point / reconnect bugs captured → fixed in PR #5 |
 | 1 | pre-session-2 | ⛔ SUPERSEDED | [ANT+ Phase-1B pairing run-sheet](../NEXT-BIKE-SESSION.md) | Folded into sessions 2–3; kept for the un-run ANT+/Phase-1B steps |
+| — | 2026-07-14 | ✅ DONE | [nRF S340 + ANT+ bring-up](nrf-s340-ant-bringup.md) | The S340 SoftDevice flashed with no probe (rebuilt bootloader, DFU); the ANT+ Bike Power master transmits **and** was received + decoded by a Garmin stick; the full real-BLE-source → nRF → ANT+ loop bench-proven 2026-07-15 (PR #272). |
+| — | 2026-07-06 | ✅ DONE | [passive capture: a qdomyos Peloton ride on the SB20](CAPTURE-qdomyos-sb20-passive.md) | The bike's FTMS GATT dump + the ANT+ inventory captured clean; the sniff was a **negative result** (qdomyos drove resistance without connecting to the bike's FTMS surface). Captures indexed in `code/findings/captures/README.md`. |
+| — | (run-sheet) | folded into 14 | [SB20 erg recovery capture](CAPTURE-sb20-erg-recovery.md) | Option A is session 14 gate G2a verbatim (does the SB20 answer *our* Set Target Power?); option B (sniff a working controller driving the bike) only if the qz path needs it. |
+| — | (cold-start) | reference | [session-12 laptop hand-off](session-12-LAPTOP-HANDOFF.md) | The paste-able cold-start for the bike laptop; written for session 12, reused by session 14; re-verify §A/§B against current `main` before pasting. |
 
 ## How to run a session
 
