@@ -5,6 +5,9 @@ loop extends what's there instead of rebuilding it.** It's the one map that span
 the per-area indexes ([`code/findings/README.md`](code/findings/README.md), [`sessions/README.md`](sessions/README.md))
 are the deep dives it points into.
 
+> **This map is what *exists*. What to build *next* is [`ROADMAP.md`](ROADMAP.md)** (Now / Next / Later /
+> Parked, owner-prioritised; only Now items are mirrored as GitHub issues).
+
 > **Why this exists (a repeated, costly failure):** planning loops kept reading only the `findings/`
 > index and missing whole areas — twice nearly **rebuilding things already built** (the meter-to-meter
 > corrector; the beta collaboration loop, which was ~95% done). The fix: a map with **summaries of what
@@ -141,7 +144,8 @@ Convergence work so the ESP32 web UI, the nRF Web Bluetooth app, and the LVGL de
   [code/findings/beta-program.md](code/findings/beta-program.md).)
 - **[`tools/`](tools/README.md)** — dev-environment + capture-rig provisioning, the `doctor.ps1` gate, and
   the Infisical secrets scripts.
-- **Root — living operational docs:** [`CLAUDE.md`](CLAUDE.md) (the project instructions),
+- **Root — living operational docs:** [`ROADMAP.md`](ROADMAP.md) (the one prioritised backlog),
+  [`CLAUDE.md`](CLAUDE.md) (the project instructions),
   [`DEV-PLAYBOOK.md`](DEV-PLAYBOOK.md) (desk dev loop), [`USERS-PLAYBOOK.md`](USERS-PLAYBOOK.md) (working with
   testers), [`BIKE-SESSION-READY.md`](BIKE-SESSION-READY.md) (bike-machine cold-start),
   [`HANDOFF-NEXT-SESSION.md`](HANDOFF-NEXT-SESSION.md) (**resume on the hardware machine** — build + the

@@ -13,6 +13,9 @@ Read a power meter → correct it → re-broadcast it so a consumer accepts it a
   index of every doc area (`findings/`, `sessions/`, `beta/`, `tools/`, the playbooks). Born from repeated
   planning misses that nearly rebuilt already-shipped features — **find the capability there before you
   build it.** CI-guarded (`code/tests/test_project_map.py`).
+- **[`ROADMAP.md`](ROADMAP.md)** — the **one prioritised backlog** (Now / Next / Later / Parked). Work the
+  Now lane; Next→Now is the owner's call; only Now items are mirrored as GitHub issues. `forward-plan.md`
+  §9, `pre-beta-plan.md` and the session ledger's banner defer to it.
 - **`code/findings/domain-primer.md`** — **new to smart bikes / power meters / BLE fitness protocols? Start here.** General concepts + verified spec facts (CPS/FTMS/ANT+, erg, calibration, pedal meters) so you're grounded without relying on model-inherent knowledge; the project's *measured* bytes live in the docs below and win on conflict.
 - **`code/findings/decisions.md`** — append-only chronological log; the source of truth for what's decided/found (every numeric value, refuted hypothesis, "it works now").
 - **`code/findings/phase-0-report.md`** — the spoof spec + state of knowledge.

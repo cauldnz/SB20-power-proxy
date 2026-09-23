@@ -20,7 +20,8 @@ later that worked before, the answer is usually in here.
 - **[domain-primer.md](domain-primer.md)** — concepts + verified spec facts (CPS / FTMS / ANT+, erg, calibration, pedal meters). New to the domain? Start here.
 - **[phase-0-report.md](phase-0-report.md)** — the SB20 crank-spoof spec + overall state of knowledge.
 - **[decisions.md](decisions.md)** — append-only chronological log: every value chosen, hypothesis refuted, "it works now". The running source of truth.
-- **[forward-plan.md](forward-plan.md)** — the backlog / roadmap (§-numbered open items + future work).
+- **[forward-plan.md](forward-plan.md)** — the technical *detail* behind backlog items (§10–§16; §0–§8 are
+  pre-pivot history and §9 is superseded). Priorities live in [`ROADMAP.md`](../../ROADMAP.md).
 
 ## SB20 crank spoof (the BLE crank we impersonate)
 - **[session-G-ble-capture-spec.md](session-G-ble-capture-spec.md)** — what the ESP BLE proxy must reproduce, byte for byte.

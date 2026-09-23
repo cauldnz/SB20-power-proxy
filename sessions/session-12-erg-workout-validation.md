@@ -1,6 +1,6 @@
 # Session 12 — the erg workout ride: prove the stack while you actually train
 
-**Status:** 🟢 READY (planned 2026-07-25) · **Bike:** Stages SB20 (`E4:AA:5A:D6:0E:D4`) ·
+**Status:** ⛔ SUPERSEDED (2026-09-23) by [session 14](session-14-two-bike-first-rides.md), which reuses these gates and the §5 pairing recipe for two bikes (planned 2026-07-25) · **Bike:** Stages SB20 (`E4:AA:5A:D6:0E:D4`) ·
 **Board:** C3-OLED bike board `sb20proxy.local` / **192.168.1.165** (COM9) · **Branch:** `main`
 (everything is merged — no feature branch) · **Budget: ~80 min, 3 must-dos** (≈25 min of gates, then a
 **~53-min workout** that doubles as the soak test).
