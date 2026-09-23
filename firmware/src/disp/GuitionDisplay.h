@@ -5,6 +5,11 @@
 // envs). Same seam contract as LcdDisplay/CydDisplay — begin / setBrightness / blit / readTap /
 // touchAlive / blitArea / readTouchState — main.cpp swaps the type by build flag (LCD_DRIVER_GUITION).
 //
+// NOTE ON THE NAME: "JC3248W535" is off the owner's AliExpress order — NOT read from the PCB, and
+// not self-reported by any ESP32 board (303A:1001 is Espressif's generic S3 USB ID); the variant
+// suffix is unknown. What this file actually depends on is the pin map + AXS15231B controller
+// below, both confirmed on the hardware. See findings/guition-board.md ("Provenance").
+//
 // The panel bus is QSPI, which the hand-rolled SPI seams don't speak. We drive it with the ESP-IDF
 // **esp_lcd** panel API + the AXS15231B panel driver vendored under lib/esp_lcd_axs15231b (which wraps
 // the QSPI command framing + the vendor init table). esp_lcd ships inside the arduino-esp32 core, so —
