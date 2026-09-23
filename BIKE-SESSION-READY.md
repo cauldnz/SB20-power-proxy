@@ -4,7 +4,10 @@
 > [`code/findings/decisions.md`](code/findings/decisions.md) links it. Do not follow it as a procedure.
 > The current equivalents are **[`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md)** (how to run an on-bike
 > session), the ledger **[`sessions/README.md`](sessions/README.md)**, and
-> **[`PROJECT-MAP.md`](PROJECT-MAP.md)**.
+> **[`PROJECT-MAP.md`](PROJECT-MAP.md)**. The live content this card once held (the #291/#288 blockers,
+> the V1–V5 qz-compatibility table, "hold-to-repeat never ridden") moved to
+> [`sessions/session-14-two-bike-first-rides.md`](sessions/session-14-two-bike-first-rides.md) Annex A on
+> 2026-09-23; what to do next is [`ROADMAP.md`](ROADMAP.md).
 
 **You are the assistant on the bike machine.**
 

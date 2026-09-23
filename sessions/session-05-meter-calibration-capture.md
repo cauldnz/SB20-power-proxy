@@ -1,6 +1,6 @@
 # 🚴 Session 5 — meter-to-meter calibration ride (XCadey → reads like Assioma)
 
-**Status: 🟢 READY** · tracked in [`sessions/README.md`](README.md). Run via [`PLAYBOOK.md`](PLAYBOOK.md)
+**Status: ⏸️ DEFERRED (2026-09-23)** — opportunistic (track bike on a trainer); not on the two-bike training-stack path (`ROADMAP.md` Later) · tracked in [`sessions/README.md`](README.md). Run via [`PLAYBOOK.md`](PLAYBOOK.md)
 (record actuals inline, **⏱ timestamp from the start**, retro at the end). Opportunistic — runs whenever
 the track bike (both meters fitted) is set up.
 

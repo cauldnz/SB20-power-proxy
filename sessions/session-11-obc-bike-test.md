@@ -1,6 +1,6 @@
 # Session 11 — OpenBikeControl (OBC) on the bike: transmit → shifter-sink → web-config
 
-**Status: PLANNED (2026-07-08)** · Board: C3-OLED bike board (LAN **192.168.1.165**, COM9) · Branch:
+**Status: 🔒 BLOCKED (#291)** — G1 banked via session 13; G2/G3 wait on the discovery-ordering decision (`ROADMAP.md` Next) · Board: C3-OLED bike board (LAN **192.168.1.165**, COM9) · Branch:
 `feat/obc-web-config` (stacked on `feat/obc-transmitter` #248; both CI-green, 9 ahead of `origin/main`,
 0 behind). Observer: **`code/scripts/obc_reader.py`** (decoder self-test PASS). ~45–60 min.
 
