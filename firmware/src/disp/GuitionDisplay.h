@@ -213,7 +213,12 @@ public:
 
 private:
     static constexpr int kBlChannel = 0;
-    static constexpr int STRIP_ROWS = 40;   // rows per DMA transfer (320x40x2 = 25.6 KB, fits internal DMA)
+    // Rows per DMA transfer. These buffers MUST be internal DMA memory (PSRAM can't feed the SPI DMA -
+    // that was the original blank-panel bug), and there are two of them, so they come straight out of the
+    // scarce internal heap: at 40 rows they cost 2 x 25.6 KB and min_free_heap fell to 2.7 KB under web
+    // load with BLE streaming - far too close to OOM for a ride device. 20 rows halves it to 2 x 12.8 KB.
+    // The cost is more (smaller) transfers per frame, which the panel doesn't mind.
+    static constexpr int STRIP_ROWS = 20;
     esp_lcd_panel_io_handle_t io_ = nullptr;
     esp_lcd_panel_handle_t panel_ = nullptr;
     uint16_t* strips_[2] = {nullptr, nullptr};  // two INTERNAL-DMA strip buffers, used alternately

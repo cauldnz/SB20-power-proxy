@@ -158,19 +158,47 @@ Everything else about the panel's drive registers is byte-identical to two indep
 the remaining lead is analog (VCOM / line-inversion) or the write still crossing the refresh. It is cosmetic
 and least visible on the dark ride UI.
 
-## Open items / to verify on hardware (Phase-1 validation)
+## Phase-1 validation: DONE (2026-09-23)
+
+Validated end-to-end against a **simulated meter over the air** — an ESP32-C3 running the
+`esp32c3-oled` mock build advertising CPS, with the Guition reading it, correcting it and
+re-broadcasting as the Stages crank. Full narrative + numbers in `decisions.md` (2026-09-23).
 
 - ✅ **Colour order, byte order, orientation** — verified by the boot colour bars (R/G/B/W top→bottom)
   and the Wi-Fi QR screen: `GUITION_RGB565_SWAP=1`, `LCD_RGB_ELEMENT_ORDER_RGB`, rotation 0, no mirror.
-- **Touch orientation** — the AXS15231B reports native portrait coords; confirm no X/Y mirror is needed
-  (the S3 needed `x = (LCD_W-1) - rawX`). Tune in `GuitionDisplay::readTouchState` after seeing a tap land.
+- ✅ **Provisioning** — real captive-portal flow (`Setup-4D20` → SSID/pass → NVS → reboot → DHCP),
+  not a compiled-in SSID.
+- ✅ **IN leg** — `source=connected` 15/15 samples, power *changing* across 14 distinct values,
+  cadence 85, `forwarded` climbing.
+- ✅ **OUT leg** — a host BLE central sees `Stages 62144`, decoding watts/cadence/balance with
+  byte-faithful `0x2F` framing. The spoof identity is not C3-specific.
+- ✅ **UI + touch** — `SCREEN` framebuffer dump matches the expected ride screen; synthetic `TAP`s
+  walk Ride → Setup → More → Ride through the real digitiser → LVGL → `navTo` chain.
+- ✅ **OTA** — push OTA succeeded first attempt at RSSI −82 dBm, reboot verified, NVS preserved.
+- ✅ **mDNS hostname** — now `sb20proxy-guition.local`. The per-board switch keyed off
+  `CONFIG_IDF_TARGET_ESP32S3` and the Guition is *also* an S3, so it had been colliding with the
+  Waveshare board on `sb20proxy-s3.local`. Name boards by board, not by chip.
+- ✅ **Heap under load** — `STRIP_ROWS` cut 40 → 20 after the two internal-DMA strip buffers
+  (25.6 KB each) left a 2,700-byte floor under web + BLE load. Now 25,620 B on the same test.
+
+### Still open
+
+- **Touch orientation** — taps land correctly on the nav bar, so no gross X/Y mirror is needed; a
+  precise corner-accuracy check across the full panel has not been done.
 - **Touch INT/RST pins disagree across sources.** The seam drives **RST=GPIO12** (pulse) / reads
   **INT=GPIO11** per the F1ATB guide, but the vendor BSP has touch RST/INT = **-1** (not connected) and the
   LVGL v9 test repo (byte-me404/JC3248W535_lvgl_test) uses **INT=GPIO3**, no RST. Touch works either way
   (polled I2C), but GPIO11/12 may belong to something else (e.g. the SD slot) — stop driving them once
   confirmed.
-- **mDNS hostname** — the C3 already claims `sb20proxy.local`; give the Guition its own per-board
-  hostname (like `-cyd`/`-s3`) so it doesn't collide on the LAN.
+- **Not yet ridden.** Everything above used a *simulated* meter; no SB20 and no real pedals.
+
+### Flashing this board
+
+`code/scripts/flash_s3.py` now preserves NVS by default (it writes the code regions and skips every
+data partition), so a reflash keeps WiFi credentials, meter/crank identity and calibration. Use
+`--erase-nvs` when a clean slate is actually wanted. Before 2026-09-23 it wrote the merged
+`firmware.factory.bin` at `0x0`, which is `0xFF`-padded across the NVS window — so every flash
+silently blanked provisioning and dropped the board back into its setup portal.
 
 ## Sources
 

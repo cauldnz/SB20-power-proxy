@@ -30,14 +30,25 @@ The per-device WiFi **setup-AP SSID is `Setup-XXXX`** where `XXXX` = the last 2 
   C3-0.96 `COM13`, CYD `COM12`, S3-Touch `COM14`/`COM16`, nRF dongle `COM8`, ANT+ stick (WSL usb).
 - **CYD full MAC not yet captured** — only the STA suffix `CC:8C` (from its `Setup-CC8C` SSID). Read it
   with esptool next time it's on a CH340 port.
-- **Live IPs + mDNS (measured 2026-07-27, DHCP so not stable):** the head-unit C3 at **`192.168.1.165`**,
-  the CYD at **`192.168.1.234`** — note the LAN moved from the `192.168.0.x` subnet recorded earlier, so
-  any `192.168.0.*` address in an older doc is stale. **The mDNS hostname collision is FIXED:** each board
-  now answers its own name — `sb20proxy.local` → the C3, `sb20proxy-cyd.local` → the CYD (both verified
-  resolving, and both served `/status`). Per-board hostnames are `sb20proxy` / `-cyd` / `-s3`.
+- **Live IPs + mDNS (measured 2026-07-27, Guition 2026-09-23; DHCP so not stable):** the head-unit C3 at
+  **`192.168.1.165`**, the CYD at **`192.168.1.234`**, the **Guition at `192.168.1.222`** — note the LAN
+  moved from the `192.168.0.x` subnet recorded earlier, so any `192.168.0.*` address in an older doc is
+  stale. **The mDNS hostname collision is FIXED:** each board answers its own name — `sb20proxy.local`
+  → the C3, `sb20proxy-cyd.local` → the CYD, `sb20proxy-guition.local` → the Guition (all verified
+  resolving and serving `/status`). Per-board hostnames are `sb20proxy` / `-cyd` / `-guition` / `-s3`.
+  **2026-09-23:** the Guition used to answer to `-s3` — the switch keyed off `CONFIG_IDF_TARGET_ESP32S3`
+  and the Guition is *also* an S3, so it collided with the Waveshare board. **Name boards by board, not
+  by chip.**
 - **ESP32 native-USB flashing** (C3 + S3) needs **esptool ≥ 4.11** (the bundled 4.5.1 wedges the USB-JTAG);
   `code/scripts/flash_c3.py` auto-picks a good one. The S3 must build on the **pioarduino** platform
   (`esp32s3-pio*`) — the stock `esp32s3-touch` env boot-looped and was **removed 2026-07-26**.
+- **A USB flash of an S3 board no longer wipes provisioning (fixed 2026-09-23).** `flash_s3.py` used to
+  write pioarduino's merged `firmware.factory.bin` at `0x0`, and that image is `0xFF`-padded across the
+  NVS window — so *every* flash silently erased WiFi credentials, meter/crank identity and calibration,
+  and the board came back up in its setup portal. It now parses the partition table and writes only the
+  code regions (`bootloader` / `partitions` / `boot_app0`→otadata / `firmware`→app0), leaving every data
+  partition alone. Pass **`--erase-nvs`** when you genuinely want a clean slate. (Push **OTA** always
+  preserved NVS and still does.)
 - **📷 Bench camera — verify screens without eyes on them (2026-09-18).** A **UC70** USB camera
   (`0AC8:3420`, Camera class) is aimed at the head-units, and **ffmpeg is installed**
   (`C:\ProgramData\chocolatey\bin\ffmpeg.exe`), so a session can *see* what a panel is actually showing

@@ -1129,6 +1129,10 @@ void setup() {
 #ifndef SB20_HOSTNAME
 #if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
 #define SB20_HOSTNAME "sb20proxy-cyd"
+#elif defined(LCD_DRIVER_GUITION) && LCD_DRIVER_GUITION
+// The Guition is ALSO an S3, so it would otherwise answer to sb20proxy-s3 alongside the
+// Waveshare board — two boards, one mDNS name (2026-09-23). Name it by board, not by chip.
+#define SB20_HOSTNAME "sb20proxy-guition"
 #elif defined(CONFIG_IDF_TARGET_ESP32S3)
 #define SB20_HOSTNAME "sb20proxy-s3"
 #else
