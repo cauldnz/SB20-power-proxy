@@ -1,4 +1,4 @@
-# sb20proxy — ESP32 firmware (initial cut)
+# sb20proxy — ESP32 firmware
 
 A **dual-role BLE proxy**: read a real power meter (BLE *central*), apply a correction, and
 re-present it to the Stages SB20 as a **spoofed crank** (BLE *peripheral*, Cycling Power
@@ -8,7 +8,9 @@ Layout + conventions follow `cauldnz/raedian-probe`'s firmware: the **platform-a
 `lib/proxy/`** is host-unit-tested with **no hardware**; `src/main.cpp` + `src/ble/` are the only
 Arduino/NimBLE files.
 
-> **Status: initial scaffold, verified.** The pure core — CPS codec (power **and cadence**),
+> **Status (2026-09-23): the shipping firmware** — what is built is [`PROJECT-MAP.md`](../PROJECT-MAP.md) §A,
+> the env table and flash card are [`BENCH-FLASH.md`](BENCH-FLASH.md); the paragraph below is the June
+> scaffold-era note. Originally: initial scaffold, verified. The pure core — CPS codec (power **and cadence**),
 > linear + **non-linear (GridTransform) correction**, the ProxyCore relay, the HTTP status model —
 > is **host-tested green** (`pio test -e native`, 45/45). The full firmware **compiles clean for
 > the ESP32-C3** (NimBLE 2.2.0): the default BLE build at 37% flash, and the WiFi+OTA+HTTP build
@@ -56,9 +58,9 @@ pio device monitor                          # watch the [proxy] log
 pio run  -e esp32c3-wifi -t upload                      # first time, over USB
 #   on boot the device raises the WPA2 AP 'Setup-XXXX' (per-device, XXXX = last 2 MAC bytes; OLED boards show an 8-digit PIN on screen;
 #   screenless boards use the default password 'sb20setup' — Config::SETUP_AP_DEFAULT_PASSWORD).
-#   Join it, open http://192.168.4.1/, pick your network -> it saves to NVS and reboots onto WiFi.
+#   Join it, open http://172.29.4.1/, pick your network -> it saves to NVS and reboots onto WiFi.
 pio run  -e esp32c3-ota -t upload --upload-port <ip>    # thereafter, over the air
-curl http://<ip>/                                       # live status JSON
+curl http://<ip>/status                                 # live status JSON (`/` is the dashboard)
 curl http://<ip>/log                                    # recent log lines (serial-over-HTTP)
 curl http://<ip>/log/off                                # disable the log endpoint (persisted)
 curl -X POST http://<ip>/forget                         # wipe creds -> reboots into setup (POST: CSRF-guarded)
@@ -75,7 +77,7 @@ back into the portal so it can be re-provisioned without a USB reflash. `wifi_se
 optional and only *seeds* the first boot (see `wifi_secret.example.h`).
 
 Envs: `esp32c3-supermini` (the Super Minis you have, BLE only) · `esp32c3-wifi` (WiFi build,
-first USB flash) · `esp32c3-ota` (same binary, flashed over the air) · `esp32s3-waveshare`
+first USB flash) · `esp32c3-ota` (same binary, flashed over the air) · `esp32s3-pio*` (Waveshare S3-Touch) · `esp32cyd*` · `esp32-guition*`
 (refine the board id + wire the touch display when it arrives).
 
 ## Try it now (no SB20)

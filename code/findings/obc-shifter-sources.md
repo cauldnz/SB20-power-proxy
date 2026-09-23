@@ -1,6 +1,6 @@
 # Electronic-shifter spare buttons → OpenBikeControl (OBC) — source-side research
 
-**Status:** **research / no code yet** (feasibility survey, 2026-07-07). Grounds the *input* half of the
+**Status:** research (feasibility survey, 2026-07-07); the ANT+ Controls-page decoder now exists host-tested (`firmware/lib/proxy/AntControlsSource.h`) but no transport is wired and no capture has been taken — [`ROADMAP.md`](../../ROADMAP.md) Parked (#249). Grounds the *input* half of the
 OBC feature: which third-party electronic shifters' **spare/custom buttons** we can listen to, over which
 transport, and therefore which of our boxes can host it. The *output* half — emitting OBC — is the built,
 host-tested [`obc-protocol.md`](obc-protocol.md); this doc is its sibling on the read side, the way

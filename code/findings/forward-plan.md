@@ -1,7 +1,9 @@
 # Forward Plan — SB20 Power Proxy (post Phase 0)
 
-> **➡️ North star: [`pre-beta-plan.md`](pre-beta-plan.md)** (2026-06-22) — the goal-focused plan to ship the
-> SB20 meter/crank proxy to ~10 collaborator-testers. This doc remains the **technical backlog** it draws on.
+> **➡️ Priorities live in [`ROADMAP.md`](../../ROADMAP.md) (2026-09-23).** This doc is the *technical detail*
+> behind backlog items: §0–§8 are the pre-pivot ANT+ lanes (historical), §9 "Do this next" is superseded by
+> the roadmap, §10–§16 carry the detail the roadmap points at. The former north star,
+> [`pre-beta-plan.md`](pre-beta-plan.md), is parked. Sections are not renumbered: `decisions.md` cites them.
 
 **Status: Phase 0 substantially complete and de-risked. This is the operational plan to get from
 "we know it will work" to a working proxy.** Last updated 2026-07-20.

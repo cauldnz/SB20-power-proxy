@@ -1,6 +1,6 @@
 # UI unification (the "U-series") — plan & living checklist
 
-**Status:** IN PROGRESS (U0 ✅, U3 ✅, U5 ✅ merged; **U2 ✅, U4 ✅ in PR #268**; U1 reframed as a parity
+**Status:** DONE except U1 (U0 ✅, U3 ✅, U5 ✅, U2 ✅, U4 ✅ — PR #268 merged 2026-07-13; U1, the parity test, is an owner decision tracked in [`ROADMAP.md`](../../ROADMAP.md) Later). Originally: IN PROGRESS (U0 ✅, U3 ✅, U5 ✅ merged; U2 ✅, U4 ✅ in PR #268; U1 reframed as a parity
 test — unblocked by U5 and optional). Born from the
 task-#11 review ("unify UI across Web + all ESP32 boards", 2026-07). This doc is the plan's home — it was
 previously only a set of one-line labels in a task list, which is why "what is U1" was unanswerable. The

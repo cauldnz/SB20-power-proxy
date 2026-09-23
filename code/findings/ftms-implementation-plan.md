@@ -1,6 +1,6 @@
 # FTMS protocol — implementation plan (overnight, spec-built ahead of capture)
 
-**Status: PLANNED** · authored 2026-06-21 · turnkey brief for an autonomous overnight session.
+**Status: ✅ EXECUTED** (2026-06-21/22; F1–F7 shipped as PRs #48–#54) — kept as the build brief; the canonical FTMS doc is [`ftms-protocol.md`](ftms-protocol.md). Originally: PLANNED · authored 2026-06-21 · turnkey brief for an autonomous overnight session.
 
 ## Goal
 

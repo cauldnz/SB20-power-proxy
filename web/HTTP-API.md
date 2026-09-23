@@ -2,7 +2,7 @@
 
 `web/index.html`'s `HttpTransport` talks to the ESP32 over this JSON API, the HTTP mirror of the
 nRF's GATT contract (`firmware-nrf/GATT.md`). Some endpoints **already exist** on the ESP32 (`/status`,
-`/workout/state`); the rest are **added in U4** (the deferred ESP32-side task). Field names are the
+`/workout/state`); the rest **shipped in U4** (PR #268, 2026-07-13). Field names are the
 ESP32's existing snake_case; `HttpTransport` maps them to the shared normalized objects the view
 renders (see the top of the `<script>`).
 

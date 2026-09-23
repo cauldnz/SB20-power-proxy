@@ -1,6 +1,6 @@
 # Ride Director Uplift — overnight autonomous build plan
 
-**Status: PLANNED** · authored 2026-06-20 · turnkey brief for an autonomous overnight session.
+**Status: ✅ EXECUTED** (2026-06-20; Phases 1–6 shipped as PRs #37–#44) — kept as the build brief; the canonical doc is [`ride-director.md`](ride-director.md). Originally: PLANNED · authored 2026-06-20 · turnkey brief for an autonomous overnight session.
 
 ## Goal
 

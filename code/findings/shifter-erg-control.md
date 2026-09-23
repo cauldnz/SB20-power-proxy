@@ -1,6 +1,6 @@
 # Feature: shifter buttons adjust Erg target watts (the SB20's missing feature)
 
-**Status:** feasibility / architecture — **research only, no code yet** (real-data-first: gated on one
+**Status:** ✅ BUILT — the on-device decoder + erg mapper shipped (`Shifter.h`, PR #112; the nRF shifter bias, PR #224) and the SB20 buttons drive qz on air (session 13). Originally: feasibility / architecture — research only, no code yet (real-data-first: gated on one
 unconfirmed capture, see *The gate*). Owner ask, 2026-06-19: *"use the shifter buttons to dial the target
 watts up/down when in Erg mode"* — something the Stages app doesn't do. MIT / clean-room.
 

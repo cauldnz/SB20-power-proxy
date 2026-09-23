@@ -1,6 +1,6 @@
 # "Advanced" board idea — Waveshare ESP32-S3-Touch-LCD-1.47
 
-**Status: ✅ BOOTS + ADVERTISES (2026-07-02, evening) — bring-up UNBLOCKED via the pioarduino platform.**
+**Status: ✅ board proven** (boots + the full LVGL touch UI verified on hardware 2026-07-05; OTA still deaf to espota). The "advanced tier" planning sections below are historical: the Guition is the two-bike stack's head unit ([`ROADMAP.md`](../../ROADMAP.md)). Originally: ✅ BOOTS + ADVERTISES (2026-07-02, evening) — bring-up UNBLOCKED via the pioarduino platform.
 The full head-unit UI + firmware seam are built and host-tested; the board now **boots the firmware
 and advertises the Stages crank on air** after switching the S3 off the stock Arduino-2.0.x/IDF-4.4
 core (whose 2nd-stage bootloader crash-looped on this module) onto **pioarduino 55.03.39

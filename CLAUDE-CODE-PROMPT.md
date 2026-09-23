@@ -1,5 +1,9 @@
 # Suggested Claude Code Prompt
 
+> ⛔ **SUPERSEDED — historical.** Part of the pre-pivot brief, kept at the root because the append-only
+> [`code/findings/decisions.md`](code/findings/decisions.md) links it. `code/findings/` wins on any conflict;
+> the doc lifecycle is in [`PROJECT-MAP.md`](PROJECT-MAP.md) §F.
+
 > **Outdated (2026-06-15):** the "first task" this primes — hardening the capture
 > script before the first session — is long done, and the capture-API questions it
 > poses are answered. Phase 0 is largely complete. For a current opening prompt,
