@@ -1,5 +1,9 @@
 # 03 — Central Hypothesis and Phase 0
 
+> ⛔ **SUPERSEDED — historical.** Part of the pre-pivot brief, kept at the root because the append-only
+> [`code/findings/decisions.md`](code/findings/decisions.md) links it. `code/findings/` wins on any conflict;
+> the doc lifecycle is in [`PROJECT-MAP.md`](PROJECT-MAP.md) §F.
+
 > **Status note (2026-06-15):** Phase 0 has now largely run. **Results:** H2 fired
 > (Stages `manufacturer_id = 69` vs Favero — entering Assioma IDs failed, so a full
 > Stages spoof is required, not just ID-matching); Session C-0 PASSED (calibration

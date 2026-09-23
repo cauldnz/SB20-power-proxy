@@ -1,6 +1,6 @@
 # Beta program — running the pre-beta with ~10 SB20 testers
 
-**Status: the operating doc for the pre-beta (2026-06-22).** The "how we run it" companion to
+**Status: ⏸️ PARKED as a programme (2026-09-23)** — the loop it describes runs first on a fleet of two (round-zero beta, [`ROADMAP.md`](../../ROADMAP.md) Now item ROUND0). Originally: the operating doc for the pre-beta (2026-06-22). The "how we run it" companion to
 [`pre-beta-plan.md`](pre-beta-plan.md) (the "what we're building"); the *principles* are
 [`USERS-PLAYBOOK.md`](../../USERS-PLAYBOOK.md). Tester-facing material lives in [`/beta`](../../beta/):
 the recruiting kit — [`recruiting-and-selection.md`](../../beta/recruiting-and-selection.md) (funnel +

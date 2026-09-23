@@ -1,7 +1,8 @@
 # Architecture remediation plan — the living checklist
 
 **Status:** IN PROGRESS (opened 2026-07-10). Tick boxes here as each slice ships; this doc is the
-source of truth for the structural cleanup, so we don't carry it in a chat context window.
+source of truth for the structural cleanup, so we don't carry it in a chat context window. The open
+R-items are prioritised in [`ROADMAP.md`](../../ROADMAP.md) (Later); this doc keeps the detail and the boxes.
 
 **Origin:** the 3-agent architecture audit logged in [`decisions.md`](decisions.md) **2026-07-10
 ("Architecture audit …")**. Read that entry for the evidence; this doc is the *plan* derived from it.
@@ -286,7 +287,7 @@ implementing the second as written would have cost a lossless-capture guarantee.
 - [x] **R7d — codegen scripts brought inside the lint gate.** `gen_bridge.py`, `gen_webjson.py`,
   `gen_spa_header.py`, `gen_tokens.py` produce committed wire-format artifacts but sat outside `ruff`.
   Now in CI's lint scope; generated output verified byte-identical after the fixes.
-- [ ] **R7e — truncated optional fields are dropped with no marker in the record** (issue #306). The
+- [x] **R7e — truncated optional fields are dropped with no marker in the record** (issue #306) — *done — PR #316 (2026-07-27): `truncated_at_field` is written into the record.* The
   contract is now *pinned as it actually is* rather than as the docstring implied. Changing what the
   canonical capture writer records is an owner decision, not an unsupervised one.
 

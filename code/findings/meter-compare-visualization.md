@@ -1,6 +1,6 @@
 # Visualizing A/B power-meter error — with the torque domain front and centre
 
-**Status: PLANNED (2026-07-16).** A research + design plan for *how* to visualize the live/offline
+**Status: ✅ SHIPPED in part** (2026-07-16/20: the torque-axed Compare screen, `MeterCompare.h`, the Python twin + parity test); §6 web plots and real two-meter data remain ([`ROADMAP.md`](../../ROADMAP.md) Next). Originally PLANNED (2026-07-16). A research + design plan for *how* to visualize the live/offline
 agreement between two power meters (A vs B), so we can see **where in the pedalling space** the error
 lives — not just "B reads +11%". Governs the compare surfaces: the pure core
 [`firmware/lib/proxy/MeterCompare.h`](../../firmware/lib/proxy/MeterCompare.h) + its lifecycle seam

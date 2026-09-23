@@ -75,9 +75,9 @@ re-broadcasts whatever its internal computer believes the power to be.
 ├── DEV-PLAYBOOK.md     ← the desk dev loop · USERS-PLAYBOOK.md ← working with testers
 ├── BOARDS.md           ← physical board inventory (MACs, VID:PIDs, which build)
 │
-├── firmware/           ← ESP32-C3 / CYD / S3 (PlatformIO) — the primary product
+├── firmware/           ← ESP32-C3 / CYD / Waveshare S3 / Guition (PlatformIO) — the primary product
 │   ├── lib/proxy/      ←   the PURE, host-tested core (ProxyCore, Cps, Correction, Config…)
-│   ├── src/            ←   the hardware seam (ble/, net/, disp/) — only this needs a board
+│   ├── src/            ←   the hardware seam (ble/, net/, disp/, ui/) — only this needs a board
 │   └── test/           ←   host unit tests: `pio test -e native`
 ├── firmware-nrf/       ← nRF52840 (XIAO Sense) target — shares lib/proxy via lib_extra_dirs
 │

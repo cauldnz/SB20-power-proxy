@@ -1,6 +1,6 @@
 # Zwift controllers + the SB20 — research (Click / Play / Ride, virtual shifting, ride-ons)
 
-**Status:** research / orientation — **no code · parked to BACKLOG** (owner decision 2026-06-19: the
+**Status:** ⛔ SUPERSEDED by the OpenBikeControl path ([`obc-protocol.md`](obc-protocol.md)), which re-presents the SB20 buttons to qz/MyWhoosh without emulating a Zwift Click. Originally: research / orientation — no code · parked to BACKLOG (owner decision 2026-06-19: the
 FTMS erg feature in [`shifter-erg-control.md`](shifter-erg-control.md) goes first; Zwift-controller
 emulation is "sounds complex → future backlog"). Answers the owner's questions: *how does Zwift Click
 work, what does it offer, what makes sense on the SB20, does it route via FTMS or via Zwift, and is what

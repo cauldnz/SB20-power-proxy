@@ -1,5 +1,9 @@
 # nRF52840 device — completeness roadmap (ANT+ · spoof · generic boards)
 
+**Status (2026-09-23):** P1–P4 done (the BLE spoof port 07-10, S340 provisioned 07-13, the ANT+ master on air
+07-14/15); the open items (P5, the ANT slave channel, run-sheets R3/R4) are prioritised in
+[`ROADMAP.md`](../../ROADMAP.md) Later/Parked — this doc keeps the detail.
+
 **Goal (owner, 2026-07-08):** invest in the nRF device to make it *complete* — lean into its two
 differentiators the ESP32-C3 can't match: **ANT+** and the small no-WiFi form factor — and support the
 incoming **generic nRF boards** (Seeed XIAO now → **Adafruit-Feather clones as the primary target**).
