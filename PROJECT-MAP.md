@@ -172,7 +172,9 @@ Convergence work so the ESP32 web UI, the nRF Web Bluetooth app, and the LVGL de
   session (`session-04`…`session-14`, plan *and* actuals), the un-numbered records (the nRF S340 bring-up,
   the `CAPTURE-*` runs) and the laptop hand-off.
 - **[`docs/`](docs/architecture.md)** — [`architecture.md`](docs/architecture.md) (the conceptual
-  architecture with four rendered diagrams; canonical), [`bike-session-workflow.md`](docs/bike-session-workflow.md)
+  architecture with four rendered diagrams; canonical), [`system-reference.md`](docs/system-reference.md)
+  (how the pieces fit at runtime: roles, discovery rules, modes, legal configurations, the two-bike
+  matrix; issue #290), [`bike-session-workflow.md`](docs/bike-session-workflow.md)
   (a short companion to the playbook), [`diagrams/`](docs/diagrams/README.md) (Mermaid sources + SVGs),
   [`agents/`](docs/agents/issue-tracker.md) (the issue-tracker, triage-label and domain-doc conventions the
   engineering skills read), [`reviews/`](docs/reviews/README.md) (dated review snapshots, indexed there), and
@@ -289,6 +291,7 @@ CI parses this table.
 | [README.md](README.md) | index | the front door |
 | [PROJECT-MAP.md](PROJECT-MAP.md) | index | this map |
 | [docs/architecture.md](docs/architecture.md) | living | the conceptual architecture (canonical) |
+| [docs/system-reference.md](docs/system-reference.md) | living | how the pieces fit at runtime (issue #290) |
 | [docs/bike-session-workflow.md](docs/bike-session-workflow.md) | living | short companion to the playbook |
 | [docs/diagrams/README.md](docs/diagrams/README.md) | index | diagram convention |
 | [docs/reviews/README.md](docs/reviews/README.md) | index | dated reviews, indexed there |
