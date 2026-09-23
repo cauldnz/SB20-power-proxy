@@ -4,7 +4,7 @@ This is the **canonical source** for the browser UI, served to **two hosts from 
 
 - **GitHub Pages** (`cauldnz/bike-bridge-web`, public) — the nRF52840 build has no WiFi, so its UI is
   a static site the browser loads over HTTPS and talks to the board over **Web Bluetooth**.
-- **The ESP32, served from the device** (planned) — the ESP32 embeds this same `index.html` and serves
+- **The ESP32, served from the device** (✅ shipped: PR #234, hardware-verified at `GET /app`) — the ESP32 embeds this same `index.html` and serves
   it over its WiFi HTTP server; the page talks to the board over **HTTP/JSON** instead.
 
 `index.html` is a **single self-contained file** (all CSS + JS inline, no external fetches) because both

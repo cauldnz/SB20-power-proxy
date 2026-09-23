@@ -60,7 +60,8 @@ docker compose up -d
 cd ..
 ```
 
-See `../09-exploring-captures.md` for the full capture-to-analysis workflow.
+See `../09-exploring-captures.md` (historical) for the original capture-to-analysis workflow; the current
+path is the SQLite index (`findings/sqlite-analysis-layer.md`).
 
 ## Tests
 
@@ -75,7 +76,7 @@ sources, `ProxyCore` wiring) and ship in the **same commit** as the code. Fixtur
 the real captures in `findings/captures/` (round-trip / golden-vector), never invented bytes.
 Hardware-bound radio I/O is isolated behind a seam and tested with a fake; the on-air / pairing
 checks are manual (see `../NEXT-BIKE-SESSION.md`). CI (`.github/workflows/tests.yml`) runs `pytest`
-+ `ruff` on every push. Full policy: `../CLAUDE.md` §Validation.
++ `ruff` on every push. Full policy: `../CLAUDE.md` §Engineering disciplines.
 
 ### Software loopback (no hardware) — digital twins
 
@@ -140,9 +141,9 @@ python scripts/05_diff_captures.py \
     > findings/captures/diff-stages-vs-assioma.md
 ```
 
-See `../03-central-hypothesis-and-phase-zero.md` for the full Phase 0 capture plan.
+See `../03-central-hypothesis-and-phase-zero.md` (historical) for the original Phase 0 capture plan.
 
-## Status by phase
+## Status by phase (historical — the ANT+/Pi era; current status: [`PROJECT-MAP.md`](../PROJECT-MAP.md) §A)
 
 | Phase | Status |
 |-------|--------|

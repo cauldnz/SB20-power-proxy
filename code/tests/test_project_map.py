@@ -117,3 +117,15 @@ def test_docs_and_design_are_mapped() -> None:
         "docs/ or design/ docs in no index (PROJECT-MAP §B/§F, or docs/reviews/README.md): "
         + ", ".join(missing)
     )
+
+
+def test_historical_docs_carry_a_banner() -> None:
+    """A doc classed 'historical' must open with the ⛔ banner, so nobody follows it as current."""
+    bad = [
+        p for p, cls in _lifecycle().items() if cls == "historical" and "⛔" not in _head(ROOT / p)
+    ]
+    assert not bad, (
+        "classed 'historical' in PROJECT-MAP §F but no ⛔ banner in the first lines of: "
+        + ", ".join(bad)
+        + " — add the banner (see any numbered root doc), or reclass it."
+    )

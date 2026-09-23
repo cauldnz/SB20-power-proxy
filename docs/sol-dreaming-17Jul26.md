@@ -1,6 +1,7 @@
 # SOL dreaming, 17 July 2026: 21 new device ideas
 
-**Status:** DREAMING, not a roadmap or decision. These are hypotheses to test using the repository's
+**Status:** ⛔ DREAMING, not a roadmap or decision — a historical idea list (2026-07-20); ideas graduate only via
+[`ROADMAP.md`](../ROADMAP.md). These are hypotheses to test using the repository's
 capture-before-code discipline.
 
 This pass is deliberately about the two emerging target devices:

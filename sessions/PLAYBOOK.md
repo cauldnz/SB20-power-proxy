@@ -109,7 +109,8 @@ rider starts:
     Pin the Assioma by its explicit ANT id; never wildcard.
   - **Pre-stage BOTH at the desk** — they are the two biggest mid-ride time-sinks: the ANT+ stick over WSL +
     `usbipd` (`wsl-capture-runbook.md`; native Windows is BLE-only — ride 1 lost ~25 min to bring-up) and the
-    nRF dongle + Wireshark/tshark. **Verify both are *actually capturing* before the rider is at the bike** —
+    nRF dongle via `sniff_ble.py` (the Nordic SnifferAPI over serial — not Wireshark/tshark; see §Passive BLE
+    sniffing). **Verify both are *actually capturing* before the rider is at the bike** —
     a sniffer you think is running but isn't is worse than none.
   - **⚠️ HARD RULE (session 9, 2026-06-26 — learned the painful way):** `doctor.ps1` MUST **gate the capture
     rig**, not just build/flash — assert the dongle is on the **sniffer firmware** (PID `522A`) + the Nordic
@@ -218,7 +219,7 @@ rider starts:
   JSONL **days later**, not at the bike.)*
 - **Leave the next gate explicit:** what this result unblocks, and what **desk work must precede** the next
   visit (so the next session is also pre-staged turnkey).
-- **Retarget the cold-start to the next READY ride(s).** `BIKE-SESSION-READY.md` is the first thing the
+- **Retarget the cold-start to the next READY ride(s).** the ledger header (plus the session's paste-able hand-off, today `session-12-LAPTOP-HANDOFF.md`) is the first thing the
   bike-machine assistant reads — if it still names the session you just closed, the next rider gets walked
   through finished work. Closing a session is not done until the cold-start (and the ledger's `Latest done`
   header) point at the next 🟢 READY session(s), with current device coordinates + restore values. *(2026-06-23:

@@ -21,7 +21,7 @@ Read a power meter → correct it → re-broadcast it so a consumer accepts it a
 - **`code/findings/phase-0-report.md`** — the spoof spec + state of knowledge.
 - **`sessions/README.md`** — the session ledger (physical sessions run / planned); **`sessions/PLAYBOOK.md`** — how to run an on-bike one; **`DEV-PLAYBOOK.md`** — the desk dev loop (how we slice/prove/ship software); **`USERS-PLAYBOOK.md`** — how we work with testers/users/customers. The DEV/USERS playbooks are **living** — extend them as we learn.
 - **[`code/findings/README.md`](code/findings/README.md)** — the **index / map of every findings doc** (subsystem → its canonical doc + the tooling that doc governs). **Before building tooling for — or judging the readiness/availability of — any subsystem, find its doc here and read it; don't rebuild what's documented.** Kept complete by CI (see the invariant in §Engineering disciplines), so it won't drift stale.
-- The numbered root docs (`01-…`–`10-…`, `HANDOFF.md`, `START-HERE.md`) are the **pre-pivot brief** — useful background, but superseded by the findings docs above (per `README.md`).
+- The numbered root docs (`01-…`–`12-…`, `HANDOFF.md`, `START-HERE.md`, `CLAUDE-CODE-PROMPT.md`) are the **pre-pivot brief** — useful background, but superseded by the findings docs above (per `README.md`).
 
 ## Showing visuals to the owner (remote mode) — render HTML → PNG → github.com URL
 
@@ -102,8 +102,10 @@ as its own.** Both mirror a `ProxyCore` (`source → correction → target`) wit
   identity + cal values), `OledScreen.h`, `PerfMonitor.h` — and a thin **hardware seam** in
   `firmware/src/`: `ble/BleMeterClient` (central), `ble/BleCrankPeripheral` (peripheral + the control-point
   responder the SB20 demands), `net/WifiLink` (captive portal + the `/`,`/ui`,`/log`,`/stats` HTTP),
-  `disp/` (OLED). The core compiles and unit-tests with no radio; only the seam needs a board. Build
-  flavours via `platformio.ini` envs: mock-meter (ramp) vs `*-live` (reads a real meter), ± OLED, ± OTA.
+  `disp/` (the OLED and the CYD / Waveshare S3 / Guition LCD panel seams), `ui/` (the LVGL head-unit UI,
+  host-tested headless by `native-lvgl`). The core compiles and unit-tests with no radio; only the seam needs
+  a board. Build flavours via `platformio.ini` envs: mock-meter (ramp) vs `*-live` (reads a real meter),
+  ± OLED/LCD, ± OTA; the shipping C3 build is `esp32c3-oled-live-ota`.
 - **`code/` — Python desk tooling + the original ANT+ proxy.** The `sb20proxy` package mirrors the same
   flow over **ANT+**: `sources/` (read), `targets/` (re-broadcast, e.g. `stages_ant`), `core.py`
   (`ProxyCore`), `ble/cps.py` (the Python CPS codec — the twin of `Cps.h`), `ant/` (openant master +

@@ -1,5 +1,9 @@
 # 05 — Implementation Phases
 
+> ⛔ **SUPERSEDED — historical.** Part of the pre-pivot brief, kept at the root because the append-only
+> [`code/findings/decisions.md`](code/findings/decisions.md) links it. `code/findings/` wins on any conflict;
+> the doc lifecycle is in [`PROJECT-MAP.md`](PROJECT-MAP.md) §F.
+
 Five phases. Each has explicit entry criteria, exit criteria, and an artefact that gets committed. Don't skip phases; don't merge them. The temptation is real — resist it.
 
 ## Phase 0 — Diagnostic capture

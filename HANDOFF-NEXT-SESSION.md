@@ -4,7 +4,8 @@
 > [`code/findings/decisions.md`](code/findings/decisions.md) links it. Do not follow it as a procedure.
 > The current equivalents are **[`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md)** (how to run an on-bike
 > session), the ledger **[`sessions/README.md`](sessions/README.md)**, and
-> **[`PROJECT-MAP.md`](PROJECT-MAP.md)**.
+> **[`PROJECT-MAP.md`](PROJECT-MAP.md)**. §4 and §5 below are frozen at 2026-07-11: R1b–R1d.2, R3a, R9 and
+> R10 have shipped since (#296, #299, #301, #312, #314, #315).
 
 **Written 2026-07-10.** Pick this up on the machine that has the nRF USB dongles, ESP32 boards, nRF
 devices, and the ANT+ stick. **Everything is committed + documented in-repo — nothing lives only in a

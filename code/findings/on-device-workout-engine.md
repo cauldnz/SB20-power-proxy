@@ -1,6 +1,6 @@
 # On-device workout engine — structured workout over a route, deterministic execution
 
-**Status: IN PROGRESS (2026-06-28).** Phases 1–3 built — desk ZWO/FIT importers, the firmware engine
+**Status: ✅ BUILT — phases 1–4 on `main` (the FTMS wire, phase 4, shipped 2026-07-05 as PR #212); phase 5 is the real-SB20 ride, session 14 ([`ROADMAP.md`](../../ROADMAP.md) Now).** Originally IN PROGRESS (2026-06-28). Phases 1–3 built — desk ZWO/FIT importers, the firmware engine
 + runtime + web Workout screen + `/workout` routes are on `main` (PRs #186/#187/#188 + the importer
 PR). **Remaining: phase 4** — wire the per-segment target → FTMS Set-Target-Power (bench-gated; the
 first on-bike smoke test of the screen + importer rides along with session 5). Backlogged at
