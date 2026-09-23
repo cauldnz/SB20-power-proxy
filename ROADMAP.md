@@ -25,19 +25,18 @@ session-8/9 recipe); a Guition JC3248W535 on each bike (the second to be ordered
 primary erg driver and qz/Peloton is kept; rides happen together and apart; pedals are owner
 `ASSIOMA 17039L / 22428R`, daughter `ASSIOMA 29064L / 26807R`.
 
-## NOW (ordered; each mirrored as an issue)
+## NOW (ordered; each mirrored as an issue — the reference doc, #290, landed 2026-09-23 and moved to "Recently landed")
 
 | # | id | goal | gate | issue / canonical doc | why it is not already done |
 |---|---|---|---|---|---|
-| 1 | **REF** | The system reference doc, extended for two bikes: roles per board, the connection graph, who discovers whom and how, ordering constraints, modes, legal vs illegal configurations incl. the two-bike matrix, Mermaid per scenario, a "predict what happens" table | desk | #290 · `docs/system-reference.md` | the doc does not exist; every session doc since 07-26 defers to it |
-| 2 | **IDENT** | Fleet identity and bike affinity: a unique per-board *default* spoof identity (MAC-derived, never `62144`), a fleet table (board → identity → bike → pinned pedals → trainer full name), identity + source + trainer shown on `/status` and the ride screen, a `qa_board` check | desk, agent | #330 · forward-plan §8; session 13 G0; decisions 2026-09-23 | `Config.h` defaults every board to `Stages 62144` (bike 1's real crank); the Guition is `62145`, the C3 ride board's id |
-| 3 | **S14-G0** | Session-14 desk pre-stage: both head units re-flashed from `main` with unique identities, the bike-2 inventory (SB20 #2 name/address, crank ids, battery), expected-topology cards, the capture rig proven live, restore values for both bikes | desk → hardware | #331 · `sessions/session-14-two-bike-first-rides.md` | the ride board was last flashed 07-26; nothing in the repo describes the second SB20 |
-| 4 | **GUITION2** | Order the second JC3248W535 (owner); bench bring-up per `guition-board.md` with the bench camera; own identity; a 30-minute `perf_soak.py` on a Guition before it rides; close the open touch/pin checks | owner + desk | #332 · `code/findings/guition-board.md` | the Guition has never ridden; one exists, two are needed |
-| 5 | **ERG** | The standing erg go/no-go and the 53-minute workout soak on bike 1. One item for what six documents track separately: session 12 G2/G3, `CAPTURE-sb20-erg-recovery` option A, ftms-protocol "still the gate", forward-plan §14 phase 5 and §13 on-bike drive, dyno plan D4.1, pre-beta Phase 0 and its 1-hour soak | bike | #331 (G2/G3) | session 12 §9 is empty; the workout engine has never driven a real SB20 |
-| 6 | **BIKE2** | Bike 2 pairs to its own head unit and pedals; then both bikes at once | bike | #331 (G4/G5) | no document mentions the second SB20 |
-| 7 | **#288** | The single-variable A/B (Garmin trainer-protocol pairing vs not) on a cold start, as session 14 G1b; diff the two banked pcaps at the desk first | bike (+ a desk sub-task) | #288 | "cause NOT established"; a stack that avoids the Stages app needs the answer |
-| 8 | **#323** | CI compiles `esp32-guition-live-ota` and `esp32s3-pio-live-ota` | desk, agent | #323 | CI compiles only the C3, CYD and nRF envs; every September change landed on an unguarded env |
-| 9 | **ROUND0** | Round-zero beta on ourselves: onboarding one-pager per bike, the ride protocol, `/report` → `parse_diag` after each ride, the feedback form, OTA to a fleet of two; lessons into `USERS-PLAYBOOK.md` | owner | #333 · `beta/`, `code/findings/beta-program.md` | `USERS-PLAYBOOK.md`: "we haven't engaged a single user yet" |
+| 1 | **IDENT** | Fleet identity and bike affinity: a unique per-board *default* spoof identity (MAC-derived, never `62144`), a fleet table (board → identity → bike → pinned pedals → trainer full name), identity + source + trainer shown on `/status` and the ride screen, a `qa_board` check | desk, agent | #330 · forward-plan §8; session 13 G0; decisions 2026-09-23 | `Config.h` defaults every board to `Stages 62144` (bike 1's real crank); the Guition is `62145`, the C3 ride board's id |
+| 2 | **S14-G0** | Session-14 desk pre-stage: both head units re-flashed from `main` with unique identities, the bike-2 inventory (SB20 #2 name/address, crank ids, battery), expected-topology cards, the capture rig proven live, restore values for both bikes | desk → hardware | #331 · `sessions/session-14-two-bike-first-rides.md` | the ride board was last flashed 07-26; nothing in the repo describes the second SB20 |
+| 3 | **GUITION2** | Order the second JC3248W535 (owner); bench bring-up per `guition-board.md` with the bench camera; own identity; a 30-minute `perf_soak.py` on a Guition before it rides; close the open touch/pin checks | owner + desk | #332 · `code/findings/guition-board.md` | the Guition has never ridden; one exists, two are needed |
+| 4 | **ERG** | The standing erg go/no-go and the 53-minute workout soak on bike 1. One item for what six documents track separately: session 12 G2/G3, `CAPTURE-sb20-erg-recovery` option A, ftms-protocol "still the gate", forward-plan §14 phase 5 and §13 on-bike drive, dyno plan D4.1, pre-beta Phase 0 and its 1-hour soak | bike | #331 (G2/G3) | session 12 §9 is empty; the workout engine has never driven a real SB20 |
+| 5 | **BIKE2** | Bike 2 pairs to its own head unit and pedals; then both bikes at once | bike | #331 (G4/G5) | no document mentions the second SB20 |
+| 6 | **#288** | The single-variable A/B (Garmin trainer-protocol pairing vs not) on a cold start, as session 14 G1b; diff the two banked pcaps at the desk first | bike (+ a desk sub-task) | #288 | "cause NOT established"; a stack that avoids the Stages app needs the answer |
+| 7 | **#323** | CI compiles `esp32-guition-live-ota` and `esp32s3-pio-live-ota` | desk, agent | #323 | CI compiles only the C3, CYD and nRF envs; every September change landed on an unguarded env |
+| 8 | **ROUND0** | Round-zero beta on ourselves: onboarding one-pager per bike, the ride protocol, `/report` → `parse_diag` after each ride, the feedback form, OTA to a fleet of two; lessons into `USERS-PLAYBOOK.md` | owner | #333 · `beta/`, `code/findings/beta-program.md` | `USERS-PLAYBOOK.md`: "we haven't engaged a single user yet" |
 
 ## NEXT (roughly ordered)
 
@@ -108,7 +107,9 @@ Guition JC3248W535 port and end-to-end validation on a simulated meter (#318, #3
 the synchronous web server (#325) · `flash_s3.py` no longer wipes NVS (#322) · `flash.ps1`'s OTA
 RSSI pre-flight revived; C3 push-OTA reliable at −72 dBm (#326) · `sb20proxy-guition.local` · the
 bench camera (`BOARDS.md`) · the `fake_meter` stale-instance guard · the 2026-09-23 review synthesis
-(#327) and state-of-the-repo review (#329) · branch and worktree hygiene.
+(#327) and state-of-the-repo review (#329) · `ROADMAP.md` (#335) · the ledger and captures guards (#336) ·
+the PROJECT-MAP refresh (#337) · the status-line pass (#338) · the system reference doc, issue #290
+(`docs/system-reference.md`) · branch and worktree hygiene.
 
 ## Maintenance rule
 
