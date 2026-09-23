@@ -1,5 +1,9 @@
 # Changelog
 
+> ⛔ **Historical — unmaintained since Revision 13 (2026-06-15).** The project's log is the append-only
+> [`code/findings/decisions.md`](code/findings/decisions.md) plus the merged PRs; firmware versions are cut per
+> [`beta/RELEASE-AND-OTA.md`](beta/RELEASE-AND-OTA.md). Kept for the pre-pivot documentation history.
+
 ## Revision 13 — Phase 0 consolidation: report written, front-door docs refreshed
 
 A take-stock pass after 5 on-bike sessions. Two read-only audits (decisions-log

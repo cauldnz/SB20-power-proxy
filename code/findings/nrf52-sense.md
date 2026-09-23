@@ -1,6 +1,6 @@
 # Seeed XIAO nRF52840 Sense — the BLE(/ANT) bridge board
 
-**Status:** bring-up in progress (2026-07-04 overnight). The fourth head-unit-family board, and the
+**Status:** ✅ proven — BLE bridge, on-device calibration, BLE OTA, the SB20 spoof mode (07-10), S340 + ANT+ master on air (07-14/15); the roadmap is [`nrf-roadmap.md`](nrf-roadmap.md). Originally: bring-up in progress (2026-07-04 overnight). The fourth head-unit-family board, and the
 first with ANT capability — target use: the track-bike repeater-with-correction, plus IMU capture.
 
 ## Board facts

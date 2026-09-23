@@ -1,6 +1,8 @@
 # Plan — on-device load monitoring + the measure→improve→iterate loop (ESP32-C3)
 
-> **Status:** planning doc (no code yet). Owner asked for this to be planned intensively after the
+> **Status:** ✅ BUILT (phases A–D: `PerfMonitor`, `/stats`, the loop-stall watchdog, `perf_soak.py`); the §12
+> definition of done was **met on 2026-09-23** (30-min soak, zero reboots — see [`perf-results.md`](perf-results.md)).
+> Originally a planning doc (no code yet). Owner asked for this to be planned intensively after the
 > ESP32-C3 was confirmed as the **beta-tester board** and after repeated coex/flashing pain.
 > Scope: how to *see* what the C3 is doing under load, then a disciplined loop to make it
 > faster/steadier on the real device. Companion to `forward-plan.md` §8 (perf/coex backlog bullet).

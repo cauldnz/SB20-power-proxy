@@ -22,7 +22,8 @@ so the SB20 broadcasts **that** power to Zwift/your apps. Two reasons people use
 
 ## Setup (one time, ~10 min, off the bike)
 1. **Power the board** (USB). The screen shows `SB20 SETUP`.
-2. On your phone, **join the WiFi network `SB20-Setup`**. A setup page opens (or visit `http://192.168.4.1`).
+2. On your phone, **join the WiFi network `Setup-XXXX`** (the four characters are unique to your board; the
+   board's screen shows them and the PIN). A setup page opens (or visit `http://172.29.4.1`).
 3. **Join your home WiFi** through that page (so we can send you updates later). The board reboots and
    shows its IP on the screen.
 4. Open the board's **dashboard** in a browser (the IP on the screen, or `http://sb20proxy.local/`).

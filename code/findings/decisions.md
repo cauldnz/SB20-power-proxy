@@ -4643,6 +4643,87 @@ partition layout changed — see the NVS entry above).
 
 ---
 
+## 2026-09-23 — docs: repo review close-out — north star reset, ROADMAP.md, index guards, branch hygiene
+
+**The owner asked for a detailed review of the repo (docs, branches, code, issues) and a plan to get
+back on track without losing work.** The review ran read-only against `origin/main` at `8a64161` and
+is recorded, with its evidence tables, under `docs/reviews/` (the 2026-09-23 state-of-the-repo review
+and four appendices; PR #329). What follows is what was decided and changed as a result.
+
+### Decisions (owner, 2026-09-23)
+
+1. **North star reset: a training stack for two riders on two SB20s.** A second SB20 (working
+   cranks); each rider on their own Assiomas (owner 17039L/22428R, daughter 29064L/26807R); a Guition
+   JC3248W535 head unit on each bike (a second one to order; a larger Guition variant may be tried); the
+   on-device workout engine as the primary erg driver with the qz/Peloton path kept working; rides
+   together and apart; **the owner and their daughter are beta round zero** ("get my daughter and I beta
+   testing it ourselves as first cut"). The external ten-tester programme is parked with an un-park
+   condition; its capabilities (setup UI, `/diag`, `/report`, the QA card, OTA fleet runbook, the tester
+   documents) are exactly what round zero exercises.
+2. **One backlog.** `ROADMAP.md` (root) is the single prioritised backlog (Now / Next / Later / Parked).
+   `forward-plan.md` §9, `pre-beta-plan.md` and the ledger banner defer to it. Only Now items are
+   mirrored as GitHub issues, with the repo's triage labels. Next→Now promotions are the owner's call.
+3. **Branch and worktree hygiene approved and performed**; the Copilot review synthesis incorporated.
+
+### What the review found (the short version)
+
+The code side was healthy (CI green, 463 pytest + 347 ESP32 + 81 nRF native cases, the July
+remediation arc closed, generated artifacts guarded). The mess was the layer that tells a session what
+to do next: a desk checkout 82 commits behind, ~80 squash-merge leftover branches and three dead
+worktrees, four documents each claiming to be the plan with no "next" newer than 2026-07-27 and zero
+commits in August, three index documents describing the July repository (PROJECT-MAP said "28 docs",
+"session-04…09", called two ⛔ docs "living", had no rows for OBC, the LCD boards, the workout engine,
+the LVGL harness or the bridge codegen, and its test did not check what it claimed), 41 docs in no
+index, a captures index listing 15 of 54 files, and a value proposition locked on 2026-06-22 that the
+work had drifted away from. **Nothing valuable was lost**: the only unmerged code anywhere was PR #255
+(27 lines), now re-filed as #334.
+
+Two live hazards surfaced for the two-bike goal: every ESP32 build defaults to `Stages 62144`
+(bike 1's real left crank), and on 2026-09-23 the Guition was renamed to `Stages 62145`, the identity
+the C3 ride board has carried since session 11. Bike affinity is name-substring only (`ASSIOMA`,
+`Stages Bike`), which two pedal sets and two bikes in one room will confuse. Both are ROADMAP Now
+items (#330) and are written into the system reference.
+
+### What changed (all merged the same day, each PR green on the required checks)
+
+| PR | What |
+|---|---|
+| #327 | The Copilot review synthesis and source register (`docs/reviews/`), as-is. |
+| #329 | The state-of-the-repo review + doc inventory, code inventory, open-work register, branch triage (with the pre-deletion ref listing as the rollback record); `docs/reviews/README.md`. |
+| #335 | `ROADMAP.md`; pointers from README, PROJECT-MAP, CLAUDE.md, the findings index and the ledger; session 14 ("two-bike training stack: first rides") as the only open session — 12 and 10 superseded by it, 11 blocked on #291, 5 deferred; the live content of the ⛔ `BIKE-SESSION-READY.md` card moved into session 14 Annex A. Issues #330–#334 created; #290/#323/#288/#291/#247/#324 relabelled; #247 blocked-by #291; #131/#144 closed as acknowledged notices. |
+| #336 | Findings-index markers fixed; the captures index now lists all 54 files with the session that produced each; ledger rows for the un-numbered session docs; two new guards, `test_sessions_ledger.py` and `test_captures_index.py`. |
+| #337 | PROJECT-MAP refreshed (every stale line; the missing capability rows; §E product lines; §F a machine-parsed doc-lifecycle table mapping the 41 orphans); `test_project_map.py` now checks `docs/`+`design/` coverage and that no "living" doc carries a ⛔. |
+| #338 | Status lines on the plans that executed unmarked; ⛔ banners on the last un-bannered historical docs; `pre-beta-plan`/`beta-program` PARKED; `forward-plan` deferring to ROADMAP; stale operational lines (portal address and SSID in the tester onboarding, the shipping env name, the refuted sniffer path, "planned" claims for shipped web features); the historical-banner guard. |
+| #339 | `docs/system-reference.md` (issue #290): roles, discovery rules with the implementing line, modes, ordering constraints, legal/illegal configurations incl. the two-bike matrix, five topologies, a board-by-mode prediction table, ten facts not yet established. |
+
+Hygiene: 3 stale worktrees removed; local `main` fast-forwarded from `df0d015`; 43 local and 28 remote
+branches deleted after `git cherry` + merged-PR verification (the SHAs are in the branch-triage
+appendix; restore with `git push origin <sha>:refs/heads/<name>`).
+
+### What was deliberately not done
+
+No code changes (the identity default, address-based affinity and the S3/Guition CI compile are Now
+items #330/#323 for a code session). No changes to branch protection (`pytest (3.14)` is not a
+required check although the bike laptop runs 3.14; `enforce_admins` is off — owner decisions, listed
+in the review). No edits to `BOARDS.md`, `firmware/BENCH-FLASH.md` or the earlier entries of this file
+while the hardware session owned them: their items are the hand-off issue #340. The 2026-09-16
+Guition bring-up that the 2026-09-23 entry above refers to as "above" was never logged here; that is
+in the same hand-off, to be backfilled by the hardware line, not by the docs line.
+
+### Lessons for the playbooks
+
+- **A plan doc's status line rots the day the plan executes.** Five docs said PLANNED or "no code yet"
+  for shipped work. The fix that scales is the lifecycle table + guard, not vigilance.
+- **A map that claims a CI guard it does not have is worse than no claim.** PROJECT-MAP promised
+  `sessions/` coverage for two months; nobody checked because the sentence said CI did.
+- **Squash-merge leftovers look like unmerged work.** `git cherry origin/main <branch>` plus the PR's
+  commit list settles it in seconds; the review found one real unmerged change among ~80 branches.
+- **Restate the north star when the work changes direction.** Two months of head-unit, nRF, OBC and
+  workout-engine work happened under a document that still said "erg is long-tail". `ROADMAP.md` now
+  carries the statement and the date.
+
+---
+
 ## 2026-09-23 — the Guition's model number was never verified, and could not have been
 
 Asked to "100% confirm the model of the Guition board", the honest answer turned out to be **no** —

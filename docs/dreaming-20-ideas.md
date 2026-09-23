@@ -1,5 +1,8 @@
 # 💭 Dreaming Session — 20 Ways to Extend the SB20 Power Proxy
 
+**Status:** ⛔ historical idea list (2026-07-15), not a plan — ideas graduate only by appearing in [`ROADMAP.md`](../ROADMAP.md)
+Next; two did (track launch control, the erg dyno) and are parked there.
+
 *A pitch deck of where this could go next. Each idea says what it does, what it leans on
 (so it's an extension, not a rebuild), and a rough effort. Dream first, prioritise later.*
 

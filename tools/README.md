@@ -35,14 +35,14 @@ Pinned versions live in [`dev-env.lock`](dev-env.lock) (the session-8 known-good
 
 ```powershell
 # build:
-firmware\.venv\Scripts\platformio.exe run -e esp32c3-oled-live -d firmware
+firmware\.venv\Scripts\platformio.exe run -e esp32c3-oled-live-ota -d firmware
 
 # OTA flash — on a multi-NIC laptop espota auto-picks the WRONG host IP (0.0.0.0 -> "No response from
 # device"); pass the explicit host LAN IP (one on the board's subnet — doctor.ps1 prints candidates):
 firmware\.venv\Scripts\python.exe "$env:USERPROFILE\.platformio\packages\framework-arduinoespressif32\tools\espota.py" `
-  -i <board-ip> -I <host-lan-ip> -p 3232 -f firmware\.pio\build\esp32c3-oled-live\firmware.bin -r
+  -i <board-ip> -I <host-lan-ip> -p 3232 -f firmware\.pio\build\esp32c3-oled-live-ota\firmware.bin -r
 
-# USB flash (fallback): python code\scripts\flash_c3.py --env esp32c3-oled-live --port COM9
+# USB flash (fallback): python code\scripts\flash_c3.py --env esp32c3-oled-live-ota --port COM9
 ```
 
 ### Flash guards — read this before you flash anything

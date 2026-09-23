@@ -32,7 +32,7 @@ human-in-the-loop contract"). Nothing below is attempted until G0 is green at th
 ## 2. Desk pre-stage (G0) — before the rider is involved
 
 - [ ] **Fleet identity.** Every board that will be powered in the room has a *unique* spoof identity
-      and a row in the fleet table (`docs/system-reference.md`, or issue #330 until it lands): board →
+      and a row in the fleet table ([`docs/system-reference.md`](../docs/system-reference.md) §2; the MAC-derived default is #330): board →
       identity → bike → pinned pedal address → trainer full name. No board may be on the default
       `Stages 62144` (bike 1's real left crank) and no two boards may share an id (on 2026-09-23 the
       Guition and the C3 ride board were both `Stages 62145`).

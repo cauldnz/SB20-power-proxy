@@ -1,6 +1,6 @@
 # Pre-beta plan — SB20 meter proxy → ~10 collaborator-testers
 
-**Status: the north-star plan (updated 2026-06-23).** Refocuses [`forward-plan.md`](forward-plan.md) (still
+**Status: ⏸️ PARKED as a programme (2026-09-23).** The north star is now the two-bike training stack in [`ROADMAP.md`](../../ROADMAP.md); round zero is the owner and their daughter using this plan's *capabilities* (all built) on themselves. Un-parks when both bikes have run four weeks and the owner re-approves. Originally: the north-star plan (updated 2026-06-23). Refocuses [`forward-plan.md`](forward-plan.md) (still
 the technical backlog) onto one goal: get the **SB20 meter proxy** onto ~10 SB20-owner testers from the
 Facebook group. Read [`decisions.md`](decisions.md) for the grounding; this is *what next, in what order*.
 
