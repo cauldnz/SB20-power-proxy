@@ -4721,3 +4721,45 @@ in the same hand-off, to be backfilled by the hardware line, not by the docs lin
 - **Restate the north star when the work changes direction.** Two months of head-unit, nRF, OBC and
   workout-engine work happened under a document that still said "erg is long-tail". `ROADMAP.md` now
   carries the statement and the date.
+
+---
+
+## 2026-09-23 — the Guition's model number was never verified, and could not have been
+
+Asked to "100% confirm the model of the Guition board", the honest answer turned out to be **no** —
+and the reason generalises.
+
+**What is measured** (`esptool` + the running firmware, this board): ESP32-S3 **rev v0.2**, 40 MHz
+crystal; **16 MB** flash, manufacturer `0x68` (Boya), device `0x4018`, eFuse **quad** line; **~8 MB
+octal PSRAM** (7.37 MiB largest free block) → an **ESP32-S3-N16R8** module; base MAC
+`28:84:85:49:4D:20`. Panel controller **AXS15231B / 320×480** — not assumed either, since the vendor
+AXS15231B init table plus our pin map renders a correct image and a different controller would not.
+Capacitive touch on I²C `0x3B`, taps confirmed through to LVGL.
+
+**What is not measured: the string "JC3248W535".** It came from the **owner's AliExpress order
+listing** (confirmed by the owner), and entered this repo via an early planning question during the
+port — then propagated into `guition-board.md`, `BOARDS.md`, the `esp32-guition*` env names and the
+seam header, none of which ever re-derived it.
+
+**And it cannot be read back.** *No ESP32 board can self-report a vendor model.* There is no
+register, eFuse or USB descriptor carrying it; `303A:1001` is Espressif's generic native-USB ID,
+identical on every S3. **The only ground truth is the PCB silkscreen.** The bench camera would
+settle it but was unplugged when asked (`NO video devices present`).
+
+Seller listings are also loose about **variant suffixes** — one of the BSP sources this port drew
+from is a repo named `JC3248W535EN`. If variants share the panel and pin map, nothing measured here
+distinguishes them, so **the suffix is recorded as unknown.**
+
+**Why it cost nothing, and where it could have.** The firmware depends on the *measured* pin map and
+controller, not the name, so a wrong string breaks nothing that runs. The real exposure was upstream:
+**the pin map was originally taken from third-party writeups for a board we believed was this
+model.** Had the name been wrong, those pin maps could have been for a different board — which on
+this hardware is not academic, since GPIO 8 is the **touch SCL** here and the `Config.h` default
+would have driven it as a status LED. That risk is now retired by independent on-hardware
+confirmation (the panel renders and touch works on exactly those pins), but it is precisely why
+"which board is this?" deserved an answer rather than an assumption.
+
+**The rule worth keeping: a name that arrives as an answer to a question is not evidence.** It was
+never measured, and re-reading our own docs would only have found it repeated. Docs now state the
+provenance explicitly — measured hardware vs reported name — so the next reader does not mistake
+repetition for verification.

@@ -9,6 +9,30 @@ the CYD's LVGL heap-fragmentation drama applies.
 Board on the dev machine: **COM14**, USB `303A:1001` (native), base MAC `28:84:85:49:4D:20`
 (SSID `Setup-4D21`). Registered in [`BOARDS.md`](../../BOARDS.md).
 
+> ### ⚠️ Provenance of the name "JC3248W535" — reported, not verified
+>
+> **The model string is the one thing here that has not been confirmed against the hardware.** It
+> comes from the **AliExpress order listing** the owner bought the board from (confirmed 2026-09-23).
+> It has **not** been read off the PCB silkscreen.
+>
+> It also cannot be: **no ESP32 board can self-report a vendor model.** There is no register, eFuse
+> or USB descriptor that says "Guition JC3248W535" — the USB ID `303A:1001` is Espressif's generic
+> native-USB ID, shared with every other S3. Nothing readable over USB or HTTP will ever settle it.
+>
+> Seller listings are also loose with **variant suffixes**: Guition ships more than one JC3248W535
+> (one of the sources below is a repo named `JC3248W535EN`), and if variants share the panel and pin
+> map, nothing measured here would distinguish them. **Treat the suffix as unknown.**
+>
+> **To settle it:** read the PCB silkscreen — by eye, or photograph it with the bench camera
+> (`skills/bench-camera`, see BOARDS.md). Then replace this box with what the board actually says.
+>
+> **What this does and doesn't put at risk.** The firmware depends on the *measured* pin map and
+> panel controller below, not on the name — so a wrong string breaks nothing that runs. It matters
+> for (a) **re-ordering** (someone buying "another one of these" could get a different variant) and
+> (b) **trusting third-party BSPs**: the pin maps below were taken from writeups for a board we
+> believe is this model. They are all independently confirmed on our hardware now (see the table),
+> so that risk has already been retired — but it is the reason the confirmation mattered.
+
 ## Why this port is different from the CYD/S3
 
 The CYD (ILI9341/ST7789) and S3-Touch (JD9853) panels are **standard SPI**, driven by **hand-rolled
@@ -46,8 +70,26 @@ First USB flash: `python code/scripts/flash_s3.py --env esp32-guition-live --por
 
 ## Verified hardware facts (pin map + protocol)
 
-From the board's community BSP — atomic14's JC3248W535 writeup, the F1ATB setup guide, and
-moononournation/Arduino_GFX (see Sources):
+### Measured on *our* board (2026-09-23, `esptool` + the running firmware)
+
+These are read from the silicon, not from a datasheet or a listing — the only claims here that owe
+nothing to the model name:
+
+| Property | Value | How |
+|---|---|---|
+| SoC | **ESP32-S3, revision v0.2**, 40 MHz crystal, WiFi+BLE | `esptool flash_id` |
+| Flash | **16 MB**, manufacturer `0x68` (Boya), device `0x4018`; eFuse: **quad** line | `esptool flash_id` |
+| PSRAM | **~8 MB octal** — 7.37 MiB largest free block | `/stats` `largest_block` on the running board |
+| ⇒ module | **ESP32-S3-N16R8** | implied by the two rows above |
+| Base MAC | `28:84:85:49:4D:20` | `esptool` |
+| Panel controller | **AXS15231B**, 320×480 | the vendor AXS15231B init table + the pin map below render a correct image; a different controller would not |
+| Touch | capacitive, I²C `0x3B` | taps route through to LVGL (`TAP`/`STATE` bench console) |
+
+### Pin map
+
+Originally taken from the community BSPs below (atomic14's JC3248W535 writeup, the F1ATB setup
+guide, moononournation/Arduino_GFX — see Sources) — and **since confirmed on our hardware**: the
+display renders correctly and touch works with exactly these pins, which is a strong fingerprint.
 
 | Interface | Pins |
 |---|---|
