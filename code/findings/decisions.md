@@ -4492,13 +4492,31 @@ overlap NVS, and a mutation that reinstates the whole-image write is caught by 3
 
 ### Two measurements worth keeping
 
-**The web server's ceiling is lwIP sockets, not our code.** Escalating concurrency against the big
-pages: 4-way and 8-way fine, 12-way floor 12,728 B, **16-way floor 5,036 B with 3 connections
-refused**. The HTTP server is the synchronous Arduino `WebServer` (one client per loop), so the
-pressure is lwIP sockets/pbufs, not response buffers — a platform characteristic, not a port defect,
-and expected to be shared by the C3 and CYD (not separately measured). A rider with one browser (≤6
-connections) is far inside it. Separately: **no leak** — after 400+ requests free heap returned to
-~65 KB every time, and 120 further requests moved the floor by 0 bytes.
+**The web server's ceiling is the lwIP socket pool, and it is independent of heap — measured on
+both boards.** Escalating concurrency against the big pages:
+
+| workers | Guition floor | Guition refused | C3 floor | C3 refused |
+|---|---|---|---|---|
+| 4  | 17,748 | 0 | 75,004 | 0 |
+| 8  | 12,836 | 0 | 68,952 | 0 |
+| 12 | 12,728 | 0 | 60,180 | 1 |
+| 16 | **5,036** | **3** | **60,180** | **9** |
+
+The C3 is the control, and it settles the mechanism: it had **60 KB free** and still refused **9**
+connections — three times as many as the Guition, which was down to 5 KB. **So the refusals are not
+an out-of-memory symptom**; they are the lwIP socket pool running out, and the smaller chip has the
+smaller pool. The HTTP server is the synchronous Arduino `WebServer` (one client per loop), so
+concurrency piles up in sockets/pbufs rather than in response buffers. A platform characteristic on
+every ESP32 head unit, not a port defect — and a rider with one browser (≤6 connections) is far
+inside it.
+
+That separation matters for reading the rest of this entry: the Guition's *heap* floor was a display
+driver problem and is fixed; the *connection* ceiling is a different thing and is not.
+
+Two robustness results fell out of the same runs. **No leak on either board** — free heap returned
+to ~65 KB (Guition) / ~120 KB (C3) after 400+ requests, and 120 further requests moved the floor by
+0 bytes. And the **BLE link is not collateral**: hammering the C3 with 400 requests *while the
+Guition was reading power from it* left the link connected and forwarding throughout.
 
 **The `SCREEN` debug dump costs ~24 KB while it runs** (it base64-encodes a 307 KB frame). It
 depressed idle free heap from 66 KB to 42 KB and nearly got mis-filed as a firmware regression; a
