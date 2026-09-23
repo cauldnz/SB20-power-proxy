@@ -52,9 +52,38 @@ def _power_at(base: int, tick: int, steady: bool) -> int:
     return base + (phase if phase < 20 else 40 - phase) * 5  # triangle, +/-100 W swing
 
 
+async def _await_advertising(periph: WinrtCpsPeripheral, timeout: float = 5.0) -> bool:
+    """Wait for the WinRT publisher to settle into STARTED.
+
+    A momentary ABORTED right after start() is a normal publisher transition (decisions.md
+    2026-06-22) — but it is ALSO what a permanent failure looks like, and the two are only
+    distinguishable by waiting. The usual permanent cause is a second publisher: a stale
+    fake_meter still holding the peripheral role silently aborts this one.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if periph.advertising:
+            return True
+        await asyncio.sleep(0.25)
+    return periph.advertising
+
+
 async def run(args: argparse.Namespace) -> None:
     periph = WinrtCpsPeripheral()
     await periph.start()
+    # Fail loudly rather than stream tx lines at nobody: without this the script looks healthy
+    # (it prints watts forever) while nothing is on the air, and the wasted debugging lands on
+    # the firmware instead of here.
+    if not await _await_advertising(periph):
+        periph.stop()
+        raise SystemExit(
+            # ASCII only: this lands on a cp1252 Windows console, where a dash or arrow
+            # becomes mojibake in the one message that has to be readable.
+            "fake_meter: the BLE advertisement never started (WinRT status stayed ABORTED).\n"
+            "  Most likely another publisher already holds the peripheral role - check for a\n"
+            "  stale fake_meter:  Get-CimInstance Win32_Process -Filter \"Name='python.exe'\"\n"
+            "  Verify nothing is advertising CPS 0x1818, then re-run."
+        )
     print(f"Advertising spoofed power meter (CPS 0x1818), advertising={periph.advertising}.")
     print("Waiting for a central (the ESP32) to connect and subscribe. Ctrl-C to stop.\n")
     try:

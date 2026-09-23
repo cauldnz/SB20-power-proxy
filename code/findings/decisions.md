@@ -4529,3 +4529,96 @@ path** — measure the ride path with the instruments detached.
 `CONFIG_IDF_TARGET_ESP32S3`, and the Guition is *also* an S3 — so it collided with the Waveshare
 board. Now `sb20proxy-guition.local`; verified resolving to the board while `sb20proxy-s3.local` goes
 unanswered. Name boards by board, not by chip.
+
+---
+
+## 2026-09-23 — the C3 meets its "ride-ready" definition of done, and the scariest metric turns out not to matter
+
+`perf-coex-plan.md` §12 has carried a definition of done since June: *"a 30-min soak at realistic
+erg-ride load with **zero reboots**, loop p95 under a few ms, stable min-heap, and BLE notify-gap
+rate within target."* Phases A–D were all built — `PerfMonitor`, `/stats`, the loop-stall watchdog,
+`perf_soak.py` — and then the longest soak anyone ever ran was **5 minutes**. The bar was written
+and never jumped. This is the jump, on the shipping build (`esp32c3-oled-live-ota`), plus what it
+turned up.
+
+**Result: PASS. Zero reboots over 30 minutes, heap flat at ~114 k the whole way, 164 loops/s.**
+Rows and JSONL in `perf-results.md`.
+
+### Isolating the remaining stalls: it is the web server, and nothing else
+
+The full-load soak showed 211 stalls >50 ms and a 395 ms loop max — against the June row that had
+achieved **zero**. Rather than guess, decompose the load (the §2 method):
+
+| scenario | loop max | stalls 50/200 ms |
+|---|---|---|
+| observe only (no load at all) | 13.0 ms | 0 / 0 |
+| **BLE load only** — central + peripheral, no HTTP | 13.4 ms | **0 / 0** |
+| **`/ui` poll only** — HTTP, no BLE at all | **227 ms** | **9 / 1** |
+
+Unambiguous. **Dual-role BLE — one radio running central *and* peripheral, the thing this whole
+project worried about — costs nothing measurable over idle.** Every stall comes from serving HTTP:
+the Arduino `WebServer` sends synchronously from `loop()`, and `/ui` (6.8 KB) takes ~345 ms of
+wall-clock while `/app` (the 64.5 KB unified SPA) takes ~1.7 s. The June row differs because the
+dashboard has since grown into the unified SPA — the regression is in page size, not in the radio.
+
+### ...and then the stall count turned out not to matter
+
+The obvious next move is to fix the blocking send. **Don't** — measure the thing you actually care
+about first. Subscribing to the board's CPS measurement characteristic the way the SB20 does, and
+timestamping every notification:
+
+| | notifications | median gap | p90 | max |
+|---|---|---|---|---|
+| quiet | 30 | 1.001 s | 1.101 s | 1.198 s |
+| while serving 24 × `/app` | 29 | 1.001 s | 1.100 s | **1.102 s** |
+
+**Indistinguishable.** NimBLE dispatches notifications from the BLE host task, not the Arduino
+`loop()`, so a blocked loop never touches the crank stream. The 6 s staleness watchdog sits far
+above the worst 395 ms block. **So no firmware change is warranted** — chunking the send would add
+risk to the hot path for no measured benefit. Recorded in `perf-results.md` so the next reader does
+not chase a 395 ms number that costs the rider nothing.
+
+**The instrument lied first, again.** The initial attempt measured this by polling `/status` every
+0.4 s and reported the opposite ("longest gap 1.14 s → 2.16 s"), which would have justified a
+pointless firmware change. Sampling a 1 Hz stream at 0.4 s cannot resolve a 1 s cadence; the
+artifact was the instrument. **That is the fifth time in this project a measurement harness had to
+be validated before its verdict meant anything.**
+
+### Self-heal verified, unattended
+
+The staleness watchdog (2026-06-22) claims to catch the *silent* failure — a peer that vanishes
+without NimBLE's `onDisconnect` ever firing. Tested by **killing** the meter process rather than
+stopping it cleanly: the board noticed in **6 s** (exactly `kMeterStaleMs`), dropped to `searching`,
+and **relinked in 2 s** when the meter came back, with `forwarded` resuming. Real-ride equivalents:
+pedal battery dies, meter sleeps, rider walks out of range.
+
+### The shipping build reads the bench rig — no bench flag needed
+
+`fake_meter.py`'s header says to flash a bench build (`METER_MATCH_ANY_CPS=1`) because WinRT stamps
+the PC's name into the scan response instead of an `ASSIOMA`-ish one. There is a simpler route that
+keeps the **production** matching path: set the meter name filter to the PC's name (here
+`CAULDT9H`). Path 5 of `MeterMatch` matches on substring, so the shipping firmware reads the rig
+directly. Better test — it exercises the code that actually ships.
+
+### The harness could fail silently, and did
+
+`fake_meter` printed `advertising=False` once and then streamed `tx 180 W …` forever at nobody. A
+stale second instance held the WinRT peripheral role, so this publisher stayed permanently
+`ABORTED`; the board saw no meter and the debugging went to the firmware. The trap is that a
+*momentary* ABORTED on start **is** normal (2026-06-22) — the two states are only distinguishable
+by waiting. `fake_meter` now waits for the publisher to settle and exits with a message naming the
+likely cause. Host tests: `code/tests/test_fake_meter_guard.py` (5), including the transient case,
+so the guard cannot regress into rejecting a normal start.
+
+### Notes for whoever runs this next
+
+- **`loop p95` is not a discriminating metric here.** It reads exactly `10000 µs` on every row ever
+  recorded, idle or loaded — it is quantised to the loop's own `delay(5)` cadence. Use `loop_max`
+  and the stall counters.
+- **Kill stale `fake_meter`/`crank_reader` processes before a soak.** `perf_soak --load` spawns its
+  own, and with the guard above a leftover instance now makes the run fail loudly instead of
+  silently producing a no-meter soak.
+- **Two boards on one bench must not share a crank identity.** The Guition was also advertising
+  `Stages 62144`, so `crank_reader --address` was mandatory; it is renamed to `Stages 62145` now.
+- The 182+ `reboot_count` on this board is development flashing accumulated in NVS, not field
+  instability — every reboot during this session was a deliberate flash or config save.
