@@ -1,5 +1,9 @@
 # Session 12 — laptop handoff (paste this into a fresh session on the bike laptop)
 
+**Status:** cold-start reference (written 2026-07-25 for session 12; [session 14](session-14-two-bike-first-rides.md)
+reuses it) — re-verify §A/§B against current `main` before pasting; the firmware, the flash tooling and the
+board fleet changed on 2026-07-26/27 and 2026-09-23.
+
 **Purpose:** everything a brand-new Claude Code session on the **bike laptop** needs to run session 12.
 The plan itself is [`session-12-erg-workout-validation.md`](session-12-erg-workout-validation.md); this
 doc is the *cold-start + the paste-able opening prompt*.

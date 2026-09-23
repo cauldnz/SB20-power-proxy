@@ -1,6 +1,6 @@
 # 🚴 Session 10 — the three-board fleet on the bike: real-erg drive + tester UX (2-day plan)
 
-**Status: 🟢 READY** · tracked in [`sessions/README.md`](README.md). Run via [`PLAYBOOK.md`](PLAYBOOK.md)
+**Status: ⛔ SUPERSEDED (2026-09-23) by [session 14](session-14-two-bike-first-rides.md)** — Day 1 folded into 14 G2; Day 2 verified at the desk; the board choice is made (Guition on both bikes) · tracked in [`sessions/README.md`](README.md). Run via [`PLAYBOOK.md`](PLAYBOOK.md)
 (record actuals inline, ⏱ from the start, retro at the end).
 
 **Goal:** move everything built this week from *twin-proven* to *rider-proven*. Two things have never

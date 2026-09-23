@@ -23,6 +23,7 @@ its own crank, so the spoof has to be byte-faithful.
 | If you are… | Read |
 |---|---|
 | **Planning or building anything** | [`PROJECT-MAP.md`](PROJECT-MAP.md) — find the capability before you build it |
+| **Deciding what to work on next** | [`ROADMAP.md`](ROADMAP.md) — the one prioritised backlog (Now / Next / Later / Parked) |
 | **New to smart bikes / power meters / BLE fitness protocols** | [`code/findings/domain-primer.md`](code/findings/domain-primer.md) — concepts + verified spec facts |
 | **Looking for what was decided, measured or refuted** | [`code/findings/decisions.md`](code/findings/decisions.md) — the append-only log (the source of truth) |
 | **Working on a subsystem** | [`code/findings/README.md`](code/findings/README.md) — the index of every findings doc and the tooling it governs |
@@ -69,6 +70,7 @@ re-broadcasts whatever its internal computer believes the power to be.
 ```
 .
 ├── PROJECT-MAP.md      ← ⭐ the capability + doc inventory (start here)
+├── ROADMAP.md          ← the one prioritised backlog (Now / Next / Later / Parked)
 ├── CLAUDE.md           ← engineering conventions and invariants
 ├── DEV-PLAYBOOK.md     ← the desk dev loop · USERS-PLAYBOOK.md ← working with testers
 ├── BOARDS.md           ← physical board inventory (MACs, VID:PIDs, which build)
