@@ -4407,3 +4407,107 @@ wizard clearing) are the fixes described above.
 **Explicitly not done:** `lcdTask` / `lcdSerialConsole` / `lcdExecute` stay in `main.cpp`. Recorded
 as R1e.3 in `architecture-remediation.md` so the next reader knows it was a decision, not an
 oversight. Reopen it if a specific behaviour there needs a test - not on line count.
+
+---
+
+## 2026-09-23 — Guition JC3248W535 validated end-to-end on simulated data; two defects found, one of them years old
+
+The 2026-09-16 bring-up (above) proved the Guition could *draw*. This is the other half: does it
+**work** as a head unit — join a WiFi network it has never seen, find a meter over the air, correct
+it, re-broadcast it as the Stages crank, render it, and answer a tap — with nothing hand-fed. Answer:
+yes on every leg. The interesting part is what the exercise flushed out on the way.
+
+**The rig.** An ESP32-C3 (COM16) flashed `esp32c3-oled` — the **mock-meter** build, a ramping power
+source — stood in for the Assioma. The Guition (COM14, `esp32-guition-live`) was the device under
+test. No SB20 and no real pedals, but everything below crossed a real radio; only the watts were
+synthetic. That is the point: it makes the whole chain repeatable at a desk.
+
+**Provisioning went through the real captive portal, not a compiled-in SSID.** `Setup-4D20` AP → pick
+the network → NVS → reboot → 192.168.1.222. Worth stating because a hard-coded credential would have
+skipped the single most user-visible path on the board.
+
+**IN leg — PASS.** `/status` once a second: `source=connected` 15/15, `src_name="OBC-SB20"`,
+power 160 → 300 W across **14 distinct values** (a stuck reading passes a naive non-zero check, so the
+assertion is on *distinctness*), cadence 85, `forwarded` +16 over 15 s.
+
+**OUT leg — PASS, checked at the bytes.** A host BLE central subscribed to the Guition's own
+peripheral and found **`Stages 62144` [28:84:85:49:4D:21]**, decoding 300 → 130 W, 85 rpm, L50/R50,
+`raw=2f00…` — the byte-faithful `0x2F` Stages framing the SB20 demands. The spoof identity survives
+the port to a new board; nothing about it was C3-specific.
+
+**UI — PASS**, via the serial `SCREEN` dump (base64 framebuffer, so this is what LVGL *composed*,
+independent of the panel's analog behaviour): `● OBC-SB20 > ● Stages 62144`, POWER, history chart,
+Cadence 85, Balance 50/50. **Touch nav — PASS:** synthetic `TAP`s walked Ride → Setup → More → Ride,
+each confirmed by `STATE`, so taps route through the real digitiser → LVGL → `navTo` chain.
+
+**OTA — PASS**, first attempt, at RSSI **−82 dBm** (below `flash.ps1`'s own −72 warning threshold),
+with the reboot verified. Push OTA is a genuinely usable update path on this board.
+
+### Defect 1: two 25.6 KB DMA strip buffers left 2.7 KB of internal heap
+
+Hammering the web server (20 requests over 7 routes) **while BLE was streaming** drove
+`min_free_heap` to **2,700 bytes**. That is not a margin; it is a coin-flip from an OOM on a device
+someone is riding.
+
+Cause is in the panel seam and was always going to bite. The flush path pushes the frame to the panel
+in **row strips through internal-DMA scratch**, because PSRAM cannot feed the SPI DMA (that was the
+original blank-panel bug, 2026-09-16). There are **two** of them for double buffering, and at
+`STRIP_ROWS = 40` they were 320 × 40 × 2 B = **25.6 KB each**, taken from the scarce internal heap
+that WiFi, NimBLE and the HTTP server also live in.
+
+**Fixed: `STRIP_ROWS` 40 → 20** (2 × 12.8 KB, ~25 KB returned). The cost is more, smaller transfers
+per frame — the same total bytes at the same clock, which the panel does not care about.
+**Measured, same load, clean boot: floor 2,700 → 25,620 bytes** (run-to-run 25–40 KB).
+
+**The lesson is worth more than the number.** A board port's memory cost does not appear in the
+build's `RAM:` line or in an idle `/status`. It appears when the radio, the web server and the display
+all want internal DRAM at once. The idle reading here was comfortable and completely uninformative.
+**Load-test a new board's heap with everything running before calling a port done.**
+
+### Defect 2: every USB flash of an S3 board silently wiped provisioning
+
+After the reflash the Guition came back up **in its setup portal** — `nvs_open failed: NOT_FOUND`,
+WiFi gone, meter config gone. Not a fluke, and not new: `flash_s3.py` wrote pioarduino's merged
+`firmware.factory.bin` at `0x0`, and **that image is padded with `0xFF` across the NVS window.**
+
+Confirmed at the bytes rather than assumed: `factory.bin` is exactly `firmware.bin` + a 64 KB header
+(1,950,464 − 1,884,928 = 65,536 = 0x10000); the partition table at `0x8000` places `nvs` at
+`0x9000+0x5000`; and `xxd -s 0x9000` of the factory image is all `0xFF`. So the flash was *erasing*
+NVS every single time, deterministically, on every S3 board — WiFi credentials, meter/crank identity
+and calibration — and that had simply been mistaken for normal.
+
+**Fixed:** `flash_s3.py` now **parses the partition table** and writes only the code regions —
+`bootloader.bin@0x0`, `partitions.bin@0x8000`, `boot_app0.bin@otadata`, `firmware.bin@app0` — leaving
+every data partition alone (`4 regions, keeping nvs, spiffs, coredump`). `--erase-nvs` restores the
+old whole-image write when a clean slate is actually wanted. Parsing the table rather than hardcoding
+`0x10000` keeps it correct if the partition scheme changes.
+
+`boot_app0 → otadata` is not optional: after an OTA the device runs from **app1**, so writing only
+app0 would leave it booting the stale image. That case was exercised for real — the board was flashed
+over USB *while running the OTA'd app1*, and came back on the new app0.
+
+**Verified on hardware: the board rejoined WiFi and relinked to the meter with no re-provisioning.**
+14 host tests in `code/tests/test_flash_s3.py`; the load-bearing one asserts no planned region can
+overlap NVS, and a mutation that reinstates the whole-image write is caught by 3 of them.
+
+### Two measurements worth keeping
+
+**The web server's ceiling is lwIP sockets, not our code.** Escalating concurrency against the big
+pages: 4-way and 8-way fine, 12-way floor 12,728 B, **16-way floor 5,036 B with 3 connections
+refused**. The HTTP server is the synchronous Arduino `WebServer` (one client per loop), so the
+pressure is lwIP sockets/pbufs, not response buffers — a platform characteristic, not a port defect,
+and expected to be shared by the C3 and CYD (not separately measured). A rider with one browser (≤6
+connections) is far inside it. Separately: **no leak** — after 400+ requests free heap returned to
+~65 KB every time, and 120 further requests moved the floor by 0 bytes.
+
+**The `SCREEN` debug dump costs ~24 KB while it runs** (it base64-encodes a 307 KB frame). It
+depressed idle free heap from 66 KB to 42 KB and nearly got mis-filed as a firmware regression; a
+clean boot with no serial attached put it straight back. **Bench instrumentation is not the ride
+path** — measure the ride path with the instruments detached.
+
+### Also fixed
+
+**The Guition answered to `sb20proxy-s3.local`.** The per-board hostname switch keyed off
+`CONFIG_IDF_TARGET_ESP32S3`, and the Guition is *also* an S3 — so it collided with the Waveshare
+board. Now `sb20proxy-guition.local`; verified resolving to the board while `sb20proxy-s3.local` goes
+unanswered. Name boards by board, not by chip.
