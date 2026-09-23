@@ -74,14 +74,18 @@ if (-not (Test-Path $bin)) { throw "firmware.bin not found ($bin) - build first 
 
 if ($Mode -eq "ota") {
   # RSSI pre-flight: OTA gets unreliable below ~ -72 dBm on the C3.
+  # Read /status, NOT / — `/` used to serve the status JSON but now serves the HTML dashboard, so
+  # ConvertFrom-Json threw on every run and the weak-signal warning had been silently dead (found
+  # 2026-09-23). A pre-flight that always lands in its own catch is worse than none: it prints a
+  # yellow line that looks like a network hiccup while the check it exists for never happens.
   $ip = $Target
   try {
-    $j = (Invoke-WebRequest "http://$Target/" -TimeoutSec 5 -UseBasicParsing).Content | ConvertFrom-Json
+    $j = (Invoke-WebRequest "http://$Target/status" -TimeoutSec 5 -UseBasicParsing).Content | ConvertFrom-Json
     $rssi = [int]$j.rssi
     $c = if ($rssi -ge -70) { "Green" } elseif ($rssi -ge -72) { "Yellow" } else { "Red" }
     Say "Board up, WiFi RSSI = $rssi dBm" $c
     if ($rssi -lt -72) { Say "  weak signal - OTA may drop; move the board nearer the AP (watch 'WiFi -XX' on the OLED)." "Yellow" }
-  } catch { Say "couldn't read http://$Target/ (continuing anyway)" "Yellow" }
+  } catch { Say "couldn't read http://$Target/status - is the board up? (continuing anyway)" "Yellow" }
   try { $ip = ([System.Net.Dns]::GetHostAddresses($Target) | Where-Object { $_.AddressFamily -eq 'InterNetwork' } | Select-Object -First 1).IPAddressToString } catch {}
 
   if (-not $otaPass) {

@@ -88,7 +88,8 @@ Phone: join the WPA2 AP **`Setup-XXXX`** (per-device, XXXX = last 2 MAC bytes, s
 boards use the default password **`sb20setup`**) → setup page auto-pops (else `http://192.168.4.1/`)
 → pick your 2.4 GHz network → saves to NVS, reboots onto WiFi. Then:
 ```bash
-curl http://<device-ip>/        # status JSON (METER IN -> CRANK OUT)
+curl http://<device-ip>/status  # status JSON (METER IN -> CRANK OUT)
+curl http://<device-ip>/        # the HTML dashboard (it used to be the JSON — see /status above)
 curl http://<device-ip>/ui      # streaming web dashboard
 curl http://<device-ip>/log     # serial-over-HTTP log (serial-flaky workaround)
 curl -X POST http://<device-ip>/forget  # wipe creds -> reboots into setup (POST: CSRF-guarded)

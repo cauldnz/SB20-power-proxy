@@ -4622,3 +4622,21 @@ so the guard cannot regress into rejecting a normal start.
   `Stages 62144`, so `crank_reader --address` was mandatory; it is renamed to `Stages 62145` now.
 - The 182+ `reboot_count` on this board is development flashing accumulated in NVS, not field
   instability — every reboot during this session was a deliberate flash or config save.
+
+**Addendum (same day) — two OTA findings on the C3.**
+
+**1. `flash.ps1`'s RSSI pre-flight had been silently dead.** It fetched `http://<board>/` and piped
+it to `ConvertFrom-Json` — but `/` stopped being the status JSON and became the HTML dashboard, so
+every run threw and landed in the catch, printing `couldn't read ... (continuing anyway)` in yellow.
+That reads like a transient network hiccup, so the *weak-signal warning the pre-flight exists for
+had not run in months*. **A check that always lands in its own catch is worse than no check** — it
+looks like it ran. Now reads `/status`; verified reporting `Board up, WiFi RSSI = -72 dBm`.
+`BENCH-FLASH.md` still documented `curl http://<device-ip>/` as returning status JSON — fixed too,
+since that stale line is what the script was written against.
+
+**2. C3 push OTA is reliable at −72/−73 dBm, contradicting the standing "prefer USB" advice.** Two
+consecutive pushes of the full 1.37 MB image, **first attempt each time**, reboot verified. The
+earlier guidance (OTA "drops near the end of the image" at −73 to −81) is not what this board does
+now; the Guition likewise took OTA first-attempt at −82 earlier today. Treat OTA as the normal
+update path and keep USB for the cases that actually need it (a wedged board, or an S3 where the
+partition layout changed — see the NVS entry above).
