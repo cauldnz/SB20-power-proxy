@@ -125,12 +125,27 @@ jobs:
           path: ~/.platformio
           # Both platformio.ini files: this job builds the ESP32 envs AND the nRF board envs, so a
           # change to either project's toolchain pins must invalidate the cache. This workflow too:
-          # WHICH envs the steps below build decides what lands in ~/.platformio (the S3 steps pull
-          # in a second platform, pioarduino, with no platformio.ini change), and actions/cache never
+          # WHICH envs the steps below build decides what lands in ~/.platformio (a new step can add
+          # packages with no platformio.ini change), and actions/cache never
           # re-saves on an exact-key hit -- without this, a platform a new step needs would be
           # re-downloaded on every run and never cached.
           key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini', 'firmware-nrf/platformio.ini', '.github/workflows/tests.yml') }}
           restore-keys: pio-${{ runner.os }}-
+
+      # The pioarduino platform (the Guition / Waveshare S3 ride builds) gets its OWN PlatformIO core
+      # dir. It and the stock espressif32 platform both ship packages named framework-arduinoespressif32
+      # (2.0.16 vs 3.3.9), tool-esptoolpy and tool-openocd-esp32, and PlatformIO keeps ONE directory per
+      # package name: in a shared ~/.platformio each platform's build re-installed its own version over
+      # the other's on every run, and a warm cache left the Guition step with the stock framework in
+      # place, which pioarduino did not re-install (FRAMEWORK_DIR None, run 35973689864). Separate
+      # core dir, separate cache, no collision.
+      - name: Cache PlatformIO toolchains (pioarduino, S3 boards)
+        if: needs.changes.outputs.firmware == 'true'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.platformio-pioarduino
+          key: pio-s3-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini', '.github/workflows/tests.yml') }}
+          restore-keys: pio-s3-${{ runner.os }}-
 
       - name: Test (native)
         if: needs.changes.outputs.firmware == 'true'
@@ -197,7 +212,7 @@ jobs:
       # platform + the Xtensa S3 toolchain; the cache above carries them on later runs.
       - name: Compile Guition head-unit ride build (AXS15231B QSPI + LVGL, pioarduino S3)
         if: needs.changes.outputs.firmware == 'true'
-        run: pio run -e esp32-guition-live-ota
+        run: PLATFORMIO_CORE_DIR="$HOME/.platformio-pioarduino" pio run -e esp32-guition-live-ota
 
       # The Waveshare ESP32-S3-Touch-LCD-1.47 ride build (JD9853 SPI LCD + AXS5106 touch): the
       # other S3 board seam (LcdDisplay's version-guarded LEDC backlight, the dio_opi PSRAM
@@ -205,7 +220,7 @@ jobs:
       # platform/toolchain, so only the compile itself is added.
       - name: Compile Waveshare S3 ride build (LCD + live meter + OTA, pioarduino S3)
         if: needs.changes.outputs.firmware == 'true'
-        run: pio run -e esp32s3-pio-live-ota
+        run: PLATFORMIO_CORE_DIR="$HOME/.platformio-pioarduino" pio run -e esp32s3-pio-live-ota
 
       # Host-side Unity tests for the nRF52840 Sense bridge's pure wire-format core
       # (firmware-nrf/lib/bridge: Proto.h + ImuCapture.h + PeerRole.h) — the byte-for-byte authority

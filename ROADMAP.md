@@ -121,7 +121,8 @@ bench camera (`BOARDS.md`) · the `fake_meter` stale-instance guard · the 2026-
 (#327) and state-of-the-repo review (#329) · `ROADMAP.md` (#335) · the ledger and captures guards (#336) ·
 the PROJECT-MAP refresh (#337) · the status-line pass (#338) · the system reference doc, issue #290
 (`docs/system-reference.md`) · branch and worktree hygiene · CI compiles the Guition and Waveshare S3 ride
-builds, and the pioarduino cache key now hashes the workflow too (#348, closes #323).
+builds, with pioarduino in its own core dir and cache so the two Arduino platforms stop overwriting each
+other's packages (#348, closes #323).
 
 ## Maintenance rule
 

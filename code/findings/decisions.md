@@ -4824,6 +4824,17 @@ S3 toolchain would have been re-downloaded on every run forever. The key now als
 `.github/workflows/tests.yml`; the run proved it (new key missed, the 1394 MB cache restored via
 `restore-keys`, the post step saved under the new key).
 
+**And a package collision the warm cache exposed (run 35973689864).** The stock espressif32 platform
+(C3 / CYD envs) and pioarduino (Guition / S3) both ship packages named `framework-arduinoespressif32`
+(2.0.16 vs 3.3.9), `tool-esptoolpy` and `tool-openocd-esp32`, and PlatformIO keeps one directory per
+package name. In one shared `~/.platformio` every C3 build re-installed the stock versions over
+pioarduino's and every Guition build the reverse; on the first warm run the Guition step found the stock
+framework in place, did not re-install its own, and died in `arduino.py` with `FRAMEWORK_DIR` None. The
+pioarduino steps now build with `PLATFORMIO_CORE_DIR=$HOME/.platformio-pioarduino` behind their own
+cache key (`pio-s3-…`). The same collision is possible on a dev box that builds both families from one
+`~/.platformio`: the symptom is that `TypeError … 'NoneType'` at `pioarduino-build.py`; the cure is the
+same env var for the S3 builds.
+
 **Environment fact worth keeping.** On Windows, run `pio` from PowerShell, not Git Bash: pioarduino's
 `idf_tools.py` refuses MSYS shells ("MSys/Mingw is not supported"), so an S3 / Guition compile from Git
 Bash fails for an environment reason that reads like a build error. The Guition env compiled locally from

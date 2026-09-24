@@ -38,6 +38,11 @@ CI, and merged the same session. Don't open a 10-file branch and hope.
 - **On Windows, build firmware from PowerShell, not Git Bash.** pioarduino's `idf_tools.py` refuses MSYS
   shells ("MSys/Mingw is not supported"), so an S3 / Guition `pio run` from Git Bash fails for an
   environment reason that reads like a build error (found landing #348, 2026-09-24).
+- **Two Arduino platforms, one `~/.platformio`, one directory per package name.** If a Guition / S3
+  build dies in `pioarduino-build.py` with `TypeError … 'NoneType'` right after a C3 / CYD build (or
+  vice versa), the stock espressif32 and pioarduino platforms have overwritten each other's
+  `framework-arduinoespressif32`. Build the S3 envs with `$env:PLATFORMIO_CORE_DIR` pointing at a second
+  core dir, as CI does (#348).
 
 ## 2 · Prove it — cheapest sufficient test, honest about scope
 
