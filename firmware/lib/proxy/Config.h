@@ -32,7 +32,10 @@ struct Config {
     static constexpr const char* BUILD_TIME = SB20_BUILD_TIME;
 
     // --- the crank we impersonate (the Stages L crank; values captured 2026-06-17 over BLE) ---
-    static constexpr const char* SPOOF_NAME         = "Stages 62144";
+    // NOTE: there is deliberately NO default advertised NAME. "Stages 62144" is bike 1's REAL left
+    // crank, and every board used to boot as it — a hazard next to that bike (session 13 G0, #330).
+    // A board with no stored name derives its own from its MAC: FleetIdentity.h +
+    // RuntimeConfig::resolveIdentity(). The DIS strings below are still what a spoof presents.
     static constexpr const char* SPOOF_MANUFACTURER = "Stages Cycling";
     static constexpr const char* SPOOF_MODEL        = "SPM2";    // DIS model number (2A24)
     static constexpr const char* SPOOF_FW           = "1.8.2";   // DIS firmware revision (2A26)

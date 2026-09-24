@@ -6,6 +6,7 @@
 #include <NimBLEDevice.h>
 #include <new>
 #include <esp_timer.h>
+#include <esp_mac.h>   // esp_read_mac — the efuse base MAC the default identity derives from (#330)
 
 #include "Config.h"
 #include "ConfigStore.h"  // NVS-backed RuntimeConfig (the user's source/doubling)
@@ -83,6 +84,13 @@ static ProxyCore proxy(meter, crank,
 #include "ble/FtmsErgClient.h"
 static FtmsErgClient ergTrainer;
 static bool g_ergConfigured = false;
+
+// Fleet identity (#330): the name this board advertises, whether it was DERIVED from the MAC at boot
+// (nothing stored) or deliberately configured, and the trainer it erg-drives — surfaced on /status and
+// the ride screens so a wrong two-bike binding is visible at a glance (system-reference §7).
+static std::string g_identity;
+static bool g_identityDefault = false;
+static std::string g_trainerName;
 
 // "Sink the SB20's own shifter buttons -> broadcast as OBC" (obcSinkShifter). A central to the SB20's
 // vendor button char (BleShifterClient) feeds each press through the pure ObcShifterSource, which emits
@@ -228,6 +236,9 @@ static void oledTask(void*) {
         RideInputs ri;
         ri.out = proxy.lastOutput();
         ri.src = proxy.lastSource();
+        ri.identity = g_identity;  // row 4 on the 0.96" panels: the crank id this board IS (#330)
+        ri.trainerName = g_trainerName;
+        ri.trainerConnected = ergTrainer.connected();
         ProvisionView prov;
         std::string ip;
         bool wifiUp = true;  // no-WiFi build: treat as connected (show power/cadence)
@@ -489,6 +500,8 @@ static void buildLcdViews(LcdViews& v) {
     ri.out = proxy.lastOutput();
     ri.src = proxy.lastSource();
     ri.identity = g_lcdIdentity;
+    ri.trainerName = g_trainerName;
+    ri.trainerConnected = ergTrainer.connected();
 #if USE_MOCK_METER
     ri.meterConnected = true;
     ri.meterName = "mock meter";
@@ -564,7 +577,8 @@ static void buildLcdViews(LcdViews& v) {
     m.mode = g_lcdCorrector ? "Corrector" : "Crank spoof";
     m.identity = g_lcdIdentity;
     m.source = g_lcdSource;
-    m.trainer = "not set";
+    m.trainer = g_trainerName.empty() ? "not set" : g_trainerName;  // was hard-coded "not set": the
+                                                                     // row never showed the configured trainer
     m.version = std::string(Config::FIRMWARE_VERSION);
     m.brightness = g_lcdUi.brightness;
 
@@ -1048,6 +1062,16 @@ void setup() {
     // Load the user's saved config FIRST (NVS, set from the web UI) so the BLE stack + crank come up
     // under the configured identity. Defaults to compile-time Config when nothing is stored.
     RuntimeConfig cfg = ConfigStore::load();
+    // Identity: a STORED name is used exactly as saved (including a deliberate real-crank id for a
+    // crank rescue); an ABSENT one — fresh board, --erase-nvs, a legacy line, a form saved blank — is
+    // derived from this board's base MAC so no two boards, and no board and bike 1's real crank, share
+    // a name by default (#330). The MAC is the seam's only contribution; the rule is host-tested
+    // (FleetIdentity.h, RuntimeConfig::resolveIdentity). Same MAC the "Setup-XXXX" SSID is cut from.
+    {
+        uint8_t mac[6] = {0};
+        esp_read_mac(mac, ESP_MAC_WIFI_STA);
+        g_identityDefault = cfg.resolveIdentity(mac);
+    }
 #ifdef S3_DIAG
     Serial.printf("[diag] stage: config loaded, spoof=%s\n", cfg.spoofName.c_str());
 #endif
@@ -1061,6 +1085,10 @@ void setup() {
     cfg.curve.add(50.0f, 1.10f);
     cfg.curve.add(600.0f, 1.10f);
 #endif
+    g_identity = cfg.spoofName;
+    g_trainerName = cfg.trainerNameFilter;
+    Serial.printf("[cfg] identity '%s' (%s)\n", cfg.spoofName.c_str(),
+                  g_identityDefault ? "derived from this board's MAC: nothing stored" : "stored");
 
     bootStage("pre-ble");
 #ifdef S3_DIAG
@@ -1141,9 +1169,15 @@ void setup() {
 #endif
     wifi.begin(SB20_HOSTNAME,
                [identity = cfg.spoofName,
-                corrector = (cfg.mode == ProxyMode::Corrector)]() {
+                corrector = (cfg.mode == ProxyMode::Corrector),
+                sourcePin = cfg.meterAddress, sourceFilter = cfg.meterNameFilter,
+                trainerName = cfg.trainerNameFilter]() {
         ProxyStatus s;
         s.identity = identity;   // the OUT name we advertise (stable until a reboot)
+        s.identityDefault = g_identityDefault;  // derived from the MAC (nothing stored) vs configured
+        s.sourcePin = sourcePin;                // the binding a two-bike room must get right (#330):
+        s.sourceFilter = sourceFilter;          // which pedals, which bike, under which name
+        s.trainerName = trainerName;
         s.corrector = corrector;
 #if USE_MOCK_METER
         s.mock = true;

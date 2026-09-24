@@ -50,24 +50,39 @@ meter, the calibration reference meter, the FTMS trainer it erg-drives, and the 
 |---|---|---|---|
 | **C3-OLED** (`sb20proxy.local`, `192.168.1.165`) | spoof `Stages 62145` (renamed from `62144` in session 8; confirm on `/status`) | bike 1's proven spoof board for the first rides | the only board that has ridden; 30-min ride-ready soak passed 2026-09-23 |
 | **Guition JC3248W535** (`sb20proxy-guition.local`, `192.168.1.222`) | was `Stages 62145` on 2026-09-23 — **collides with the C3**; rename before both are powered | the head unit for each bike (a second one to be ordered; #332) | validated on a simulated meter; never ridden; not compiled in CI (#323) |
-| **CYD** (`sb20proxy-cyd.local`, `192.168.1.234`) | default `Stages 62144` unless changed — **collides with bike 1's real crank** | fallback head unit | session 13 G0 found it spoofing the real crank |
+| **CYD** (`sb20proxy-cyd.local`, `192.168.1.234`) | `Stages 62144` on pre-#330 firmware (session 13 G0) — **collided with bike 1's real crank**; from #330 a blank identity derives `Stages 92364` (predicted from its `Setup-CC8C` suffix; confirm on `/status`) | fallback head unit | session 13 G0 found it spoofing the real crank |
 | **Waveshare S3-Touch** (`sb20proxy-s3.local`) | (check `/status`) | fallback head unit | OTA-deaf to espota; USB flash |
-| **XIAO nRF52840 Sense** (BLE `DE:F2:ED:C4:F3:FD`) | corrector `SB20 Bridge`, or spoof `Stages 62144` when in spoof mode | not in the two-bike stack (track bike, ANT+) | must be **off** during two-bike rides unless deliberately part of a gate |
+| **XIAO nRF52840 Sense** (BLE `DE:F2:ED:C4:F3:FD`) | corrector `SB20 Bridge`, or in spoof mode its derived id `Stages 92461` (last two address bytes `F3:FD`, the same rule as the ESP32 fleet, #330) | not in the two-bike stack (track bike, ANT+) | must be **off** during two-bike rides unless deliberately part of a gate |
 | **nRF52840 USB dongle** (`1915:522A`) | — | the BLE sniffer (`code/scripts/sniff_ble.py`) | start it *before* a connection you want to see (session 6) |
 | **ANT+ stick** (`0FCF:1008`) | — | the Python ANT+ tooling; sees every ANT+ device in the room | Linux/WSL udev rule needed |
 | **The bike laptop** | — | runs every tool during a session; the rider only touches hardware and pedals | `tools\doctor.ps1` is the pre-flight |
 | **Bench camera** (UC70) | — | sees what a panel shows without a human | recipe in `BOARDS.md` |
 
 The physical inventory with MACs, ports and quirks is `BOARDS.md`; the fleet-identity table (board →
-identity → bike → pinned pedals → trainer name) is ROADMAP Now item IDENT (#330) and lives here once
-it exists:
+identity → bike → pinned pedals → trainer name) is ROADMAP Now item IDENT (#330) and lives here.
+
+**Default-identity rule (shipped by #330):** a board with *no stored* identity advertises
+`Stages 9NNNN`, where `NNNN` = the last 16 bits of its **base MAC** modulo 10000, zero-padded
+(`firmware/lib/proxy/FleetIdentity.h::defaultSpoofName`, applied at boot by
+`RuntimeConfig::resolveIdentity`; Python twin `sb20proxy.qa.acceptance.default_spoof_name`). Those are
+the same two MAC bytes as the board's `Setup-XXXX` SSID, so `Setup-A6E9` ⇒ `Stages 92729`, and the
+base MAC is what `esptool read-mac` and `BOARDS.md` print. A *stored* identity (set in `/setup` or
+`POST /config`; blank = the default) is used exactly as saved, including a deliberate real-crank id
+for a crank rescue. `/status` reports `identity` plus `identity_default` (true = derived, nothing
+stored), and the boot log prints `[cfg] identity '…' (derived from this board's MAC…|stored)`.
+Predicted defaults from the `BOARDS.md` base MACs (confirm each on `/status` before it rides):
+S3-Touch `A4:CB:8F:DA:E9:CC` ⇒ `Stages 99852`; the 0.96" C3 `10:B4:1D:BA:C9:0C` ⇒ `Stages 91468`; the
+CYD (`Setup-CC8C`) ⇒ `Stages 92364`. **The `9xxxx` ids are an assumption** — only `62145` is proven to
+pair with the Stages app (§11).
+
 
 | Board | Spoof identity | Bike | Pinned pedals (`meterAddress`) | Trainer name (`trainerNameFilter`) |
 |---|---|---|---|---|
 | C3-OLED `.165` | `Stages 62145` (to confirm) | SB20 #1 | owner's `ASSIOMA 17039L` address | `Stages Bike 0105` |
-| Guition #1 | (assign; not `62144`/`62145`) | SB20 #2 | daughter's `ASSIOMA 29064L` address | SB20 #2's full name (G0 inventory) |
-| Guition #2 | (assign) | SB20 #1 (replaces the C3 as head unit) | owner's address | `Stages Bike 0105` |
-| CYD, S3, nRF | (assign, unique) | none | — | — |
+| Guition #1 | its MAC-derived default (read it off `/status`), or assign — never `62144`/`62145`/`4963` | SB20 #2 | daughter's `ASSIOMA 29064L` address | SB20 #2's full name (G0 inventory) |
+| Guition #2 | its MAC-derived default, or assign | SB20 #1 (replaces the C3 as head unit) | owner's address | `Stages Bike 0105` |
+| CYD, S3 | predicted defaults `Stages 92364` / `Stages 99852` (confirm on `/status`) | none | — | — |
+| nRF | its own spoof profile under a derived id (`Stages 92461` for this XIAO; the SPM2 DIS strings stay fixed) — keep it OFF near bike 1 all the same | none | — | — |
 
 ## 3. The SB20 as a BLE device
 
@@ -92,7 +107,8 @@ it exists:
 ## 4. Our device: what each mode changes
 
 `RuntimeConfig` (`firmware/lib/proxy/RuntimeConfig.h`) carries: `mode` (Spoof | Corrector),
-`spoofName` (default `Stages 62144`, `Config.h`), `spoofSerial`, `meterAddress` (pin the source),
+`spoofName` (no compile-time default: blank = derived per board from its MAC at boot —
+`FleetIdentity.h`, `RuntimeConfig::resolveIdentity`; `/status` `identity_default` says which), `spoofSerial`, `meterAddress` (pin the source),
 `meterNameFilter` (default `ASSIOMA`), `singleSidedDouble`, the corrector's `refMeterAddress` /
 `refMeterNameFilter` / `curve` / `calibrating`, `trainerNameFilter` (`""` = erg off), and the OBC
 flags `obcEnabled`, `obcDevmode`, `obcSinkShifter`, `obcPort`, `obcButtons`. All are set from
@@ -161,7 +177,7 @@ ids), the trainer full name in that board's config, the phone that holds the app
 
 | Thing | Why | Where it is set |
 |---|---|---|
-| every `Stages NNNNN` name (2 spoofs + 4 real cranks) | the SB20 pairs by advertised name; a duplicate can bind a bike to an unfed spoof (0 W) or refuse pairing | `/setup` identity; `spoofName` |
+| every `Stages NNNNN` name (2 spoofs + 4 real cranks) | the SB20 pairs by advertised name; a duplicate can bind a bike to an unfed spoof (0 W) or refuse pairing | `/setup` identity; `spoofName` (blank = the board's MAC-derived `Stages 9NNNN`, unique per board); `qa_board.py` fails a duplicate or a real-crank id |
 | the pinned pedal address per board | `ASSIOMA` matches both sets | `/setup` source → `meterAddress` |
 | the trainer name per board | `Stages Bike` matches both bikes | `/setup` trainer → `trainerNameFilter` (full name) |
 | mDNS hostnames | already per board (`sb20proxy`, `-cyd`, `-s3`, `-guition`) | firmware, by board |
@@ -174,7 +190,8 @@ SB20s in one room (§11). The ANT+ stick sees everything: the Assioma sets (owne
 29064), both bikes' FE-C channels, the cranks.
 
 **Illegal (will fail or corrupt a ride):**
-- The same spoof name on two boards, or a board on the default `Stages 62144` next to bike 1's real crank.
+- The same spoof name on two boards, or a board advertising `Stages 62144` / `Stages 4963` next to bike 1
+  (pre-#330 firmware's default, or a crank-rescue configuration on the wrong bike). `qa_board.py` fails both.
 - A bench (`METER_MATCH_ANY_CPS`) or mock (`USE_MOCK_METER`) build powered in the room: the bench
   build reads the nearest meter, the mock build advertises ramping watts.
 - qz's native SB20 button decode and the OBC listener both on (double-fire, session 13 R1).
@@ -184,10 +201,16 @@ SB20s in one room (§11). The ANT+ stick sees everything: the Assioma sets (owne
   until G1b of session 14 settles it).
 - An empty-filter nRF bridge powered on during a ride (it latches the nearest CPS advertiser).
 
-**What a default-identity boot does:** a fresh or `--erase-nvs` board advertises `Stages 62144` with
-`ASSIOMA` as its source filter; bike 1's app configuration (`L=62144`) may bind it instead of the real
-crank, and any empty-filter bridge in range may read it as a source. Until the MAC-derived default
-lands (#330), give every board an identity in `/setup` before it is powered near a bike.
+**What a default-identity boot does (from #330):** a fresh or `--erase-nvs` board — or one whose
+`/setup` crank name was saved blank — advertises its MAC-derived `Stages 9NNNN` (§2 rule) with
+`ASSIOMA` as its source filter and no trainer; `/status` reports `identity_default: true`, `source_pin`,
+`source_filter` and `trainer`, and the boot log says `[cfg] identity '…' (derived from this board's
+MAC: nothing stored)`. It cannot collide with bike 1's real cranks or with another board, but it still
+reads the first `ASSIOMA` it sees and any empty-filter bridge in range may read it as a source — so
+**pin the pedals and set the trainer's full name in `/setup` before a two-bike ride**. Pre-#330 firmware
+boots as `Stages 62144`: reflash it, or store an identity, before powering such a board near bike 1.
+The acceptance card (`qa_board.py`) fails a board advertising `62144`/`4963` unless `--crank-rescue`
+says that is intended, and fails two advertisers on one name.
 
 ## 8. Topologies
 
@@ -262,7 +285,7 @@ Two boards on one identity make `crank_reader --address` mandatory (decisions 20
 
 | Board / build | Advertised name | Services in advert / scan response | Centrals it opens | Who may connect to it | `/status` says |
 |---|---|---|---|---|---|
-| ESP32, spoof (default config, no trainer) | `spoofName` (default `Stages 62144`) | `0x1818` primary; Stages `d445fe01` in the scan response | source meter (filter `ASSIOMA`, or a pinned address) | one SB20 (or `crank_reader`) | `mode: spoof`, source name/address, `trainer: (none)` |
+| ESP32, spoof (default config, no trainer) | `spoofName` (blank = the MAC-derived `Stages 9NNNN`) | `0x1818` primary; Stages `d445fe01` in the scan response | source meter (filter `ASSIOMA`, or a pinned address) | one SB20 (or `crank_reader`) | `mode: spoof`, `identity` + `identity_default`, `source_pin` / `source_filter`, `trainer` empty |
 | ESP32, spoof + trainer | as above | as above | source + FTMS trainer by name | the SB20 | + trainer connected, erg target |
 | ESP32, corrector | our own name | `0x1818` primary, no scan response | DUT source | any head unit (Garmin, phone) | `mode: corrector`, curve present or not |
 | ESP32, corrector + calibrating | as above | as above | DUT + reference | as above | calibration state (Idle / Collecting / Fitted) |
@@ -273,13 +296,13 @@ Two boards on one identity make `crank_reader --address` mandatory (decisions 20
 | ESP32 bench build (`*-bench`) | `spoofName` | as per mode | the nearest non-Stages CPS advertiser | as above | whatever it latched |
 | Guition / CYD / S3 | same as the C3 for the same config, plus the LVGL UI and their own hostnames | | | | |
 | nRF corrector | `SB20 Bridge` | `0x1818` only (no OBC UUID as shipped: session 13 R9) | up to four by the role ladder | Garmin/phone; the Web Bluetooth SPA; Connect IQ | serial only (no HTTP) |
-| nRF spoof | `Stages 62144` (its own fixed spoof profile) | as the ESP32 spoof | as above | an SB20 (never tried: R3) | serial |
+| nRF spoof | `Stages 92461` (derived from its address; the SPM2 DIS profile is fixed) | as the ESP32 spoof | as above | an SB20 (never tried: R3) | serial |
 | `03_static_replay.py --radio ant` | ANT+ device 62144, type 0x0B | — | — | an ANT+ consumer (the SB20's internal link, a head unit) | — |
 | `fake_meter.py` | the PC's name (WinRT stamps it) | `0x1818` | — | our boards (bench match or a name filter set to the PC's name) | `subs=1` in its log when a board is attached |
 
 ## 10. Instruments per board
 
-ESP32 boards: `/status` (JSON: mode, identity, source, trainer, build SHA), `/stats` (loop timing, heap,
+ESP32 boards: `/status` (JSON: mode, `identity` + `identity_default`, source state + `source_pin`/`source_filter`, `trainer`, build SHA), `/stats` (loop timing, heap,
 stalls), `/log` (serial over HTTP; the main live instrument), `/diag` and `/report` (the tester report),
 `/setup`, `/calibrate`, `/workout/*`, `/obc/*`; the serial bench console on the LCD boards (`SCREEN`,
 `TAP x y`, `STATE`). nRF: serial only (`WKTEST`, `IMUTEST`, the Bridge GATT over Web Bluetooth). The
@@ -297,7 +320,9 @@ changed nothing), `perf_soak.py` (single-board), `qa_board.py`, the bench camera
   `trainerNameFilter` may miss it.
 - Does the Stages app resolve a typed crank id by the advertised name suffix only, or does the DIS
   serial matter? (The own-id spoof `62145` paired in session 8, so the name suffices for a Stages-shaped
-  device; a `9xxxx` id has not been tried.)
+  device; a `9xxxx` id has not been tried.) **A `9xxxx` id is now the shipped default for an unnamed
+  board (#330, §2): the first pairing of a `Stages 9NNNN` board settles this. If the app rejects it,
+  store an id in `/setup` — the derivation rule stays.**
 - Does the Stages app on one phone hold pairings for two bikes? (Plan: the second rider's phone.)
 - Does a non-Stages name pair at all (never tried; forward-plan §8)?
 - Does erg engage in the app's single-crank mode with only the spoof findable (forward-plan §12)?

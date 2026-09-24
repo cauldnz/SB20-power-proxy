@@ -15,10 +15,20 @@ already uses.
 ### `GET /status` → normalized **Status**
 ```json
 { "source":"connected|searching|mock", "power_w":248, "src_power_w":250,
-  "src_cadence_rpm":95, "src_balance_pct":50, "ms":12345, "fw":"sb20proxy-esp32" }
+  "src_cadence_rpm":95, "src_balance_pct":50, "ms":12345, "fw":"sb20proxy-esp32",
+  "identity":"Stages 92729", "identity_default":true, "mode":"spoof",
+  "source_pin":"e6:20:90:8c:f3:fe", "source_filter":"ASSIOMA", "trainer":"Stages Bike 0105" }
 ```
 Map: `srcConnected = source==="connected"`, `outW = power_w`, `srcW = src_power_w`, `cad`, `bal`,
 `uptime = ms/1000`. `scale`/`offset` come from `/config` (cached). `recN = 0` (no IMU on the ESP32).
+
+**Fleet identity (#330):** `identity` is the name the board advertises. `identity_default` is `true`
+when nothing is stored and the name was derived from the board's base MAC at boot (`Stages 9NNNN`,
+`firmware/lib/proxy/FleetIdentity.h`), `false` for a stored identity (a non-blank name saved from
+`/setup` or `POST /config`; a blank keeps the derived default). `source_pin` / `source_filter` are the
+pinned source address and the name filter, `trainer` the FTMS trainer the workout engine erg-drives
+(`""` = erg off) — the three bindings a two-bike room must get right, in one read, so a wrong one is
+visible (`docs/system-reference.md` §7). Additive: nothing that reads `/status` needs to change.
 
 ### `GET /workout/state` → normalized **Wk**
 ```json
@@ -32,10 +42,13 @@ Garmin/web erg line + shifter bias render; default 0/false until then).
 
 ### `GET /config` → normalized **Config**
 ```json
-{ "scale":1.0, "offset":0.0, "single_sided":false, "src_filter":"ASSIOMA", "out_name":"Stages 62144",
+{ "scale":1.0, "offset":0.0, "single_sided":false, "src_filter":"ASSIOMA", "out_name":"",
   "mode":"spoof", "has_curve":false }
 ```
 `mode` is `"spoof"` (impersonate the Stages crank — drive an SB20) or `"corrector"` (our own identity).
+`out_name` is the **stored** identity: `""` means none is stored and the board advertises its MAC-derived
+default (`Stages 9NNNN`; the live name is `/status` `identity`). `POST /config` with a blank `out_name`
+keeps it derived; a non-blank one stores it. The SPA no longer forces `Stages 62144` in spoof mode (#330).
 The ESP32's correction is a fitted **curve**, so `scale`/`offset` report the `1.0`/`0` baseline and
 `has_curve` flags whether a curve is active (the nRF's Config is scalar scale/offset instead).
 

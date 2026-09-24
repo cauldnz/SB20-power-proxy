@@ -119,6 +119,29 @@ static void test_the_output_link_is_always_reported_as_on() {
     TEST_ASSERT_TRUE(v.outOn);
 }
 
+// The third leg of the binding (#330): which trainer this board erg-drives is projected next to the
+// source and the identity, so both panel families show it from the one model.
+static void test_the_trainer_binding_is_projected_verbatim() {
+    RideInputs in = connectedRide();
+    in.trainerName = "Stages Bike 0105";
+    in.trainerConnected = true;
+    RideView v;
+    projectRideView(in, v);
+    TEST_ASSERT_EQUAL_STRING("Stages Bike 0105", v.trainerName.c_str());
+    TEST_ASSERT_TRUE(v.trainerOn);
+}
+
+// No trainer configured (erg off) must read as exactly that, not as a stale name from a previous frame.
+static void test_no_trainer_reads_as_erg_off() {
+    RideInputs in = connectedRide();  // trainerName empty, trainerConnected false
+    RideView v;
+    v.trainerName = "Stages Bike 0105";  // as if a previous frame had left it there
+    v.trainerOn = true;
+    projectRideView(in, v);
+    TEST_ASSERT_EQUAL_STRING("", v.trainerName.c_str());
+    TEST_ASSERT_FALSE(v.trainerOn);
+}
+
 // The caller still owns the device-specific fields; the projection must not stamp on them.
 static void test_the_projection_leaves_the_callers_own_fields_alone() {
     static const int16_t hist[3] = {100, 200, 300};
@@ -369,6 +392,8 @@ int main(int, char**) {
     RUN_TEST(test_rssi_is_zeroed_when_wifi_is_down);
     RUN_TEST(test_rssi_is_reported_when_wifi_is_up);
     RUN_TEST(test_the_output_link_is_always_reported_as_on);
+    RUN_TEST(test_the_trainer_binding_is_projected_verbatim);
+    RUN_TEST(test_no_trainer_reads_as_erg_off);
     RUN_TEST(test_the_projection_leaves_the_callers_own_fields_alone);
 
     RUN_TEST(test_idle_offers_the_scanned_meters);
