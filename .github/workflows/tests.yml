@@ -124,8 +124,12 @@ jobs:
         with:
           path: ~/.platformio
           # Both platformio.ini files: this job builds the ESP32 envs AND the nRF board envs, so a
-          # change to either project's toolchain pins must invalidate the cache.
-          key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini', 'firmware-nrf/platformio.ini') }}
+          # change to either project's toolchain pins must invalidate the cache. This workflow too:
+          # WHICH envs the steps below build decides what lands in ~/.platformio (the S3 steps pull
+          # in a second platform, pioarduino, with no platformio.ini change), and actions/cache never
+          # re-saves on an exact-key hit -- without this, a platform a new step needs would be
+          # re-downloaded on every run and never cached.
+          key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini', 'firmware-nrf/platformio.ini', '.github/workflows/tests.yml') }}
           restore-keys: pio-${{ runner.os }}-
 
       - name: Test (native)
@@ -181,6 +185,27 @@ jobs:
       - name: Compile CYD head-unit build (LVGL + display driver)
         if: needs.changes.outputs.firmware == 'true'
         run: pio run -e esp32cyd
+
+      # The Guition JC3248W535 head-unit ride build (bike 2's head unit). It carries the most
+      # board-specific code in the tree — the vendored AXS15231B QSPI panel driver
+      # (lib/esp_lcd_axs15231b), the hand-built init table (GuitionInitCmds.h), the GuitionDisplay
+      # seam, and a pin map where one wrong GPIO is destructive (SB20_STATUS_LED_PIN=2 because the
+      # Config.h default is this board's touch SCL) — and none of it was compiled by CI: every
+      # September firmware change landed on an env this job did not build (#323). Unlike the
+      # C3/CYD steps (stock espressif32) this env is on the pioarduino platform (Arduino 3.x /
+      # IDF 5.5, pinned by release URL in platformio.ini), so the first run also installs a second
+      # platform + the Xtensa S3 toolchain; the cache above carries them on later runs.
+      - name: Compile Guition head-unit ride build (AXS15231B QSPI + LVGL, pioarduino S3)
+        if: needs.changes.outputs.firmware == 'true'
+        run: pio run -e esp32-guition-live-ota
+
+      # The Waveshare ESP32-S3-Touch-LCD-1.47 ride build (JD9853 SPI LCD + AXS5106 touch): the
+      # other S3 board seam (LcdDisplay's version-guarded LEDC backlight, the dio_opi PSRAM
+      # framebuffer path). Cheap once the step above has paid the pioarduino install: same
+      # platform/toolchain, so only the compile itself is added.
+      - name: Compile Waveshare S3 ride build (LCD + live meter + OTA, pioarduino S3)
+        if: needs.changes.outputs.firmware == 'true'
+        run: pio run -e esp32s3-pio-live-ota
 
       # Host-side Unity tests for the nRF52840 Sense bridge's pure wire-format core
       # (firmware-nrf/lib/bridge: Proto.h + ImuCapture.h + PeerRole.h) — the byte-for-byte authority
