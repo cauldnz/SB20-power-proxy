@@ -27,6 +27,7 @@
 #include "ObcShifterSource.h"  // pure: SB20 shifter notification -> OBC ButtonState (shared w/ ESP32)
 #include "PeerRole.h"      // pure: which of the 4 concurrent central links is this? (lib/bridge)
 #include "Cps.h"           // pure CPS codec — the same bytes as the ESP32 + Python twins
+#include "FleetIdentity.h"  // pure: the per-board default spoof name, derived from the address (#330)
 #include "spoofs/StagesSpm2.h"  // the captured Stages crank bytes the spoof mode reproduces
 #include "Ftms.h"          // pure FTMS codec (erg control point) — shared with ESP32 (P4)
 #include "IPowerSource.h"  // PowerReading
@@ -71,6 +72,23 @@ static void trainerLoad() { bridgestore::loadTrainer(g_trainerFilter, sizeof(g_t
 static void setLed(bool r, bool g, bool b) { boardLed(r, g, b); }
 
 static void cfgLoad() { g_cfg = bridgestore::loadConfig(); applyCorrectionFromCfg(); }
+
+// The name SPOOF mode advertises. There is no fixed default any more (#330): "Stages 62144" is bike 1's
+// REAL left crank, and every board used to boot as it. This board derives its own "Stages 9NNNN" from
+// its BLE address with the same rule as the ESP32 fleet (FleetIdentity.h), so no two boards — and no
+// board and that crank — share a name. Computed once, after Bluefruit.begin() (the address is only
+// valid then); the bytes are reordered so NNNN comes from the last two bytes AS PRINTED in a scan.
+static const char* spoofIdentityName() {
+    static char s_name[24] = {0};
+    if (s_name[0] == 0) {
+        uint8_t a[6] = {0};
+        Bluefruit.getAddr(a);  // little-endian: a[0] is the printed LAST byte
+        const uint8_t printed[6] = {a[5], a[4], a[3], a[2], a[1], a[0]};
+        const std::string n = sb20proxy::defaultSpoofName(printed);
+        strncpy(s_name, n.c_str(), sizeof(s_name) - 1);
+    }
+    return s_name;
+}
 static void cfgSave() { bridgestore::saveConfig(g_cfg); }
 
 // ================= source side: BLE central reading a CPS meter ===============================
@@ -589,7 +607,7 @@ static void configWriteCb(uint16_t /*conn*/, BLECharacteristic* /*chr*/, uint8_t
     uint8_t buf[CONFIG_LEN];
     packConfig(g_cfg, buf);
     g_bridge.chConfig.write(buf, sizeof(buf));  // read-back reflects what stuck
-    if (nameChanged && !g_cfg.spoof) {  // SPOOF's advertised name is fixed to the Stages crank
+    if (nameChanged && !g_cfg.spoof) {  // SPOOF's advertised name is this board's derived crank id (#330)
         Bluefruit.setName(g_cfg.outName);
         Bluefruit.Advertising.stop();
         Bluefruit.Advertising.start(0);
@@ -902,8 +920,9 @@ void setup() {
     Bluefruit.configUuid128Count(24);
     Bluefruit.begin(/*peripheral*/ 2, /*central*/ 3);
     Bluefruit.setTxPower(4);
-    // SPOOF advertises as the real Stages crank; CORRECTOR advertises our own configurable name.
-    Bluefruit.setName(g_cfg.spoof ? Config::SPOOF_NAME : g_cfg.outName);
+    // SPOOF advertises as a Stages crank under this board's own derived id (spoofIdentityName, #330);
+    // CORRECTOR advertises our own configurable name.
+    Bluefruit.setName(g_cfg.spoof ? spoofIdentityName() : g_cfg.outName);
 
     // --- output: CPS peripheral. SPOOF presents the real Stages SPM2 identity (the SB20 only accepts
     //     its own crank); CORRECTOR presents our own honest identity (any head unit takes a plain CPS). ---
@@ -1018,7 +1037,9 @@ void setup() {
     Bluefruit.Advertising.setFastTimeout(30);
     Bluefruit.Advertising.start(0);
 
-    Serial.printf("[bridge] up: out='%s' src-filter='%s' scale=%.3f offset=%.1f\n", g_cfg.outName,
+    Serial.printf("[bridge] up: out='%s' (%s) src-filter='%s' scale=%.3f offset=%.1f\n",
+                  g_cfg.spoof ? spoofIdentityName() : g_cfg.outName,
+                  g_cfg.spoof ? "spoof id derived from this board's BLE address" : "corrector name",
                   g_cfg.srcFilter, (double)g_corr.scale, (double)g_corr.offset);
 
 #ifdef NRF_HAS_ANT

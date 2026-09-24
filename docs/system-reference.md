@@ -52,7 +52,7 @@ meter, the calibration reference meter, the FTMS trainer it erg-drives, and the 
 | **Guition JC3248W535** (`sb20proxy-guition.local`, `192.168.1.222`) | was `Stages 62145` on 2026-09-23 — **collides with the C3**; rename before both are powered | the head unit for each bike (a second one to be ordered; #332) | validated on a simulated meter; never ridden; not compiled in CI (#323) |
 | **CYD** (`sb20proxy-cyd.local`, `192.168.1.234`) | `Stages 62144` on pre-#330 firmware (session 13 G0) — **collided with bike 1's real crank**; from #330 a blank identity derives `Stages 92364` (predicted from its `Setup-CC8C` suffix; confirm on `/status`) | fallback head unit | session 13 G0 found it spoofing the real crank |
 | **Waveshare S3-Touch** (`sb20proxy-s3.local`) | (check `/status`) | fallback head unit | OTA-deaf to espota; USB flash |
-| **XIAO nRF52840 Sense** (BLE `DE:F2:ED:C4:F3:FD`) | corrector `SB20 Bridge`, or spoof `Stages 62144` when in spoof mode | not in the two-bike stack (track bike, ANT+) | must be **off** during two-bike rides unless deliberately part of a gate |
+| **XIAO nRF52840 Sense** (BLE `DE:F2:ED:C4:F3:FD`) | corrector `SB20 Bridge`, or in spoof mode its derived id `Stages 92461` (last two address bytes `F3:FD`, the same rule as the ESP32 fleet, #330) | not in the two-bike stack (track bike, ANT+) | must be **off** during two-bike rides unless deliberately part of a gate |
 | **nRF52840 USB dongle** (`1915:522A`) | — | the BLE sniffer (`code/scripts/sniff_ble.py`) | start it *before* a connection you want to see (session 6) |
 | **ANT+ stick** (`0FCF:1008`) | — | the Python ANT+ tooling; sees every ANT+ device in the room | Linux/WSL udev rule needed |
 | **The bike laptop** | — | runs every tool during a session; the rider only touches hardware and pedals | `tools\doctor.ps1` is the pre-flight |
@@ -82,7 +82,7 @@ pair with the Stages app (§11).
 | Guition #1 | its MAC-derived default (read it off `/status`), or assign — never `62144`/`62145`/`4963` | SB20 #2 | daughter's `ASSIOMA 29064L` address | SB20 #2's full name (G0 inventory) |
 | Guition #2 | its MAC-derived default, or assign | SB20 #1 (replaces the C3 as head unit) | owner's address | `Stages Bike 0105` |
 | CYD, S3 | predicted defaults `Stages 92364` / `Stages 99852` (confirm on `/status`) | none | — | — |
-| nRF | its own fixed spoof profile (`Stages 62144` in spoof mode — keep it OFF near bike 1) | none | — | — |
+| nRF | its own spoof profile under a derived id (`Stages 92461` for this XIAO; the SPM2 DIS strings stay fixed) — keep it OFF near bike 1 all the same | none | — | — |
 
 ## 3. The SB20 as a BLE device
 
@@ -296,7 +296,7 @@ Two boards on one identity make `crank_reader --address` mandatory (decisions 20
 | ESP32 bench build (`*-bench`) | `spoofName` | as per mode | the nearest non-Stages CPS advertiser | as above | whatever it latched |
 | Guition / CYD / S3 | same as the C3 for the same config, plus the LVGL UI and their own hostnames | | | | |
 | nRF corrector | `SB20 Bridge` | `0x1818` only (no OBC UUID as shipped: session 13 R9) | up to four by the role ladder | Garmin/phone; the Web Bluetooth SPA; Connect IQ | serial only (no HTTP) |
-| nRF spoof | `Stages 62144` (its own fixed spoof profile) | as the ESP32 spoof | as above | an SB20 (never tried: R3) | serial |
+| nRF spoof | `Stages 92461` (derived from its address; the SPM2 DIS profile is fixed) | as the ESP32 spoof | as above | an SB20 (never tried: R3) | serial |
 | `03_static_replay.py --radio ant` | ANT+ device 62144, type 0x0B | — | — | an ANT+ consumer (the SB20's internal link, a head unit) | — |
 | `fake_meter.py` | the PC's name (WinRT stamps it) | `0x1818` | — | our boards (bench match or a name filter set to the PC's name) | `subs=1` in its log when a board is attached |
 
