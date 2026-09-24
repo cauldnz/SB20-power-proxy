@@ -198,7 +198,7 @@ it on; a row for a surface the owner placed it *off* is a removal check ("not of
 | F05 | bench | `TAP` on Rescan; `/app` Rescan | the list refills within the boost window; no 404 in the browser console |
 | F06–F07 | bench | `/app` Settings, `/status`, `crank_reader.py` | filter and ×2 persist across a reboot and change the relayed watts as expected |
 | F08 | bench | `/app` mode selector, `crank_reader.py` | corrector mode advertises our own name with no Stages service; spoof mode the reverse |
-| F09 | bench | `/app`, `/status`, `crank_reader.py --scan` | the identity from the fleet table is advertised; two boards from one image differ (#330) |
+| F09 | bench | `/app`, `/status`, `qa_board.py --no-flash --connect --spoof-name`, `crank_reader.py --name` / `--address` | the identity from the fleet table is advertised; two boards from one image differ (#330) |
 | F10 | bench | FTMS trainer sim (`esp32c3-ftms-server`); camera; `/app` | picking the trainer on the device and on `/app` both persist to `trainerNameFilter`; More → Trainer shows it |
 | F11 | bench | `/app` (once moved) or `/setup/reset` | defaults restored; `/status` shows the derived identity |
 | F13 | bench → bike | `fake_meter.py` ramp; camera; a phone on `/app` | device and `/app` show the same watts within one refresh; cadence and balance present; then real pedals on the bike |
