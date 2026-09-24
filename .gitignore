@@ -54,3 +54,7 @@ firmware/webflash/firmware-factory.bin
 # graphify skill output/cache — generated knowledge-graph artifacts (AST cache, chunks,
 # GRAPH_REPORT.md, .gf_*.py scratch). Regenerated on demand; not source. (~10 MB, 186 files.)
 graphify-out/
+
+# Bench-session raw captures (camera frames, serial dumps). Only the frames the run-sheet's
+# Actual table cites are committed, cropped, under sessions/bench-evidence/<date>/.
+sessions/bench-out/
