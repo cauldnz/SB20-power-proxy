@@ -174,7 +174,8 @@ Convergence work so the ESP32 web UI, the nRF Web Bluetooth app, and the LVGL de
 - **[`docs/`](docs/architecture.md)** — [`architecture.md`](docs/architecture.md) (the conceptual
   architecture with four rendered diagrams; canonical), [`system-reference.md`](docs/system-reference.md)
   (how the pieces fit at runtime: roles, discovery rules, modes, legal configurations, the two-bike
-  matrix; issue #290), [`bike-session-workflow.md`](docs/bike-session-workflow.md)
+  matrix; issue #290), [`ui-feature-map.md`](docs/ui-feature-map.md) (every feature on every surface,
+  its device-vs-web placement and the test that proves it; issue #345), [`bike-session-workflow.md`](docs/bike-session-workflow.md)
   (a short companion to the playbook), [`diagrams/`](docs/diagrams/README.md) (Mermaid sources + SVGs),
   [`agents/`](docs/agents/issue-tracker.md) (the issue-tracker, triage-label and domain-doc conventions the
   engineering skills read), [`reviews/`](docs/reviews/README.md) (dated review snapshots, indexed there), and
@@ -292,6 +293,7 @@ CI parses this table.
 | [PROJECT-MAP.md](PROJECT-MAP.md) | index | this map |
 | [docs/architecture.md](docs/architecture.md) | living | the conceptual architecture (canonical) |
 | [docs/system-reference.md](docs/system-reference.md) | living | how the pieces fit at runtime (issue #290) |
+| [docs/ui-feature-map.md](docs/ui-feature-map.md) | living | every UI feature, its placement, its test (issue #345) |
 | [docs/bike-session-workflow.md](docs/bike-session-workflow.md) | living | short companion to the playbook |
 | [docs/diagrams/README.md](docs/diagrams/README.md) | index | diagram convention |
 | [docs/reviews/README.md](docs/reviews/README.md) | index | dated reviews, indexed there |
