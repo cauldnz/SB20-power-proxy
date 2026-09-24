@@ -38,8 +38,7 @@ primary erg driver and qz/Peloton is kept; rides happen together and apart; peda
 | 7 | **ERG** | The standing erg go/no-go and the 53-minute workout soak on bike 1. One item for what six documents track separately: session 12 G2/G3, `CAPTURE-sb20-erg-recovery` option A, ftms-protocol "still the gate", forward-plan §14 phase 5 and §13 on-bike drive, dyno plan D4.1, pre-beta Phase 0 and its 1-hour soak | bike | #331 (G2/G3) | session 12 §9 is empty; the workout engine has never driven a real SB20 |
 | 8 | **BIKE2** | Bike 2 pairs to its own head unit and pedals; then both bikes at once | bike | #331 (G4/G5) | no document mentions the second SB20 |
 | 9 | **#288** | The single-variable A/B (Garmin trainer-protocol pairing vs not) on a cold start, as session 14 G1b; diff the two banked pcaps at the desk first | bike (+ a desk sub-task) | #288 | "cause NOT established"; a stack that avoids the Stages app needs the answer |
-| 10 | **#323** | CI compiles `esp32-guition-live-ota` and `esp32s3-pio-live-ota` | desk, agent | #323 | CI compiles only the C3, CYD and nRF envs; every September change landed on an unguarded env |
-| 11 | **ROUND0** | Round-zero beta on ourselves: onboarding one-pager per bike, the ride protocol, `/report` → `parse_diag` after each ride, the feedback form, OTA to a fleet of two; lessons into `USERS-PLAYBOOK.md` | owner | #333 · `beta/`, `code/findings/beta-program.md` | `USERS-PLAYBOOK.md`: "we haven't engaged a single user yet" |
+| 10 | **ROUND0** | Round-zero beta on ourselves: onboarding one-pager per bike, the ride protocol, `/report` → `parse_diag` after each ride, the feedback form, OTA to a fleet of two; lessons into `USERS-PLAYBOOK.md` | owner | #333 · `beta/`, `code/findings/beta-program.md` | `USERS-PLAYBOOK.md`: "we haven't engaged a single user yet" |
 
 ## NEXT (roughly ordered)
 
@@ -121,7 +120,8 @@ RSSI pre-flight revived; C3 push-OTA reliable at −72 dBm (#326) · `sb20proxy-
 bench camera (`BOARDS.md`) · the `fake_meter` stale-instance guard · the 2026-09-23 review synthesis
 (#327) and state-of-the-repo review (#329) · `ROADMAP.md` (#335) · the ledger and captures guards (#336) ·
 the PROJECT-MAP refresh (#337) · the status-line pass (#338) · the system reference doc, issue #290
-(`docs/system-reference.md`) · branch and worktree hygiene.
+(`docs/system-reference.md`) · branch and worktree hygiene · CI compiles the Guition and Waveshare S3 ride
+builds, and the pioarduino cache key now hashes the workflow too (#348, closes #323).
 
 ## Maintenance rule
 

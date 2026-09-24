@@ -35,6 +35,9 @@ CI, and merged the same session. Don't open a 10-file branch and hope.
   firmware change, compile the actual env (`pio run -e esp32c3-oled-live`) — `pio test -e native` does
   **not** build `main.cpp` or the BLE seam. The host tests catch logic; the target compile catches the
   wiring.
+- **On Windows, build firmware from PowerShell, not Git Bash.** pioarduino's `idf_tools.py` refuses MSYS
+  shells ("MSys/Mingw is not supported"), so an S3 / Guition `pio run` from Git Bash fails for an
+  environment reason that reads like a build error (found landing #348, 2026-09-24).
 
 ## 2 · Prove it — cheapest sufficient test, honest about scope
 
