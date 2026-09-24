@@ -74,8 +74,8 @@ the owner's call, taken group by group on 2026-09-24 (every row is decided; §2i
 | F06 | Source **name filter** (when not pinned) | — | `src_filter` (inert once an address is pinned) | `name` field | HW 07-11 (HTTP), 07-11 (BLE) | W | W |
 | F07 | Single-sided ×2 (a surviving R crank) | — | checkbox | checkbox | HW BLE 07-11; HTTP sent 07-11 | W | W |
 | F08 | Mode: spoof ↔ corrector (reboots) | More: read-only row | selector + reboot hint | none to set; `/more` read-only | HW 07-11 | W (device shows it) | W; device shows |
-| F09 | Spoof identity: name + serial | More: read-only row | name (locked to `Stages 62144` in spoof mode ⚠ hard-coded lock string); no serial | name + serial | HW BLE 07-11; HTTP preserved 07-11 | W (device shows it); default becomes per-board (#330) | W; device shows |
-| F10 | Trainer (erg target) selection | Setup: FTMS rows; More → Trainer ⚠ always `not set` (#346) | ⚠ "Set trainer" → `POST /workout/trainer` 404 (#347) | `/setup` FTMS tap-list | HW legacy C3 07-05; LCD pick twin-proven 07-05 | D+W | D + W; same picker rule as F04 |
+| F09 | Spoof identity: name + serial | More: read-only row; OLED row 4 (the 0.96" panels) | name, editable in both modes (blank = the board's MAC-derived `Stages 9NNNN`, #330; the `Stages 62144` lock string is gone); no serial | name + serial (blank = the per-board default) | HW BLE 07-11; HTTP preserved 07-11; per-board default host-tested only (#330) | W (device shows it); default is per-board (#330) | W; device shows |
+| F10 | Trainer (erg target) selection | Setup: FTMS rows; More → Trainer shows the configured name (the literal `not set` of #346 fixed in #330) | ⚠ "Set trainer" → `POST /workout/trainer` 404 (#347) | `/setup` FTMS tap-list | HW legacy C3 07-05; LCD pick twin-proven 07-05 | D+W | D + W; same picker rule as F04 |
 | F11 | Reset source + identity to defaults | — | — | `POST /setup/reset` + confirm | CSRF probe only | W | W |
 | F12 | Spoof radio BLE / ANT+ (nRF) | — | BLE: selector, ANT disabled | — | never (S340-gated) | W (BLE) | W (BLE) |
 | F46 | Heart-rate strap as a source (Heart Rate Service `0x180D`): listed under an HR filter in both pickers; bpm on the ride view | — | — | — | not built | D+W (later) | D + W, later (owner: "at some point") |
@@ -85,7 +85,7 @@ the owner's call, taken group by group on 2026-09-24 (every row is decided; §2i
 |---|---|---|---|---|---|---|---|
 | F13 | Live power hero, cadence, L/R balance | Ride: hero + cadence/balance cards; OLED rows | hero (3.4 rem) + Live card, 1 Hz; BLE 2 Hz | `/`: hero 4.6 rem + cards, 1 Hz | HW: LCD every board; SPA/HTTP mock values 07-05; legacy every session | D+W | D + W |
 | F14 | Power history chart | Ride: 48-point line chart | ⚠ none | `/`: 90-sample canvas | HW LCD | D+W (add to `/app` for ride use) | D + W |
-| F15 | Source / output names, link state, uptime, RSSI | Ride title bar + details pop-down (IN RSSI, OUT uptime) | source-link + uptime rows | `/` title + detail cards | HW: CYD 07-03, S3 07-04, Guition 09-23 | D+W | D + W |
+| F15 | Source / output names, link state, uptime, RSSI, erg trainer | Ride title bar + details pop-down (IN RSSI, OUT uptime + `erg … <trainer>`, #330) | source-link + uptime rows | `/` title + detail cards; `/status` `identity_default` / `source_pin` / `trainer` | HW: CYD 07-03, S3 07-04, Guition 09-23; the erg line host-compiled only | D+W | D + W |
 | F16 | Current erg target, segment, time left **on the ride screen** | ⚠ only in the canvas twin (`RideView` strip never drawn by LVGL); LVGL shows it on the Workout screen only | ⚠ in the Workout card (7th of 10 cards), not the hero | none | desk | D+W (both need it on the ride view) | D + W |
 | F17 | Erg link status (connected / controlled) | Workout screen erg line (4 states) | ⚠ "searching…" forever on HTTP (missing `erg_*` fields, #347); real on BLE | none | LCD: twin 07-05 | D+W | D + W |
 | F18 | Keep the display awake through a ride; survive a board reboot | n/a (device) | ⚠ no Wake Lock; HTTP has no reconnect (errors swallowed, green dot never revoked); BLE reconnects with backoff | n/a | S13 R13 (BLE) | W (required for principle 3) | W |
@@ -167,9 +167,9 @@ Rows already where they were placed need only the bench pass (§4) to move their
 no Wake Lock and no HTTP reconnect. `web/HTTP-API.md` documents the missing routes as existing;
 `web/README.md` still calls the HTTP path "unverified until U4".
 
-**Device (issue #346):** the brightness cycle shows 100 % and emits 25 % forever; More → Trainer is
-the literal `not set`; the Calibrate button falls through to `default`; the Version row has a renderer
-and no table entry. To confirm with the bench camera: the Ride layout's absolute offsets (hero 60,
+**Device (issue #346):** the brightness cycle shows 100 % and emits 25 % forever; More → Trainer was
+the literal `not set` (fixed in #330); the Calibrate button falls through to `default`; the Version row
+has a renderer and no table entry. To confirm with the bench camera: the Ride layout's absolute offsets (hero 60,
 chart 140, cards 208) on the 480-tall Guition, which likely leaves the bottom third empty above the nav.
 
 **Drift between the canvas twin and LVGL:** the twin has a live workout strip on Ride, a Firmware row

@@ -41,6 +41,9 @@ inline std::string renderDiagReport(const RuntimeConfig& cfg, const ProxyStatus&
     r += "[status]\n";
     r += "  source=" + std::string(source) + "\n";
     r += "  source_connected_name=" + st.srcName + "\n";
+    // The LIVE identity (the [config] spoof_name above is what is STORED — blank = derived at boot).
+    r += "  identity=" + st.identity + "  identity_default=" + std::string(st.identityDefault ? "yes" : "no") +
+         "  trainer=" + st.trainerName + "\n";
     r += "  src_power_w=" + std::to_string(st.srcPowerW) +
          "  src_cadence_rpm=" + std::to_string(st.srcCadenceRpm) +
          "  src_balance_pct=" + std::to_string(st.srcBalanceHalfPct < 0 ? -1 : st.srcBalanceHalfPct / 2) +

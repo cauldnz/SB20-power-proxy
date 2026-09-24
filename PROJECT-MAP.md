@@ -35,7 +35,7 @@ Status key: ✅ built & working · ⚙ partial / hardening · 🔒 built but blo
 | L/R balance forwarding (plumbed; the *value* grounding from a capture is pending) | ⚙ | `Cps.h`/`ProxyCore.h` · forward-plan §"balance" |
 | Bidirectional **crank-length** bridge (app↔meter) | 🔲 | capture-gated — [forward-plan §11](code/findings/forward-plan.md) + its capture recipe |
 | Sole-source pairing rule (SB20 needs *both* crank IDs findable) | ✅ understood | forward-plan §12 |
-| **Spoof identity per board.** Every board still *defaults* to `Stages 62144` (bike 1's real crank); a unique-by-default identity and a fleet table are ROADMAP Now item IDENT (#330) | ⚙ hazard | `Config.h`, `RuntimeConfig.h` · decisions 2026-09-23 |
+| **Spoof identity per board.** No compile-time default name: a board with nothing stored derives `Stages 9NNNN` from its base MAC (`FleetIdentity.h`, `RuntimeConfig::resolveIdentity`); `/status` shows `identity_default` + `source_pin` + `trainer`; `qa_board.py` fails a board on bike 1's real crank ids (`--crank-rescue` opts out) or a duplicated name. Fleet table + rule: `docs/system-reference.md` §2 | ✅ (#330; the `9xxxx` pairing is unproven, §11) | `firmware/lib/proxy/FleetIdentity.h`, `code/src/sb20proxy/qa/acceptance.py` · system-reference §2/§7 |
 
 ### Config & UX — user-configurable, no rebuild (pre-beta Phase 1, ✅)
 | Capability | Status | Lives in |

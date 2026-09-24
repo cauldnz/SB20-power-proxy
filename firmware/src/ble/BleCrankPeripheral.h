@@ -56,7 +56,8 @@ public:
 
 private:
     ProxyMode mode_ = ProxyMode::Spoof;
-    std::string spoofName_ = Config::SPOOF_NAME;      // advertised identity
+    std::string spoofName_;                           // advertised identity (set from the resolved
+                                                      // RuntimeConfig before begin(); no fixed default)
     std::string spoofSerial_ = Config::SPOOF_SERIAL;  // DIS serial (0x2A25)
     NimBLECharacteristic* meas_ = nullptr;
     bool obcEnabled_ = false;

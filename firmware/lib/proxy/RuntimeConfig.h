@@ -6,6 +6,7 @@
 
 #include "Config.h"
 #include "Correction.h"      // CorrectionCurve — the meter-to-meter correction stored in NVS
+#include "FleetIdentity.h"   // defaultSpoofName — the per-board identity when nothing is stored (#330)
 #include "Sb20ButtonMap.h"   // the configurable SB20-shifter-button -> action binding
 
 namespace sb20proxy {
@@ -109,10 +110,25 @@ struct RuntimeConfig {
         c.meterAddress = Config::METER_ADDRESS;          // usually "" — match by name/UUID
         c.meterNameFilter = Config::METER_NAME_FILTER;    // e.g. "ASSIOMA"
         c.singleSidedDouble = false;
-        c.spoofName = Config::SPOOF_NAME;                 // e.g. "Stages 62144"
+        c.spoofName = "";                                 // "" = NOT STORED: resolveIdentity() derives
+                                                          // this board's own name from its MAC at boot
         c.spoofSerial = Config::SPOOF_SERIAL;
         c.mode = ProxyMode::Spoof;                        // ships as the SB20 crank spoof
         return c;
+    }
+
+    // Fill in an ABSENT identity. Nothing stored — a fresh board, --erase-nvs, a legacy line with an
+    // empty identity slot, a /setup form saved blank — means "this board's own default": in SPOOF mode
+    // the MAC-derived "Stages 9NNNN" (FleetIdentity.h), in CORRECTOR mode our own honest name. A STORED
+    // identity is left exactly as saved, including a deliberately configured real-crank id for a crank
+    // rescue. The MAC is passed in by the seam (esp_read_mac in main.cpp) so this stays pure and
+    // host-tested. Returns true when a default was applied: /status reports it as `identity_default`
+    // so a board nobody has named yet is visible at a glance (#330, system-reference §7).
+    bool resolveIdentity(const uint8_t mac[6]) {
+        if (!spoofName.empty()) return false;
+        spoofName = (mode == ProxyMode::Corrector) ? std::string(Config::CORRECTOR_NAME)
+                                                   : defaultSpoofName(mac);
+        return true;
     }
 
     // Compact one-line serialisation for NVS, with a leading schema tag:
@@ -152,7 +168,7 @@ struct RuntimeConfig {
     // instead of silently reverting to defaults.
     //
     // Otherwise backward-compatible as before: an old line (no mode/ref/curve) keeps SPOOF + no
-    // curve; a 3-field pre-spoof-picker line keeps the default identity; a malformed line (<3
+    // curve; a 3-field pre-spoof-picker line leaves the identity ABSENT (derived at boot); a malformed line (<3
     // fields) falls back to defaults() so a corrupt NVS value can never wedge the device. Empty
     // optional fields keep their defaults.
     static RuntimeConfig fromLine(const std::string& s) {

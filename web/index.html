@@ -690,21 +690,20 @@ function wire(t) {
   $("cfgCurveNote").style.display = scalar ? "none" : "";
   if (t.kind === "ble" && !navigator.bluetooth) $("unsupported").style.display = "block";
 }
-// Broadcast-mode (spoof/corrector) UI. Spoof impersonates the Stages crank the SB20 expects, so its
-// advertised name is fixed to "Stages 62144" (editing it would stop the SB20 recognising us); corrector
-// broadcasts under our own editable name. The ANT+ spoof radio shows only on ANT-capable hardware
-// (the nRF) and stays disabled until the S340 SoftDevice lands — the ESP32 is BLE-only.
-const SPOOF_CRANK_NAME = "Stages 62144";
-let loadedSpoof = false, loadedOutName = "";
+// Broadcast-mode (spoof/corrector) UI. In SPOOF the advertised name is the Stages crank id the SB20
+// pairs to, and it is PER BOARD (fleet table: docs/system-reference.md §2/§7, #330): blank = the board's
+// own MAC-derived default ("Stages 9NNNN"), never a fixed "Stages 62144" — that is bike 1's real crank,
+// and forcing it here put every board on it. (The nRF ignores the name in spoof mode and uses its own
+// fixed profile.) Corrector broadcasts under our own name. The ANT+ spoof radio shows only on
+// ANT-capable hardware (the nRF) and stays disabled until the S340 SoftDevice lands — the ESP32 is BLE-only.
+let loadedSpoof = false;
 function applyModeUi() {
   const spoof = $("cfgMode").value === "spoof";
   $("cfgModeHelp").textContent = spoof
     ? "Impersonate the SB20's own Stages crank so the SB20 accepts our corrected power and runs erg — pair the SB20 to us as its crank."
     : "Re-broadcast the corrected meter under our own name; any head unit (Garmin, Zwift) pairs to it. For meter-to-meter correction.";
   $("cfgRadioRow").style.display = (spoof && T && T.caps.antCapable) ? "" : "none";
-  const out = $("cfgOut");
-  if (spoof) { out.value = SPOOF_CRANK_NAME; out.disabled = true; }
-  else { out.disabled = false; if (out.value === SPOOF_CRANK_NAME) out.value = loadedOutName || "SB20 Corrector"; }
+  $("cfgOut").placeholder = spoof ? "blank = this board's own default (Stages 9NNNN)" : "SB20 Corrector";
   $("cfgRebootHint").style.display = (spoof !== loadedSpoof) ? "" : "none";
 }
 $("cfgMode").onchange = applyModeUi;
@@ -713,7 +712,7 @@ async function loadConfig() {
     const c = await T.getConfig();
     $("cfgScale").value = c.scale.toFixed(3); $("cfgOffset").value = c.offset.toFixed(1);
     $("cfgSingle").checked = !!c.singleSided; $("cfgSrc").value = c.srcFilter; $("cfgOut").value = c.outName;
-    $("cfgMode").value = c.spoof ? "spoof" : "corrector"; loadedSpoof = !!c.spoof; loadedOutName = c.outName || "";
+    $("cfgMode").value = c.spoof ? "spoof" : "corrector"; loadedSpoof = !!c.spoof;
     applyModeUi();
   } catch (e) {}
 }
@@ -774,9 +773,9 @@ $("btnApply").onclick = async () => {
     const modeChanged = spoof !== loadedSpoof;
     const c = await T.setConfig({ scale: parseFloat($("cfgScale").value || "1"), offset: parseFloat($("cfgOffset").value || "0"),
       singleSided: $("cfgSingle").checked, spoof, srcFilter: $("cfgSrc").value,
-      outName: spoof ? SPOOF_CRANK_NAME : $("cfgOut").value });
+      outName: $("cfgOut").value });
     $("cfgScale").value = c.scale.toFixed(3); $("cfgOffset").value = c.offset.toFixed(1); $("cfgSingle").checked = !!c.singleSided;
-    $("cfgSrc").value = c.srcFilter; loadedSpoof = !!c.spoof; loadedOutName = c.spoof ? loadedOutName : c.outName;
+    $("cfgSrc").value = c.srcFilter; loadedSpoof = !!c.spoof;
     $("cfgMode").value = c.spoof ? "spoof" : "corrector"; applyModeUi();
     // Identity is set at boot on both platforms: the ESP32 persists + reboots; the nRF applies the
     // framing live but needs a reboot to re-advertise the new identity/services.
