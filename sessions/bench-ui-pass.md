@@ -21,6 +21,8 @@ needed only for the QR-scan and phone-in-hand checks. **Budget:** two to three d
 - [ ] A phone joined to the bench WiFi with `/app` open; browser console visible (USB debugging or a
       desktop browser standing in).
 - [ ] `route_baseline.py capture` taken as the "before" oracle.
+- [ ] The map's Decision column (filled 2026-09-24) is the oracle: a row placed *off* a surface is checked
+      there as "not offered" (a removal check), a row placed *on* a surface it lacks is recorded as a gap, not a fail.
 
 ## 1. Order of work (per board: Guition first, then CYD, then the C3 for the OLED rows)
 
@@ -31,11 +33,12 @@ needed only for the QR-scan and phone-in-hand checks. **Budget:** two to three d
 | 3 | F04, F05, F10 | Setup: rescan, pick the fake meter, pick the trainer sim, Save → reboot | `/status` before/after; `STATE` |
 | 4 | F20–F23, F16, F17 | Load a preset, start, pause, resume, skip, stop, change; trainer sim log | sim log excerpt; frames of the console states; `/app` Workout card |
 | 5 | F41, F38, F42 | More: brightness cycle (four taps), Firmware row, touch-cal (CYD) | frames; confirm or refute #346 |
-| 6 | F29, F33 | Calibrate button; Compare screen | confirm the no-op; Compare renders the stub verdict |
+| 6 | F29, F33 | Calibrate button; Compare screen | confirm the no-op (the button is decided out: map §2i DEVROWS); Compare renders the stub verdict |
 | 7 | F01–F03 | Portal: forget, QR scan with the owner's phone, rejoin; WiFi-off | phone screenshot of the join; `/status` after |
 | 8 | F18 | `/app` on a phone for 15 minutes with the board rebooted once | does the screen sleep; does the page recover |
 | 9 | F06–F09, F30, F34 | `/app` Settings: filter, ×2, mode, identity, curve round-trip, buttons card | `/status`, `crank_reader.py --scan`, `obc_reader.py` |
 | 10 | F37 | `route_baseline.py diff` against the "before" capture | 0/57 or the exact differences |
+| 11 | map §2i | Removal checks: every row placed off a surface is not offered there (today only F29's device button); every row placed on a surface it lacks is listed as a gap with its §2i item | one line per row |
 
 ## 2. Actual — fill in as it runs
 
