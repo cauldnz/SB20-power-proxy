@@ -1171,13 +1171,14 @@ void setup() {
                [identity = cfg.spoofName,
                 corrector = (cfg.mode == ProxyMode::Corrector),
                 sourcePin = cfg.meterAddress, sourceFilter = cfg.meterNameFilter,
-                trainerName = cfg.trainerNameFilter]() {
+                trainerName = cfg.trainerNameFilter, bleOff = cfg.bleOff]() {
         ProxyStatus s;
         s.identity = identity;   // the OUT name we advertise (stable until a reboot)
         s.identityDefault = g_identityDefault;  // derived from the MAC (nothing stored) vs configured
         s.sourcePin = sourcePin;                // the binding a two-bike room must get right (#330):
         s.sourceFilter = sourceFilter;          // which pedals, which bike, under which name
         s.trainerName = trainerName;
+        s.bleOff = bleOff;                      // radio held down on purpose, not broken
         s.corrector = corrector;
 #if USE_MOCK_METER
         s.mock = true;
@@ -1217,8 +1218,12 @@ void setup() {
     // the portal is up. Onboarding ends in an esp_restart (/save, /forget, /wifi/off all reboot or
     // drop the radio), so BLE starts on the next boot. NimBLEDevice::init above (no adv/scan) is fine
     // — only active advertising/scanning starves the AP, which is exactly what we gate here.
+    // cfg.bleOff is the second reason to hold the radio down, alongside the portal: an operator
+    // parked this board quiet with POST /ble/off so another board could be tested without it
+    // answering. Unlike /wifi/off it is recoverable remotely - HTTP stays up, POST /ble/on reboots
+    // back into a live radio - and /status carries `ble_off` so the silence is legible.
 #if USE_WIFI
-    if (!wifi.inPortal()) {
+    if (!wifi.inPortal() && !cfg.bleOff) {
         proxy.begin();  // crank advertises; source begins (scan, or nothing for mock)
 #if !USE_MOCK_METER
         if (g_calibrating) refMeter.begin();  // 2nd central joins the shared scan
@@ -1240,7 +1245,9 @@ void setup() {
         Serial.println("[wifi] portal: BT released + modem-sleep off (stable SoftAP)");
     }
 #else
-    proxy.begin();  // no WiFi in this build: BLE starts immediately
+    if (!cfg.bleOff) proxy.begin();  // no WiFi in this build: BLE starts immediately
+    // (a bleOff board with no WiFi cannot be recovered over HTTP - USB reflash only. The flag
+    //  is honoured anyway so the stored config means the same thing on every build.)
 #if !USE_MOCK_METER
     if (g_calibrating) refMeter.begin();
 #endif

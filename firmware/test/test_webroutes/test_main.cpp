@@ -538,6 +538,75 @@ void test_source_banner_reflects_connection_state() {
     TEST_ASSERT_TRUE(routes::sourceBanner(st).find("Searching") != std::string::npos);
 }
 
+// POST /ble/off parks the radio; POST /ble/on restores it. Both reboot, because the flag is read at
+// boot. The property that matters is that neither touches anything else in the config -- a board
+// parked quiet must come back with the same identity, meter pin and trainer it had.
+void test_ble_off_sets_only_the_flag_and_reboots() {
+    DeviceHooks h;
+    RuntimeConfig stored = RuntimeConfig::defaults();
+    stored.spoofName = "Stages 99744";
+    stored.meterAddress = "aa:bb:cc:dd:ee:ff";
+    stored.trainerNameFilter = "Stages Bike 0105";
+    RuntimeConfig saved;
+    h.config = [&] { return stored; };
+    h.saveConfig = [&](const RuntimeConfig& c) { saved = c; };
+
+    HttpResponse r = dispatch(*station("/ble/off", HttpMethod::Post), h, post("/ble/off"));
+    TEST_ASSERT_TRUE(saved.bleOff);
+    TEST_ASSERT_TRUE(r.reboot);
+    TEST_ASSERT_EQUAL_STRING("Stages 99744", saved.spoofName.c_str());
+    TEST_ASSERT_EQUAL_STRING("aa:bb:cc:dd:ee:ff", saved.meterAddress.c_str());
+    TEST_ASSERT_EQUAL_STRING("Stages Bike 0105", saved.trainerNameFilter.c_str());
+}
+
+void test_ble_on_clears_the_flag_and_reboots() {
+    DeviceHooks h;
+    RuntimeConfig stored = RuntimeConfig::defaults();
+    stored.bleOff = true;
+    stored.obcDevmode = true;          // must survive: /ble/on is not a reset
+    RuntimeConfig saved;
+    h.config = [&] { return stored; };
+    h.saveConfig = [&](const RuntimeConfig& c) { saved = c; };
+
+    HttpResponse r = dispatch(*station("/ble/on", HttpMethod::Post), h, post("/ble/on"));
+    TEST_ASSERT_FALSE(saved.bleOff);
+    TEST_ASSERT_TRUE(r.reboot);
+    TEST_ASSERT_TRUE(saved.obcDevmode);
+}
+
+// The recovery property this route exists for: unlike /wifi/off, a parked board is still served
+// over HTTP, so /ble/on is reachable. If /ble/on ever stopped being routable on the station server
+// the feature would be a trap, so pin it.
+void test_ble_on_is_reachable_on_the_station_server() {
+    TEST_ASSERT_NOT_NULL(station("/ble/on", HttpMethod::Post));
+    TEST_ASSERT_NOT_NULL(station("/ble/off", HttpMethod::Post));
+}
+
+// What /setup/save does to a parked radio, pinned because it is the question anyone will ask.
+// It PRESERVES bleOff: /setup/save goes through mergeSetupForm, which starts from the stored config
+// and overwrites only the setup fields -- the same treatment mode, the fitted curve and the OBC
+// flags get. So reconfiguring a source does not silently wake a board that was deliberately parked.
+//
+// That leaves exactly two ways back, both deliberate: POST /ble/on, or /setup/reset (which persists
+// defaults()). The residual risk is a parked board reaching a bike, which is why /status carries
+// `ble_off` -- a silent board must never look like a broken one.
+void test_setup_save_preserves_a_parked_radio_but_reset_clears_it() {
+    DeviceHooks h;
+    RuntimeConfig stored = RuntimeConfig::defaults();
+    stored.bleOff = true;
+    RuntimeConfig saved;
+    h.config = [&] { return stored; };
+    h.saveConfig = [&](const RuntimeConfig& c) { saved = c; };
+
+    HttpRequest rq = post("/setup/save");
+    rq.body = "addr=&name=ASSIOMA&spoof_name=&spoof_serial=11821518&trainer=";
+    dispatch(*station("/setup/save", HttpMethod::Post), h, rq);
+    TEST_ASSERT_TRUE(saved.bleOff);          // preserved, like every other stored flag
+
+    dispatch(*station("/setup/reset", HttpMethod::Post), h, post("/setup/reset"));
+    TEST_ASSERT_FALSE(saved.bleOff);         // defaults() = radio on: the second way back
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
 
@@ -588,6 +657,10 @@ int main(int, char**) {
     RUN_TEST(test_both_forget_variants_clear_credentials);
     RUN_TEST(test_no_duplicate_path_method_pairs);
     RUN_TEST(test_source_banner_reflects_connection_state);
+    RUN_TEST(test_ble_off_sets_only_the_flag_and_reboots);
+    RUN_TEST(test_ble_on_clears_the_flag_and_reboots);
+    RUN_TEST(test_ble_on_is_reachable_on_the_station_server);
+    RUN_TEST(test_setup_save_preserves_a_parked_radio_but_reset_clears_it);
 
     return UNITY_END();
 }

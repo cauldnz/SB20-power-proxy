@@ -103,6 +103,13 @@ struct RuntimeConfig {
                                          // SB20's vendor char 0c46be60) and re-broadcast them as OBC —
                                          // the "OBC bike add-on". Implies the OBC service.
     Sb20ButtonMap obcButtons = Sb20ButtonMap::defaults();  // per-button action binding (web-configurable)
+    bool bleOff = false;                 // hold the radio down at boot: no crank advertising, no
+                                         // scan. WiFi/HTTP stay up, so the board is still
+                                         // reachable and `POST /ble/on` brings it back. For a
+                                         // bench where one board is under test and the others
+                                         // must not answer (bench-ui-pass.md), and for the
+                                         // 'never two erg controllers on one bike' rule
+                                         // (system-reference §8 rule 3). NOT for a ride board.
 
     // The factory defaults, from compile-time Config (used when nothing is stored in NVS yet).
     static RuntimeConfig defaults() {
@@ -154,7 +161,8 @@ struct RuntimeConfig {
                s(refMeterNameFilter) + "|" + s(curveToString(curve)) + "|" + (calibrating ? "1" : "0") +
                "|" + s(trainerNameFilter) + "|" + (obcEnabled ? "1" : "0") + "|" +
                std::to_string(obcPort) + "|" + (obcDevmode ? "1" : "0") + "|" +
-               (obcSinkShifter ? "1" : "0") + "|" + s(obcButtons.toString());
+               (obcSinkShifter ? "1" : "0") + "|" + s(obcButtons.toString()) + "|" +
+               (bleOff ? "1" : "0");
     }
 
     // Parse a stored line, tagged or not.
@@ -199,6 +207,9 @@ struct RuntimeConfig {
         if (f.size() >= 14) c.obcDevmode = (f[13] == "1");
         if (f.size() >= 15) c.obcSinkShifter = (f[14] == "1");
         if (f.size() >= 16 && !f[15].empty()) c.obcButtons = Sb20ButtonMap::fromString(f[15]);
+        // Appended after v2 shipped: a line stored before this field simply leaves bleOff at its
+        // default (false = radio on), which is the safe direction.
+        if (f.size() >= 17) c.bleOff = (f[16] == "1");
         return c;
     }
 
