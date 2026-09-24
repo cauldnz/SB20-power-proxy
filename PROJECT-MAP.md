@@ -233,7 +233,7 @@ Convergence work so the ESP32 web UI, the nRF Web Bluetooth app, and the LVGL de
   C3 build** (`esp32c3-oled-live` is the same without espota; `oled96*` for the 0.96" boards); `esp32cyd*`,
   `esp32s3-pio*`, `esp32-guition*` (the LCD head units, each with `-live` and `-ota` variants); FTMS bench
   and probe envs. Bench (`METER_MATCH_ANY_CPS=1`) and mock envs are refused by the flash guard. CI compiles
-  6 of the 37 (#323). Flash via `firmware/flash.ps1` / `scripts/flash_c3.py` / `scripts/flash_s3.py` /
+  8 of the 37 since #348 (the Guition and S3 ride builds joined 2026-09-24). Flash via `firmware/flash.ps1` / `scripts/flash_c3.py` / `scripts/flash_s3.py` /
   `firmware-nrf/flash.ps1`. Toolchain gate: `tools/doctor.ps1`.
 
 ## D. Source tree at a glance
@@ -262,7 +262,7 @@ Convergence work so the ESP32 web UI, the nRF Web Bluetooth app, and the LVGL de
 |---|---|---|
 | **SB20 crank spoof** on the C3 (the product) | core · rides | proven end to end (pair → power → calibrate/zero); the two-bike stack runs one per bike |
 | **On-device erg / workouts on a head unit** | core (since the 2026-09-23 north star) | built and twin-proven; the real-SB20 erg round-trip is ROADMAP Now item ERG (session 14) |
-| **Head-unit boards** (CYD, S3-Touch, Guition) | core delivery vehicle | Guition on both bikes; validated on simulated data, never ridden; CI does not compile it (#323) |
+| **Head-unit boards** (CYD, S3-Touch, Guition) | core delivery vehicle | Guition on both bikes; validated on simulated data, never ridden; CI compiles it since 2026-09-24 (#348) |
 | **Round-zero beta** (the owner and their daughter) | core | the tester kit exercised on a fleet of two (ROADMAP Now item ROUND0) |
 | **qz/Peloton path** (qz drives erg; we proxy power) | supported | proven in sessions 7 and 13; never two erg controllers on one bike |
 | **Meter-to-meter corrector** | supporting | built M1–M5; never ridden (session 5 deferred) |
