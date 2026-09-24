@@ -4803,3 +4803,42 @@ test removals as well as presence, and lets the legacy pages go.
 mode and F46 heart rate added), §2i "What the decisions require", §4 test rows updated; `ROADMAP.md`
 Now #3 WEBRIDE (#351), Next PICKER / WEBPARITY / DEVROWS, Later HR; the bench pass run-sheet gained the
 removal checks. No firmware or web code changed.
+
+## 2026-09-24 — CI compiles the Guition and Waveshare S3 ride builds (#323 → #348), and a cache key that could never refresh
+
+**What changed.** `.github/workflows/tests.yml` gained two steps beside the CYD compile — `pio run -e
+esp32-guition-live-ota` and `pio run -e esp32s3-pio-live-ota` — gated on the same `firmware` path
+filter. Nothing under `firmware/` changed: both envs already had everything committed (`lib/monocypher`,
+`lib/esp_lcd_axs15231b`, `include/lv_conf.h`, `scripts/build_version.py`) and inherit `esp32s3-pio-min`'s
+pinned pioarduino URL (55.03.39).
+
+**Measured (run 35968067120, all green).** Guition: pass in 3m37s, of which 1m38s was the cold pioarduino
+install (platform 55.3.39, arduino-esp32 3.3.9, xtensa-esp-elf 14.2.0); RAM 21.7 %, flash 29.0 %.
+S3-Touch: pass in 1m58s with no installs; RAM 21.2 %, flash 56.0 %. Added job time 5m35s cold, about
+4 min warm. The firmware job's other +7 min that day was the LVGL harness and the CYD step running
+slower on that runner — unrelated.
+
+**A cache bug found on the way.** The pioarduino cache key hashed only the two `platformio.ini` files. A
+workflow-only change leaves that key untouched, and `actions/cache` never re-saves on an exact hit, so the
+S3 toolchain would have been re-downloaded on every run forever. The key now also hashes
+`.github/workflows/tests.yml`; the run proved it (new key missed, the 1394 MB cache restored via
+`restore-keys`, the post step saved under the new key).
+
+**And a package collision the warm cache exposed (run 35973689864).** The stock espressif32 platform
+(C3 / CYD envs) and pioarduino (Guition / S3) both ship packages named `framework-arduinoespressif32`
+(2.0.16 vs 3.3.9), `tool-esptoolpy` and `tool-openocd-esp32`, and PlatformIO keeps one directory per
+package name. In one shared `~/.platformio` every C3 build re-installed the stock versions over
+pioarduino's and every Guition build the reverse; on the first warm run the Guition step found the stock
+framework in place, did not re-install its own, and died in `arduino.py` with `FRAMEWORK_DIR` None. The
+pioarduino steps now build with `PLATFORMIO_CORE_DIR=$HOME/.platformio-pioarduino` behind their own
+cache key (`pio-s3-…`). The same collision is possible on a dev box that builds both families from one
+`~/.platformio`: the symptom is that `TypeError … 'NoneType'` at `pioarduino-build.py`; the cure is the
+same env var for the S3 builds.
+
+**Environment fact worth keeping.** On Windows, run `pio` from PowerShell, not Git Bash: pioarduino's
+`idf_tools.py` refuses MSYS shells ("MSys/Mingw is not supported"), so an S3 / Guition compile from Git
+Bash fails for an environment reason that reads like a build error. The Guition env compiled locally from
+PowerShell in 9m07s with byte-identical RAM/flash to CI. (`DEV-PLAYBOOK.md` carries the one-liner.)
+
+**Still open.** The `-live` S3/Guition envs emit `"USE_MOCK_METER" redefined` warnings (their `build_flags`
+layer `=1` then `=0`); the `firmware/**/*.md` path-filter exclusion discussed on #323 was not done.
