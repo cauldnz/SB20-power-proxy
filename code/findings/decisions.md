@@ -4842,3 +4842,93 @@ PowerShell in 9m07s with byte-identical RAM/flash to CI. (`DEV-PLAYBOOK.md` carr
 
 **Still open.** The `-live` S3/Guition envs emit `"USE_MOCK_METER" redefined` warnings (their `build_flags`
 layer `=1` then `=0`); the `firmware/**/*.md` path-filter exclusion discussed on #323 was not done.
+
+---
+
+## 2026-09-25 — bench UI pass, Guition: the panel is fine, the instruments were the problem
+
+First run of the bench UI pass (#345) against a real panel. The Guition's UI came out of it in
+better shape than the map predicted; **three separate measurements had to be thrown away and redone**
+because the instrument was lying, and that is the part worth keeping.
+
+### What the board does
+
+**Passes:** the geometry walk (all six screens, 8/8 taps landing); **F09** — blanking `out_name`
+derives `Stages 99744` with `identity_default:true`, proving #354's MAC identity on hardware and
+visible on the panel; **F13/F15/F19** (live watts on panel and `/status` agree, details pop-down
+carries names/RSSI/erg target); the **whole workout console from the device** — load, start, pause,
+skip (target 138 → 248), stop; **F29**'s calibrate button is the designed no-op (screen unchanged,
+`/log` silent); **F33** renders the documented `x1.101` stub; **F37** 57 route vectors. The OUT side
+broadcasts byte-faithful `2f00…` at 175–200 W, 85 rpm, L50/R50.
+
+**#346 confirmed, both halves.** Brightness: the label reads `100 %` at all five steps while the
+backlight drops once on the first tap and never moves again (normalised 0.318 → 0.203, 0.204, 0.204,
+0.202). The Firmware/Version row is absent — More has eight rows and none of them is it. Its
+More → Trainer item is **fixed** by #354.
+
+**Two new defects:** #358 (the Ride/More layout leaves ~40 % of the 480-tall panel empty, exactly as
+map §3 predicted by reading) and #359 (the details OUT card wraps `erg - Stages Bike 0105` onto the
+row beneath it, leaving both unreadable — triggered by trainer-name length, so not Guition-specific).
+
+### Three instruments that lied, and what each cost
+
+**1. Opening the serial port reboots the board.** `bench_ui.py --tap` opened the port per call, and
+the ESP32's native-USB DTR/RTS auto-reset rebooted the board each time, returning it to Ride. A
+four-tap brightness test therefore tapped a freshly-rebooted Ride screen four times and measured
+nothing. It reported "#346 CONFIRMED" — the right answer, for no reason at all. Caught only because
+a screen dump afterwards showed Ride where More should have been.
+
+The reboot could not be suppressed on Windows (setting `.dtr`/`.rts` before open did not take), so
+the fix is structural: **multi-step tests are one invocation** (`--seq`), never several.
+
+**2. The board answers before it is ready.** After that reset the reboot takes **~20 s** — WiFi, BLE
+and LVGL all come back — and `STATE` returns valid JSON with `touch:1` throughout. So the board looks
+ready and taps are silently dropped. Two more runs were invalidated this way, each looking exactly
+like a dead button. `bench_ui.py` now settles 20 s by default.
+
+**3. `wk_running` is not the pause indicator.** The device's Pause button appeared dead: two taps,
+`wk_running` still 1. It is not dead — `/workout/state` carries a **separate `paused` flag**, and a
+paused workout still reports `running:true`. Driving the engine over HTTP proved pause works
+(`seg_elapsed` frozen at 2 across the pause, advancing again after resume), then the device button
+was retested with `/workout/state` as the oracle: `paused=true`, `seg_elapsed` frozen. **F22 passes.**
+The real defect is that the serial console's `STATE` cannot express pause at all.
+
+**The pattern.** Every one of these produced a *plausible* answer — a confirmed bug, a dead button —
+and every one was the measuring apparatus, not the board. The camera brightness run needed the same
+discipline for a different reason: the webcam's auto-exposure drifted 87.4 → 88.4 during the cycle,
+so the panel was normalised against the CYD sitting in the same frame. **Before believing a bench
+result, ask what would make the instrument produce it with a healthy board.**
+
+### Run-sheet corrections (applied)
+
+- The Guition's setup AP is **`Setup-4D20`**, not `Setup-4D21`: the SSID comes from the station MAC,
+  and `4D:21` is the BLE crank address.
+- **Do not assign an identity.** Since #354 a board derives its own; blank `out_name` and read it
+  back. Guition `Stages 99744` verified.
+- §0b calls F10 a GAP because "`/status` carries no trainer key". Stale — `/status` now returns
+  `trainer`, `identity_default`, `source_pin` and `source_filter`.
+- §0c's formula does **not** reproduce the S3's panel-proven nav row (formula `(28,305)`, proven
+  `(20,312)`). Both land in the 30 px bar, but the derived Guition/CYD numbers are estimates and
+  should be treated as such — hence reading `STATE` after every tap.
+
+### Blocked, not failed
+
+The trainer-simulator rows (F04/F05/F10, F16/F17, F24–F27) need a C3 over USB and **no C3
+enumerates** — it produces no device node at all, which is a charge-only cable rather than a port
+fault (the one error-43 device on the bus never moved when the C3 was replugged, so it is unrelated).
+The portal and 15-minute `/app` rows need someone at the bench. The CYD pass is not started.
+
+### Toolchain: CI's second-core-dir recipe does not port to Windows
+
+DEV-PLAYBOOK §1 says to build the S3 envs with `$env:PLATFORMIO_CORE_DIR` "as CI does". CI uses
+`$HOME/.platformio-pioarduino`; on Windows that name is **37 chars**, and a pioarduino package's own
+inner path is **223**, so the install dies at exactly **260** — one over MAX_PATH — with a
+`FileNotFoundError` naming a Matter header, which looks nothing like a path-length problem. The
+default `.platformio` is 26 → 249 and works, which is why only the *second* core dir trips it. Use a
+short root (`C:\pio-s3` → 232). Playbook updated.
+
+Also: **`lvgl@^9.3.0` is not pinned in practice.** `platformio.ini:41` says it "resolves 9.5.x so
+pixels match"; that was only true while 9.5.x was newest. A fresh env resolved **9.6.0** while every
+existing env — including this board's own ride build and the `native-lvgl` host harness — is on
+9.5.0. Today's build was forced to 9.5.0 so the pass compares like with like; the repo-wide pin is
+still open, and the next CI cache miss builds 9.6.0 for everything.
