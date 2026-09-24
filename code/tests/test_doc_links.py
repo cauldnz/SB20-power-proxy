@@ -15,6 +15,7 @@ that no longer existed — "proxy not yet built" while two firmware targets ship
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -34,11 +35,22 @@ _LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 
 
 def _markdown_files() -> list[Path]:
-    return sorted(
-        md
-        for md in REPO.rglob("*.md")
-        if not any(part in SKIP_DIRS for part in md.relative_to(REPO).parts)
-    )
+    """Every tracked-ish Markdown file, skipping build output and vendored trees.
+
+    Prunes SKIP_DIRS *during* the walk rather than filtering afterwards. `rglob` recurses into
+    every directory regardless of what you do with its results, so the filtered-afterwards version
+    still traversed `.git`, `.venv` and — once anyone has built firmware locally — the enormous
+    `firmware/.pio` toolchain and build trees. Measured 2026-09-24 on a machine with firmware built:
+    pruned walk 147 files in 0.32 s, unpruned still running after 10 minutes. CI never noticed
+    because a fresh checkout has no `.pio` at all.
+    """
+    out: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(REPO):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]  # prune BEFORE descending
+        for name in filenames:
+            if name.endswith(".md"):
+                out.append(Path(dirpath) / name)
+    return sorted(out)
 
 
 def _is_checkable(target: str) -> bool:
