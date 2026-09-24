@@ -4763,3 +4763,43 @@ confirmation (the panel renders and touch works on exactly those pins), but it i
 never measured, and re-reading our own docs would only have found it repeated. Docs now state the
 provenance explicitly — measured hardware vs reported name — so the next reader does not mistake
 repetition for verification.
+
+## 2026-09-24 — UI placement decided per feature: the device carries the ride, the web carries setup and must also be a ride display
+
+**Decision (owner, taken group by group on 2026-09-24; recorded row by row in `docs/ui-feature-map.md` §2,
+with what it implies in §2i).** Of the 46 features on the map: 23 live on both surfaces, 17 on the web
+only (the device shows the value read-only where it matters: mode, identity, calibration state), 3 on
+the device only (brightness, touch calibration, the game), 2 are tooling only (`/log`/`/stats`/`/status`,
+OTA), and WiFi provisioning stays the device QR/PIN screen plus the captive portal. The rules the rows
+descend from:
+
+- **The pickers on both surfaces list every BLE device and filter to power meters and trainers**;
+  heart-rate straps join the filter later (F46, Later). Today the device list is pre-filtered to
+  CPS/FTMS and the web cannot pin by address (#347) — ROADMAP Next "PICKER".
+- **The web must be as good for a live ride as for setup.** The must-haves before the owner rides
+  with a phone on the bars are all four asked: target/segment/time-left on the ride hero (F16), a
+  Wake Lock plus HTTP reconnect (F18), the power chart (F14) and a full-screen ride mode (F45) —
+  issue #351, ROADMAP Now #3 "WEBRIDE".
+- **Calibration is web-only; the device shows Calibrating/Fitted state and loses its dead button**
+  (F29; the button was already a no-op, #346).
+- **Peloton needs no class picking**: the head unit detects the class the rider started, the way qz
+  does, and runs its downloaded timeline; the web holds only the sign-in (F26; recipe in
+  `peloton-integration.md`).
+- **Shifter bias ±10 W is on the SB20 buttons, the device Workout console and the web** (F27); the
+  OBC devmode toggle and virtual press get a web Settings home as well as curl (F35).
+- **Compare** keeps a verdict-only device screen and the deep dive on the web, revisited once real
+  two-meter data exists (F33).
+- **The legacy per-route pages retire in one PR** once every web-placed row is green on `/app`
+  (ROADMAP Next "WEBPARITY"); the device additions (Forget WiFi, WiFi-off, Reboot and Version rows,
+  bias on the console, the Calibrate button removal) follow the bench pass (Next "DEVROWS").
+
+**Why.** The north star ride is "no Stages app, no phone, no agent in the loop", so the screen must
+carry everything a ride needs; the web carries what needs a keyboard, a network, an account or a
+large display — and the owner also wants a phone on the bars to be a full ride display, not a settings
+page. Deciding each row once, in writing, is what lets the bench pass (`sessions/bench-ui-pass.md`)
+test removals as well as presence, and lets the legacy pages go.
+
+**What changed.** `docs/ui-feature-map.md` §2 Decision column filled for F01–F46 (F45 full-screen ride
+mode and F46 heart rate added), §2i "What the decisions require", §4 test rows updated; `ROADMAP.md`
+Now #3 WEBRIDE (#351), Next PICKER / WEBPARITY / DEVROWS, Later HR; the bench pass run-sheet gained the
+removal checks. No firmware or web code changed.

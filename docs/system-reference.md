@@ -107,7 +107,7 @@ flags `obcEnabled`, `obcDevmode`, `obcSinkShifter`, `obcPort`, `obcButtons`. All
 | **+ OBC enabled** (`obcEnabled`) | unchanged | unchanged | unchanged | + the OBC BLE service (and mDNS/TCP on `obcPort` on the ESP32) | unchanged |
 | **+ OBC devmode** (`obcDevmode`) | **`OBC-SB20`** (fixed string) | name + CPS | as per mode | + OBC service | unchanged; `GET /obc/press` fires virtual buttons |
 | **+ shifter sink** (`obcSinkShifter`) | unchanged | unchanged | unchanged | + OBC service | +1: the SB20 (by name `Stages Bike`), to read `0c46be60` and re-broadcast as OBC |
-| **Setup portal up** (fresh onboarding or a failed WiFi join) | **nothing** — BLE is held off | — | — | — | none; the portal offers `/setup` and `/wifi/off`; BLE starts after provisioning (`main.cpp`, the portal gate) |
+| **Setup portal up** (fresh onboarding or a failed WiFi join) | **nothing** — BLE is held off | — | — | — | none; the portal serves only its own pages (`/`, `/rescan`, `/save`, `/forget`, `/log`); `/setup` and `/wifi/off` are station routes, reachable once WiFi is up; BLE starts after provisioning (`main.cpp`, the portal gate) |
 | **Ride-mode WiFi-off** | unchanged | unchanged | unchanged | unchanged | unchanged; HTTP is unreachable until reboot |
 | **Mock / bench build** (`USE_MOCK_METER=1` or `METER_MATCH_ANY_CPS=1`) | `spoofName` | as per mode | as per mode | as per mode | mock: no source at all (a ramp); bench: the *nearest* CPS advertiser that is not a `Stages ` crank. **Never power one in the room during a ride** (`flash.ps1` refuses these envs without `-Force`) |
 

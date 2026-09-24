@@ -43,6 +43,7 @@ CLAUDE.md → *Session plans & the session ledger* (record Actual against Plan, 
 | — | 2026-07-06 | ✅ DONE | [passive capture: a qdomyos Peloton ride on the SB20](CAPTURE-qdomyos-sb20-passive.md) | The bike's FTMS GATT dump + the ANT+ inventory captured clean; the sniff was a **negative result** (qdomyos drove resistance without connecting to the bike's FTMS surface). Captures indexed in `code/findings/captures/README.md`. |
 | — | (run-sheet) | folded into 14 | [SB20 erg recovery capture](CAPTURE-sb20-erg-recovery.md) | Option A is session 14 gate G2a verbatim (does the SB20 answer *our* Set Target Power?); option B (sniff a working controller driving the bike) only if the qz path needs it. |
 | — | (cold-start) | reference | [session-12 laptop hand-off](session-12-LAPTOP-HANDOFF.md) | The paste-able cold-start for the bike laptop; written for session 12, reused by session 14; re-verify §A/§B against current `main` before pasting. |
+| — | (bench) | PLANNED | [bench UI pass](bench-ui-pass.md) | Every screen and card of the [UI feature map](../docs/ui-feature-map.md) exercised at the desk (bench camera, serial console, fake meter, the FTMS trainer sim, a phone on `/app`) before session 14 spends rider time; confirms or refutes the defects the map found by reading (#346, #347). |
 
 ## How to run a session
 
