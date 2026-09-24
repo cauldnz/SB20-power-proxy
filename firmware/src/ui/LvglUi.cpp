@@ -146,7 +146,7 @@ struct {
     // details pop-down (title-bar tap): IN/OUT cards replace the chart + chips
     lv_obj_t *chev, *cardCad, *cardBal, *det;
     lv_obj_t *dInName, *dInW, *dInCad, *dInMeta;
-    lv_obj_t *dOutName, *dOutW, *dOutCad, *dOutMeta;
+    lv_obj_t *dOutName, *dOutW, *dOutCad, *dOutMeta, *dOutErg;  // dOutErg: the trainer we erg-drive (#330)
 } R{};
 bool g_rideDetails = false;
 struct {
@@ -318,6 +318,14 @@ void buildRide() {
     mkSide(LV_ALIGN_TOP_LEFT, 10, "IN", C_OK(), &R.dInName, &R.dInW, &R.dInCad, &R.dInMeta);
     mkSide(LV_ALIGN_TOP_RIGHT, -10, "OUT", C_ACCENT(), &R.dOutName, &R.dOutW, &R.dOutCad,
            &R.dOutMeta);
+    {   // OUT card, between cadence and the meta line: the FTMS trainer this board erg-drives, so the
+        // rider checks pedals -> identity -> bike in one glance (system-reference §7, #330).
+        lv_obj_t* card = lv_obj_get_parent(R.dOutMeta);
+        R.dOutErg = mkLabel(card, &lv_inter_12, C_MUT(), "");
+        lv_obj_set_width(R.dOutErg, dw - 20);
+        lv_label_set_long_mode(R.dOutErg, LV_LABEL_LONG_DOT);
+        lv_obj_align(R.dOutErg, LV_ALIGN_TOP_LEFT, 0, 92);
+    }
 
     mkNav(s, 0);
 }
@@ -826,6 +834,12 @@ void lvglUiUpdate(const LcdViews& v) {
         lv_label_set_text(R.dInMeta, buf);
         snprintf(buf, sizeof(buf), "up %lum", (unsigned long)(v.ride.uptimeMs / 60000u));
         lv_label_set_text(R.dOutMeta, buf);
+        if (v.ride.trainerName.empty()) {
+            lv_label_set_text(R.dOutErg, "erg: off");
+        } else {
+            snprintf(buf, sizeof(buf), "erg %s %s", v.ride.trainerOn ? "*" : "-", v.ride.trainerName.c_str());
+            lv_label_set_text(R.dOutErg, buf);
+        }
     }
 
     // Workout — only while it's the live screen (W.* widgets exist only after the lazy build, and

@@ -19,9 +19,13 @@ namespace sb20proxy {
 // The ride/live-data view — the numbers both panels display (power/cadence/balance + link state).
 struct RideView {
     std::string srcName;      // "ASSIOMA17039L" or "searching…"
-    std::string outName;      // the identity we advertise ("Stages 62144")
+    std::string outName;      // the identity we advertise ("Stages 92729", or the configured id)
     bool srcOn = false;
     bool outOn = true;
+    std::string trainerName;  // the FTMS trainer this board erg-drives ("" = erg off) — with srcName and
+                              // outName, the three-way binding a rider must be able to check at a glance
+                              // in a two-bike room (docs/system-reference.md §7, #330)
+    bool trainerOn = false;   // that trainer's link is up
     int16_t watts = 0;        // broadcast power (the hero)
     int16_t srcWatts = 0;     // received power (details)
     int16_t cadence = -1;
@@ -50,7 +54,9 @@ struct RideInputs {
     PowerReading src;             // the reading we RECEIVED (pre-correction)
     bool meterConnected = false;  // (mock-meter builds report true with meterName = "mock meter")
     std::string meterName;        // only meaningful while connected
-    std::string identity;         // the name we advertise, e.g. "Stages 62144"
+    std::string identity;         // the name we advertise, e.g. "Stages 92729"
+    std::string trainerName;      // RuntimeConfig.trainerNameFilter as configured at boot ("" = erg off)
+    bool trainerConnected = false;
     bool wifiUp = false;
     int32_t rssi = 0;             // only meaningful while wifiUp
 };
@@ -81,6 +87,8 @@ inline void projectRideView(const RideInputs& in, RideView& v) {
     v.srcName = in.meterConnected ? in.meterName : std::string("searching...");
     v.outName = in.identity;
     v.outOn = true;
+    v.trainerName = in.trainerName;
+    v.trainerOn = in.trainerConnected;
     // A stale RSSI reads as a plausible signal strength rather than as "no link", so it is zeroed
     // when WiFi is down instead of being left at whatever the radio last reported.
     v.wifiRssi = in.wifiUp ? in.rssi : 0;

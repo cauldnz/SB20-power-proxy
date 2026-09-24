@@ -21,6 +21,11 @@ struct ProxyStatus {
     std::string srcName;           // the connected source's advertised name ("" if none)
     std::string identity;          // the name we ADVERTISE (the OUT side): Stages spoof, or our
                                    // own corrector name. Set from RuntimeConfig at boot.
+    bool identityDefault = false;  // identity was DERIVED from the MAC at boot (nothing stored) — a
+                                   // board nobody has named yet; false = a stored, deliberate identity
+    std::string sourcePin;         // the pinned source address (RuntimeConfig.meterAddress; "" = by name)
+    std::string sourceFilter;      // the source name filter (RuntimeConfig.meterNameFilter)
+    std::string trainerName;       // the FTMS trainer we erg-drive (trainerNameFilter; "" = erg off)
     bool corrector = false;        // false = SPOOF (impersonate a crank); true = CORRECTOR mode
     int32_t forwarded = 0;         // readings relayed to the crank
     // The proxy carries two power streams; the UI shows both so each direction is visible:
@@ -70,6 +75,13 @@ inline std::string renderStatusJson(const ProxyStatus& s) {
     j += ",\"mode\":\"";
     j += s.corrector ? "corrector" : "spoof";
     j += "\"";
+    // Fleet identity (#330): was the name derived from the MAC (nothing stored) or configured — and the
+    // rest of the binding a two-bike room must get right (system-reference §7): which pedals this board
+    // reads and which bike it erg-drives, next to the name it advertises, so a wrong one is visible.
+    j += ",\"identity_default\":" + std::string(s.identityDefault ? "true" : "false");
+    j += ",\"source_pin\":\"" + jsonEscape(s.sourcePin) + "\"";
+    j += ",\"source_filter\":\"" + jsonEscape(s.sourceFilter) + "\"";
+    j += ",\"trainer\":\"" + jsonEscape(s.trainerName) + "\"";
     j += ",\"forwarded\":" + std::to_string(s.forwarded);
     // src_* = received from the meter (goal #1); power_w/cadence_rpm = broadcast to the crank (goal #2)
     j += ",\"src_power_w\":" + std::to_string(s.srcPowerW);

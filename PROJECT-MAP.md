@@ -35,7 +35,7 @@ Status key: ✅ built & working · ⚙ partial / hardening · 🔒 built but blo
 | L/R balance forwarding (plumbed; the *value* grounding from a capture is pending) | ⚙ | `Cps.h`/`ProxyCore.h` · forward-plan §"balance" |
 | Bidirectional **crank-length** bridge (app↔meter) | 🔲 | capture-gated — [forward-plan §11](code/findings/forward-plan.md) + its capture recipe |
 | Sole-source pairing rule (SB20 needs *both* crank IDs findable) | ✅ understood | forward-plan §12 |
-| **Spoof identity per board.** Every board still *defaults* to `Stages 62144` (bike 1's real crank); a unique-by-default identity and a fleet table are ROADMAP Now item IDENT (#330) | ⚙ hazard | `Config.h`, `RuntimeConfig.h` · decisions 2026-09-23 |
+| **Spoof identity per board.** No compile-time default name: a board with nothing stored derives `Stages 9NNNN` from its base MAC (`FleetIdentity.h`, `RuntimeConfig::resolveIdentity`); `/status` shows `identity_default` + `source_pin` + `trainer`; `qa_board.py` fails a board on bike 1's real crank ids (`--crank-rescue` opts out) or a duplicated name. Fleet table + rule: `docs/system-reference.md` §2 | ✅ (#330; the `9xxxx` pairing is unproven, §11) | `firmware/lib/proxy/FleetIdentity.h`, `code/src/sb20proxy/qa/acceptance.py` · system-reference §2/§7 |
 
 ### Config & UX — user-configurable, no rebuild (pre-beta Phase 1, ✅)
 | Capability | Status | Lives in |
@@ -174,7 +174,8 @@ Convergence work so the ESP32 web UI, the nRF Web Bluetooth app, and the LVGL de
 - **[`docs/`](docs/architecture.md)** — [`architecture.md`](docs/architecture.md) (the conceptual
   architecture with four rendered diagrams; canonical), [`system-reference.md`](docs/system-reference.md)
   (how the pieces fit at runtime: roles, discovery rules, modes, legal configurations, the two-bike
-  matrix; issue #290), [`bike-session-workflow.md`](docs/bike-session-workflow.md)
+  matrix; issue #290), [`ui-feature-map.md`](docs/ui-feature-map.md) (every feature on every surface,
+  its device-vs-web placement and the test that proves it; issue #345), [`bike-session-workflow.md`](docs/bike-session-workflow.md)
   (a short companion to the playbook), [`diagrams/`](docs/diagrams/README.md) (Mermaid sources + SVGs),
   [`agents/`](docs/agents/issue-tracker.md) (the issue-tracker, triage-label and domain-doc conventions the
   engineering skills read), [`reviews/`](docs/reviews/README.md) (dated review snapshots, indexed there), and
@@ -232,7 +233,7 @@ Convergence work so the ESP32 web UI, the nRF Web Bluetooth app, and the LVGL de
   C3 build** (`esp32c3-oled-live` is the same without espota; `oled96*` for the 0.96" boards); `esp32cyd*`,
   `esp32s3-pio*`, `esp32-guition*` (the LCD head units, each with `-live` and `-ota` variants); FTMS bench
   and probe envs. Bench (`METER_MATCH_ANY_CPS=1`) and mock envs are refused by the flash guard. CI compiles
-  6 of the 37 (#323). Flash via `firmware/flash.ps1` / `scripts/flash_c3.py` / `scripts/flash_s3.py` /
+  8 of the 37 since #348 (the Guition and S3 ride builds joined 2026-09-24). Flash via `firmware/flash.ps1` / `scripts/flash_c3.py` / `scripts/flash_s3.py` /
   `firmware-nrf/flash.ps1`. Toolchain gate: `tools/doctor.ps1`.
 
 ## D. Source tree at a glance
@@ -261,7 +262,7 @@ Convergence work so the ESP32 web UI, the nRF Web Bluetooth app, and the LVGL de
 |---|---|---|
 | **SB20 crank spoof** on the C3 (the product) | core · rides | proven end to end (pair → power → calibrate/zero); the two-bike stack runs one per bike |
 | **On-device erg / workouts on a head unit** | core (since the 2026-09-23 north star) | built and twin-proven; the real-SB20 erg round-trip is ROADMAP Now item ERG (session 14) |
-| **Head-unit boards** (CYD, S3-Touch, Guition) | core delivery vehicle | Guition on both bikes; validated on simulated data, never ridden; CI does not compile it (#323) |
+| **Head-unit boards** (CYD, S3-Touch, Guition) | core delivery vehicle | Guition on both bikes; validated on simulated data, never ridden; CI compiles it since 2026-09-24 (#348) |
 | **Round-zero beta** (the owner and their daughter) | core | the tester kit exercised on a fleet of two (ROADMAP Now item ROUND0) |
 | **qz/Peloton path** (qz drives erg; we proxy power) | supported | proven in sessions 7 and 13; never two erg controllers on one bike |
 | **Meter-to-meter corrector** | supporting | built M1–M5; never ridden (session 5 deferred) |
@@ -292,6 +293,7 @@ CI parses this table.
 | [PROJECT-MAP.md](PROJECT-MAP.md) | index | this map |
 | [docs/architecture.md](docs/architecture.md) | living | the conceptual architecture (canonical) |
 | [docs/system-reference.md](docs/system-reference.md) | living | how the pieces fit at runtime (issue #290) |
+| [docs/ui-feature-map.md](docs/ui-feature-map.md) | living | every UI feature, its placement, its test (issue #345) |
 | [docs/bike-session-workflow.md](docs/bike-session-workflow.md) | living | short companion to the playbook |
 | [docs/diagrams/README.md](docs/diagrams/README.md) | index | diagram convention |
 | [docs/reviews/README.md](docs/reviews/README.md) | index | dated reviews, indexed there |

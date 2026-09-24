@@ -52,6 +52,9 @@ human-in-the-loop contract"). Nothing below is attempted until G0 is green at th
 - [ ] **Workouts staged:** the `4×8 Threshold` preset with each rider's FTP
       (`code/scripts/import_workout.py --ftp` per rider until `ftp_w` lives in the config).
 - [ ] **Two `/status` watch loops** ready (one per board); `perf_soak.py` is single-board.
+- [ ] **The bench UI pass has run once** ([`bench-ui-pass.md`](bench-ui-pass.md)): every never-seen-on-a-panel
+      cell of the UI map burned down at the desk and its gaps filed, so no rider time goes to a screen the
+      camera could have checked (owner, 2026-09-24: bench first, then this session).
 
 ## 3. Bring-list
 
@@ -85,6 +88,10 @@ real right crank**; the SB20 needs *both* ids findable, so the real R crank stay
 | stretch S1 | single-crank pairing (forward-plan §12) | 10 min | does the SB20 pair with only the spoof findable? |
 | stretch S2 | MeterCompare with two real Assioma sets | both pedal sets on one bike | real A/B numbers replace the fabricated ones |
 | stretch S3 | the qz/Peloton path through the proxy, head-unit erg OFF | qz on a phone/PC | one Peloton ride per bike; one erg controller at a time |
+
+**The UI map rides along.** [`docs/ui-feature-map.md`](../docs/ui-feature-map.md) §4 marks each row bench or
+bike; the bench pass ([`bench-ui-pass.md`](bench-ui-pass.md)) runs first, and the bike rows plus the rider's
+check of every device-placed row are listed in Annex C with the gate they attach to.
 
 ## 6. Risks and landmines (designed around, not discovered at the bike)
 
@@ -165,3 +172,23 @@ Board firmware `6897578` is current (no: firmware changed on 07-26/27 and 09-23)
 07-26); `L=62145` uniquely identifies the C3 (the Guition was also `62145` from 09-23); one rider, one
 bike, `ftp_w 250`; the RSSI pre-flight in `flash.ps1` works (it was dead until 09-23); "OTA needs better
 than −72 dBm" (first-attempt at −72/−82 now); the C3 as the only ride board (the Guition exists).
+
+## Annex C — UI map rows checked in this session (added 2026-09-24)
+
+The bike rows of [`docs/ui-feature-map.md`](../docs/ui-feature-map.md) §4 plus the rider's check of the
+device-placed rows. Bench-testable rows are not repeated: they are the bench pass's job. Mark each
+✅ / ❌ / ⚠️ with what was seen, at the gate it attaches to.
+
+| Map row | What the rider checks | Gate | Result |
+|---|---|---|---|
+| F13 | live watts, cadence and balance from real pedals on the head unit; the phone on `/app` alongside if #351 has landed | G1 / G2b | |
+| F15 | source and trainer names, link dots and RSSI on the ride title bar | G1 | |
+| F16 | the current target, segment and time left are findable on the device mid-workout (today: the Workout screen only, not the ride view — record whether that is enough at the bike) | G2b | |
+| F17 | the erg line walks searching → connected → controlled against a real SB20 | G2b | |
+| F19 | identity and mode on More agree with the fleet table | G0 / G1 | |
+| F20–F23 | load, start, pause, resume, skip, stop and change from the head unit while riding | G2b / G3 | |
+| F27 | ±10 W from the SB20 buttons during erg (the OBC path; only if #291 is resolved) | G3 | |
+| F28 | the profile bar, next block and clock stay legible for 53 minutes | G3 | |
+| F38 | the build SHA readable on each board (today only via `/status`, #346) | G0 | |
+| F26 | Peloton as the workout source — only once #342 Phase 1 exists; otherwise the qz path is stretch S3 | stretch S3 | |
+| F33 | Compare with two real Assioma sets replaces the fabricated ×1.11 numbers | stretch S2 | |

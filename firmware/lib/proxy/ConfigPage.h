@@ -32,9 +32,10 @@ inline RuntimeConfig parseConfigForm(const std::string& body) {
         else if (key == "trainer") c.trainerNameFilter = stripConfigDelims(val);
     });
     c.singleSidedDouble = single;
-    // The spoof identity must always be present (we advertise it); fall back to the default when the
-    // form leaves it blank, so the device can never end up nameless.
-    if (c.spoofName.empty()) c.spoofName = Config::SPOOF_NAME;
+    // A BLANK identity is stored blank on purpose: it means "this board's own default", which the boot
+    // path derives from the MAC (RuntimeConfig::resolveIdentity, #330). The old fallback to a fixed
+    // "Stages 62144" put every blank-named board on bike 1's real crank id. The serial keeps its fixed
+    // default (the DIS string the SB20 has been measured against).
     if (c.spoofSerial.empty()) c.spoofSerial = Config::SPOOF_SERIAL;
     return c;
 }
@@ -54,7 +55,7 @@ inline RuntimeConfig mergeSpaConfigForm(const RuntimeConfig& current, const std:
         else if (key == "out_name") c.spoofName = stripConfigDelims(val);
         else if (key == "mode") c.mode = (val == "corrector") ? ProxyMode::Corrector : ProxyMode::Spoof;
     });
-    if (c.spoofName.empty()) c.spoofName = Config::SPOOF_NAME;  // we always advertise a name
+    // A blank out_name stays blank = this board's MAC-derived default at boot (see parseConfigForm).
     return c;
 }
 
@@ -191,13 +192,15 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
          // --- Crank identity: what the SB20 sees as its crank (advanced) --------------------------
          "<details><summary style='cursor:pointer;font-weight:600;margin:6px 0 10px'>Crank identity "
          "(advanced)</summary>"
-         "<p class='hint'>What the SB20 pairs to as its crank. Set this to <b>your</b> Stages crank's "
-         "ID (shown in the Stages app) so the bike accepts it &mdash; or a different number to run "
-         "alongside a still-working crank. Pull the matching crank's battery before riding.</p>"
+         "<p class='hint'>What the SB20 pairs to as its crank. <b>Blank = this board's own default</b> "
+         "(<code>Stages 9NNNN</code>, from its MAC &mdash; unique per board; type that id into the "
+         "Stages app). Every crank name in the room must be unique: never another board's, and never "
+         "a real crank's id unless this board is standing in for that crank &mdash; then pull the "
+         "matching crank's battery before riding.</p>"
          "<label for='spoof_name'>Crank name</label>"
          "<input type='text' id='spoof_name' name='spoof_name' autocomplete='off' "
          "autocapitalize='none' autocorrect='off' spellcheck='false' value='" +
-         htmlEscape(cfg.spoofName) + "' placeholder='Stages 62144'>"
+         htmlEscape(cfg.spoofName) + "' placeholder='blank = this board&#39;s own (Stages 9NNNN)'>"
          "<label for='spoof_serial'>Serial <span class='hint'>(optional)</span></label>"
          "<input type='text' id='spoof_serial' name='spoof_serial' autocomplete='off' "
          "autocapitalize='none' autocorrect='off' spellcheck='false' value='" +

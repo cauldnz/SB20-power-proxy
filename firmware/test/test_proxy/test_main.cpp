@@ -512,7 +512,9 @@ void test_runtime_config_line_roundtrip() {
 
 void test_runtime_config_defaults_spoof_identity() {
     RuntimeConfig c = RuntimeConfig::defaults();
-    TEST_ASSERT_EQUAL_STRING(Config::SPOOF_NAME, c.spoofName.c_str());
+    // No compile-time name: "" = not stored, derived from the MAC at boot (FleetIdentity.h, #330;
+    // the derivation itself is covered in test/test_fleetidentity).
+    TEST_ASSERT_EQUAL_STRING("", c.spoofName.c_str());
     TEST_ASSERT_EQUAL_STRING(Config::SPOOF_SERIAL, c.spoofSerial.c_str());
 }
 
@@ -521,7 +523,7 @@ void test_runtime_config_old_line_keeps_default_identity() {
     RuntimeConfig c = RuntimeConfig::fromLine("aa:bb:cc:dd:ee:ff|ASSIOMA|1");
     TEST_ASSERT_EQUAL_STRING("aa:bb:cc:dd:ee:ff", c.meterAddress.c_str());
     TEST_ASSERT_TRUE(c.singleSidedDouble);
-    TEST_ASSERT_EQUAL_STRING(Config::SPOOF_NAME, c.spoofName.c_str());     // identity defaulted
+    TEST_ASSERT_EQUAL_STRING("", c.spoofName.c_str());     // identity absent -> derived at boot
     TEST_ASSERT_EQUAL_STRING(Config::SPOOF_SERIAL, c.spoofSerial.c_str());
 }
 
@@ -1257,12 +1259,13 @@ void test_config_form_parse() {
     TEST_ASSERT_EQUAL_STRING("", d.meterAddress.c_str());
     TEST_ASSERT_EQUAL_STRING("ASSIOMA", d.meterNameFilter.c_str());
     TEST_ASSERT_FALSE(d.singleSidedDouble);
-    // spoof identity round-trips through the form; blank identity falls back to the default
+    // spoof identity round-trips through the form; a blank identity is stored blank (= this board's
+    // own MAC-derived default at boot, #330), never a fixed real-crank id
     RuntimeConfig e = parseConfigForm("addr=&name=ASSIOMA&spoof_name=Stages+12345&spoof_serial=42");
     TEST_ASSERT_EQUAL_STRING("Stages 12345", e.spoofName.c_str());  // '+' -> space
     TEST_ASSERT_EQUAL_STRING("42", e.spoofSerial.c_str());
     RuntimeConfig f = parseConfigForm("addr=&name=ASSIOMA&spoof_name=&spoof_serial=");
-    TEST_ASSERT_EQUAL_STRING(Config::SPOOF_NAME, f.spoofName.c_str());      // blank -> default
+    TEST_ASSERT_EQUAL_STRING("", f.spoofName.c_str());                      // blank stays blank
     TEST_ASSERT_EQUAL_STRING(Config::SPOOF_SERIAL, f.spoofSerial.c_str());
 }
 
@@ -1432,6 +1435,9 @@ void test_status_json_mock() {
     s.srcCadenceRpm = 88;
     s.srcName = "ASSIOMA \"L\"";  // includes a quote -> must be JSON-escaped
     s.identity = "Stages 62144";  // the OUT side we advertise
+    s.identityDefault = true;     // derived from the MAC at boot (nothing stored) — #330
+    s.sourcePin = "e6:20:90:8c:f3:fe";
+    s.trainerName = "Stages Bike 0105";
     s.srcBalanceHalfPct = 88;   // 44 % left
     s.lastPowerW = 200;
     s.lastCadenceRpm = 90;
@@ -1441,6 +1447,11 @@ void test_status_json_mock() {
     TEST_ASSERT_TRUE(j.find("\"source\":\"mock\"") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"identity\":\"Stages 62144\"") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"mode\":\"spoof\"") != std::string::npos);  // default mode
+    // the fleet-identity binding (#330): provenance of the name + which pedals / which bike
+    TEST_ASSERT_TRUE(j.find("\"identity_default\":true") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"source_pin\":\"e6:20:90:8c:f3:fe\"") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"source_filter\":\"\"") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"trainer\":\"Stages Bike 0105\"") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"forwarded\":5") != std::string::npos);
     TEST_ASSERT_TRUE(j.find("\"src_power_w\":220") != std::string::npos);   // received from meter
     TEST_ASSERT_TRUE(j.find("\"src_cadence_rpm\":88") != std::string::npos);
@@ -1550,11 +1561,12 @@ void test_merge_spa_config_form() {
     TEST_ASSERT_EQUAL_STRING("SB20-FTMS", c.trainerNameFilter.c_str());
     TEST_ASSERT_EQUAL_STRING("9999", c.spoofSerial.c_str());
     TEST_ASSERT_EQUAL_STRING("e3:25:39:38:92:71", c.meterAddress.c_str());
-    // Spoof back on; single on; a blank out_name falls back to the default (never nameless).
+    // Spoof back on; single on; a blank out_name stays blank (= this board's own MAC-derived default
+    // at boot, #330) — never the fixed real-crank id the old fallback filled in.
     RuntimeConfig d = mergeSpaConfigForm(c, "single=1&out_name=&mode=spoof");
     TEST_ASSERT_TRUE(d.mode == ProxyMode::Spoof);
     TEST_ASSERT_TRUE(d.singleSidedDouble);
-    TEST_ASSERT_EQUAL_STRING(Config::SPOOF_NAME, d.spoofName.c_str());
+    TEST_ASSERT_EQUAL_STRING("", d.spoofName.c_str());
     TEST_ASSERT_EQUAL_STRING("XCADEY", d.meterNameFilter.c_str());  // absent key = unchanged
 }
 
@@ -1866,10 +1878,12 @@ void test_oled_struct_overload_projects_ride_view() {
     ride.watts = 217;
     ride.cadence = 92;
     ride.wifiRssi = -55;
+    ride.outName = "Stages 92729";
     auto l = formatOledLines(prov, ride, /*wifiUp=*/true, "192.168.1.7");
     TEST_ASSERT_EQUAL_STRING("WiFi -55", l[0].c_str());
     TEST_ASSERT_EQUAL_STRING("192.168.1.7", l[1].c_str());
     TEST_ASSERT_EQUAL_STRING("217W 92rpm", l[2].c_str());
+    TEST_ASSERT_EQUAL_STRING("Stages 92729", l[3].c_str());  // row 4: the crank id this board IS (#330)
 }
 
 void test_oled_scalar_adapter_matches_struct() {
@@ -2300,6 +2314,9 @@ void test_diag_report() {
     ProxyStatus st;
     st.sourceConnected = true;
     st.srcName = "ASSIOMA17039L";
+    st.identity = "Stages 92729";  // the LIVE name (the stored one above is a crank-rescue config)
+    st.identityDefault = true;
+    st.trainerName = "Stages Bike 0105";
     st.srcPowerW = 158;
     st.srcBalanceHalfPct = 88;  // 44 %
     std::vector<std::string> frames = {"23009e005816134e4d", "23009f005a1a13915a"};
@@ -2307,6 +2324,8 @@ void test_diag_report() {
     TEST_ASSERT_TRUE(r.find("SB20 Proxy diagnostic") != std::string::npos);
     TEST_ASSERT_TRUE(r.find("source_addr=e6:20:90:8c:f3:fe") != std::string::npos);  // config
     TEST_ASSERT_TRUE(r.find("spoof_name=Stages 62144") != std::string::npos);
+    TEST_ASSERT_TRUE(r.find("identity=Stages 92729  identity_default=yes  trainer=Stages Bike 0105") !=
+                     std::string::npos);  // the live identity + its provenance (#330)
     TEST_ASSERT_TRUE(r.find("ASSIOMA17039L") != std::string::npos);                  // status
     TEST_ASSERT_TRUE(r.find("src_balance_pct=44") != std::string::npos);
     TEST_ASSERT_TRUE(r.find("23009e005816134e4d") != std::string::npos);            // raw frames

@@ -116,7 +116,8 @@ private:
     BalanceHold balanceHold_;     // sticky L/R split: hold last good across balance-less frames
     std::string matchAddr_ = Config::METER_ADDRESS;          // runtime source pin ("" = by name/UUID)
     std::string matchNameFilter_ = Config::METER_NAME_FILTER; // runtime source name substring
-    std::string matchSpoofName_ = Config::SPOOF_NAME;         // our spoof's name (loop-guard exclusion)
+    std::string matchSpoofName_;                              // our spoof's name (loop-guard exclusion;
+                                                              // set from the resolved RuntimeConfig)
     std::vector<SourceCandidate> candidates_;                 // discovered sources for the web picker
     std::vector<std::string> recentFrames_;                   // recent raw CPS frames (hex) for /diag
     uint32_t lastReadingMs_ = 0;  // for the staleness watchdog (meter went silent -> rescan)

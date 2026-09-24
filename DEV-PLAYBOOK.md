@@ -35,6 +35,20 @@ CI, and merged the same session. Don't open a 10-file branch and hope.
   firmware change, compile the actual env (`pio run -e esp32c3-oled-live`) — `pio test -e native` does
   **not** build `main.cpp` or the BLE seam. The host tests catch logic; the target compile catches the
   wiring.
+- **On Windows, build firmware from PowerShell, not Git Bash.** pioarduino's `idf_tools.py` refuses MSYS
+  shells ("MSys/Mingw is not supported"), so an S3 / Guition `pio run` from Git Bash fails for an
+  environment reason that reads like a build error (found landing #348, 2026-09-24).
+- **Two Arduino platforms, one `~/.platformio`, one directory per package name.** If a Guition / S3
+  build dies in `pioarduino-build.py` with `TypeError … 'NoneType'` right after a C3 / CYD build (or
+  vice versa), the stock espressif32 and pioarduino platforms have overwritten each other's
+  `framework-arduinoespressif32`. Build the S3 envs with `$env:PLATFORMIO_CORE_DIR` pointing at a second
+  core dir, as CI does (#348).
+- **A change under `firmware/lib/` is also an nRF change.** `firmware-nrf` builds `../firmware/lib`
+  (`lib_extra_dirs`), so removing or renaming anything there can break the XIAO bridge while every ESP32
+  env compiles. The pre-push gate is **every env CI builds** — the ESP32 compiles, `pio run -e xiao-sense`
+  and `-e feather-nrf52840` from `firmware-nrf/` — and a delegated agent's prompt should name them all,
+  not "the envs you touched". *(2026-09-24: #354 passed ten local gates, then failed CI on the nRF,
+  which still advertised the `Config::SPOOF_NAME` the PR had removed.)*
 
 ## 2 · Prove it — cheapest sufficient test, honest about scope
 
@@ -91,6 +105,13 @@ One task → **fresh branch off `origin/main`** → PR → **wait for green CI**
 open PRs** + confirm `origin/main` hasn't moved under the PR → `gh pr merge --merge --delete-branch` →
 `git pull` → prune the local branch. Never resurrect an old branch; never merge on a stale base. (This
 is CLAUDE.md → *Git & branch hygiene*; it works — follow it every time, including for docs PRs.)
+
+- **`main` requires branches to be up to date, so merge order is a cost.** Merging *any* PR puts every
+  other open PR behind, and a behind PR needs `origin/main` merged in plus a fresh CI run before it can
+  land. A docs PR's run takes minutes; one touching `firmware/`, `firmware-nrf/` or the workflow takes
+  ~50 (the LVGL harness alone is ~30). So land the quick PRs first, then refresh the long one and merge
+  nothing else until it lands; cancel the superseded run when you push a new head. *(2026-09-24: a
+  one-minute docs merge landed while #348 was mid-run and cost it a second 50-minute run.)*
 
 - **A spawned task or concurrent session can leave work in the *shared working tree* — survey before you commit,
   and reconcile rather than stomp or duplicate.** `git status` + `git branch -r` + `gh pr list` before each

@@ -44,7 +44,9 @@ inline std::array<std::string, 4> formatOledLines(const ProvisionView& prov, con
     if (ride.balancePct >= 0) row += " L" + std::to_string(ride.balancePct);
     std::string title = ride.wifiRssi < 0 ? "WiFi " + std::to_string(ride.wifiRssi)
                                           : std::string("SB20 PROXY");
-    return {title, ip, row, std::string()};
+    // Row 4 = the identity we advertise: the crank id this board IS, i.e. the one to type into the
+    // Stages app (#330). The 0.42" panel shows ~3 rows so it falls off there; the 0.96" boards show it.
+    return {title, ip, row, ride.outName};
 }
 
 // Scalar convenience adapter (back-compat + the host tests): builds the shared views from loose

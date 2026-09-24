@@ -4763,3 +4763,82 @@ confirmation (the panel renders and touch works on exactly those pins), but it i
 never measured, and re-reading our own docs would only have found it repeated. Docs now state the
 provenance explicitly — measured hardware vs reported name — so the next reader does not mistake
 repetition for verification.
+
+## 2026-09-24 — UI placement decided per feature: the device carries the ride, the web carries setup and must also be a ride display
+
+**Decision (owner, taken group by group on 2026-09-24; recorded row by row in `docs/ui-feature-map.md` §2,
+with what it implies in §2i).** Of the 46 features on the map: 23 live on both surfaces, 17 on the web
+only (the device shows the value read-only where it matters: mode, identity, calibration state), 3 on
+the device only (brightness, touch calibration, the game), 2 are tooling only (`/log`/`/stats`/`/status`,
+OTA), and WiFi provisioning stays the device QR/PIN screen plus the captive portal. The rules the rows
+descend from:
+
+- **The pickers on both surfaces list every BLE device and filter to power meters and trainers**;
+  heart-rate straps join the filter later (F46, Later). Today the device list is pre-filtered to
+  CPS/FTMS and the web cannot pin by address (#347) — ROADMAP Next "PICKER".
+- **The web must be as good for a live ride as for setup.** The must-haves before the owner rides
+  with a phone on the bars are all four asked: target/segment/time-left on the ride hero (F16), a
+  Wake Lock plus HTTP reconnect (F18), the power chart (F14) and a full-screen ride mode (F45) —
+  issue #351, ROADMAP Now #3 "WEBRIDE".
+- **Calibration is web-only; the device shows Calibrating/Fitted state and loses its dead button**
+  (F29; the button was already a no-op, #346).
+- **Peloton needs no class picking**: the head unit detects the class the rider started, the way qz
+  does, and runs its downloaded timeline; the web holds only the sign-in (F26; recipe in
+  `peloton-integration.md`).
+- **Shifter bias ±10 W is on the SB20 buttons, the device Workout console and the web** (F27); the
+  OBC devmode toggle and virtual press get a web Settings home as well as curl (F35).
+- **Compare** keeps a verdict-only device screen and the deep dive on the web, revisited once real
+  two-meter data exists (F33).
+- **The legacy per-route pages retire in one PR** once every web-placed row is green on `/app`
+  (ROADMAP Next "WEBPARITY"); the device additions (Forget WiFi, WiFi-off, Reboot and Version rows,
+  bias on the console, the Calibrate button removal) follow the bench pass (Next "DEVROWS").
+
+**Why.** The north star ride is "no Stages app, no phone, no agent in the loop", so the screen must
+carry everything a ride needs; the web carries what needs a keyboard, a network, an account or a
+large display — and the owner also wants a phone on the bars to be a full ride display, not a settings
+page. Deciding each row once, in writing, is what lets the bench pass (`sessions/bench-ui-pass.md`)
+test removals as well as presence, and lets the legacy pages go.
+
+**What changed.** `docs/ui-feature-map.md` §2 Decision column filled for F01–F46 (F45 full-screen ride
+mode and F46 heart rate added), §2i "What the decisions require", §4 test rows updated; `ROADMAP.md`
+Now #3 WEBRIDE (#351), Next PICKER / WEBPARITY / DEVROWS, Later HR; the bench pass run-sheet gained the
+removal checks. No firmware or web code changed.
+
+## 2026-09-24 — CI compiles the Guition and Waveshare S3 ride builds (#323 → #348), and a cache key that could never refresh
+
+**What changed.** `.github/workflows/tests.yml` gained two steps beside the CYD compile — `pio run -e
+esp32-guition-live-ota` and `pio run -e esp32s3-pio-live-ota` — gated on the same `firmware` path
+filter. Nothing under `firmware/` changed: both envs already had everything committed (`lib/monocypher`,
+`lib/esp_lcd_axs15231b`, `include/lv_conf.h`, `scripts/build_version.py`) and inherit `esp32s3-pio-min`'s
+pinned pioarduino URL (55.03.39).
+
+**Measured (run 35968067120, all green).** Guition: pass in 3m37s, of which 1m38s was the cold pioarduino
+install (platform 55.3.39, arduino-esp32 3.3.9, xtensa-esp-elf 14.2.0); RAM 21.7 %, flash 29.0 %.
+S3-Touch: pass in 1m58s with no installs; RAM 21.2 %, flash 56.0 %. Added job time 5m35s cold, about
+4 min warm. The firmware job's other +7 min that day was the LVGL harness and the CYD step running
+slower on that runner — unrelated.
+
+**A cache bug found on the way.** The pioarduino cache key hashed only the two `platformio.ini` files. A
+workflow-only change leaves that key untouched, and `actions/cache` never re-saves on an exact hit, so the
+S3 toolchain would have been re-downloaded on every run forever. The key now also hashes
+`.github/workflows/tests.yml`; the run proved it (new key missed, the 1394 MB cache restored via
+`restore-keys`, the post step saved under the new key).
+
+**And a package collision the warm cache exposed (run 35973689864).** The stock espressif32 platform
+(C3 / CYD envs) and pioarduino (Guition / S3) both ship packages named `framework-arduinoespressif32`
+(2.0.16 vs 3.3.9), `tool-esptoolpy` and `tool-openocd-esp32`, and PlatformIO keeps one directory per
+package name. In one shared `~/.platformio` every C3 build re-installed the stock versions over
+pioarduino's and every Guition build the reverse; on the first warm run the Guition step found the stock
+framework in place, did not re-install its own, and died in `arduino.py` with `FRAMEWORK_DIR` None. The
+pioarduino steps now build with `PLATFORMIO_CORE_DIR=$HOME/.platformio-pioarduino` behind their own
+cache key (`pio-s3-…`). The same collision is possible on a dev box that builds both families from one
+`~/.platformio`: the symptom is that `TypeError … 'NoneType'` at `pioarduino-build.py`; the cure is the
+same env var for the S3 builds.
+
+**Environment fact worth keeping.** On Windows, run `pio` from PowerShell, not Git Bash: pioarduino's
+`idf_tools.py` refuses MSYS shells ("MSys/Mingw is not supported"), so an S3 / Guition compile from Git
+Bash fails for an environment reason that reads like a build error. The Guition env compiled locally from
+PowerShell in 9m07s with byte-identical RAM/flash to CI. (`DEV-PLAYBOOK.md` carries the one-liner.)
+
+**Still open.** The `-live` S3/Guition envs emit `"USE_MOCK_METER" redefined` warnings (their `build_flags`
+layer `=1` then `=0`); the `firmware/**/*.md` path-filter exclusion discussed on #323 was not done.
