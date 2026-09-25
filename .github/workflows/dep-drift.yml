@@ -1,0 +1,73 @@
+# Standing check: has upstream moved past what we pin?
+#
+# Pinning exactly (which the repo now does for lvgl) buys reproducible builds and costs staleness.
+# The owner's rule, 2026-09-25: pin, but keep a standing check so a pin is a decision to revisit
+# rather than a version nobody looks at again. This is that check.
+#
+# It does not bump anything. It keeps ONE issue up to date, so the backlog carries the evaluation
+# and a human decides — which is the process the owner asked for, not silent auto-upgrades.
+name: dependency drift
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"     # Mondays, early. Off-peak; the exact minute avoids the :00 stampede.
+  workflow_dispatch: {}       # and on demand
+
+permissions:
+  contents: read
+  issues: write               # to open/update the single tracking issue
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The script only needs the stdlib; no install step, so a registry outage is the only
+      # external dependency and it degrades to "unknown" rather than a false alarm.
+      - name: Check pinned versions against the registry
+        id: drift
+        run: |
+          set +e
+          python code/scripts/dep_drift.py > drift.txt 2>drift.err
+          echo "rc=$?" >> "$GITHUB_OUTPUT"
+          cat drift.txt
+          cat drift.err >&2 || true
+
+      - name: Open or update the tracking issue
+        if: steps.drift.outputs.rc != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="Dependency drift: pinned versions are behind upstream"
+          BODY=$(printf '%s\n' \
+            "Automated by \`.github/workflows/dep-drift.yml\` — nothing has been changed." \
+            "" \
+            "\`\`\`" \
+            "$(cat drift.txt)" \
+            "\`\`\`" \
+            "" \
+            "$(cat drift.err)" \
+            "" \
+            "**What to do:** evaluate each row and either bump the pin or record why not." \
+            "A row marked \`floats\` is not pinned at all — it resolves to whatever is newest at" \
+            "build time, which is how lvgl ended up at 9.6.0 on a fresh env while every board was" \
+            "on 9.5.0, and how NimBLE ended up at 2.5.1 on the Guition and 2.5.0 on the ride C3." \
+            "" \
+            "Re-run any time from the Actions tab (\`workflow_dispatch\`), or locally:" \
+            "\`python code/scripts/dep_drift.py\`." \
+            "" \
+            "_This issue is reused, not duplicated — the body is rewritten on each run._")
+
+          NUM=$(gh issue list --state open --search "$TITLE in:title" \
+                  --json number,title --jq ".[] | select(.title==\"$TITLE\") | .number" | head -1)
+          if [ -n "$NUM" ]; then
+            gh issue edit "$NUM" --body "$BODY"
+            echo "updated #$NUM"
+          else
+            gh issue create --title "$TITLE" --body "$BODY" --label needs-triage
+          fi
