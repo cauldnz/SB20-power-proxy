@@ -439,6 +439,19 @@ inline HttpResponse obcPress(DeviceHooks& h, const HttpRequest& req) {
 // The four toggles differ only in which flag they set and what they say, so they share
 // one body. `devmode/on` additionally sets obcEnabled — Devmode implies the OBC service
 // is present. That asymmetry used to be invisible across four near-identical handlers.
+// Set one persisted bool and reboot into it. The reboot is the point: the flags this serves
+// (OBC devmode/shifter, the BLE hold-down) all change what comes up at boot, and restarting is far
+// simpler than tearing a live NimBLE stack down and rebuilding it.
+inline HttpResponse setFlagAndReboot(DeviceHooks& h, bool RuntimeConfig::*flag, bool on,
+                                     const char* msg) {
+    RuntimeConfig cfg = h.config();
+    cfg.*flag = on;
+    h.saveConfig(cfg);
+    HttpResponse r = HttpResponse::text(msg);
+    r.reboot = true;
+    return r;
+}
+
 inline HttpResponse obcToggle(DeviceHooks& h, bool RuntimeConfig::*flag, bool on,
                               const char* msg, bool alsoEnable = false) {
     RuntimeConfig cfg = h.config();
@@ -448,6 +461,21 @@ inline HttpResponse obcToggle(DeviceHooks& h, bool RuntimeConfig::*flag, bool on
     HttpResponse r = HttpResponse::text(msg);
     r.reboot = true;
     return r;
+}
+
+// POST /ble/off, POST /ble/on — hold the radio down, or bring it back, WITHOUT losing the board.
+//
+// `/wifi/off` is the opposite trade and the reason this exists: it drops HTTP and the board cannot
+// be recovered without a power-cycle. This keeps WiFi and HTTP up, so a board parked quiet is still
+// reachable and one more curl restores it — which is what makes it usable on a bench nobody is
+// standing at. `/status` reports `ble_off` so a silent board does not read as a broken one.
+inline HttpResponse bleOff(DeviceHooks& h, const HttpRequest&) {
+    return setFlagAndReboot(h, &RuntimeConfig::bleOff, true,
+                            "BLE off - restarting quiet. WiFi stays up; POST /ble/on to restore.\n");
+}
+inline HttpResponse bleOn(DeviceHooks& h, const HttpRequest&) {
+    return setFlagAndReboot(h, &RuntimeConfig::bleOff, false,
+                            "BLE on - restarting with the radio live.\n");
 }
 inline HttpResponse obcDevmodeOn(DeviceHooks& h, const HttpRequest&) {
     return obcToggle(h, &RuntimeConfig::obcDevmode, true,
@@ -579,6 +607,8 @@ inline const std::vector<Route>& stationRoutes() {
         {"/log/on", HttpMethod::Get, routes::logOn},
         {"/log/off", HttpMethod::Get, routes::logOff},
 
+        {"/ble/off", HttpMethod::Post, routes::bleOff},
+        {"/ble/on", HttpMethod::Post, routes::bleOn},
         {"/obc", HttpMethod::Get, routes::obcHelp},
         {"/obc/buttons.json", HttpMethod::Get, routes::obcButtonsGet},
         {"/obc/buttons.json", HttpMethod::Post, routes::obcButtonsSet},

@@ -43,6 +43,16 @@ CI, and merged the same session. Don't open a 10-file branch and hope.
   vice versa), the stock espressif32 and pioarduino platforms have overwritten each other's
   `framework-arduinoespressif32`. Build the S3 envs with `$env:PLATFORMIO_CORE_DIR` pointing at a second
   core dir, as CI does (#348).
+  - ⚠ **On Windows that second core dir must be SHORT — CI's name does not port.** CI uses
+    `$HOME/.platformio-pioarduino`, which is fine on Linux but on Windows makes the pioarduino
+    package unpack fail with `FileNotFoundError` deep inside
+    `esp32-arduino-libs/esp32c5/…/valve-configuration-and-control-delegate.h`. That is **MAX_PATH**,
+    not a missing file: the package's own inner path is **223 characters**, so the root has to fit in
+    the remainder. `C:\Users\<you>\.platformio-pioarduino` is 37 chars → **260, one over the limit**;
+    the default `.platformio` is 26 → 249 and works, which is why only the *second* dir trips it.
+    Use something like **`C:\pio-s3`** (9 → 232). Measured 2026-09-25 during the bench UI pass.
+    If you already have a half-installed long-path core dir, `Move-Item` it to the short path rather
+    than deleting it — the ~500 MB of downloads in its `.cache` are reused.
 - **A change under `firmware/lib/` is also an nRF change.** `firmware-nrf` builds `../firmware/lib`
   (`lib_extra_dirs`), so removing or renaming anything there can break the XIAO bridge while every ESP32
   env compiles. The pre-push gate is **every env CI builds** — the ESP32 compiles, `pio run -e xiao-sense`

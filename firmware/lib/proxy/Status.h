@@ -27,6 +27,8 @@ struct ProxyStatus {
     std::string sourceFilter;      // the source name filter (RuntimeConfig.meterNameFilter)
     std::string trainerName;       // the FTMS trainer we erg-drive (trainerNameFilter; "" = erg off)
     bool corrector = false;        // false = SPOOF (impersonate a crank); true = CORRECTOR mode
+    bool bleOff = false;           // the radio is held down (POST /ble/off). Reported so a board
+                                   // that is silent on air does not look like a broken board.
     int32_t forwarded = 0;         // readings relayed to the crank
     // The proxy carries two power streams; the UI shows both so each direction is visible:
     //   * src*  — what we RECEIVED from the meter (the BLE-central / goal-#1 side)
@@ -82,6 +84,7 @@ inline std::string renderStatusJson(const ProxyStatus& s) {
     j += ",\"source_pin\":\"" + jsonEscape(s.sourcePin) + "\"";
     j += ",\"source_filter\":\"" + jsonEscape(s.sourceFilter) + "\"";
     j += ",\"trainer\":\"" + jsonEscape(s.trainerName) + "\"";
+    j += ",\"ble_off\":" + std::string(s.bleOff ? "true" : "false");
     j += ",\"forwarded\":" + std::to_string(s.forwarded);
     // src_* = received from the meter (goal #1); power_w/cadence_rpm = broadcast to the crank (goal #2)
     j += ",\"src_power_w\":" + std::to_string(s.srcPowerW);

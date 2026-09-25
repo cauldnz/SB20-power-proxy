@@ -1,6 +1,6 @@
 # Bench UI pass — every screen and card, no rider
 
-**Status: PLANNED (2026-09-24)** · tracked in [`README.md`](README.md) · drives from
+**Status: IN PROGRESS (started 2026-09-25)** · tracked in [`README.md`](README.md) · drives from
 [`../docs/ui-feature-map.md`](../docs/ui-feature-map.md) §4 (the test map) · issue #345.
 **Where:** the desk, with the bench camera, the serial console, a phone on the bench WiFi, `fake_meter.py`,
 the FTMS trainer sim board and `crank_reader.py`. **Who:** the agent runs every step; the owner is
@@ -32,7 +32,11 @@ chains cross `MAX_PATH`, per `BOARDS.md`). Fill these in once per board and past
 $BOARD = "sb20proxy-guition.local"   # sb20proxy-cyd.local | sb20proxy.local (the C3)
 $COM   = "COM14"                      # the board under test's USB serial (see 0a)
 $SIM   = "COM10"                      # the trainer-sim C3's USB serial
-$ID    = "Stages 62146"               # this board's spoof identity from the fleet table (system-reference §2)
+# Identity: do NOT assign one. Since #354 a board DERIVES its own from its MAC — blank the
+# stored name (`curl.exe -s -X POST http://$BOARD/config -d "out_name="`) and it comes up as
+# Guition `Stages 99744` / CYD `Stages 92364`, with `identity_default:true` in /status.
+# Verified on the Guition 2026-09-25. Leave the C3 ride board's identity to session 14 G0.
+$ID    = "Stages 99744"               # the Guition's DERIVED identity (read it, do not set it)
 $PY    = "code\.venv\Scripts\python.exe"
 $OUT   = "sessions\bench-out\$(Get-Date -Format yyyyMMdd)"   # evidence folder (gitignore it or commit the frames you cite)
 New-Item -ItemType Directory -Force $OUT | Out-Null
@@ -44,7 +48,7 @@ COM numbers re-enumerate on replug (`BOARDS.md`): identify by **USB VID:PID**, c
 
 | Board | VID:PID | Console | Last seen | MAC / SSID |
 |---|---|---|---|---|
-| Guition JC3248W535 (320×480) | `303A:1001` native USB CDC | `SCREEN`/`TAP`/`STATE` console | `COM14` (2026-09-23) | base `28:84:85:49:4D:20` · `Setup-4D21` |
+| Guition JC3248W535 (320×480) | `303A:1001` native USB CDC | `SCREEN`/`TAP`/`STATE` console | `COM14` (2026-09-25) | base `28:84:85:49:4D:20` · **`Setup-4D20`** (the SSID comes from the STATION MAC; `4D:21` is the BLE crank address — corrected 2026-09-25) |
 | CYD ESP32-2432S028R (240×320) | `1A86:7523` CH340 UART | console + the CYD touch-cal commands | `COM17` (cyd-board.md) / `COM12` (2026-07-11) | STA `…CC:8C` · `Setup-CC8C` |
 | C3 + 0.96" OLED (the ride board) | `303A:1001` | **no console** (OLED builds have no `USE_LCD`); its native USB-JTAG does not deliver `Serial` | `COM13` (2026-07-11) | `10:B4:1D:BA:C9:0C` · ⛔ WiFi RF dead — display-only spare |
 | C3 + 0.42" OLED (peff74, spare → **the trainer-sim host**) | `303A:1001` | the sim's log | `COM5` (2026-07-11) | `38:44:BE:45:E9:A4` · `Setup-E9A4` |
@@ -346,11 +350,30 @@ DEVROWS list in the map (F02/F03 on More, F40 Reboot, F38 Version, F27 bias ±, 
 
 ## 2. Actual — fill in as it runs
 
+Run 2026-09-25 on `4f7b96b5b+dirty` (main 4f7b96b + this branch's tooling), `esp32-guition-live-bench`,
+lvgl 9.5.0. Raw captures in `sessions/bench-out/20260925/` (gitignored); cited frames committed under
+`sessions/bench-evidence/2026-09-25/`.
+
 | Board | Step | Result | Evidence | Issue filed |
 |---|---|---|---|---|
-| Guition | | | | |
-| CYD | | | | |
-| C3-OLED | | | | |
+| Guition | 1 geometry | ✅ all six screens reachable, every tap landed | `bench_ui.py --walk`: 8/8 taps correct; dumps `guition-0[1-6]-*.txt` | — |
+| Guition | 1 geometry | ❌ **bottom ~40 % of the panel is empty** on Ride and More (content ends ~275 px, nav at 465) | framebuffer + camera agree | **#358** (confirms map §3) |
+| Guition | F09 identity | ✅ blanked `out_name` → **`Stages 99744`**, `identity_default=true`; visible on the panel | `/status`, camera | — |
+| Guition | 2 F13/F15/F19 | ✅ live watts on panel = `/status`; details pop-down shows names, RSSI −56, erg target | `guition-f15-details.png` | — |
+| Guition | 2 F15 | ❌ **OUT card's erg line wraps and collides** with the row beneath it; both unreadable | `f15-out-card-zoom.png` | **#359** (new) |
+| Guition | OUT side | ✅ crank broadcasts byte-faithful `2f00…`, 175–200 W, 85 rpm, L50/R50 | `crank_reader.py --address 28:84:85:49:4D:21` | — |
+| Guition | 4 F20–F23 | ✅ **load, start, pause, skip, stop all work from the device** (skip moved target 138 → 248) | one-session `--seq`; `/workout/state` `paused=true` with `seg_elapsed` frozen | — |
+| Guition | 5 F41 bright | ❌ **#346 CONFIRMED**: label reads `100 %` at all 5 steps; backlight drops on tap 1 then never moves (normalised 0.318 → 0.203, 0.204, 0.204, 0.202) | `bright-rows-stacked.png`, camera normalised against the CYD | #346 |
+| Guition | 5 F38 firmware row | ❌ **#346 CONFIRMED**: More has 8 rows, no Firmware/Version row | `guition-03-more.png` | #346 |
+| Guition | 5 More → Trainer | ✅ **#346 item FIXED** by #354 — shows `Stages Bike 0105`, not `not set` | `guition-03-more.png` | — |
+| Guition | 6 F29 calibrate | ✅ expected no-op: screen unchanged, `/log` silent | `/log` after the tap | — (decided out, map §2i DEVROWS) |
+| Guition | 6 F33 compare | ✅ renders the documented stub (`SIMULATED B x1.101`, n=93 pairs) | `guition-f33-compare.png` | — (real verdict = session 14 S2) |
+| Guition | 9 F30 curve | ⚠ round-trips byte-identically, but **the board has no fitted curve**, so the interesting path is untested | `/curve` before/after | — |
+| Guition | 10 F37 routes | ✅ 57 vectors captured | `routes-guition.json` | — |
+| Guition | 3 F04/F05/F10 · 4 F16/F17 · F24–F27 | ⛔ **BLOCKED** — the trainer simulator needs a C3 over USB and no C3 enumerates (charge-only cable) | USB sweep: 2 boards, not 3 | — |
+| Guition | 7 F01–F03 · 8 F18 | ⛔ **NOT RUN** — portal QR + 15-min `/app` need a phone in hand | — | — |
+| CYD | all | ⛔ **NOT RUN** this pass | — | — |
+| C3-OLED | all | ⛔ **NOT RUN** — no USB; OTA-only | — | — |
 
 ## 3. Close-out
 

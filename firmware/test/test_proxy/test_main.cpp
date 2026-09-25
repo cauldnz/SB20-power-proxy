@@ -2826,6 +2826,22 @@ void test_oled_portal_shows_per_device_ssid() {
 
 // --- runner -------------------------------------------------------------------
 
+// bleOff was appended to the line format after v2 shipped. Both directions matter: it must survive
+// a round trip, and a line stored BEFORE the field existed must load with the radio ON -- the safe
+// direction, since the unsafe one is a board that comes back silent for no visible reason.
+void test_ble_off_round_trips_and_defaults_off_on_old_lines() {
+    RuntimeConfig c = RuntimeConfig::defaults();
+    c.bleOff = true;
+    TEST_ASSERT_TRUE(RuntimeConfig::fromLine(c.toLine()).bleOff);
+
+    c.bleOff = false;
+    TEST_ASSERT_FALSE(RuntimeConfig::fromLine(c.toLine()).bleOff);
+
+    // A pre-field line (no bleOff slot) must not come back parked.
+    TEST_ASSERT_FALSE(
+        RuntimeConfig::fromLine("aa:bb:cc:dd:ee:ff|ASSIOMA|0|Stages 62144|11821518").bleOff);
+}
+
 int runUnityTests() {
     UNITY_BEGIN();
     RUN_TEST(test_setup_pin_is_eight_digits);
@@ -3044,6 +3060,7 @@ int runUnityTests() {
     RUN_TEST(test_lcd_picker_list_filters_noise);
     RUN_TEST(test_correction_to_curve_passthrough_and_linear);
     RUN_TEST(test_proxycore_tap_sees_raw_source_reading);
+    RUN_TEST(test_ble_off_round_trips_and_defaults_off_on_old_lines);
     return UNITY_END();
 }
 
