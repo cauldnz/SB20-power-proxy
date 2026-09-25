@@ -375,6 +375,33 @@ lvgl 9.5.0. Raw captures in `sessions/bench-out/20260925/` (gitignored); cited f
 | CYD | all | ⛔ **NOT RUN** this pass | — | — |
 | C3-OLED | all | ⛔ **NOT RUN** — no USB; OTA-only | — | — |
 
+Second sitting, same day, once a spare C3 (`38:44:BE:45:53:34`, brand new from the box) became the
+FTMS simulator. Raw captures in `sessions/bench-out/20260925-cyd/`.
+
+| Board | Step | Result | Evidence | Issue filed |
+|---|---|---|---|---|
+| Guition | 3 **F10** | ✅ trainer pick persists and is **provable from `/status`** (`trainer:"SB20-FTMS-Server"`) | `/status` | — (run-sheet's "no trainer key" GAP is stale since #354) |
+| Guition | 4 **F17** (trainer side) | ✅ erg link reaches **linked + controlling**: sim reports `controlled=1 started=1 hasTarget=1` | simulator serial log | — |
+| Guition | 4 **F17** (device screen) | ⛔ **NOT CAPTURED** — the on-screen erg line needs `TAP` to reach the Workout screen, and the Guition has no serial (its cable is the simulator's) | — | — |
+| Guition | 4 **F20–F23** | ✅ **confirmed at the trainer**, matching the decisions.md oracle: start → `target=138W`, pause → `0W`, resume → `138W`, skip → `248W`, stop → `0W` | simulator serial log + `/workout/state` | — |
+| Guition | — | ℹ **pause RELEASES the erg target to 0 W** rather than holding resistance — correct and safe, now evidenced | simulator log | — |
+| CYD | **F09** | ✅ blanked `out_name` → **`Stages 92364`**, `identity_default=true` — the predicted value, and it **ends the `Stages 62144` collision** with the ride C3 | `/status` | — |
+| CYD | 1 geometry | ⚠ **6–7 of 8 taps land; the failures move between runs.** Hand-driven taps work every time (`TAP 200 305` → `[lcd] tap injected` → screen 1→2), so this is **instrument flakiness, not a UI defect** — see the note below | `cyd-0*-*.txt` dumps (now complete at ~207 KB) | — |
+| CYD | rest | ⛔ **NOT RUN** — workout console, brightness, F42 touch-cal | — | — |
+
+> **Why the CYD walk is flaky, and why it is the instrument.** The CYD is a real CH340 UART at
+> 115200 (~11.5 KB/s); its 240×320 frame is ~205 KB of base64, so a `SCREEN` dump needs **~18 s**.
+> The harness allowed 8 s, truncated mid-dump (98304 B one run, 81920 the next), and the remaining
+> ~10 s of pixel data then flooded the console and swallowed every command after it — which is
+> exactly what a dead UI looks like. The Guition never showed this because it is native USB CDC:
+> effectively megabits, so its *larger* 410 KB dump finishes in under a second.
+>
+> Fixed by deriving the read budget from panel size × link speed, warning loudly on truncation,
+> taking the LAST JSON line rather than the first (a *searching* board floods `[meter] found ...`
+> every second), settling after each dump, and spending the first tap after a port open on a no-op.
+> That took the walk from 1/8 to 7/8. **The remaining flakiness means framebuffer dumps are the
+> wrong instrument on this board — use the bench camera for CYD screens.**
+
 ## 3. Close-out
 
 Update the map's Verified column for every row that passed; file an issue per failure (link it in the
