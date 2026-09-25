@@ -17,6 +17,7 @@
 #include "DiagReport.h"
 #include "Ftms.h"
 #include "Obc.h"
+#include "SimScreen.h"
 #include "ObcSb20Map.h"
 #include "ObcShifterSource.h"
 #include "Sb20ButtonMap.h"
@@ -2842,6 +2843,44 @@ void test_ble_off_round_trips_and_defaults_off_on_old_lines() {
         RuntimeConfig::fromLine("aa:bb:cc:dd:ee:ff|ASSIOMA|0|Stages 62144|11821518").bleOff);
 }
 
+// The simulator's OLED rows. The point of the screen is that someone at the bench can tell, by
+// looking, which board is the simulator and whether a head unit has taken control of it -- so the
+// states have to be distinguishable, and "target is zero" must not look like "no target".
+void test_sim_oled_says_what_the_board_is_and_what_state_it_is_in() {
+    auto idle = formatSimOledLines(false, false, false, 0, 120);
+    TEST_ASSERT_EQUAL_STRING("FTMS SIM", idle[0].c_str());   // identifies the board across the desk
+    TEST_ASSERT_EQUAL_STRING("idle", idle[1].c_str());
+    TEST_ASSERT_EQUAL_STRING("tgt --", idle[2].c_str());     // no target set AT ALL
+    TEST_ASSERT_EQUAL_STRING("pwr 120W", idle[3].c_str());
+
+    // Connected but not started: distinct from both idle and the controlled state.
+    TEST_ASSERT_EQUAL_STRING("linked", formatSimOledLines(true, false, false, 0, 120)[1].c_str());
+
+    // The state the erg rows assert.
+    auto run = formatSimOledLines(true, true, true, 248, 260);
+    TEST_ASSERT_EQUAL_STRING("CONTROLLED", run[1].c_str());
+    TEST_ASSERT_EQUAL_STRING("tgt 248W", run[2].c_str());
+    TEST_ASSERT_EQUAL_STRING("pwr 260W", run[3].c_str());
+}
+
+// Pause and stop release the target to 0 W (decisions.md 2026-09-25). On screen that MUST read as
+// a real zero target, not as "nothing set" -- they mean different things to whoever is watching.
+void test_sim_oled_distinguishes_a_zero_target_from_no_target() {
+    TEST_ASSERT_EQUAL_STRING("tgt 0W", formatSimOledLines(true, true, true, 0, 200)[2].c_str());
+    TEST_ASSERT_EQUAL_STRING("tgt --", formatSimOledLines(true, true, false, 0, 200)[2].c_str());
+}
+
+// The 0.42" panel fits ~12 chars at the 5x7 font used for rows 2-4; row 0 uses 6x10 (~11 chars).
+// A row that overflows is silently clipped on the panel, so pin the width.
+void test_sim_oled_rows_fit_the_smallest_panel() {
+    for (auto rows : {formatSimOledLines(false, false, false, 0, 0),
+                      formatSimOledLines(true, true, true, 1234, 9999)}) {
+        for (const auto& r : rows) {
+            TEST_ASSERT_TRUE_MESSAGE(r.size() <= 12, r.c_str());
+        }
+    }
+}
+
 int runUnityTests() {
     UNITY_BEGIN();
     RUN_TEST(test_setup_pin_is_eight_digits);
@@ -3061,6 +3100,9 @@ int runUnityTests() {
     RUN_TEST(test_correction_to_curve_passthrough_and_linear);
     RUN_TEST(test_proxycore_tap_sees_raw_source_reading);
     RUN_TEST(test_ble_off_round_trips_and_defaults_off_on_old_lines);
+    RUN_TEST(test_sim_oled_says_what_the_board_is_and_what_state_it_is_in);
+    RUN_TEST(test_sim_oled_distinguishes_a_zero_target_from_no_target);
+    RUN_TEST(test_sim_oled_rows_fit_the_smallest_panel);
     return UNITY_END();
 }
 
