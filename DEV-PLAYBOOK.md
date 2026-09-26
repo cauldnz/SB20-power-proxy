@@ -61,6 +61,15 @@ CI, and merged the same session. Don't open a 10-file branch and hope.
   building. Measured 2026-09-25: a successful `esp32c3-ftms-server` build was silently deleted by a
   later `esp32cyd-live` build started from the junction, and several 8–11 minute "rebuilds" that day
   were this, not the compiler. **Use `C:\sbw\firmware` for everything**, including the non-LVGL envs.
+- **Don't commit between the build and the flash.** `[build_version]` stamps the git SHA into every
+  binary (`SB20_BUILD_SHA=<sha>+dirty`, visible in `/status`) — exactly what you want when you are
+  deciding whether a board is running your change — but it is a *build flag*, so a commit in between
+  changes it and PlatformIO rebuilds the whole env on the upload. Measured 2026-09-26: a 15-minute
+  `esp32cyd-live` build was re-done from scratch by `-t upload`, because a docs commit had landed in
+  between. Build, flash, *then* commit.
+- **`pio run -t upload` is not cheap on the LVGL envs.** It re-runs the `deep+` dependency scan before
+  it looks at whether anything changed, so even a no-op upload costs minutes. `code/scripts/flash_s3.py`
+  shows the alternative — esptool straight at the built binaries.
 - **A change under `firmware/lib/` is also an nRF change.** `firmware-nrf` builds `../firmware/lib`
   (`lib_extra_dirs`), so removing or renaming anything there can break the XIAO bridge while every ESP32
   env compiles. The pre-push gate is **every env CI builds** — the ESP32 compiles, `pio run -e xiao-sense`

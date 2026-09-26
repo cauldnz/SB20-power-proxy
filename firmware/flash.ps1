@@ -28,9 +28,40 @@ param(
 $ErrorActionPreference = "Stop"
 $fw = $PSScriptRoot                                   # this script lives in firmware/
 $bin = Join-Path $fw ".pio\build\$Env\firmware.bin"
-$espota = Join-Path $env:USERPROFILE ".platformio\packages\framework-arduinoespressif32\tools\espota.py"
+# espota.py must come from the SAME Arduino core that built this firmware. The two on this machine
+# are not interchangeable: Arduino 2.x's espota does `sock2.recv(37)` for the AUTH reply, Arduino 3.x
+# boards answer with a 64-hex nonce (69 bytes), and on Windows a UDP recv into a short buffer RAISES
+# (WSAEMSGSIZE) rather than truncating. espota catches it bare, retries ten times and reports
+# "No response from the ESP" — a message that sends you looking at signal strength and firewalls
+# while the board is answering perfectly. Cost ~25 minutes on the Guition, 2026-09-26.
+# PLATFORMIO_CORE_DIR is how the S3/Guition family is built (the MAX_PATH workaround, DEV-PLAYBOOK),
+# so honour it first; fall back to the default core for the C3.
+$coreDir = if ($env:PLATFORMIO_CORE_DIR) { $env:PLATFORMIO_CORE_DIR } else { Join-Path $env:USERPROFILE ".platformio" }
+$espota = Join-Path $coreDir "packages\framework-arduinoespressif32\tools\espota.py"
 
 function Say($msg, $color = "Cyan") { Write-Host $msg -ForegroundColor $color }
+
+# Ask the board for its AUTH nonce and check the chosen espota's buffer is big enough for the reply.
+# One UDP round-trip, and it turns the six-attempt lie above into one accurate line.
+function Test-EspotaFitsReply($espotaPath, $ip) {
+  $expect = (Select-String -Path $espotaPath -Pattern 'sock2\.recv\((\d+)\)' | Select-Object -First 1)
+  if (-not $expect) { return }                      # unknown tool shape: say nothing rather than guess
+  $want = [int]$expect.Matches[0].Groups[1].Value
+  $u = New-Object System.Net.Sockets.UdpClient(0)
+  try {
+    $u.Client.ReceiveTimeout = 3000
+    $msg = [Text.Encoding]::ASCII.GetBytes("0 1 1 00000000000000000000000000000000`n")
+    [void]$u.Send($msg, $msg.Length, $ip, 3232)
+    $ep = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Any, 0)
+    $len = $u.Receive([ref]$ep).Length
+    if ($len -gt $want) {
+      Say "espota mismatch: the board replies $len bytes, $espotaPath reads $want." "Red"
+      Say "  On Windows that fails as 'No response from the ESP'. Use the espota.py from the core that" "Red"
+      Say "  built this env (set PLATFORMIO_CORE_DIR, e.g. C:\pio-s3 for the S3/Guition family)." "Red"
+    }
+  } catch { }                                        # no reply is the normal 'board busy' case; carry on
+  finally { $u.Close() }
+}
 
 # ---- Ride-safety gate -------------------------------------------------------------------------
 # The env names are one hyphen apart ("...-live" vs "...-live-bench") and the flags that make the
@@ -92,6 +123,7 @@ if ($Mode -eq "ota") {
     Say "No ota_secret.h found - push OTA is disabled on boards built without it (fail-closed)." "Yellow"
     Say "  If this board has no OTA_PASSWORD baked in, espota will not connect - use: .\flash.ps1 -Mode usb" "Yellow"
   }
+  Test-EspotaFitsReply $espota $ip
   $espotaArgs = @('-i', $ip, '-p', '3232', '-f', $bin, '-r')
   if ($otaPass) { $espotaArgs += @('-a', $otaPass) }
 

@@ -5098,3 +5098,53 @@ The 2 px `footerGap` is load-bearing: without it the CYD's ninth row clears the 
 2 px, which is arithmetic, not clearance. With it the margin is 11 px and the S3 keeps its 29 px
 pitch (a 4 px gap would have dropped the S3 to 28 — the constant was chosen so the board that was
 never broken does not move).
+
+---
+
+## 2026-09-26 (second sitting) — #358 and #364 verified on both panels, and an espota trap
+
+Both fixes are now on hardware, not just in the host tests.
+
+**CYD (#364), decoded framebuffer.** The More screen's nine rows now sit at pitch 25 and end at
+y=259 against a footer at 270; `Touch cal` and `192.168.1.234`, which were drawn on top of each
+other, are on their own lines. Ride's cards moved 208→218, closing that board's own 18 px band.
+Evidence: `sessions/bench-evidence/2026-09-26/cyd-more-footer-before-after.png`, `cyd-more-after.png`.
+
+**Guition (#358), bench camera.** Chart 140..366, cards 378..442, nav 450 — the ~40 % dead band is
+gone, and the power trace has real amplitude instead of a flat line squeezed into 56 px. Evidence:
+`sessions/bench-evidence/2026-09-26/guition-ride-before-after.jpg` (same camera, same crop, before
+and after). The Guition's **More** screen could not be shown on the panel: it has no serial on the
+bench right now and there is no HTTP route that injects a tap, so nothing can navigate it remotely.
+Its layout is covered by the host tests and by the same code path proven on the CYD's panel.
+
+### `espota.py` is not interchangeable between Arduino cores — and it lies about why
+
+The Guition OTA failed six times with **"No response from the ESP"** while the board was answering
+perfectly. Diagnosis: a raw UDP invitation to `192.168.1.222:3232` returned
+`AUTH <64 hex chars>` = **69 bytes**. `flash.ps1` hard-coded espota from the *default* core
+(`framework-arduinoespressif32 @ 3.20016.0`, Arduino 2.0.16), whose `serve()` does
+`sock2.recv(37)` — sized for Arduino 2.x's 32-hex nonce. **On Windows a UDP `recv` into a buffer
+smaller than the datagram raises `WSAEMSGSIZE` instead of truncating**, espota catches it bare,
+retries ten times and reports no response. The pioarduino core's espota (`C:\pio-s3\…`) reads 69 and
+flashed first time.
+
+Two changes, because the misleading message is the expensive part:
+
+* `flash.ps1` now resolves espota from `$env:PLATFORMIO_CORE_DIR` when set (which is how the
+  S3/Guition family is built — the MAX_PATH workaround) and falls back to the default core.
+* Before the first attempt it sends one invitation itself and compares the board's reply length to
+  the `recv(N)` in the chosen espota, printing the actual mismatch. Verified both ways on the
+  Guition: the 2.0.16 tool reports "board replies 69 bytes, … reads 37"; the pioarduino tool passes.
+
+**Rule: on this machine the OTA tool must come from the core that built the binary.** Signal
+strength and firewalls are the wrong first suspects when espota says "No response" — check the
+nonce length first, it takes one UDP packet.
+
+### Two smaller things measured the same evening
+
+* **A commit between the build and the flash costs the whole build.** `[build_version]` stamps the
+  git SHA as a build *flag*, so a docs commit invalidated a 15-minute `esp32cyd-live` build and
+  `-t upload` redid it from scratch. Build, flash, then commit. (→ DEV-PLAYBOOK.)
+* **`pio run -t upload` re-runs the `deep+` LDF scan** before it checks whether anything changed, so
+  even a no-op upload on an LVGL env costs minutes. `flash_s3.py` (esptool straight at the binaries)
+  is the pattern worth copying for the CYD and Guition.
