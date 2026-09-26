@@ -34,8 +34,6 @@ import sys
 import time
 from pathlib import Path
 
-import serial
-
 _SCRIPTS = Path(__file__).resolve().parent
 
 
@@ -215,6 +213,11 @@ class BenchUi:
             self.bench.ser.close()
         except Exception:  # noqa: BLE001
             pass
+        # Imported here, not at module scope: the layout mirror below is pure, and CI installs the
+        # dev extras only -- a top-level pyserial import would make the drift guard skip there,
+        # which is the one place it has to run.
+        import serial
+
         try:
             ser = serial.Serial()
             ser.port = port
