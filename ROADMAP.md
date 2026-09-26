@@ -91,6 +91,14 @@ the doc debt recorded in the 2026-09-23 review (dead modules, unguarded generate
 references, version strings) · a heart-rate strap as a source, under an HR filter in the pickers and
 on the ride view (map F46; owner: "at some point").
 
+**nRF52840 as an ANT+ co-processor for the ESP32 head units** (owner, 2026-09-27) — investigate
+wiring an nRF52840 to the S3 (UART/SPI) so an ESP32 board gets **both** BLE and ANT+, which no
+ESP32 can do alone. Not a new radio stack: `firmware-nrf/` already runs the nRF and the C++ ANT page
+codec is done (`code/findings/nrf-roadmap.md` P1), so the question is the *link* — wire protocol,
+who owns pairing/identity, whether the ESP32 or the nRF is master, power, and whether it beats just
+using the nRF as the whole head unit. Start from `nrf-roadmap.md`, not from scratch. Gated on the
+same S340 SoftDevice download as the rest of the ANT+ track (owner-login).
+
 ## PARKED (un-park condition in brackets)
 
 - **Pre-beta programme** (pre-beta-plan Phases 3–5, `beta-program.md`, the recruiting kit)
