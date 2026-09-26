@@ -402,6 +402,34 @@ FTMS simulator. Raw captures in `sessions/bench-out/20260925-cyd/`.
 > That took the walk from 1/8 to 7/8. **The remaining flakiness means framebuffer dumps are the
 > wrong instrument on this board — use the bench camera for CYD screens.**
 
+### CYD block — complete (2026-09-25)
+
+Run with the Guition **parked via `POST /ble/off`** so the CYD could own the simulator: the first
+real use of that route, and the reason it exists (two head units, one trainer, nobody at the bench).
+
+| Step | Row | Result | Evidence |
+|---|---|---|---|
+| — | **F09** | ✅ derived **`Stages 92364`**, `identity_default=true` — predicted value; ends the `Stages 62144` collision with the ride C3 | `/status` |
+| 3–4 | **F10, F17 (trainer), F20–F23** | ✅ **identical to the Guition**: start → `138W`, pause → `0W`, resume → `138W`, skip → `248W`, stop → `0W`, `controlled=1 started=1` | simulator serial log |
+| 5 | **F41** | ❌ **#346 CONFIRMED** — label reads `100 %` after four taps and the backlight never moves (normalised spread **0.022**, i.e. noise). Note the difference from the Guition, where tap 1 *did* drop it and then froze; here nothing moves at all | `cyd-bright-row-stuck-at-100.png`, camera normalised against the parked Guition |
+| 5 | **F38** | ❌ **#346 CONFIRMED** — no Firmware row on this board either (9 rows: the 8 shared + Touch cal) | `cyd-more-*.png` |
+| 5 | **F42** | ✅ the touch-cal ritual works **headlessly**: `CALCLEAR` wipes + restarts, `RAWTAP` walks 1/4→4/4, point 4 computes and `[tcal] SAVED` the fit | serial |
+| 6 | **F29** | ✅ designed no-op — Calibrate's button leaves the screen unchanged and `/log` stays silent | `/log` |
+| 6 | **F33** | ✅ renders the stub: Meter A 215 / B 238, `SIMULATED B x1.104`, n=174 pairs | `cyd-f33-compare.png` |
+| 1 | geometry | ❌ **NEW defect #364** — the IP footer is drawn **through** the `Touch cal` row | `cyd-more-ip-collides-with-touchcal.png` |
+
+> **#364 and #358 are one bug with two faces.** Rows sit at `y = 49 + 29*k` regardless of panel
+> height or row count. On the Guition (480 tall, 8 rows) that leaves ~40 % of the panel empty; on the
+> CYD (320 tall, **9** rows — Touch cal exists only here) the ninth row lands on the fixed IP footer.
+> A layout derived from row count and available height fixes both; nudging constants fixes neither,
+> and the 4.3-inch Guition on the roadmap would be a third geometry.
+
+> **`RAWTAP` needs raw values in the panel's REAL range.** The first F42 attempt fed 300–3800 and the
+> fit was rejected as "taps too clustered" — this digitiser reads ~160–1890 in x and ~93–1915 in y, so
+> those coordinates were off the film. Deriving them from the stored fit
+> (`raw = (target - offset) / scale`) reproduced the original calibration to the fifth decimal.
+> **Clearing a board's touch calibration is destructive** — have the restore values before you start.
+
 ## 3. Close-out
 
 Update the map's Verified column for every row that passed; file an issue per failure (link it in the
