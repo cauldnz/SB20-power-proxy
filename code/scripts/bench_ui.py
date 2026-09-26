@@ -56,6 +56,26 @@ PANELS = {
 
 SCREENS = {0: "Ride", 1: "Setup", 2: "More", 3: "Workout", 4: "Calibrate", 5: "Compare"}
 
+# How many rows the More screen shows on each board. `Touch cal` is compiled in only for a resistive
+# panel, so the CYD has nine where the others have eight -- which is the whole of #364.
+MORE_ROWS = {"guition": 8, "cyd": 9, "s3": 8}
+
+
+def more_pitch(h: int, rows: int) -> tuple[int, int, int]:
+    """Mirror of firmware/lib/proxy/LcdLayout.h `moreLayout` -> (rowTop, pitch, rowH).
+
+    The firmware stopped laying these rows out at a fixed 29 px pitch (#358/#364), so a harness that
+    still assumed one would tap between rows on the Guition and on the last row of the CYD. Kept as a
+    mirror rather than a duplicate rule: `code/tests/test_bench_ui_layout.py` pins both to the same
+    numbers, so a change on one side fails the suite instead of quietly missing taps on a bench.
+    """
+    row_top, nav_h, ip_h, footer_gap = 36, 30, 16, 2
+    footer_top = h - (nav_h + 4) - ip_h
+    n = max(1, rows)
+    roomy = min(40, max(29, h // 13))
+    pitch = max(18, min(roomy, (footer_top - row_top - footer_gap) // n))
+    return row_top, pitch, max(14, pitch - 2)
+
 
 # Values actually proven on a panel beat values derived from the layout formula. Only the S3's
 # nav row has ever been confirmed on hardware (bench_s3.py), and it does NOT match the formula:
@@ -72,6 +92,7 @@ class Targets:
 
     def __init__(self, w: int, h: int, board: str = ""):
         self.w, self.h = w, h
+        self.board = board
         self.proven = PROVEN_NAV.get(board, {})
 
     # nav bar: 30 px at the bottom of every screen
@@ -92,7 +113,8 @@ class Targets:
     def more_row(self, k: int) -> tuple[int, int]:
         """Rows: 0 Workout, 1 Calibrate, 2 Compare, 3 Mode, 4 Identity, 5 Source,
         6 Trainer, 7 Bright (8 Touch cal on the CYD only)."""
-        return (self.w // 2, 49 + 29 * k)
+        top, pitch, row_h = more_pitch(self.h, MORE_ROWS.get(self.board, 8))
+        return (self.w // 2, top + pitch * k + row_h // 2)
 
     def setup_row(self, i: int) -> tuple[int, int]:
         return (self.w // 2, 71 + 38 * i)

@@ -1,6 +1,7 @@
 // LvglUi.cpp — LVGL v9 head-unit UI. See LvglUi.h for the contract.
 #if defined(USE_LVGL) && USE_LVGL
 
+#include "LcdLayout.h"
 #include "LvglUi.h"
 
 #include <Arduino.h>
@@ -258,17 +259,18 @@ void buildRide() {
     lv_obj_add_flag(tb, LV_OBJ_FLAG_CLICKABLE);           // tap the title -> IN/OUT details
     lv_obj_add_event_cb(tb, rideTitleCb, LV_EVENT_CLICKED, nullptr);
 
+    const RideLayout RL = rideLayout(g_ver);   // #358/#364: derived, not hard-coded
     lv_obj_t* pw = mkLabel(s, &lv_inter_12, C_MUT(), "P O W E R");
-    lv_obj_align(pw, LV_ALIGN_TOP_MID, 0, 46);
+    lv_obj_align(pw, LV_ALIGN_TOP_MID, 0, RL.powerY);
     R.hero = mkLabel(s, &lv_inter_sb_64, C_FG(), "0");
-    lv_obj_align(R.hero, LV_ALIGN_TOP_MID, -10, 60);
+    lv_obj_align(R.hero, LV_ALIGN_TOP_MID, -10, RL.heroY);
     R.unitW = mkLabel(s, &lv_inter_sb_20, C_MUT(), "W");
     lv_obj_align_to(R.unitW, R.hero, LV_ALIGN_OUT_RIGHT_BOTTOM, 4, -8);
 
     R.chart = lv_chart_create(s);
     lv_obj_remove_style_all(R.chart);
-    lv_obj_set_size(R.chart, g_hor - 20, 56);
-    lv_obj_align(R.chart, LV_ALIGN_TOP_MID, 0, 140);
+    lv_obj_set_size(R.chart, g_hor - 20, RL.chartH);
+    lv_obj_align(R.chart, LV_ALIGN_TOP_MID, 0, RL.chartY);
     lv_chart_set_type(R.chart, LV_CHART_TYPE_LINE);
     lv_chart_set_point_count(R.chart, 48);
     lv_chart_set_range(R.chart, LV_CHART_AXIS_PRIMARY_Y, 0, 400);
@@ -278,14 +280,14 @@ void buildRide() {
 
     const int cardW = (g_hor - 30) / 2;
     lv_obj_t* c1 = mkCard(s);
-    lv_obj_set_size(c1, cardW, 64);
-    lv_obj_align(c1, LV_ALIGN_TOP_LEFT, 10, 208);
+    lv_obj_set_size(c1, cardW, RL.cardsH);
+    lv_obj_align(c1, LV_ALIGN_TOP_LEFT, 10, RL.cardsY);
     mkLabel(c1, &lv_inter_12, C_MUT(), "Cadence");
     R.cad = mkLabel(c1, &lv_inter_sb_28, C_FG(), "--");
     lv_obj_align(R.cad, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     lv_obj_t* c2 = mkCard(s);
-    lv_obj_set_size(c2, cardW, 64);
-    lv_obj_align(c2, LV_ALIGN_TOP_RIGHT, -10, 208);
+    lv_obj_set_size(c2, cardW, RL.cardsH);
+    lv_obj_align(c2, LV_ALIGN_TOP_RIGHT, -10, RL.cardsY);
     mkLabel(c2, &lv_inter_12, C_MUT(), "Balance");
     R.bal = mkLabel(c2, &lv_inter_sb_28, C_FG(), "--");
     lv_obj_align(R.bal, LV_ALIGN_BOTTOM_LEFT, 0, 0);
@@ -294,8 +296,8 @@ void buildRide() {
 
     // details pop-down: IN/OUT cards replace the chart + chips while open
     R.det = mkPanel(s);
-    lv_obj_set_size(R.det, g_hor, 134);
-    lv_obj_align(R.det, LV_ALIGN_TOP_MID, 0, 138);
+    lv_obj_set_size(R.det, g_hor, RL.detailsH);
+    lv_obj_align(R.det, LV_ALIGN_TOP_MID, 0, RL.detailsY);
     lv_obj_add_flag(R.det, LV_OBJ_FLAG_HIDDEN);
     const int dw = (g_hor - 26) / 2;
     auto mkSide = [&](lv_align_t al, int ox, const char* badge, lv_color_t bc, lv_obj_t** name,
@@ -539,14 +541,21 @@ void buildMore() {
     lv_obj_align(h, LV_ALIGN_TOP_LEFT, 10, 8);
     // `vis` (visible rows kept so far) drives the y position; the table index `i` keys M.val[] and
     // the tap user-data — so a compiled-out CYD-only row leaves no gap and shifts no other row's id.
+    // Count the rows this BUILD shows first: the CYD has nine (Touch cal is resistive-only) and
+    // nine at the old fixed pitch ran through the IP footer (#364).
+    int visible = 0;
+    for (int i = 0; i < kMoreRowCount; ++i) {
+        if (moreRowActive(kMoreRows[i])) ++visible;
+    }
+    const MoreLayout ML = moreLayout(g_ver, visible);
     int vis = 0;
     for (int i = 0; i < kMoreRowCount; ++i) {
         const MoreRowDef& def = kMoreRows[i];
         if (!moreRowActive(def)) continue;
         lv_obj_t* row = lv_button_create(s);
         lv_obj_remove_style_all(row);
-        lv_obj_set_size(row, g_hor - 20, 27);
-        lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 36 + vis * 29);
+        lv_obj_set_size(row, g_hor - 20, ML.rowH);
+        lv_obj_align(row, LV_ALIGN_TOP_MID, 0, ML.rowTop + vis * ML.pitch);
         lv_obj_set_style_border_color(row, C_LINE(), 0);
         lv_obj_set_style_border_width(row, 1, 0);
         lv_obj_set_style_border_side(row, LV_BORDER_SIDE_BOTTOM, 0);
@@ -560,7 +569,7 @@ void buildMore() {
         ++vis;
     }
     M.ip = mkLabel(s, &lv_inter_12, C_MUT(), "");
-    lv_obj_align(M.ip, LV_ALIGN_BOTTOM_MID, 0, -34);
+    lv_obj_align(M.ip, LV_ALIGN_BOTTOM_MID, 0, -ML.ipFromBottom);
     mkNav(s, 2);
 }
 
