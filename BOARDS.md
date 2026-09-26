@@ -55,8 +55,11 @@ The per-device WiFi **setup-AP SSID is `Setup-XXXX`** where `XXXX` = the last 2 
   instead of asking the owner to describe it. Grab a frame:
   `ffmpeg -f dshow -rtbufsize 512M -video_size 3840x2160 -i video="UC70" -t 3 -update 1 -q:v 2 -y shot.jpg`
   (`-t` lets auto-exposure settle; `-update 1` keeps the last frame). Crop/rotate per board with
-  `-vf "crop=w:h:x:y,transpose=N"` — the boards sit rotated, and the **CYD and Guition are rotated
-  opposite ways** (`transpose=1` vs `transpose=2`). Record across a reboot (`ffmpeg -t 16` while resetting
+  `-vf "crop=w:h:x:y,transpose=N"`. **Re-derive the crop and the rotation every session — they
+  describe where the boards happen to be sitting, not the boards.** Grab one full frame first, read
+  the pixel box off it, and check the rotation by eye; on 2026-09-26 the two boards had swapped
+  sides and the Guition was 180° round, so the committed numbers produced an upside-down CYD and a
+  crop of empty desk. Record across a reboot (`ffmpeg -t 16` while resetting
   with `python -m esptool --port COMxx --after hard_reset chip-id`) to catch boot-time screens. This closed
   the Guition bring-up loop: build → flash → capture → judge, no human in the loop.
 - **Building the LVGL envs on Windows** (`esp32cyd*`, `esp32s3-pio*`): LVGL's relative include chains can
