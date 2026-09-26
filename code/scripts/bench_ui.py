@@ -34,6 +34,8 @@ import sys
 import time
 from pathlib import Path
 
+import serial
+
 _SCRIPTS = Path(__file__).resolve().parent
 
 
@@ -170,64 +172,111 @@ class BenchUi:
         self.w, self.h = PANELS[board]
         self.t = Targets(self.w, self.h, board)
         self.bench = _load_s3bench()(port, outdir)
-        self._suppress_reset()
+        self._reopen_quietly(port)
         self.out = outdir
         self.findings: list[str] = []
 
-    def _suppress_reset(self) -> None:
-        """Re-open the port with DTR/RTS deasserted so opening it does not reset the board.
+    def _reopen_quietly(self, port: str) -> None:
+        """Re-open with DTR/RTS deasserted BEFORE the open, never after.
 
-        pyserial asserts DTR/RTS on open by default, which on the ESP32's native USB CDC is the
-        auto-reset sequence: the board reboots and the UI returns to the Ride screen. Measured
-        2026-09-25 -- a fresh invocation that only read STATE came back on screen 0 after the
-        previous one had navigated to More, which silently invalidated a whole brightness
-        measurement (every tap landed on a freshly-rebooted Ride screen, not the row under test).
-        Setting .dtr/.rts BEFORE open applies them as the port opens, with no pulse.
+        Two boards, two reasons, one fix. On the ESP32's native USB CDC (Guition) asserting
+        DTR/RTS is the auto-reset sequence. On the CYD's CH340 it is worse than a reset: the
+        console answers intermittently and injected taps are dropped entirely, so a walk reports
+        every screen as 'Ride' and reads like a dead UI (measured 2026-09-25 -- the CYD walk failed
+        7/8 taps this way, then passed once opened like this).
+
+        pyserial asserts both on a default open, so closing and reopening afterwards is too late:
+        the damage is done on the first open. Build the port unopened, set the lines, then open.
+        The board still reboots on the native-USB boards, hence the settle.
         """
         try:
-            ser = self.bench.ser
-            port, baud = ser.port, ser.baudrate
-            ser.close()
+            self.bench.ser.close()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            ser = serial.Serial()
+            ser.port = port
+            ser.baudrate = 115200
+            ser.timeout = 2
             ser.dtr = False
             ser.rts = False
-            ser.port = port
-            ser.baudrate = baud
             ser.open()
-            # Settle before the caller's first tap. Opening the port REBOOTS the board (the
-            # DTR/RTS auto-reset, which could not be suppressed on Windows), and a full reboot here
-            # is ~20 s because WiFi, BLE and LVGL all come back. Taps sent into that window are
-            # silently dropped.
-            #
-            # The trap, measured 2026-09-25: STATE answers valid JSON with touch:1 during the
-            # window, so the board looks ready when it is not. Two separate test runs were
-            # invalidated that way -- taps 'landing' on a screen that never changed, which reads
-            # exactly like a broken button. 2.5 s was not enough; 20 s is. --settle overrides.
             time.sleep(self.settle)
             ser.reset_input_buffer()
-        except Exception as e:  # noqa: BLE001 - if it fails, say so rather than measure garbage
-            print(f"  !! could not suppress the DTR/RTS reset ({e}); "
-                  "state will not persist across calls")
+            self.bench.ser = ser
+        except Exception as e:  # noqa: BLE001 - say so rather than measure garbage
+            print(f"  !! could not open {port} quietly ({e}); results may be unreliable")
 
     # -- primitives -------------------------------------------------------------------
-    def state(self) -> dict:
-        return self.bench.state()
+    def state(self, window: float = 3.5) -> dict:
+        """Read STATE, tolerating a console that is talking about something else.
+
+        S3Bench.state() takes the FIRST line beginning with '{' and gives up on a short timeout.
+        That works on a board with a connected meter, which is quiet. A board that is still
+        *searching* floods the console with `[meter] found ...` every second, so the scan keeps
+        landing on chatter and returns {} -- which the walk then reports as `got None`, i.e. a
+        screen that never changed, i.e. a dead UI. Measured 2026-09-25: the CYD walk failed 7 of 8
+        taps this way while the identical taps worked when sent by hand.
+
+        So: drain the whole window and take the LAST JSON object, not the first line that looks
+        promising.
+        """
+        self.bench.ser.reset_input_buffer()
+        self.bench._send("STATE")
+        deadline, buf = time.time() + window, b""
+        while time.time() < deadline:
+            chunk = self.bench.ser.read(4096)
+            if chunk:
+                buf += chunk
+                if b'"screen"' in buf and buf.rstrip().endswith(b"}"):
+                    break
+        best = {}
+        for line in buf.decode("utf-8", "replace").splitlines():
+            line = line.strip()
+            if line.startswith("{") and '"screen"' in line:
+                try:
+                    best = json.loads(line)
+                except ValueError:
+                    continue
+        return best
 
     def tap(self, x: int, y: int) -> dict:
         self.bench.tap(x, y)
-        time.sleep(0.5)
+        time.sleep(1.2)   # a classic-ESP32 LVGL repaint is slower than the S3's; 0.4 s raced it
         return self.state()
 
     def raw_screen(self, name: str) -> Path:
         """Save the raw SCREEN response. No decode — see the module docstring."""
+        # Budget the read from the LINK, not a guess. A native-USB-CDC board (Guition) shifts a
+        # 410 KB dump in under a second; the CYD is a real CH340 UART at 115200 (~11.5 KB/s) and
+        # its ~205 KB base64 frame needs ~18 s. An 8 s window truncated it mid-dump (98304 B one
+        # run, 81920 the next) and the REMAINING pixel data then flooded the console, swallowing
+        # every command after it -- which is what made a healthy CYD look like a dead UI
+        # (2026-09-25: 7/8 taps failed with dumps, 4/4 passed without).
+        expected = self.w * self.h * 2 * 4 // 3          # RGB565 -> base64
+        budget = 6.0 + expected / 11_000                 # ~UART bytes/s at 115200, plus slack
         self.bench.ser.reset_input_buffer()
         self.bench._send("SCREEN")
-        deadline, buf = time.time() + 8, b""
+        deadline, buf, last = time.time() + budget, b"", time.time()
         while time.time() < deadline:
             chunk = self.bench.ser.read(8192)
             if chunk:
                 buf += chunk
+                last = time.time()
                 if b"DUMPDONE" in buf or b"BMP>" in buf:
                     break
+            elif time.time() - last > 3.0 and buf:
+                break                                     # stream went quiet: done or stalled
+        if not (b"DUMPDONE" in buf or b"BMP>" in buf):
+            print(f"  !! {name}: dump TRUNCATED at {len(buf)} B after {budget:.0f}s "
+                  f"- treat as invalid evidence, not as a rendering fault")
+        # A SCREEN dump runs inside the LVGL task (lv is not threadsafe), so the UI is blocked
+        # for the length of the transfer and the console is left mid-flood. A tap sent straight
+        # after is dropped: measured 2026-09-25, the CYD walk failed 7/8 taps WITH dumps and 4/4
+        # without them, on identical coordinates. Let the board catch up before returning.
+        time.sleep(2.0)
+        self.bench.ser.reset_input_buffer()
+
         p = self.out / f"{self.board}-{name}.txt"
         p.write_bytes(buf)
         msg = f"  [dump] {name}: {len(buf)} B -> {p.name}"
@@ -296,6 +345,12 @@ class BenchUi:
         if not st:
             print("  !! no STATE — is this an LVGL build with the console?")
             return 2
+        # Spend the first tap on a no-op. Even after the settle, the first tap following a port
+        # open is intermittently absorbed (2026-09-25: the CYD walk lost exactly its first tap,
+        # 7/8 otherwise). Re-tapping the nav entry we are already on costs nothing and makes the
+        # first REAL assertion trustworthy instead of a coin flip.
+        self.bench.tap(*self.t.nav_ride())
+        time.sleep(1.0)
         self.raw_screen("01-ride")
         self.goto("Setup", self.t.nav_setup(), 1)
         self.raw_screen("02-setup")

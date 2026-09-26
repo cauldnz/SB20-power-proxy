@@ -375,6 +375,61 @@ lvgl 9.5.0. Raw captures in `sessions/bench-out/20260925/` (gitignored); cited f
 | CYD | all | ⛔ **NOT RUN** this pass | — | — |
 | C3-OLED | all | ⛔ **NOT RUN** — no USB; OTA-only | — | — |
 
+Second sitting, same day, once a spare C3 (`38:44:BE:45:53:34`, brand new from the box) became the
+FTMS simulator. Raw captures in `sessions/bench-out/20260925-cyd/`.
+
+| Board | Step | Result | Evidence | Issue filed |
+|---|---|---|---|---|
+| Guition | 3 **F10** | ✅ trainer pick persists and is **provable from `/status`** (`trainer:"SB20-FTMS-Server"`) | `/status` | — (run-sheet's "no trainer key" GAP is stale since #354) |
+| Guition | 4 **F17** (trainer side) | ✅ erg link reaches **linked + controlling**: sim reports `controlled=1 started=1 hasTarget=1` | simulator serial log | — |
+| Guition | 4 **F17** (device screen) | ⛔ **NOT CAPTURED** — the on-screen erg line needs `TAP` to reach the Workout screen, and the Guition has no serial (its cable is the simulator's) | — | — |
+| Guition | 4 **F20–F23** | ✅ **confirmed at the trainer**, matching the decisions.md oracle: start → `target=138W`, pause → `0W`, resume → `138W`, skip → `248W`, stop → `0W` | simulator serial log + `/workout/state` | — |
+| Guition | — | ℹ **pause RELEASES the erg target to 0 W** rather than holding resistance — correct and safe, now evidenced | simulator log | — |
+| CYD | **F09** | ✅ blanked `out_name` → **`Stages 92364`**, `identity_default=true` — the predicted value, and it **ends the `Stages 62144` collision** with the ride C3 | `/status` | — |
+| CYD | 1 geometry | ⚠ **6–7 of 8 taps land; the failures move between runs.** Hand-driven taps work every time (`TAP 200 305` → `[lcd] tap injected` → screen 1→2), so this is **instrument flakiness, not a UI defect** — see the note below | `cyd-0*-*.txt` dumps (now complete at ~207 KB) | — |
+| CYD | rest | ⛔ **NOT RUN** — workout console, brightness, F42 touch-cal | — | — |
+
+> **Why the CYD walk is flaky, and why it is the instrument.** The CYD is a real CH340 UART at
+> 115200 (~11.5 KB/s); its 240×320 frame is ~205 KB of base64, so a `SCREEN` dump needs **~18 s**.
+> The harness allowed 8 s, truncated mid-dump (98304 B one run, 81920 the next), and the remaining
+> ~10 s of pixel data then flooded the console and swallowed every command after it — which is
+> exactly what a dead UI looks like. The Guition never showed this because it is native USB CDC:
+> effectively megabits, so its *larger* 410 KB dump finishes in under a second.
+>
+> Fixed by deriving the read budget from panel size × link speed, warning loudly on truncation,
+> taking the LAST JSON line rather than the first (a *searching* board floods `[meter] found ...`
+> every second), settling after each dump, and spending the first tap after a port open on a no-op.
+> That took the walk from 1/8 to 7/8. **The remaining flakiness means framebuffer dumps are the
+> wrong instrument on this board — use the bench camera for CYD screens.**
+
+### CYD block — complete (2026-09-25)
+
+Run with the Guition **parked via `POST /ble/off`** so the CYD could own the simulator: the first
+real use of that route, and the reason it exists (two head units, one trainer, nobody at the bench).
+
+| Step | Row | Result | Evidence |
+|---|---|---|---|
+| — | **F09** | ✅ derived **`Stages 92364`**, `identity_default=true` — predicted value; ends the `Stages 62144` collision with the ride C3 | `/status` |
+| 3–4 | **F10, F17 (trainer), F20–F23** | ✅ **identical to the Guition**: start → `138W`, pause → `0W`, resume → `138W`, skip → `248W`, stop → `0W`, `controlled=1 started=1` | simulator serial log |
+| 5 | **F41** | ❌ **#346 CONFIRMED** — label reads `100 %` after four taps and the backlight never moves (normalised spread **0.022**, i.e. noise). Note the difference from the Guition, where tap 1 *did* drop it and then froze; here nothing moves at all | `cyd-bright-row-stuck-at-100.png`, camera normalised against the parked Guition |
+| 5 | **F38** | ❌ **#346 CONFIRMED** — no Firmware row on this board either (9 rows: the 8 shared + Touch cal) | `cyd-more-*.png` |
+| 5 | **F42** | ✅ the touch-cal ritual works **headlessly**: `CALCLEAR` wipes + restarts, `RAWTAP` walks 1/4→4/4, point 4 computes and `[tcal] SAVED` the fit | serial |
+| 6 | **F29** | ✅ designed no-op — Calibrate's button leaves the screen unchanged and `/log` stays silent | `/log` |
+| 6 | **F33** | ✅ renders the stub: Meter A 215 / B 238, `SIMULATED B x1.104`, n=174 pairs | `cyd-f33-compare.png` |
+| 1 | geometry | ❌ **NEW defect #364** — the IP footer is drawn **through** the `Touch cal` row | `cyd-more-ip-collides-with-touchcal.png` |
+
+> **#364 and #358 are one bug with two faces.** Rows sit at `y = 49 + 29*k` regardless of panel
+> height or row count. On the Guition (480 tall, 8 rows) that leaves ~40 % of the panel empty; on the
+> CYD (320 tall, **9** rows — Touch cal exists only here) the ninth row lands on the fixed IP footer.
+> A layout derived from row count and available height fixes both; nudging constants fixes neither,
+> and the 4.3-inch Guition on the roadmap would be a third geometry.
+
+> **`RAWTAP` needs raw values in the panel's REAL range.** The first F42 attempt fed 300–3800 and the
+> fit was rejected as "taps too clustered" — this digitiser reads ~160–1890 in x and ~93–1915 in y, so
+> those coordinates were off the film. Deriving them from the stored fit
+> (`raw = (target - offset) / scale`) reproduced the original calibration to the fifth decimal.
+> **Clearing a board's touch calibration is destructive** — have the restore values before you start.
+
 ## 3. Close-out
 
 Update the map's Verified column for every row that passed; file an issue per failure (link it in the

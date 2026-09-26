@@ -53,6 +53,14 @@ CI, and merged the same session. Don't open a 10-file branch and hope.
     Use something like **`C:\pio-s3`** (9 → 232). Measured 2026-09-25 during the bench UI pass.
     If you already have a half-installed long-path core dir, `Move-Item` it to the short path rather
     than deleting it — the ~500 MB of downloads in its `.cache` are reused.
+- **Build from ONE path. Alternating with the `C:\sbw` junction wipes `.pio/build`.** The LVGL envs
+  must build from the short junction (MAX_PATH), so the temptation is to use `C:\sbw\firmware` for
+  those and the real `C:\repos\SB20-power-proxy\firmware` for everything else. **Don't.**
+  PlatformIO keys `.pio/build/project.checksum` on the project path, so switching makes it consider
+  the project changed and **purge the entire build tree** — every env, not just the one you are
+  building. Measured 2026-09-25: a successful `esp32c3-ftms-server` build was silently deleted by a
+  later `esp32cyd-live` build started from the junction, and several 8–11 minute "rebuilds" that day
+  were this, not the compiler. **Use `C:\sbw\firmware` for everything**, including the non-LVGL envs.
 - **A change under `firmware/lib/` is also an nRF change.** `firmware-nrf` builds `../firmware/lib`
   (`lib_extra_dirs`), so removing or renaming anything there can break the XIAO bridge while every ESP32
   env compiles. The pre-push gate is **every env CI builds** — the ESP32 compiles, `pio run -e xiao-sense`

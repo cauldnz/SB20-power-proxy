@@ -4932,3 +4932,120 @@ pixels match"; that was only true while 9.5.x was newest. A fresh env resolved *
 existing env — including this board's own ride build and the `native-lvgl` host harness — is on
 9.5.0. Today's build was forced to 9.5.0 so the pass compares like with like; the repo-wide pin is
 still open, and the next CI cache miss builds 9.6.0 for everything.
+
+---
+
+## 2026-09-25 (second sitting) — the erg chain reaches the trainer, and a fifth lying instrument
+
+The bench pass resumed once a **brand-new C3 from the box** (`38:44:BE:45:53:34`) became the FTMS
+simulator. Two results and one methodological lesson that is becoming the theme of this whole pass.
+
+### The erg chain works end to end, confirmed by the trainer itself
+
+Driving the Guition's workout over HTTP while reading the **simulator's** serial log — an oracle
+independent of anything the head unit claims — reproduces the `decisions.md` 2026-07-04 expectation
+exactly:
+
+| step | simulator reports |
+|---|---|
+| baseline | `controlled=1 started=1 hasTarget=1 target=0W` |
+| start | **`target=138W`** (the warm-up segment) |
+| pause | **`target=0W`** |
+| resume | `target=138W` |
+| skip | **`target=248W`** (Interval 1) |
+| stop | `target=0W` |
+
+**F10, F17 (trainer side) and F20–F23 pass.** Worth recording as behaviour, not just a test result:
+**pause RELEASES the erg target to 0 W** rather than holding resistance — the safe choice, and now
+evidenced rather than assumed.
+
+**F09 passes on the CYD too**: blanking `out_name` derived **`Stages 92364`**, the predicted value.
+Second independent confirmation of #354 on hardware, and it ends the collision where the CYD and the
+ride C3 both advertised `Stages 62144` — bike 1's real left-crank id.
+
+**The oracle earned its place immediately.** The first erg run showed a flawless `/workout/state`
+sequence — running, paused, segments, targets all correct — while the simulator sat at
+`controlled=0 started=0 target=0W`. The head unit was never connected to it: an earlier
+`/setup/save` had failed with "No such host is known" because the board was unpowered at that
+moment, so the trainer filter was still `Stages Bike 0105`. **Reading only the device's own view
+would have recorded a full pass for a chain that was not connected.**
+
+### The fifth instrument fault: bandwidth, not the board
+
+The CYD walk failed 7 of 8 taps and looked like a dead UI. It was not. `TAP 200 305` by hand gives
+`[lcd] tap injected` and screen 1 → 2, every time.
+
+The CYD is a real **CH340 UART at 115200** (~11.5 KB/s) and its 240×320 frame is ~205 KB of base64,
+so a `SCREEN` dump needs **~18 s**. The harness allowed **8 s**, truncated mid-dump (98304 B one
+run, 81920 the next), and the remaining ~10 s of pixel data then flooded the console and swallowed
+every command after it. The Guition never showed this because it is **native USB CDC** — effectively
+megabits, so its *larger* 410 KB dump finishes in under a second. Same command, same firmware,
+opposite behaviour, entirely because of the link.
+
+Four more fixes fell out, each from a symptom that reads as a product defect:
+
+- **Budget the read from panel size × link speed**, and say so loudly on truncation. A truncated
+  dump is invalid evidence, not a rendering fault.
+- **Take the LAST JSON line, not the first.** A board that is still *searching* prints
+  `[meter] found ...` every second; the old scan kept landing on chatter and returned nothing,
+  which the walk reported as a screen that never changed.
+- **Settle after a dump.** It runs inside the LVGL task (lv is not threadsafe), so the UI is blocked
+  for the transfer and the next tap is dropped.
+- **Spend the first tap after a port open on a no-op.** It is intermittently absorbed even after the
+  settle.
+
+Together: 1/8 → 7/8. The residue means **framebuffer dumps are simply the wrong instrument on the
+CYD** — its camera frame is the picture.
+
+### The count, because it is the finding
+
+Five measurements this pass produced a plausible, wrong answer, and every one was the apparatus:
+a brightness test run on a rebooted screen; a "dead" Pause button read off `wk_running` when the
+flag is `paused`; a camera auto-exposing during the very cycle it measured; an erg chain that
+reported success while disconnected; and a CYD whose console was drowning in its own screenshot.
+**The board has been right every time. Before believing a bench result, ask what would make the
+instrument produce it with healthy hardware.**
+
+### Bench logistics: cables, not boards, are the constraint
+
+These boards are powered *through* their data cable, so a board without one is simply off — moving
+the Guition's cable to the C3 silently killed the Guition mid-test. With a dozen spare C3s in a box
+and one known-good data cable, the bottleneck is **powered USB**, not hardware. A powered hub (or
+any charger, including the charge-only cable that wasted an hour earlier) fixes it: boards need data
+only while being flashed or serial-driven.
+
+---
+
+## 2026-09-25 (third sitting) — the CYD block, and /ble/off earning its keep
+
+The CYD passed everything runnable, and the session produced the first real use of the `/ble/off`
+route: both head units were configured for the one simulator and only one can control it, so the
+Guition was **parked with `POST /ble/off`** — radio down, HTTP still up — and the CYD took the
+trainer. That is exactly the case the route was built for (two erg controllers, one trainer, nobody
+at the bench), and it worked without touching a cable.
+
+**Results.** F09 derived **`Stages 92364`** — the predicted value, a second hardware confirmation of
+#354, and the end of the `Stages 62144` collision with the ride C3. F10 / F17 (trainer side) /
+F20–F23 are **identical to the Guition** at the trainer: start → `138W`, pause → `0W`, resume →
+`138W`, skip → `248W`, stop → `0W`. F29's no-op and F33's stub behave as designed. **#346 is
+confirmed on this board too** — the Bright label reads `100 %` after four taps and the backlight
+does not move (normalised spread 0.022), and there is no Firmware row.
+
+**F42 passes, and the ritual is fully headless**: `CALCLEAR` wipes the stored fit and restarts,
+`RAWTAP` walks the crosshairs 1/4 → 4/4, and the fourth point computes and saves. No finger needed.
+
+### Two things worth carrying forward
+
+**`RAWTAP` wants raw values in the panel's real range, and clearing a calibration is destructive.**
+The first attempt fed 300–3800 and the fit came back *"taps too clustered"*, leaving the board with
+`cal_valid=0` — i.e. the CYD's touch broken until it was fixed. This digitiser actually reads
+~160–1890 in x and ~93–1915 in y; inverting the stored fit (`raw = (target − offset) / scale`) gave
+coordinates that reproduced the original calibration to the fifth decimal
+(`sx −0.13878 → −0.13879`, `oy −16.4 → −16.5`). **Read and keep `CALINFO` before `CALCLEAR`.**
+
+**#364 and #358 are one bug wearing two faces.** More rows sit at `y = 49 + 29*k` irrespective of
+panel height or row count. On the Guition — 480 tall, 8 rows — that strands ~40 % of the panel. On
+the CYD — 320 tall and **9** rows, because `Touch cal` exists only there — the ninth row is drawn
+straight through the fixed IP footer. The same absolute-offset assumption produces "too much space"
+and "not enough" on two boards, so the fix is a layout derived from row count and available height,
+not adjusted constants. The 4.3-inch Guition in the roadmap would be a third geometry to get wrong.
