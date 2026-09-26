@@ -188,7 +188,7 @@ exists**, so after every `TAP` read `STATE` and treat a wrong `screen` as a find
 | Ride title → details pop-down (`rideTitleCb`) | top-left label | `40,10` | `40,10` | `40,10` |
 | Setup device row *i* (0–5) | `(W/2, 71 + 38·i)` | `160,71` … `160,261` | `120,71` … `120,261` | `86,71` … |
 | Setup **Rescan** / **Save** | `(10 + (W−30)/4, H−54)` / `(W−10−(W−30)/4, H−54)` | `82,426` / `238,426` | `62,266` / `178,266` | `45,266` / `127,266` |
-| More row *k*: 0 Workout · 1 Calibrate · 2 Compare · 3 Mode · 4 Identity · 5 Source · 6 Trainer · 7 **Bright** · 8 Touch cal (CYD only) | `(W/2, 49 + 29·k)` | `160,49` … Bright `160,252` | `120,49` … Bright `120,252`, Touch cal `120,281` | `86,49` … |
+| More row *k*: 0 Workout · 1 Calibrate · 2 Compare · 3 Mode · 4 Identity · 5 Source · 6 Trainer · 7 **Bright** · 8 Touch cal (CYD only) | **superseded 2026-09-26** — ask `bench_ui.more_pitch(H, rows)`; the pitch is per-board now (PR #365) | `160,53` … Bright `160,305` | `120,47` … Bright `120,222`, Touch cal `120,247` | `86,49` … Bright `86,252` |
 | Workout preset row *i* (0–3: `4x8`, `ss3x12`, `vo25x3`, `endur45`) | `(W/2, 72 + 52·i)` | `160,72` … `160,228` | `120,72` … `120,228` | `86,70` … |
 | Workout **Start** (loaded) · **Change** | y ≈ 255 (button spans 232–274) | `118,255` · `251,255` | `91,255` · `184,255` | `86,262` |
 | Workout **Pause** / **Skip** / **Stop** (running; `bw=(W−30)/3`) | `(20+bw/2, 255)` / `(25+3bw/2, 255)` / `(30+5bw/2, 255)` | `68,255` / `169,255` / `270,255` | `55,255` / `130,255` / `205,255` | `28,262` / — / `150,262` |
@@ -423,6 +423,10 @@ real use of that route, and the reason it exists (two head units, one trainer, n
 > CYD (320 tall, **9** rows — Touch cal exists only here) the ninth row lands on the fixed IP footer.
 > A layout derived from row count and available height fixes both; nudging constants fixes neither,
 > and the 4.3-inch Guition on the roadmap would be a third geometry.
+>
+> **Fixed 2026-09-26 (PR #365)** — `firmware/lib/proxy/LcdLayout.h`. Note for anyone re-running this
+> pass: `bench_ui.py` had the same `29` baked into its tap targets, so it now mirrors the firmware
+> layout. Re-derive tap rows from `bench_ui.more_pitch(h, rows)`, not from the table in §0c.
 
 > **`RAWTAP` needs raw values in the panel's REAL range.** The first F42 attempt fed 300–3800 and the
 > fit was rejected as "taps too clustered" — this digitiser reads ~160–1890 in x and ~93–1915 in y, so

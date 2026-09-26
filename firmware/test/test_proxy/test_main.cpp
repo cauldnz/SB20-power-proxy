@@ -17,6 +17,7 @@
 #include "DiagReport.h"
 #include "Ftms.h"
 #include "Obc.h"
+#include "LcdLayout.h"
 #include "SimScreen.h"
 #include "ObcSb20Map.h"
 #include "ObcShifterSource.h"
@@ -2881,6 +2882,74 @@ void test_sim_oled_rows_fit_the_smallest_panel() {
     }
 }
 
+// ---- LcdLayout: the invariants #358 and #364 violated -----------------------------------------
+// Both bugs were one assumption -- absolute offsets that ignore panel height and row count -- so
+// these are written against EVERY geometry we ship or plan, not just the two that failed.
+static const int kPanelH[] = {320, 480};   // CYD/S3 = 320, Guition = 480
+static const int kPanelW[] = {172, 240, 320, 480};  // + the 4.3" on the roadmap
+
+// #364: the CYD's ninth More row (Touch cal is resistive-only) was drawn through the IP footer.
+void test_more_rows_never_reach_the_footer_on_any_panel() {
+    for (int h : kPanelH) {
+        for (int rows = 1; rows <= 12; ++rows) {   // 8 shipped, 9 on the CYD, headroom for more
+            TEST_ASSERT_TRUE_MESSAGE(moreRowsFit(h, rows), "rows collide with the IP footer");
+        }
+    }
+    // The exact case that failed on hardware: 320 tall, 9 rows.
+    const MoreLayout L = moreLayout(320, 9);
+    const int lastBottom = L.rowTop + 8 * L.pitch + L.rowH;
+    TEST_ASSERT_TRUE(lastBottom <= 320 - L.ipFromBottom - 16);
+}
+
+// The pitch answers to the panel, not to a constant: the 240x320 design keeps the 29 px it was drawn
+// at, the 480-tall Guition spends its room on bigger touch targets rather than stranding it (#358),
+// and the CYD's ninth row tightens instead of running off the bottom (#364).
+void test_more_pitch_follows_the_panel() {
+    TEST_ASSERT_EQUAL_INT(29, moreLayout(320, 8).pitch);
+    TEST_ASSERT_TRUE_MESSAGE(moreLayout(480, 8).pitch > 29, "tall panel strands its room");
+    TEST_ASSERT_TRUE_MESSAGE(moreLayout(320, 9).pitch < 29, "nine rows must tighten");
+    // Never below the readable floor, never so tall the list becomes a row of buttons.
+    for (int h : kPanelH) {
+        for (int rows = 1; rows <= 12; ++rows) {
+            const int pitch = moreLayout(h, rows).pitch;
+            TEST_ASSERT_TRUE_MESSAGE(pitch >= 18, "pitch below the readable floor");
+            TEST_ASSERT_TRUE_MESSAGE(pitch <= 40, "pitch above the list cap");
+        }
+    }
+}
+
+// #358: Ride left ~40% of the 480-tall Guition empty because the cards were at a fixed y=208.
+void test_ride_cards_sit_just_above_the_nav_on_every_panel() {
+    for (int h : kPanelH) {
+        const RideLayout L = rideLayout(h);
+        const int cardsBottom = L.cardsY + L.cardsH;
+        const int navTop = h - kNavH;
+        TEST_ASSERT_TRUE_MESSAGE(cardsBottom <= navTop, "cards overlap the nav");
+        // The whole point: no dead band between the cards and the nav.
+        TEST_ASSERT_TRUE_MESSAGE(navTop - cardsBottom <= 12, "dead space under the cards");
+    }
+}
+
+void test_ride_chart_takes_the_slack_rather_than_leaving_a_hole() {
+    const RideLayout small = rideLayout(320);
+    const RideLayout big = rideLayout(480);
+    TEST_ASSERT_TRUE(big.chartH > small.chartH);           // the taller panel gets more history
+    TEST_ASSERT_TRUE(small.chartH >= 40);                  // still usable on the short one
+    // The chart must not run into the cards on either.
+    TEST_ASSERT_TRUE(small.chartY + small.chartH < small.cardsY);
+    TEST_ASSERT_TRUE(big.chartY + big.chartH < big.cardsY);
+}
+
+// The details pop-down replaces the chart AND the cards, so it must cover exactly that band.
+void test_ride_details_panel_covers_what_it_replaces() {
+    for (int h : kPanelH) {
+        const RideLayout L = rideLayout(h);
+        TEST_ASSERT_TRUE(L.detailsY <= L.chartY);
+        TEST_ASSERT_EQUAL_INT(L.cardsY + L.cardsH, L.detailsY + L.detailsH);
+        TEST_ASSERT_TRUE(L.detailsY + L.detailsH <= h - kNavH);
+    }
+}
+
 int runUnityTests() {
     UNITY_BEGIN();
     RUN_TEST(test_setup_pin_is_eight_digits);
@@ -3103,6 +3172,11 @@ int runUnityTests() {
     RUN_TEST(test_sim_oled_says_what_the_board_is_and_what_state_it_is_in);
     RUN_TEST(test_sim_oled_distinguishes_a_zero_target_from_no_target);
     RUN_TEST(test_sim_oled_rows_fit_the_smallest_panel);
+    RUN_TEST(test_more_rows_never_reach_the_footer_on_any_panel);
+    RUN_TEST(test_more_pitch_follows_the_panel);
+    RUN_TEST(test_ride_cards_sit_just_above_the_nav_on_every_panel);
+    RUN_TEST(test_ride_chart_takes_the_slack_rather_than_leaving_a_hole);
+    RUN_TEST(test_ride_details_panel_covers_what_it_replaces);
     return UNITY_END();
 }
 

@@ -169,15 +169,21 @@ no Wake Lock and no HTTP reconnect. `web/HTTP-API.md` documents the missing rout
 
 **Device (issue #346):** the brightness cycle shows 100 % and emits 25 % forever; More → Trainer was
 the literal `not set` (fixed in #330); the Calibrate button falls through to `default`; the Version row
-has a renderer and no table entry. To confirm with the bench camera: the Ride layout's absolute offsets (hero 60,
-chart 140, cards 208) on the 480-tall Guition, which likely leaves the bottom third empty above the nav.
+has a renderer and no table entry. The Ride layout's absolute offsets (hero 60, chart 140, cards 208)
+were confirmed on the 480-tall Guition on 2026-09-25 — ~40 % of the panel empty above the nav
+(#358) — and the *same* constants overran the CYD's ninth More row into the IP footer (#364).
+**Both fixed 2026-09-26**: `firmware/lib/proxy/LcdLayout.h` derives the positions from the panel
+height and the row count, and `code/scripts/bench_ui.py` mirrors it so the walker taps where the
+firmware draws.
 
 **Drift between the canvas twin and LVGL:** the twin has a live workout strip on Ride, a Firmware row
 and a working three-state Calibrate wizard; LVGL has none of them. Tests on the twin prove nothing
 about the panel (`ui-unification.md` U1).
 
-**Coverage:** the host LVGL harness compiles only the 240×320 geometry; 172×320 and 320×480 are
-untested on the host, and the Guition has only ever shown the Ride screen and the nav on camera.
+**Coverage:** the host LVGL harness still *renders* only the 240×320 geometry, so 172×320 and
+320×480 have no host pixel check. What is host-tested for all three since 2026-09-26 is the layout
+arithmetic (`LcdLayout.h` in `test_proxy`) — which is what #358 and #364 turned out to be; the
+pixels above it remain a camera/framebuffer job.
 
 **Docs:** `/app` is absent from every tester-facing document; the `system-reference.md` note that
 the portal offers `/wifi/off` is wrong (the portal route table has neither `/setup` nor `/wifi/off`).

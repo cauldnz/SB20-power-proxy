@@ -5049,3 +5049,102 @@ the CYD — 320 tall and **9** rows, because `Touch cal` exists only there — t
 straight through the fixed IP footer. The same absolute-offset assumption produces "too much space"
 and "not enough" on two boards, so the fix is a layout derived from row count and available height,
 not adjusted constants. The 4.3-inch Guition in the roadmap would be a third geometry to get wrong.
+
+---
+
+## 2026-09-26 — one layout module for every panel (#358 + #364 fixed together)
+
+The two geometry defects the bench pass found are **one bug**: the LVGL screens placed everything at
+absolute y offsets chosen on a 240×320 panel. On the 480-tall Guition that stranded ~40 % of the
+screen (#358); on the CYD, whose More list has a **ninth** row because `Touch cal` is compiled in
+only for a resistive panel, the last row was drawn straight through the IP footer (#364). Same
+assumption, opposite symptoms — which is exactly why nudging the constants was not an option: every
+value that fixes one board breaks the other, and the 4.3-inch Guition on the roadmap would be a
+third geometry to get wrong.
+
+**`firmware/lib/proxy/LcdLayout.h`** is now the single place that answers "where does this go":
+
+- `rideLayout(h)` — the cards are **anchored to the nav** (`h − navH − 8 − cardsH`) instead of
+  sitting at a fixed `y=208`, and the chart takes whatever slack is left. The hero and the captions
+  are font-sized, so they stay put. Guition: chart `140..366`, cards `378..442`, nav at `450` — the
+  dead band is gone. CYD: cards move `208 → 218`, closing its own 18 px band.
+- `moreLayout(h, rows)` — pitch derived from the panel and the row count: `min(40, max(29, h/13))`
+  capped by what the rows can actually have, floored at 18 px so a 16 px label stays readable.
+  CYD 9 rows → pitch **25**, last row ends at 259 with the footer at 270 (was pitch 29, ending at
+  **295**, i.e. 25 px *into* the footer). Guition 8 rows → pitch **36**, bigger touch targets rather
+  than stranded room. S3 is **unchanged** at 29 — a board that already fitted must not be re-spaced.
+- `moreRowsFit(h, rows)` states the invariant both issues violated, and is asserted for every panel
+  height we ship or plan × 1–12 rows in `test_proxy`.
+
+### Two things this changed beyond the firmware
+
+**The bench walker had the same constant baked in.** `bench_ui.py` derives its tap targets from
+`y = 49 + 29*k`, so the moment the firmware stopped using that pitch the harness would have tapped
+*between* rows on the Guition and off the last row on the CYD — and the run-sheet's rule is to treat
+a wrong screen as a finding, so it would have manufactured one. `bench_ui.more_pitch()` now mirrors
+`moreLayout`, and `code/tests/test_bench_ui_layout.py` **reads the constants out of `LcdLayout.h`**
+and asserts the mirror reproduces the C++ for every panel × row count. Changing one side without the
+other now fails the suite instead of quietly missing taps at the bench. (Mutation-checked: flipping
+the Python divisor 13 → 12 fails 10 of the 26.)
+
+**A settings list that does not fill a tall panel is a list, not a bug.** #358 also called out the
+Guition's More rows ending at y≈266 with the IP at 437. Spreading eight rows over 480 px would make
+a row of buttons, not a list, so the fix spends the room on pitch (36 px) and leaves the rest
+top-aligned. That is the deliberate answer, not an oversight.
+
+### Note for the next session
+
+The 2 px `footerGap` is load-bearing: without it the CYD's ninth row clears the footer by exactly
+2 px, which is arithmetic, not clearance. With it the margin is 11 px and the S3 keeps its 29 px
+pitch (a 4 px gap would have dropped the S3 to 28 — the constant was chosen so the board that was
+never broken does not move).
+
+---
+
+## 2026-09-26 (second sitting) — #358 and #364 verified on both panels, and an espota trap
+
+Both fixes are now on hardware, not just in the host tests.
+
+**CYD (#364), decoded framebuffer.** The More screen's nine rows now sit at pitch 25 and end at
+y=259 against a footer at 270; `Touch cal` and `192.168.1.234`, which were drawn on top of each
+other, are on their own lines. Ride's cards moved 208→218, closing that board's own 18 px band.
+Evidence: `sessions/bench-evidence/2026-09-26/cyd-more-footer-before-after.png`, `cyd-more-after.png`.
+
+**Guition (#358), bench camera.** Chart 140..366, cards 378..442, nav 450 — the ~40 % dead band is
+gone, and the power trace has real amplitude instead of a flat line squeezed into 56 px. Evidence:
+`sessions/bench-evidence/2026-09-26/guition-ride-before-after.jpg` (same camera, same crop, before
+and after). The Guition's **More** screen could not be shown on the panel: it has no serial on the
+bench right now and there is no HTTP route that injects a tap, so nothing can navigate it remotely.
+Its layout is covered by the host tests and by the same code path proven on the CYD's panel.
+
+### `espota.py` is not interchangeable between Arduino cores — and it lies about why
+
+The Guition OTA failed six times with **"No response from the ESP"** while the board was answering
+perfectly. Diagnosis: a raw UDP invitation to `192.168.1.222:3232` returned
+`AUTH <64 hex chars>` = **69 bytes**. `flash.ps1` hard-coded espota from the *default* core
+(`framework-arduinoespressif32 @ 3.20016.0`, Arduino 2.0.16), whose `serve()` does
+`sock2.recv(37)` — sized for Arduino 2.x's 32-hex nonce. **On Windows a UDP `recv` into a buffer
+smaller than the datagram raises `WSAEMSGSIZE` instead of truncating**, espota catches it bare,
+retries ten times and reports no response. The pioarduino core's espota (`C:\pio-s3\…`) reads 69 and
+flashed first time.
+
+Two changes, because the misleading message is the expensive part:
+
+* `flash.ps1` now resolves espota from `$env:PLATFORMIO_CORE_DIR` when set (which is how the
+  S3/Guition family is built — the MAX_PATH workaround) and falls back to the default core.
+* Before the first attempt it sends one invitation itself and compares the board's reply length to
+  the `recv(N)` in the chosen espota, printing the actual mismatch. Verified both ways on the
+  Guition: the 2.0.16 tool reports "board replies 69 bytes, … reads 37"; the pioarduino tool passes.
+
+**Rule: on this machine the OTA tool must come from the core that built the binary.** Signal
+strength and firewalls are the wrong first suspects when espota says "No response" — check the
+nonce length first, it takes one UDP packet.
+
+### Two smaller things measured the same evening
+
+* **A commit between the build and the flash costs the whole build.** `[build_version]` stamps the
+  git SHA as a build *flag*, so a docs commit invalidated a 15-minute `esp32cyd-live` build and
+  `-t upload` redid it from scratch. Build, flash, then commit. (→ DEV-PLAYBOOK.)
+* **`pio run -t upload` re-runs the `deep+` LDF scan** before it checks whether anything changed, so
+  even a no-op upload on an LVGL env costs minutes. `flash_s3.py` (esptool straight at the binaries)
+  is the pattern worth copying for the CYD and Guition.
