@@ -121,6 +121,15 @@ capture; produce a new analysis). Conclusions drawn from these live in
 | `SNIFF-session13-phaseD.pcap` | bike | Phase D of the session (see the session doc §Captures). |
 | `session13-qz-g1-buttons.log.gz` | qz (`--log`) | The authoritative button-behaviour record for G1: which press produced which qz action, including the dropped LEFT-down. |
 
+## Ride 2026-09-27 — Peloton class with qz driving (`sessions/ride-20260927-peloton-qz.md`)
+
+| File | Source | What it is |
+|---|---|---|
+| `QZ-osc-peloton-20260927.jsonl.gz` | qz OSC feed (`scripts/qz_osc_capture.py`) | **A whole Peloton class as qz saw it**: 2609 packets over 43.5 min at exactly 1.00 Hz, 41 fields (`/QZ/Watts`, `/QZ/Cadence`, `/QZ/Resistance`, `/QZ/PowerZone`, `/QZ/TargetPowerZone`, …). Avg 256 W, max 621 W, 944 kcal. Recorded with **zero BLE contention** — qz kept every link to the bike. **Two known limits:** it carries the *rider*, not the *prescription* (qz's Peloton class fields never reach OSC), and 1 Hz misses transients (621 W logged vs 746 W on qz's own tile). **gzipped** (3.5 MB raw → 159 KB) per the "small enough and worth committing" rule in `.gitignore`. |
+
+> The head unit's 44-minute soak from the same ride is a soak, so per the rule at the bottom of this file it lives in `../perf/ride-soak-cyd-20260927.jsonl.gz`: 2644 samples, 2521 ok, **123 dropouts recorded as rows** (WiFi −78 dBm at the bike), **0 reboots**, heap 110 KB → flat 84.6 KB after settling. Answers "does a head unit survive a session" for the **WiFi/LVGL path only** — BLE was off by design.
+
+
 ## Perf soaks
 
 The soak-run JSONL files behind [`perf-results.md`](../perf-results.md) live in `../perf/`, not here.

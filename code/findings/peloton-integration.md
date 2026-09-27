@@ -1,7 +1,7 @@
 # Peloton Power Zone classes as a workout source — research + the Phase 0 capture recipe
 
-**Status: RESEARCH + PHASE 0 RECIPE (2026-09-24); no code yet; issue #342.** ROADMAP **Now #1
-(PELOTON)**. Will govern: `code/src/sb20proxy/workout/importers.py::from_peloton()` and the desk
+**Status: RESEARCH + PHASE 0 RECIPE (2026-09-24), with the product direction RESET on 2026-09-27
+(see §0); no code yet; issue #342.** ROADMAP **Now #1 (PELOTON)**. Will govern: `code/src/sb20proxy/workout/importers.py::from_peloton()` and the desk
 poller (Phase 1), the on-device fetch (Phase 2), and the Phase-0 captures
 `code/findings/captures/PELOTON-*` (none committed yet — §4.5 says how). **Nothing in here has been
 checked against Peloton's servers by us.** Every "expected" below is a hypothesis the Phase-0 capture
@@ -24,6 +24,88 @@ zone model), [`mcp-workout-server.md`](mcp-workout-server.md) (the desk-side erg
 
 ---
 
+## 0. The product direction (owner, 2026-09-27) — companion to qz, not a replacement
+
+**This supersedes the "with qz not in the loop" framing in §1.** It was decided after the owner rode
+a real Peloton class on the SB20 with qz driving the trainer — the first time anyone here watched the
+whole thing work end to end ([`sessions/ride-20260927-peloton-qz.md`](../../sessions/ride-20260927-peloton-qz.md)).
+
+> Aim to be a **fantastic companion to people using QZ** — and *especially* fantastic for **SB20
+> owners who have power meter pedals**. Support both **rich device mode** (with a screen) and
+> **basic device mode** (no screen, or a tiny one: the C3 0.42″ OLED, the nRF52840). Both modes must
+> work well with the **browser app**. First test users: the owner and his daughter.
+
+**Why the reset.** §1 was written before anyone had watched qz do the Peloton job in anger. On the
+bike it already does all of it: OAuth, finding the live class, the target timeline, the offset trim,
+driving the trainer. Replacing that is duplicating a working thing. What qz *cannot* do from a phone
+is be the **power truth** on a bike whose own numbers you do not trust — which is this project's
+whole existing competence (the spoof and the corrector) — or put the right numbers where the rider's
+eyes already are.
+
+**What survives from the rest of this doc.** §2's protocol prose and §4's Phase-0 capture recipe are
+still wanted: a paired "what the class asked for vs what the rider produced" capture is the grounding
+any correction or erg work needs, and it does not depend on who drives the trainer. What is **parked**
+is the §5 Phase-1/Phase-2 ambition of *our* stack playing the class back with qz out of the loop;
+un-park it only if the owner reverses this.
+
+### 0.1 The first concrete feature: trim the Peloton offset from the bike's buttons
+
+The class clock, the rider's pedalling clock and the Apple TV's video lag all disagree, so qz exposes
+a **`Peloton Offset`** the rider trims by hand — **13 s on the 2026-09-27 ride** — using `−`/`+` on a
+touchscreen, mid-effort. That is the worst possible moment to poke at a phone, and it is a problem we
+are unusually well placed to fix:
+
+```
+SB20 shifter buttons -> our OBC transmitter (#248) -> the OBC listener in qz (#4791) -> Plus/Minus("peloton_offset")
+```
+
+qz already dispatches `Plus("peloton_offset")` / `Minus("peloton_offset")` from configurable
+shortcuts (`shortcut_peloton_offset_plus` / `_minus`) — the identical action to the on-screen buttons.
+**No new Peloton code on either side**, and both halves are already in this project's orbit: the
+transmitter is ours, the listener is the owner's own upstream contribution
+([`obc-protocol.md`](obc-protocol.md), [`qz-upstream-contribution.md`](qz-upstream-contribution.md)).
+The same plumbing reaches `peloton_remaining` and `remainingtimetrainprogramrow`, so the offset is the
+first of a family, not a one-off.
+
+### 0.2 What the two device modes have to mean
+
+| | rich mode (CYD / Guition / S3) | basic mode (C3 0.42″, nRF52840) |
+|---|---|---|
+| on the device | the ride view: power, cadence, target, zone | a few glanceable characters, or nothing |
+| configuration | on-device UI **and** the browser app | **browser app only** — it is the entire UI |
+
+The rule: the browser app is **first-class in both**, not a fallback for the screenless board. Basic
+mode is the harder constraint and likely the more common product. See
+[`ui-unification.md`](ui-unification.md) and [`../../docs/ui-feature-map.md`](../../docs/ui-feature-map.md).
+
+### 0.3 The instrument, and its two limits
+
+[`../scripts/qz_osc_capture.py`](../scripts/qz_osc_capture.py) records qz's OSC feed with **zero
+impact on the ride** — qz keeps every BLE link to the bike and we only read what it already knows.
+Enable it at **qz Settings → *OSC Settings* → `OSC IP`** (reachable on iOS, unlike *Template
+Settings*, which lists only sideloaded `.qzt` files); restart qz. 41 fields at 1 Hz. First real use:
+`captures/QZ-osc-peloton-20260927.jsonl.gz`, 2609 packets over 43.5 min with no gaps.
+
+Two limits, both found on that first use:
+
+1. **The Peloton class fields are not on the OSC surface.** `Peloton R(%)`, `T.Power`,
+   `Peloton Offset` and time-remaining are computed inside qz and never emitted. The feed gives the
+   **rider**, not the **prescription** — so the paired capture §4 wants still needs qz's Debug Log,
+   its `TcpClient` template (sideload-only, hence not iOS), or first-party Peloton auth per §4.2.
+2. **1 Hz misses transients.** That capture logged a **621 W** max where qz's own tile read **746 W**.
+   Fine for zone and target work; not a sprint-peak instrument.
+
+### 0.4 Open questions this direction raises
+
+- With pedals as the power source, what does qz actually read — our re-broadcast, or the pedals
+  direct? That decides whether the spoof, the corrector, or neither is in the path.
+- Does the SB20's erg loop need to be involved at all in a Peloton class, or is the bike just a
+  resistance device qz commands?
+- What is the daughter's setup? A second test user on different hardware is the fastest way to find
+  which assumptions are the owner's bike rather than the product.
+
+---
+
 ## 1. What we want, and the design conclusion
 
 Ride a **Peloton Power Zone (PZ) cycling class** and have *our* stack drive erg from the class's own
@@ -33,6 +115,10 @@ either bike, with qz not in the loop. Per `PROJECT-MAP.md` the hard half already
 workout engine, the `/workout` routes, the FTMS erg drive and zone/%FTP targets resolved by a rider
 FTP. So Peloton is a **new workout *source***, not a new erg engine — a `from_peloton()` beside
 `from_zwo()` / `from_fit()` (#342).
+
+> ⚠️ **The "with qz not in the loop" goal above was reset on 2026-09-27 — see §0.** The paragraph is
+> kept because the *technical* conclusion below (a downloaded timeline, not a stream) is unaffected
+> and still correct.
 
 **Design conclusion (closed 2026-09-24, #342):** it is a **downloaded timeline, played back locally
 — not a streamed target feed.** The ride object carries the complete target timeline up front

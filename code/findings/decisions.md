@@ -5148,3 +5148,79 @@ nonce length first, it takes one UDP packet.
 * **`pio run -t upload` re-runs the `deep+` LDF scan** before it checks whether anything changed, so
   even a no-op upload on an LVGL env costs minutes. `flash_s3.py` (esptool straight at the binaries)
   is the pattern worth copying for the CYD and Guition.
+
+---
+
+## 2026-09-27 — a Peloton class watched end to end, and #342 changes shape
+
+The owner rode a real Peloton class on the SB20 with **qz driving the trainer**, on ~15 minutes'
+notice, asking for observability that cost him nothing. Full narrative + retro:
+`sessions/ride-20260927-peloton-qz.md`.
+
+### The product decision (owner)
+
+> Be a **fantastic companion to people using QZ** — especially for **SB20 owners with power meter
+> pedals**. Support **rich device mode** (with a screen) *and* **basic device mode** (no screen, or
+> a C3 0.42″ / nRF52840), both working well with the **browser app**. First test users: the owner
+> and his daughter.
+
+This **supersedes the 2026-09-24 framing** in `peloton-integration.md` §1 ("our stack drives erg
+from the class targets, with qz not in the loop"). The earlier conclusion was reached before anyone
+had watched qz do the job; on the bike it already does all of it — OAuth, finding the live class,
+the target timeline, the offset trim, driving the trainer. The old paragraph is **kept and annotated,
+not deleted**: its *technical* conclusion (a downloaded timeline, not a streamed feed) is unaffected.
+Phase 1/2 of "replace qz" is **parked**; §2's protocol prose and §4's Phase-0 recipe still stand,
+because a paired "asked vs produced" capture is wanted either way. Recorded in the doc as §0.
+
+**The first concrete feature falls out of work already done**: the Peloton **offset** is trimmed by
+hand, mid-effort, on a touchscreen (13 s on this ride). qz already dispatches
+`Plus("peloton_offset")` / `Minus("peloton_offset")` from configurable shortcuts, so
+`SB20 buttons → our OBC transmitter (#248) → the OBC listener in qz (#4791) → that shortcut` needs
+**no new Peloton code on either side**, and both halves are already ours. `peloton_remaining` and
+`remainingtimetrainprogramrow` are reachable the same way.
+
+### qz's OSC feed — the live surface that is reachable on iOS
+
+`Template Settings` is **not** an option on iOS: it is populated from `template_user_ids`, i.e.
+sideloaded `.qzt` files only, so the page is empty there. The owner looked and reported it missing;
+the source explained why. **`OSC Settings` is the one that works** — set `OSC IP` (qz enables OSC
+purely on that being non-empty), restart qz, and it sends one UDP bundle per update. Sink promoted
+to `code/scripts/qz_osc_capture.py`, decoder unit-tested.
+
+**Measured:** `captures/QZ-osc-peloton-20260927.jsonl.gz` — 2609 packets over 43.5 min at **exactly
+1.00 Hz, no gaps**, 41 fields. Avg 256 W, max 621 W, 944 kcal, 23.1 km. Zones (s): Z1 1141 · Z2 613 ·
+Z3 437 · Z4 238 · Z5 94 · Z6 73 · Z7 13.
+
+**Two limits, both found on first use:**
+1. **No Peloton class fields.** `Peloton R(%)`, `T.Power`, `Peloton Offset`, time-remaining are
+   computed inside qz and never emitted. The feed is the **rider**, not the **prescription**.
+2. **1 Hz misses transients** — 621 W logged against 746 W on qz's own tile. Confirmed mid-ride by
+   comparing the capture to a photo of the phone: cadence, resistance and elapsed agreed; only the
+   peak differed. Fine for zone/target work, not a sprint-peak instrument.
+
+Incidental: `/QZ/Resistance` maxed at **602** while the live value read 60, and qz's own tile showed
+`MAX: 603`. **A ~10× spike out of qz or the bike** — not ours, but anything consuming that field must
+expect it.
+
+### The head unit survived a session — for the path that was actually exercised
+
+CYD on the bars for 44 min (`../perf/ride-soak-cyd-20260927.jsonl.gz`): 2644 samples, **0 reboots**,
+heap 110 KB at boot → settled to **84.6 KB by the first third and flat thereafter** (allocation
+warming, not a leak). WiFi at the bike was **−78 dBm** (below the −72 OTA drop zone), median −74,
+floor −88, costing 5 % of polls — recorded as rows, not dropped. **This clears the WiFi/LVGL path
+only: BLE was off all session by design.** Do not read it as a BLE soak.
+
+### Two near-misses worth more than the data
+
+**A bench board carries bench state to the bike.** The CYD nearly went downstairs with a **bound
+FTMS `trainer` and a loaded workout**; downstairs it could have found the real SB20 and **driven the
+rider's resistance mid-class**. Caught by reading `/status` before it left, not by any checklist —
+so it is now a `PLAYBOOK.md` pre-flight item, along with "do not compete with the rider's app for
+BLE" (a second central on the crank, or a board advertising as a power meter that the rider's app
+auto-picks and reads zeros from).
+
+**A documented capability was nearly rebuilt, again.** A Peloton findings doc was written from
+scratch before discovering `peloton-integration.md` had existed since 2026-09-24 with the API
+research, the data shapes *and* a Phase-0 capture recipe. The duplicate was deleted and the new
+material folded in. This is precisely the failure `PROJECT-MAP.md` and the `nrf-sniffer.md` lesson
+describe — repeated inside the repo that documents it. **Read the index first; it is not optional.**
