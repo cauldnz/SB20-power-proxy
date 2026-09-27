@@ -61,6 +61,17 @@ This pairs with CLAUDE.md → *Session plans & the session ledger* (the doc/stat
 These are not aspirational — each is here because skipping it cost a real session. Walk it before the
 rider starts:
 
+- [ ] **Read `/status` on any board leaving the bench, and clear what it must not do.** A board
+  configured for the bench carries bench state: on 2026-09-27 the CYD nearly went to the bike with a
+  **bound FTMS `trainer` and a loaded workout**, which downstairs could have found the real SB20 and
+  **driven the rider's resistance mid-class**. Clear `trainer`, point `source_filter` at something
+  that matches nothing, and if the board has no job on the bike, put its radio down with
+  `POST /ble/off`. All three are HTTP calls — no hands on the board.
+- [ ] **Do not compete with the rider's app for BLE.** If qz (or Zwift, or the Peloton app) is
+  driving the trainer, it owns the bike's connections; a second central on the crank or the FTMS is a
+  risk to the session, and a board advertising as a power meter can be auto-picked by the rider's app
+  and feed it zeros. Prefer a surface that reads what the app *already knows* — see the qz OSC feed in
+  [`ride-20260927-peloton-qz.md`](ride-20260927-peloton-qz.md) §2.3.
 - [ ] **Fresh CR2032 in the real LEFT crank.** It has read **12–14%** before *three* separate sessions
   (`62144`) — low enough to drop out mid-capture, and a weak battery can also skew power. The spoof test
   needs the *real* crank quiet, but a restore at the end needs it alive. Bring the coin/screwdriver too.
