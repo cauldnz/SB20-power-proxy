@@ -261,6 +261,10 @@ sequenceDiagram
   Note over C3,QZ: buttons never reach OBC. Attach the C3 first, or pin by address, or let the board proxy everything (#291).
 ```
 
+**Decided 2026-10-02 (#291): the board proxies everything.** It becomes the bike's only central and
+re-presents the bike to qz, so this deadlock cannot occur. Design (PROPOSED, not built):
+[`code/findings/sb20-full-proxy.md`](../code/findings/sb20-full-proxy.md).
+
 ### 8d. The nRF bridge standalone (track bike, corrector mode)
 
 ```mermaid
@@ -313,9 +317,9 @@ changed nothing), `perf_soak.py` (single-board), `qa_board.py`, the bench camera
 ## 11. Not yet established (mark these honestly; each is a cheap experiment)
 
 - Does the SB20 keep advertising while one central is connected? (Decides #291: if adverts stop,
-  connect-by-address cannot rescue the shifter sink either.)
+  connect-by-address cannot rescue the shifter sink either.) *(No longer decisive: #291 chose the full proxy, which makes our board the only central.)*
 - Can one head unit hold both the erg link and the shifter link to the same SB20 (one peer, two
-  NimBLE clients)?
+  NimBLE clients)? *(The full-proxy design uses one link with many consumers instead.)*
 - Which of the bike's adverts carries the name? If the FTMS advert is sometimes unnamed,
   `trainerNameFilter` may miss it.
 - Does the Stages app resolve a typed crank id by the advertised name suffix only, or does the DIS

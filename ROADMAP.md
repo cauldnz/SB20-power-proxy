@@ -71,7 +71,7 @@ primary erg driver and qz/Peloton is kept; rides happen together and apart; peda
    becomes the only BLE central on the SB20 and re-presents its telemetry, its FTMS control point (relayed
    both ways, so qz keeps erg control) and its button service to qz. That removes the advert deadlock
    for good, and it is the on-bike blocker inside #367 (Now #2). Includes #247 G2 and the OBC
-   seed-on-connect audit (decisions 07-26). Design note in `docs/system-reference.md` before code.
+   seed-on-connect audit (decisions 07-26). Design: [`code/findings/sb20-full-proxy.md`](code/findings/sb20-full-proxy.md) (PROPOSED; owner questions in its §9).
 10. **V1–V5 SB20 facts and the hold-to-repeat ride** (qz path; the table lives in session 14's annex).
 11. **forward-plan §12** single-crank pairing test (session 14 stretch).
 12. **R1e.2 CYD screen sweep** via the bench camera.
