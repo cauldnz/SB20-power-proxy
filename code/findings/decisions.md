@@ -5224,3 +5224,22 @@ scratch before discovering `peloton-integration.md` had existed since 2026-09-24
 research, the data shapes *and* a Phase-0 capture recipe. The duplicate was deleted and the new
 material folded in. This is precisely the failure `PROJECT-MAP.md` and the `nrf-sniffer.md` lesson
 describe — repeated inside the repo that documents it. **Read the index first; it is not optional.**
+
+## 2026-10-02 — #291 decided: our hardware proxies everything between the SB20 and qz; #324 deferred
+
+**Decision (owner).** Of the three options in #291, option 3: **our box is the only BLE central on the
+SB20**, and it re-presents the bike to qz: the telemetry, the FTMS control point relayed both ways (so
+qz keeps erg control), and the button service. The advert deadlock measured in session 13 (the SB20
+stops advertising once qz connects, so the shifter central can never find it, and whoever attaches
+first locks the other out) goes away because qz never connects to the SB20 directly. Documented startup
+ordering (option 1) is rejected as a product answer; connect-by-address (option 2) is not pursued.
+
+**Why.** A ride must not depend on a startup sequence that any restart or dropout can invert, and it
+matches the project's "between the bike and the apps" framing. It is the largest firmware lift of the
+three: the control point must relay in both directions.
+
+**Consequences.** ROADMAP Next 9 becomes "SB20 full proxy" (#291), the on-bike blocker inside OBC complete
+(#367, Now #2); a design note in `docs/system-reference.md` comes before code.
+
+**Also decided: #324 is parked.** Publishing the qz-fork OBC listener upstream waits until the SB20 proxy
+is more stable and "done". Until then, OBC tests against qz use our fork's local build.
