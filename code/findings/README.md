@@ -33,6 +33,7 @@ later that worked before, the answer is usually in here.
 ## FTMS / erg control
 - **[ftms-protocol.md](ftms-protocol.md)** — ⭐ **canonical for FTMS** (service `0x1826`, control point `0x2AD9`, Set Target Power). → `code/src/sb20proxy/ble/ftms.py` + `ftms_erg.py`, `scripts/capture_ftms.py`, `scripts/ftms_workout.py`, `scripts/ftms_hw_loop.py`.
 - **[ftms-implementation-plan.md](ftms-implementation-plan.md)** — the spec-built implementation plan behind it.
+- **[sb20-full-proxy.md](sb20-full-proxy.md)** — *(PROPOSED 2026-10-02, design only; #291)* the board as the SB20's **only** BLE central, re-presenting the bike to qz (FTMS relayed both ways through a control-point arbiter, the buttons, CSC) as a second advertising set; the SB20's real GATT, the connection budget, failure handling, experiments E1–E5 and the owner's open questions.
 - **[ride-director.md](ride-director.md)** — the steerable session / erg engine. → `code/src/sb20proxy/ride/`, `scripts/ride_control.py`, `scripts/ride_web.py`.
 - **[ride-director-uplift-plan.md](ride-director-uplift-plan.md)** — the uplift build plan for it.
 - **[shifter-erg-control.md](shifter-erg-control.md)** — shifter buttons adjust the erg target (the SB20's missing feature).
