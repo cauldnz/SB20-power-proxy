@@ -66,12 +66,14 @@ primary erg driver and qz/Peloton is kept; rides happen together and apart; peda
    before ordering; budget a display-seam bring-up plus a CI env, like the JC3248W535 port.
 8. **Two-rider motivation features** (owner wish): a shared dashboard or pace-match between the two
    head units; needs the fleet-status instrument below first.
-9. **OBC complete** (#367; owner 2026-10-02): the whole OpenBikeControl v1 spec on every board. That
-   means the missing App Information and Haptic characteristics and DeviceStatus, the mDNS/TCP transport
-   actually started (`ObcNet` is never instantiated) with the TXT record the spec requires, the button
-   IDs the spec added since July, several actions per button, per-board OBC names, `/app` configuration
-   on the ESP32 and the nRF, and on-air proof with qz and MyWhoosh. Now #1's first slice (SB20 buttons
-   → qz's `peloton_offset`) rides on part of it; promoting that part is the owner's call.
+9. **OBC complete** (#367; owner 2026-10-02): the whole OpenBikeControl v1 spec on every board, with
+   **BLE and mDNS/TCP both first-class**. qz's listener is BLE-only and matches on the OBC service UUID,
+   which no board advertises yet; MyWhoosh on Apple TV is mDNS/TCP-only, and `ObcNet` is never started.
+   Every ESP32 board serves both at once; the nRF has no WiFi, so it is BLE-only. Also: the missing App
+   Information and Haptic characteristics and DeviceStatus, the TXT record, the button IDs the spec added
+   since July, several actions per button, per-board OBC names, `/app` configuration, and on-air proof
+   with qz and MyWhoosh. Now #1's first slice (SB20 buttons → qz's `peloton_offset`) rides on the BLE
+   half; promoting that part is the owner's call.
 10. **#291 decision → #247 G2** and the OBC seed-on-connect audit (decisions 07-26): buttons only.
    Since the 2026-09-27 reset the PELOTON first slice needs it: #291 is the on-bike blocker inside #367.
 11. **#324** push the qz-fork branch and open the upstream PR (owner's public action).
