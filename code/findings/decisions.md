@@ -5243,3 +5243,12 @@ three: the control point must relay in both directions.
 
 **Also decided: #324 is parked.** Publishing the qz-fork OBC listener upstream waits until the SB20 proxy
 is more stable and "done". Until then, OBC tests against qz use our fork's local build.
+
+## 2026-10-02 (later) — the full proxy serves any FTMS app, not only qz
+
+**Decision (owner).** The SB20 full proxy (#291) is a standard FTMS bike for **any trainer app**: qz is
+one consumer, and riders who don't want qz in the middle pair Zwift, MyWhoosh, Rouvy and the like to
+the proxy directly. The design (`code/findings/sb20-full-proxy.md` §3g) therefore relays every
+control-point op, including simulation (`0x11`) for free rides, not only erg. Known gap: Zwift speaks
+neither OBC nor the SB20's vendor characteristic, so the bike's buttons do not reach Zwift unless the
+parked Zwift-controller work is revived (an owner question, the design's §9 Q7).
