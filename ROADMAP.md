@@ -69,7 +69,7 @@ primary erg driver and qz/Peloton is kept; rides happen together and apart; peda
    head units; needs the fleet-status instrument below first.
 9. **SB20 full proxy** (#291; owner decision 2026-10-02: our hardware proxies everything): the head unit
    becomes the only BLE central on the SB20 and re-presents its telemetry, its FTMS control point (relayed
-   both ways, so qz keeps erg control) and its button service to qz. That removes the advert deadlock
+   both ways, so qz keeps erg control) and its button service to qz, or directly to Zwift and other FTMS apps for riders who skip qz. That removes the advert deadlock
    for good, and it is the on-bike blocker inside #367 (Now #2). Includes #247 G2 and the OBC
    seed-on-connect audit (decisions 07-26). Design: [`code/findings/sb20-full-proxy.md`](code/findings/sb20-full-proxy.md) (PROPOSED; owner questions in its §9).
 10. **V1–V5 SB20 facts and the hold-to-repeat ride** (qz path; the table lives in session 14's annex).

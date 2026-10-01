@@ -1,7 +1,9 @@
 # SB20 full proxy — design (issue #291)
 
 **Status: PROPOSED (2026-10-02) — design only, no code.** The owner decided #291 on 2026-10-02:
-**option 3, our hardware proxies everything** between the SB20 and qz (`decisions.md`, same date).
+**option 3, our hardware proxies everything** between the SB20 and qz (`decisions.md`, same date),
+and the same day widened the consumer: **any FTMS trainer app**, so riders can use Zwift, MyWhoosh,
+Rouvy and the like directly, without qz in the middle.
 This note turns that decision into a buildable shape. §9 lists the questions the owner must answer
 before code; §7 lists the cheap experiments that must pass first. Tracked as ROADMAP Next 9
 ("SB20 full proxy"); it is the on-bike blocker inside OBC complete (#367, Now #2). The runtime
@@ -13,9 +15,11 @@ and points here for what is planned.
 Today qz connects to the SB20 directly, the bike stops advertising, and our shifter-sink central can
 never find it: whoever attaches first locks the other out (session 13; system-reference §6.1, §8c).
 Under the full proxy **our board is the only BLE central on the SB20**. It holds one link to the bike
-and re-presents the bike to qz as a second BLE personality: the telemetry, the FTMS control point
-(relayed both ways, so qz keeps erg control) and the button service. qz never connects to the SB20,
-so the deadlock cannot occur, and a restart or dropout cannot silently invert an ordering.
+and re-presents the bike as a second BLE personality, a standard FTMS bike that **any trainer app**
+can pair: qz, or Zwift, MyWhoosh, Rouvy and the like directly. It carries the telemetry, the FTMS
+control point (relayed both ways, so the app keeps erg and simulation control) and the button service.
+No app connects to the SB20, so the deadlock cannot occur, and a restart or dropout cannot silently
+invert an ordering.
 
 ## 1. What we know (measured, with sources)
 
@@ -74,7 +78,7 @@ flowchart LR
   end
   S[SB20] -- connects to its crank --> C
   L -- FTMS + CSC + vendor --> S
-  Q[qz] -- connects to the proxy --> P
+  Q[qz, Zwift or any FTMS app] -- connects to the proxy --> P
   P --> R
   W --> R
   R --> L
@@ -83,7 +87,7 @@ flowchart LR
 ```
 
 Every edge is opened by the side shown first. The SB20 sees exactly one central (ours) and one crank
-(ours). qz sees one bike (ours).
+(ours). The app sees one bike (ours).
 
 ## 3. Components
 
@@ -97,7 +101,7 @@ consumers: the proxy server, the workout engine's view of the bike, and the shif
 OBC. `FtmsErgClient` and `BleShifterClient` stop opening their own connections and become consumers.
 This also retires the question in system-reference §11 of holding two links to one bike.
 
-### 3b. `Sb20ProxyServer` — the bike as qz sees it
+### 3b. `Sb20ProxyServer` — the bike as an app sees it
 
 `FtmsTrainerServer` grows a relay mode: the FTMS service with the cached read values, `2AD2`/`2ADA`
 forwarded as they arrive, and `2AD9` handed to the arbiter. Alongside it: the `0c46be5f` vendor
@@ -163,7 +167,28 @@ Four to five links against a limit of 3 today: raise `CONFIG_BT_NIMBLE_MAX_CONNE
 controller's own limit and the per-link heap cost measured on the C3; §7 E2). The nRF already
 starts Bluefruit with 2 peripheral and 3 central links, which fits; it follows the ESP32 (§9 Q5).
 
-### 3g. Releasing the bike
+### 3g. Consumers beyond qz (owner, 2026-10-02)
+
+The proxy is a standards-conforming FTMS bike, so any app that pairs an FTMS trainer can use it with
+no qz in the middle. What that adds to the design:
+
+- **Every control-point op is relayed, not just erg.** Zwift's free rides use Set Indoor Bike
+  Simulation (`0x11`), other apps use Set Target Resistance (`0x04`); the bike's `2ACC` advertises
+  simulation support (Target Setting bit 13). The arbiter forwards every op unchanged and owns only
+  the question of *who* may write.
+- **Power source:** an app may take power from the proxy's FTMS `2AD2`, or offer our CPS service
+  (the crank spoof's, present in the same GATT, §3d) or the Assiomas themselves. All carry the same
+  corrected numbers; the rider picks one.
+- **Buttons:** OBC reaches the apps that speak it (MyWhoosh, Rouvy and the others the OBC spec
+  lists) and qz's fork decodes the relayed `0c46be60` natively. **Zwift speaks neither**: its own
+  controller protocol is the parked `zwift-controls-research.md`. With Zwift directly, erg,
+  simulation and telemetry work through the proxy, and the SB20's buttons do not reach Zwift (§9 Q7).
+- **Naming:** apps other than qz pick the device from a list, so the proxy's name only has to be
+  recognisable; qz needs the `Stages Bike` prefix (§3e).
+- **One app at a time in v1:** a second FTMS consumer costs a link and would be refused control by the
+  arbiter anyway.
+
+### 3h. Releasing the bike
 
 With the proxy holding the bike's only link, **the Stages app cannot connect** to pair cranks or to
 apply its suspected cold-start "wake" (#288). The proxy needs a **release** control on the device
@@ -213,12 +238,16 @@ board (§8).
 - **E4** the relay end to end on the bench: the FTMS trainer sim stands in for the SB20 (add the
   `0c46be5f` vendor service to the sim so buttons can be faked), qz on the desktop drives erg through
   the proxy, and the sim's log shows every target.
-- **E5** latency: bike-side and qz-side timestamps for `2AD2` and the control point.
+- **E5** latency: bike-side and app-side timestamps for `2AD2` and the control point.
+- **E6** apps other than qz: Zwift, and MyWhoosh or Rouvy, pair the proxy on the bench (the trainer sim
+  as the bike) and run an erg workout and a free ride; the sim's log shows Set Target Power and Set
+  Indoor Bike Simulation (`0x11`) arriving through the arbiter.
 
 ## 8. Validation path
 
 Bench first (E1–E5 with the trainer sim as the bike), then one bike gate in session 14: the crank
-spoof still pairs (E3), qz pinned to the proxy name drives erg through it, the six buttons reach qz
+spoof still pairs (E3), qz pinned to the proxy name drives erg through it, Zwift paired directly
+runs erg and a free ride with no qz in the room, the six buttons reach qz
 natively and over OBC, a bike-link drop and a qz drop each recover per §5, and the release switch
 lets the Stages app in.
 
@@ -233,3 +262,6 @@ lets the Stages app in.
 5. **Scope:** the ESP32 boards first (C3 basic mode and the LCD head units), the nRF after?
 6. **The iOS observation:** on the next qz ride from the iPhone, read the connected device's name off
    qz's screen, so we know which personality an iOS qz uses (§1).
+7. **Buttons in Zwift:** with Zwift paired directly, the SB20's buttons do not reach it (Zwift speaks
+   neither OBC nor our relayed vendor characteristic). Leave that out of v1, or un-park the Zwift
+   controller emulation (`zwift-controls-research.md`) as its own item?
