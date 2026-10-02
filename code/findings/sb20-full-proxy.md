@@ -1,6 +1,6 @@
 # SB20 full proxy — design (issue #291)
 
-**Status: PROPOSED (2026-10-02) — design only, no code; the owner answered §9 Q1–Q5 and Q7 the same day.** The owner decided #291 on 2026-10-02:
+**Status: PROPOSED (2026-10-02). The pure core is built and host-tested (§6, "Built so far"); the BLE seam is not. The owner answered §9 Q1–Q5 and Q7 the same day.** The owner decided #291 on 2026-10-02:
 **option 3, our hardware proxies everything** between the SB20 and qz (`decisions.md`, same date),
 and the same day widened the consumer: **any FTMS trainer app**, so riders can use Zwift, MyWhoosh,
 Rouvy and the like directly, without qz in the middle.
@@ -229,6 +229,34 @@ board (§8).
 - **Config:** `RuntimeConfig` gains `proxyEnabled`, `sb20Address` and `proxyName` (derived default).
 - **Instruments and UI:** `/status` gains the bike link, the proxy client and the control-point owner;
   `/app` gains the proxy card and the release switch; `docs/ui-feature-map.md` gains the rows.
+
+**Built so far (2026-10-02): the pure core only, not wired into the firmware.**
+
+- `firmware/lib/proxy/FtmsArbiter.h`: the §3c arbiter as an event-in, action-out state machine.
+  Events: a client write, a client disconnect, a bike indication, a tick, the bike link up or down, a
+  workout start or stop, and a head-unit write. Actions: write to the bike, indicate to a client, notify
+  the head unit. Implementation choices the decisions above leave open:
+  - A client's Request Control claims ownership on arrival; the bike's success confirms the claim, and
+    anything else reverts it.
+  - A write from a party that does not hold control is answered `0x80 <op> 05` locally.
+  - The timeout is 2 s. The slowest captured SB20 reply took 321 ms.
+  - The re-assertion after a link drop replays Request Control, then Start if the owner had started,
+    then the owner's last *successful* target write (`0x04`, `0x05` or `0x11`).
+  - A successful Reset (`0x01`) from the owning client releases its control.
+- `firmware/lib/proxy/BikeMirror.h`: the §3a/§3b cache of the bike's static reads, validated per
+  characteristic.
+  - It is ready once it holds the name, DIS manufacturer and model, `2ACC`, and each range that
+    `2ACC`'s Target Setting bits promise.
+  - It also derives the proxy's name (§3e) and checks the 31-byte advertising budget. A bike name too
+    long for that budget is trimmed so that ` PXY` still fits.
+- `firmware/lib/proxy/Ftms.h` gains the constants these need (ops `0x04`/`0x11`, result `0x04`, the
+  `2AD5`/`2AD6` UUIDs, Target Setting bits 1–2).
+- Tests: `firmware/test/test_fullproxy/` (`pio test -e native`). The golden vectors come from
+  `QDZ-sb20-ftms-gatt-20260706-0739.jsonl` and the `G-sb20-ftms-erg*` captures. One new fact from those
+  captures: the SB20's Set Target Power reply echoes the target (`80 05 01 96 00`), so the relay must
+  not rebuild the 3-byte form. The `0x11` vector is spec-built because no simulation capture exists yet.
+- Not built: `Sb20Link`, the relay mode of `FtmsTrainerServer`, advertising set B, the config keys, and
+  the instruments. The status stays PROPOSED until the BLE seam exists.
 
 ## 7. Experiments before code (cheap, mostly bench)
 

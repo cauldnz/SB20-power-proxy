@@ -18,6 +18,8 @@ constexpr const char* UUID_FTMS_FEATURE       = "2ACC";  // read
 constexpr const char* UUID_SUPPORTED_POWER_RANGE = "2AD8";  // read
 constexpr const char* UUID_FTMS_CONTROL_POINT = "2AD9";  // write + indicate
 constexpr const char* UUID_FTMS_STATUS        = "2ADA";  // notify
+constexpr const char* UUID_SUPPORTED_RESISTANCE_RANGE  = "2AD6";  // read
+constexpr const char* UUID_SUPPORTED_INCLINATION_RANGE = "2AD5";  // read
 
 // --- Indoor Bike Data flags (uint16). NOTE bit0 inversion: speed present when bit0 == 0. ---
 constexpr uint16_t IBD_MORE_DATA      = 1 << 0;  // speed present when CLEAR
@@ -32,18 +34,23 @@ constexpr uint16_t IBD_AVG_POWER      = 1 << 7;
 // --- Control Point (0x2AD9) op codes ---
 constexpr uint8_t FTMS_CP_REQUEST_CONTROL  = 0x00;
 constexpr uint8_t FTMS_CP_RESET            = 0x01;
+constexpr uint8_t FTMS_CP_SET_TARGET_RESISTANCE = 0x04;  // + uint8 resistance level
 constexpr uint8_t FTMS_CP_SET_TARGET_POWER = 0x05;  // + sint16 LE watts  (erg)
 constexpr uint8_t FTMS_CP_START_RESUME     = 0x07;
 constexpr uint8_t FTMS_CP_STOP_PAUSE       = 0x08;  // + uint8 (0x01 stop / 0x02 pause)
+constexpr uint8_t FTMS_CP_SET_INDOOR_BIKE_SIM = 0x11;  // + wind, grade, crr, cw (free ride)
 constexpr uint8_t FTMS_CP_RESPONSE         = 0x80;
 constexpr uint8_t FTMS_CP_SUCCESS              = 0x01;
 constexpr uint8_t FTMS_CP_OP_NOT_SUPPORTED     = 0x02;
 constexpr uint8_t FTMS_CP_INVALID_PARAMETER    = 0x03;
+constexpr uint8_t FTMS_CP_OPERATION_FAILED     = 0x04;
 constexpr uint8_t FTMS_CP_CONTROL_NOT_PERMITTED = 0x05;
 
 // --- Feature bits we use ---
 constexpr uint32_t FTMS_FEAT_CADENCE       = 1u << 1;
 constexpr uint32_t FTMS_FEAT_POWER_MEAS    = 1u << 14;
+constexpr uint32_t FTMS_TGT_INCLINATION    = 1u << 1;   // needs Supported Inclination Range 0x2AD5
+constexpr uint32_t FTMS_TGT_RESISTANCE     = 1u << 2;   // needs Supported Resistance Range 0x2AD6
 constexpr uint32_t FTMS_TGT_POWER          = 1u << 3;   // Power Target Setting Supported (erg)
 constexpr uint32_t FTMS_TGT_INDOOR_BIKE_SIM = 1u << 13;
 
