@@ -65,6 +65,37 @@
         {"name": "grid", "type": "object", "doc": "power×cadence bias heatmap; inner keys pW/cLo/cW (axes), P/C (bin counts), bias[][] (null = empty cell)"},
         {"name": "pairs", "type": "array", "doc": "downsampled [a,b] pairs for the Bland-Altman scatter"}
       ]
+    },
+    {
+      "path": "/calibrate/state",
+      "method": "GET",
+      "serializer": "renderCalStateJson",
+      "doc": "The calibration wizard's view as JSON for the SPA's calibrate card (#347): the same CalWizardView GET /calibrate renders as HTML. `state` is CalState (0 idle, 1 collecting, 2 fitted), the nRF Cal characteristic's numbering. `devices` (Idle only) carries ADDRESSES because POST /calibrate/start pins the DUT and the reference by address; its inner keys name/addr/rssi are `nested`.",
+      "wrapper": null,
+      "nested": ["name", "addr", "rssi"],
+      "fields": [
+        {"name": "state", "type": "int", "doc": "0 idle, 1 collecting, 2 fitted"},
+        {"name": "pairs", "type": "int", "doc": "paired DUT/reference samples so far"},
+        {"name": "min_pairs", "type": "int", "doc": "pairs needed before a fit"},
+        {"name": "residual_w", "type": "number", "doc": "mean residual after the fit (W); 0 until fitted"},
+        {"name": "enough", "type": "bool", "doc": "enough pairs and coverage to fit"},
+        {"name": "dut_connected", "type": "bool", "doc": "the meter being corrected is linked (collecting)"},
+        {"name": "ref_connected", "type": "bool", "doc": "the reference meter is linked (collecting)"},
+        {"name": "coverage", "type": "array", "doc": "pairs per power band (<100, 100-150, ... 300+)"},
+        {"name": "devices", "type": "array", "doc": "Idle only: [{name, addr, rssi}], the DUT/reference picker, by address"}
+      ]
+    },
+    {
+      "path": "/workout/state",
+      "method": "GET",
+      "serializer": "renderWorkoutStateJson",
+      "doc": "The workout cursor (WorkoutEngine.h renderWorkoutJson: loaded, running, paused, seg_index, seg_count, seg_label, seg_target_w, seg_remaining_s, total_elapsed_s, ... outside this contract) with the erg leg appended (#347, F17/F27). Only the appended keys are checked here.",
+      "wrapper": null,
+      "fields": [
+        {"name": "erg_connected", "type": "bool", "doc": "the FTMS trainer link is up"},
+        {"name": "erg_controlled", "type": "bool", "doc": "the trainer granted control; workout targets drive it"},
+        {"name": "bias_w", "type": "int", "doc": "the rider's live nudge on the erg target (W, clamped to +/-200)"}
+      ]
     }
   ]
 }

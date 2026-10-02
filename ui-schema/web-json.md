@@ -59,3 +59,29 @@ The #10 A/B meter-compare deep-dive the web Compare card renders: summary + per-
 | `tqBias` | array | per-torque-band bias %, null = empty band |
 | `grid` | object | power×cadence bias heatmap; inner keys pW/cLo/cW (axes), P/C (bin counts), bias[][] (null = empty cell) |
 | `pairs` | array | downsampled [a,b] pairs for the Bland-Altman scatter |
+
+## `GET /calibrate/state` (renderCalStateJson)
+
+The calibration wizard's view as JSON for the SPA's calibrate card (#347): the same CalWizardView GET /calibrate renders as HTML. `state` is CalState (0 idle, 1 collecting, 2 fitted), the nRF Cal characteristic's numbering. `devices` (Idle only) carries ADDRESSES because POST /calibrate/start pins the DUT and the reference by address; its inner keys name/addr/rssi are `nested`.
+
+| field | type | meaning |
+|---|---|---|
+| `state` | int | 0 idle, 1 collecting, 2 fitted |
+| `pairs` | int | paired DUT/reference samples so far |
+| `min_pairs` | int | pairs needed before a fit |
+| `residual_w` | number | mean residual after the fit (W); 0 until fitted |
+| `enough` | bool | enough pairs and coverage to fit |
+| `dut_connected` | bool | the meter being corrected is linked (collecting) |
+| `ref_connected` | bool | the reference meter is linked (collecting) |
+| `coverage` | array | pairs per power band (<100, 100-150, ... 300+) |
+| `devices` | array | Idle only: [{name, addr, rssi}], the DUT/reference picker, by address |
+
+## `GET /workout/state` (renderWorkoutStateJson)
+
+The workout cursor (WorkoutEngine.h renderWorkoutJson: loaded, running, paused, seg_index, seg_count, seg_label, seg_target_w, seg_remaining_s, total_elapsed_s, ... outside this contract) with the erg leg appended (#347, F17/F27). Only the appended keys are checked here.
+
+| field | type | meaning |
+|---|---|---|
+| `erg_connected` | bool | the FTMS trainer link is up |
+| `erg_controlled` | bool | the trainer granted control; workout targets drive it |
+| `bias_w` | int | the rider's live nudge on the erg target (W, clamped to +/-200) |

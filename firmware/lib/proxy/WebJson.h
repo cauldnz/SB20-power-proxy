@@ -3,12 +3,15 @@
 // the SAME index.html the nRF build does; its `HttpTransport` reads these endpoints instead of GATT.
 // /status + /workout/state already have serializers (Status.h / WorkoutEngine.h); these add the ones
 // the SPA also needs — /scan (source picker), /config (identity display), /curve (calibration profile
-// export). Host-tested.
+// export), /calibrate/state (the calibrate card) and the erg fields /workout/state gains (#347).
+// Host-tested.
 #include <cstdio>
 #include <string>
 #include <vector>
 
+#include "CalibrationPage.h"  // CalWizardView (GET /calibrate/state)
 #include "Correction.h"
+#include "ErgLink.h"         // the erg leg's live state (GET /workout/state's erg_* fields)
 #include "MeterCompare.h"  // #10 A/B compare: stats + torque bands + power×cadence grid + pairs
 #include "RuntimeConfig.h"
 #include "SourceCandidate.h"
@@ -117,6 +120,49 @@ inline std::string renderCompareJson(const MeterCompare& mc, const std::string& 
         j += buf;
     }
     j += "]}";
+    return j;
+}
+
+// GET /calibrate/state -> the SPA's normalized Cal (#347): the same wizard view GET /calibrate renders
+// as HTML, as JSON. `state` is CalState (0 idle, 1 collecting, 2 fitted) — the nRF Cal characteristic's
+// numbering. `devices` is the wizard's own picker list (Idle only), WITH addresses: POST /calibrate/start
+// pins the DUT and the reference by address (`dut=`, `ref=`), so the SPA must offer addresses, not names.
+inline std::string renderCalStateJson(const CalWizardView& v) {
+    char buf[48];
+    std::string j = "{\"state\":" + std::to_string((int)v.state);
+    j += ",\"pairs\":" + std::to_string(v.pairCount);
+    j += ",\"min_pairs\":" + std::to_string(v.minPairs);
+    std::snprintf(buf, sizeof(buf), "%.1f", (double)v.residualW);
+    j += std::string(",\"residual_w\":") + buf;
+    j += ",\"enough\":" + std::string(v.enoughToFit ? "true" : "false");
+    j += ",\"dut_connected\":" + std::string(v.dutConnected ? "true" : "false");
+    j += ",\"ref_connected\":" + std::string(v.refConnected ? "true" : "false");
+    j += ",\"coverage\":[";
+    for (size_t i = 0; i < v.coverage.size(); ++i) {
+        if (i) j += ",";
+        j += std::to_string(v.coverage[i]);
+    }
+    j += "],\"devices\":[";
+    const std::vector<SourceCandidate> ds = dedupeAndSortSources(v.devices);
+    for (size_t i = 0; i < ds.size(); ++i) {
+        if (i) j += ",";
+        j += "{\"name\":\"" + jsonEscape(ds[i].name) + "\",\"addr\":\"" + jsonEscape(ds[i].address) +
+             "\",\"rssi\":" + std::to_string(ds[i].rssi) + "}";
+    }
+    j += "]}";
+    return j;
+}
+
+// GET /workout/state -> the workout cursor (WorkoutEngine.h renderWorkoutJson, unchanged and outside
+// this contract) plus the erg leg the SPA's trainer-link row and ride view read (#347, F17/F27):
+// erg_connected, erg_controlled, bias_w — appended as the object's last three keys. A body that is not
+// a JSON object is returned unchanged rather than corrupted.
+inline std::string renderWorkoutStateJson(const std::string& workoutJson, const ErgLink& e) {
+    if (workoutJson.size() < 2 || workoutJson.back() != '}') return workoutJson;
+    std::string j = workoutJson.substr(0, workoutJson.size() - 1);
+    j += ",\"erg_connected\":" + std::string(e.connected ? "true" : "false");
+    j += ",\"erg_controlled\":" + std::string(e.controlled ? "true" : "false");
+    j += ",\"bias_w\":" + std::to_string(e.biasW) + "}";
     return j;
 }
 

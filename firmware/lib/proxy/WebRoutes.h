@@ -45,6 +45,7 @@
 #include "ConfigPage.h"
 #include "Correction.h"
 #include "DiagReport.h"
+#include "ErgLink.h"
 #include "HttpSecurity.h"
 #include "Provisioning.h"
 #include "RuntimeConfig.h"
@@ -170,6 +171,11 @@ struct DeviceHooks {
     std::function<std::string()> workoutState = [] { return std::string("{\"loaded\":false}"); };
     std::function<bool(const std::string&)> workoutLoad = [](const std::string&) { return false; };
     std::function<void(const std::string&)> workoutControl = [](const std::string&) {};
+    // The erg leg (#347): its live link state for /workout/state, and the ±W nudge POST /workout/bias
+    // applies (returns the new, clamped bias). Unwired: a dead link and a bias that never moves — an
+    // unwired build must not claim it nudged a trainer it has no hook to.
+    std::function<ErgLink()> ergLink = [] { return ErgLink{}; };
+    std::function<int(int)> ergBias = [](int) { return 0; };
 
     std::function<void(uint8_t, uint8_t)> obcPress = [](uint8_t, uint8_t) {};
     std::function<void(bool, const Sb20ButtonMap&)> obcButtons = [](bool, const Sb20ButtonMap&) {};
@@ -277,6 +283,13 @@ inline HttpResponse setupReset(DeviceHooks& h, const HttpRequest&) {
     r.reboot = true;
     return r;
 }
+// POST /setup/scan — the shared SPA's rescan (#347). Same effect as GET /setup/scan (the legacy page's
+// link, kept unchanged), but answers JSON instead of a 303 to a full /setup render the SPA would throw
+// away; the list itself refills through GET /scan.
+inline HttpResponse setupScanJson(DeviceHooks& h, const HttpRequest&) {
+    h.rescanSources();
+    return HttpResponse::json("{\"ok\":true,\"scanning\":true}");
+}
 inline HttpResponse scanJson(DeviceHooks& h, const HttpRequest&) {
     return HttpResponse::json(renderScanJson(h.sources()));
 }
@@ -318,6 +331,10 @@ inline HttpResponse calRender(DeviceHooks& h, const std::string& message) {
 }
 inline HttpResponse calibrate(DeviceHooks& h, const HttpRequest&) {
     return calRender(h, std::string());
+}
+// GET /calibrate/state — the wizard's view as JSON, for the shared SPA's calibrate card (#347).
+inline HttpResponse calibrateState(DeviceHooks& h, const HttpRequest&) {
+    return HttpResponse::json(renderCalStateJson(h.calView()));
 }
 inline HttpResponse calibrateScan(DeviceHooks& h, const HttpRequest&) {
     h.calScan();
@@ -378,7 +395,45 @@ inline HttpResponse workoutPage(DeviceHooks&, const HttpRequest&) {
     return HttpResponse::page(workoutPageHtml());
 }
 inline HttpResponse workoutStateJson(DeviceHooks& h, const HttpRequest&) {
-    return HttpResponse::json(h.workoutState());
+    return HttpResponse::json(renderWorkoutStateJson(h.workoutState(), h.ergLink()));
+}
+// A request field from either the parsed args (the WebServer decodes urlencoded bodies and the query
+// string into args) or, failing that, the raw form body (host tests, and any client the server did not
+// parse for). Same fallback portalSave uses.
+inline std::string formArg(const HttpRequest& req, const std::string& key) {
+    if (req.hasArg(key)) return req.arg(key);
+    std::string v;
+    forEachFormField(req.body, [&](const std::string& k, const std::string& val) {
+        if (k == key) v = val;
+    });
+    return v;
+}
+// POST /workout/trainer (`name=<trainer>`; blank = erg off) — the SPA's "Set trainer" (#347, F10).
+// The erg client is started at boot from trainerNameFilter (main.cpp ergBegin), so a CHANGED trainer
+// persists and reboots, exactly like the /setup and LCD Setup pickers; an unchanged one is a no-op
+// reply, not a needless restart mid-ride.
+inline HttpResponse workoutTrainer(DeviceHooks& h, const HttpRequest& req) {
+    RuntimeConfig cfg = h.config();
+    const std::string name = stripConfigDelims(formArg(req, "name"));
+    if (name == cfg.trainerNameFilter)
+        return HttpResponse::json("{\"ok\":true,\"reboot\":false}");
+    cfg.trainerNameFilter = name;
+    h.saveConfig(cfg);
+    HttpResponse r = HttpResponse::json("{\"ok\":true,\"reboot\":true}");
+    r.reboot = true;
+    return r;
+}
+// POST /workout/bias?d=<±W> — nudge the erg target live (#347, F27), the web twin of the SB20
+// shifter's erg actions. One nudge is bounded to ±50 W so a typo cannot slam the trainer; the running
+// total is clamped by the hook (nudgeErgBias, ±kErgBiasLimitW). Replies the new bias.
+inline HttpResponse workoutBias(DeviceHooks& h, const HttpRequest& req) {
+    const std::string d = formArg(req, "d");
+    char* end = nullptr;
+    const long delta = std::strtol(d.c_str(), &end, 10);
+    if (d.empty() || end == d.c_str() || *end != ' ' || delta < -50 || delta > 50)
+        return HttpResponse::json("{\"error\":\"expected d=<-50..50>\"}", 400);
+    const int bias = h.ergBias((int)delta);
+    return HttpResponse::json("{\"bias_w\":" + std::to_string(bias) + "}");
 }
 inline HttpResponse workoutLoad(DeviceHooks& h, const HttpRequest& req) {
     const bool ok = h.workoutLoad(req.body);
@@ -578,6 +633,7 @@ inline const std::vector<Route>& stationRoutes() {
 
         {"/setup", HttpMethod::Get, routes::setupPage},
         {"/setup/scan", HttpMethod::Get, routes::setupScan},
+        {"/setup/scan", HttpMethod::Post, routes::setupScanJson},
         {"/setup/save", HttpMethod::Post, routes::setupSave},
         {"/setup/reset", HttpMethod::Post, routes::setupReset},
         {"/scan", HttpMethod::Get, routes::scanJson},
@@ -589,6 +645,7 @@ inline const std::vector<Route>& stationRoutes() {
         {"/report", HttpMethod::Get, routes::report},
 
         {"/calibrate", HttpMethod::Get, routes::calibrate},
+        {"/calibrate/state", HttpMethod::Get, routes::calibrateState},
         {"/calibrate/scan", HttpMethod::Get, routes::calibrateScan},
         {"/calibrate/start", HttpMethod::Post, routes::calibrateStart},
         {"/calibrate/finish", HttpMethod::Post, routes::calibrateFinish},
@@ -602,6 +659,8 @@ inline const std::vector<Route>& stationRoutes() {
         {"/workout/state", HttpMethod::Get, routes::workoutStateJson},
         {"/workout/load", HttpMethod::Post, routes::workoutLoad},
         {"/workout/preset", HttpMethod::Post, routes::workoutPreset},
+        {"/workout/trainer", HttpMethod::Post, routes::workoutTrainer},
+        {"/workout/bias", HttpMethod::Post, routes::workoutBias},
 
         {"/log", HttpMethod::Get, routes::log},
         {"/log/on", HttpMethod::Get, routes::logOn},

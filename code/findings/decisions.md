@@ -5272,3 +5272,29 @@ Still open: board scope (ESP32 first, nRF after?) and which bike personality an 
 mode and the LCD head units). The nRF52840 follows as part of a **broader review that brings the nRF
 build up to par with the ESP32 one**, rather than feature by feature (ROADMAP Next 10). Still open on
 the proxy: which bike personality an iOS qz connects to.
+
+## 2026-10-02 — the web ride view (#351) and the SPA's phantom routes (#347), desk-built
+
+**Built at the desk, not yet on hardware** (no board attached this week). `/app` gains the ride view
+the owner placed on the web (F14/F16/F18/F45), and every route the shared SPA calls over HTTP now
+exists (#347). Values chosen, each a desk default the bench pass may move:
+- **HTTP heartbeat:** `/status` polled at 1 Hz with a 2.5 s timeout; **2** consecutive failures =
+  *reconnecting* (one dropped poll on a busy 2.4 GHz band is not an outage); `ms` going backwards by
+  more than 1 s = the board restarted (`web/ride-model.js` `LinkMonitor`, Node-tested).
+- **Power chart:** 90 samples at ≤1 Hz (the legacy `/` page's window), target dashed.
+- **Erg bias over HTTP:** one `POST /workout/bias` nudge is limited to −50..50 W; the running total
+  keeps the shifter path's ±200 W clamp (`ErgLink.h` `nudgeErgBias`).
+- **`POST /workout/trainer`** reboots only when the name changes (the erg client starts at boot).
+- **Calibrate over HTTP pins by address** (`GET /calibrate/state` lists the wizard's meters with
+  addresses); the SPA's Save = `finish`, re-read state, then `save` only if fitted.
+
+**Finding: the Screen Wake Lock API does not exist on the board's own page.** It is exposed only in
+secure contexts; `http://<board>/app` is not one (the GitHub Pages copy is). The SPA uses the Wake Lock
+where it exists and otherwise plays a 2 px muted inline canvas-stream video, the usual keep-awake
+fallback. That fallback is unverified on a phone: bench step 8 (F18) must record which mechanism the
+ride view reports and whether the screen actually stays on.
+
+**From the firmware source (main.cpp restores only the saved workout JSON at boot), worth checking
+on hardware:** a board reboot mid-ride (every Apply, Set
+trainer, calibration step) loses the *running* workout — only the loaded workout persists in NVS — so
+the page recovers but the rider must press Start again.

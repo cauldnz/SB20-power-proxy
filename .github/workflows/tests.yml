@@ -281,3 +281,8 @@ jobs:
 
       - name: JS codec parity vs golden vectors
         run: node web/test/bridge-codec.test.mjs
+
+      # The SPA's ride view (#351): the HTTP link monitor behind "reconnecting", the hero/ride-mode
+      # workout line and the power-chart history are a pure module, tested here under Node.
+      - name: Ride view model (Node)
+        run: node web/test/ride-model.test.mjs

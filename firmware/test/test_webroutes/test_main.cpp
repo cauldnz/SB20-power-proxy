@@ -15,6 +15,8 @@
 #include <unity.h>
 
 #include "WebRoutes.h"
+#include "WorkoutPresets.h"
+#include "WorkoutRuntime.h"
 
 using namespace sb20proxy;
 
@@ -138,9 +140,11 @@ void test_unwired_perf_and_compare_defaults() {
 }
 
 void test_unwired_workout_state_default() {
+    // The unwired workout default, plus the erg leg's unwired default (#347): a dead link, no bias.
     DeviceHooks h;
-    TEST_ASSERT_EQUAL_STRING("{\"loaded\":false}",
-                             routes::workoutStateJson(h, get("/workout/state")).body.c_str());
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"loaded\":false,\"erg_connected\":false,\"erg_controlled\":false,\"bias_w\":0}",
+        routes::workoutStateJson(h, get("/workout/state")).body.c_str());
 }
 
 // --- reboot intent ---------------------------------------------------------
@@ -165,6 +169,7 @@ void test_exactly_the_expected_routes_request_a_reboot() {
         {"/obc/shifter/on", HttpMethod::Post, ""},
         {"/obc/shifter/off", HttpMethod::Post, ""},
         {"/forget", HttpMethod::Post, ""},
+        {"/workout/trainer", HttpMethod::Post, "name=SB20-FTMS-Server"},  // a CHANGED trainer
     };
     for (const auto& c : rebooting) {
         const Route* r = station(c.path, c.m);
@@ -607,6 +612,188 @@ void test_setup_save_preserves_a_parked_radio_but_reset_clears_it() {
     TEST_ASSERT_FALSE(saved.bleOff);         // defaults() = radio on: the second way back
 }
 
+// --- the shared SPA's routes (#347) ------------------------------------------
+
+// Every route web/index.html's HttpTransport calls must exist with the method it uses. This is the
+// list the SPA was written against (web/HTTP-API.md); four of these were phantoms until #347.
+void test_every_route_the_spa_calls_exists() {
+    struct Want { const char* path; HttpMethod m; };
+    const std::vector<Want> spa = {
+        {"/status", HttpMethod::Get},          {"/workout/state", HttpMethod::Get},
+        {"/scan", HttpMethod::Get},            {"/calibrate/state", HttpMethod::Get},
+        {"/config", HttpMethod::Get},          {"/config", HttpMethod::Post},
+        {"/curve", HttpMethod::Get},           {"/curve", HttpMethod::Post},
+        {"/obc/buttons.json", HttpMethod::Get}, {"/obc/buttons.json", HttpMethod::Post},
+        {"/compare", HttpMethod::Get},         {"/setup/scan", HttpMethod::Post},
+        {"/calibrate/start", HttpMethod::Post}, {"/calibrate/finish", HttpMethod::Post},
+        {"/calibrate/cancel", HttpMethod::Post}, {"/calibrate/save", HttpMethod::Post},
+        {"/workout/trainer", HttpMethod::Post}, {"/workout/preset", HttpMethod::Post},
+        {"/workout/bias", HttpMethod::Post},
+    };
+    for (const auto& w : spa) TEST_ASSERT_NOT_NULL_MESSAGE(station(w.path, w.m), w.path);
+    // The workout verbs (start/pause/resume/stop) are registered from workoutVerbs(), not the table.
+    for (const char* v : {"start", "pause", "resume", "stop"}) {
+        bool found = false;
+        for (const char* x : workoutVerbs()) found = found || std::string(x) == v;
+        TEST_ASSERT_TRUE_MESSAGE(found, v);
+    }
+    // The legacy page's GET /setup/scan link is untouched by the new POST twin.
+    TEST_ASSERT_NOT_NULL(station("/setup/scan", HttpMethod::Get));
+}
+
+// /workout/state = the engine's JSON, byte for byte, then the three erg keys. Uses the real engine
+// output for a running preset so the splice is tested against what the board actually emits.
+void test_workout_state_appends_erg_fields_to_the_engine_json() {
+    WorkoutRuntime rt;
+    rt.load(parseWorkout(presetJson("4x8")));
+    rt.start(0);
+    const std::string engine = rt.json(700000);  // 700 s in: Interval 1
+    DeviceHooks h;
+    h.workoutState = [&] { return engine; };
+    h.ergLink = [] { ErgLink e; e.connected = true; e.controlled = true; e.biasW = -10; return e; };
+    const std::string body = routes::workoutStateJson(h, get("/workout/state")).body;
+    const std::string tail = ",\"erg_connected\":true,\"erg_controlled\":true,\"bias_w\":-10}";
+    TEST_ASSERT_EQUAL_STRING((engine.substr(0, engine.size() - 1) + tail).c_str(), body.c_str());
+    TEST_ASSERT_TRUE(body.find("\"seg_label\":\"Interval 1\"") != std::string::npos);
+}
+
+void test_workout_state_json_leaves_a_non_object_alone() {
+    ErgLink e;
+    TEST_ASSERT_EQUAL_STRING("", renderWorkoutStateJson("", e).c_str());
+    TEST_ASSERT_EQUAL_STRING("oops", renderWorkoutStateJson("oops", e).c_str());
+}
+
+void test_workout_bias_nudges_through_the_hook() {
+    DeviceHooks h;
+    int got = 0;
+    h.ergBias = [&](int d) { got = d; return 20; };
+    HttpRequest r = post("/workout/bias");
+    r.args = {{"d", "-10"}};  // the SPA sends ?d= in the query string
+    const HttpResponse resp = dispatch(*station("/workout/bias", HttpMethod::Post), h, r);
+    TEST_ASSERT_EQUAL_INT(200, resp.status);
+    TEST_ASSERT_EQUAL_INT(-10, got);
+    TEST_ASSERT_EQUAL_STRING("{\"bias_w\":20}", resp.body.c_str());
+    TEST_ASSERT_FALSE(resp.reboot);  // a nudge is live, never a restart mid-ride
+    // A form body works too (curl -d d=10).
+    got = 0;
+    routes::workoutBias(h, post("/workout/bias", "d=10"));
+    TEST_ASSERT_EQUAL_INT(10, got);
+}
+
+void test_workout_bias_rejects_bad_deltas_without_calling_the_hook() {
+    DeviceHooks h;
+    bool called = false;
+    h.ergBias = [&](int) { called = true; return 0; };
+    for (const char* d : {"", "abc", "10x", "51", "-51", "9999"}) {
+        HttpRequest r = post("/workout/bias");
+        if (*d) r.args = {{"d", d}};
+        TEST_ASSERT_EQUAL_INT_MESSAGE(400, routes::workoutBias(h, r).status, d);
+    }
+    TEST_ASSERT_FALSE(called);
+}
+
+void test_erg_bias_is_clamped() {
+    TEST_ASSERT_EQUAL_INT(10, nudgeErgBias(0, 10));
+    TEST_ASSERT_EQUAL_INT(-20, nudgeErgBias(-10, -10));
+    TEST_ASSERT_EQUAL_INT(kErgBiasLimitW, nudgeErgBias(195, 10));
+    TEST_ASSERT_EQUAL_INT(-kErgBiasLimitW, nudgeErgBias(-195, -10));
+}
+
+// Set trainer persists the name on top of the STORED config (never a wipe of the curve, identity or
+// meter pin) and reboots, because the erg client is built at boot.
+void test_workout_trainer_persists_and_reboots_only_on_change() {
+    DeviceHooks h;
+    RuntimeConfig stored = RuntimeConfig::defaults();
+    stored.meterAddress = "aa:bb:cc:dd:ee:ff";
+    stored.spoofName = "Stages 99744";
+    stored.curve = curveFromString("100.0:1.0500,200.0:0.9800");
+    int saves = 0;
+    RuntimeConfig saved;
+    h.config = [&] { return stored; };
+    h.saveConfig = [&](const RuntimeConfig& c) { saved = c; ++saves; };
+
+    // The SPA posts text/plain, so the board hands the raw body over, not parsed args.
+    HttpResponse r = dispatch(*station("/workout/trainer", HttpMethod::Post), h,
+                              post("/workout/trainer", "name=SB20-FTMS-Server"));
+    TEST_ASSERT_TRUE(r.reboot);
+    TEST_ASSERT_EQUAL_INT(1, saves);
+    TEST_ASSERT_EQUAL_STRING("SB20-FTMS-Server", saved.trainerNameFilter.c_str());
+    TEST_ASSERT_EQUAL_STRING("aa:bb:cc:dd:ee:ff", saved.meterAddress.c_str());
+    TEST_ASSERT_EQUAL_STRING("Stages 99744", saved.spoofName.c_str());
+    TEST_ASSERT_EQUAL_UINT32(2, (uint32_t)saved.curve.points.size());
+
+    // Unchanged: a reply, no save, no restart.
+    stored.trainerNameFilter = "SB20-FTMS-Server";
+    r = routes::workoutTrainer(h, post("/workout/trainer", "name=SB20-FTMS-Server"));
+    TEST_ASSERT_FALSE(r.reboot);
+    TEST_ASSERT_EQUAL_INT(1, saves);
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true,\"reboot\":false}", r.body.c_str());
+
+    // Blank clears (erg off) - still a change, so it persists and reboots.
+    r = routes::workoutTrainer(h, post("/workout/trainer", "name="));
+    TEST_ASSERT_TRUE(r.reboot);
+    TEST_ASSERT_EQUAL_STRING("", saved.trainerNameFilter.c_str());
+}
+
+void test_setup_scan_post_rescans_and_answers_json() {
+    DeviceHooks h;
+    bool rescanned = false;
+    h.rescanSources = [&] { rescanned = true; };
+    const HttpResponse r = dispatch(*station("/setup/scan", HttpMethod::Post), h, post("/setup/scan"));
+    TEST_ASSERT_TRUE(rescanned);
+    TEST_ASSERT_EQUAL_INT(200, r.status);
+    TEST_ASSERT_EQUAL_STRING("application/json", r.contentType.c_str());
+    TEST_ASSERT_FALSE(r.reboot);
+}
+
+// GET /calibrate/state is the wizard view as JSON. Idle carries the picker list WITH addresses (the
+// start route pins by address); the state numbering is the nRF Cal characteristic's 0/1/2.
+void test_calibrate_state_idle_lists_devices_with_addresses() {
+    DeviceHooks h;
+    h.calView = [] {
+        CalWizardView v;
+        SourceCandidate a;
+        a.address = "e6:20:90:8c:f3:fe"; a.name = "ASSIOMA17039L"; a.rssi = -60; a.isCps = true;
+        SourceCandidate b;
+        b.address = "c0:ff:ee:00:00:01"; b.name = "XCADEY"; b.rssi = -48; b.isCps = true;
+        v.devices = {a, b};
+        return v;
+    };
+    const std::string j = routes::calibrateState(h, get("/calibrate/state")).body;
+    TEST_ASSERT_TRUE(j.rfind("{\"state\":0,", 0) == 0);
+    TEST_ASSERT_TRUE(j.find("\"addr\":\"e6:20:90:8c:f3:fe\"") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"name\":\"XCADEY\"") != std::string::npos);
+    TEST_ASSERT_TRUE(j.find("\"coverage\":[]") != std::string::npos);
+}
+
+void test_calibrate_state_collecting_reports_progress() {
+    CalWizardView v;
+    v.state = CalState::Collecting;
+    v.pairCount = 40;
+    v.minPairs = 30;
+    v.enoughToFit = true;
+    v.dutConnected = true;
+    v.coverage = {1, 2, 5, 5, 3, 0};
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"state\":1,\"pairs\":40,\"min_pairs\":30,\"residual_w\":0.0,\"enough\":true,"
+        "\"dut_connected\":true,\"ref_connected\":false,\"coverage\":[1,2,5,5,3,0],\"devices\":[]}",
+        renderCalStateJson(v).c_str());
+    v.state = CalState::Fitted;
+    v.residualW = 3.25f;
+    TEST_ASSERT_TRUE(renderCalStateJson(v).find("\"state\":2,") != std::string::npos);
+    TEST_ASSERT_TRUE(renderCalStateJson(v).find("\"residual_w\":3.2") != std::string::npos);
+}
+
+// Device names are attacker-controlled (anything can advertise); the JSON must stay well-formed.
+void test_calibrate_state_escapes_device_names() {
+    CalWizardView v;
+    SourceCandidate a;
+    a.address = "aa:bb:cc:dd:ee:ff"; a.name = "x\"},{\"evil\":1";
+    v.devices = {a};
+    const std::string j = renderCalStateJson(v);
+    TEST_ASSERT_TRUE(j.find("\"evil\"") == std::string::npos);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
 
@@ -661,6 +848,18 @@ int main(int, char**) {
     RUN_TEST(test_ble_on_clears_the_flag_and_reboots);
     RUN_TEST(test_ble_on_is_reachable_on_the_station_server);
     RUN_TEST(test_setup_save_preserves_a_parked_radio_but_reset_clears_it);
+
+    RUN_TEST(test_every_route_the_spa_calls_exists);
+    RUN_TEST(test_workout_state_appends_erg_fields_to_the_engine_json);
+    RUN_TEST(test_workout_state_json_leaves_a_non_object_alone);
+    RUN_TEST(test_workout_bias_nudges_through_the_hook);
+    RUN_TEST(test_workout_bias_rejects_bad_deltas_without_calling_the_hook);
+    RUN_TEST(test_erg_bias_is_clamped);
+    RUN_TEST(test_workout_trainer_persists_and_reboots_only_on_change);
+    RUN_TEST(test_setup_scan_post_rescans_and_answers_json);
+    RUN_TEST(test_calibrate_state_idle_lists_devices_with_addresses);
+    RUN_TEST(test_calibrate_state_collecting_reports_progress);
+    RUN_TEST(test_calibrate_state_escapes_device_names);
 
     return UNITY_END();
 }
