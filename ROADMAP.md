@@ -72,14 +72,19 @@ primary erg driver and qz/Peloton is kept; rides happen together and apart; peda
    both ways, so qz keeps erg control) and its button service to qz, or directly to Zwift and other FTMS apps for riders who skip qz. That removes the advert deadlock
    for good, and it is the on-bike blocker inside #367 (Now #2). Includes #247 G2 and the OBC
    seed-on-connect audit (decisions 07-26). Design: [`code/findings/sb20-full-proxy.md`](code/findings/sb20-full-proxy.md) (PROPOSED; owner questions in its §9).
-10. **V1–V5 SB20 facts and the hold-to-repeat ride** (qz path; the table lives in session 14's annex).
-11. **forward-plan §12** single-crank pairing test (session 14 stretch).
-12. **R1e.2 CYD screen sweep** via the bench camera.
-13. **#321** as a PC-side MCP adapter over the head unit's HTTP API (discover boards by mDNS).
-14. **`fleet_status.py`**: poll N boards' `/status` and `/stats` (`perf_soak.py` is single-board).
-15. **MeterCompare with two real Assioma sets** (session 14 stretch S2; today every number in that
+10. **nRF parity review** (owner, 2026-10-02): the nRF52840 build brought up to par with the ESP32 one,
+   reviewed as a whole rather than feature by feature, and **after** the ESP32 full proxy (Next 9) lands.
+   Start from `code/findings/nrf-roadmap.md` and `docs/ui-feature-map.md`; known gaps include the full
+   proxy, OBC bindings (a build flag with one default mapping today) and the rest of #367, and the
+   nRF items under Later.
+11. **V1–V5 SB20 facts and the hold-to-repeat ride** (qz path; the table lives in session 14's annex).
+12. **forward-plan §12** single-crank pairing test (session 14 stretch).
+13. **R1e.2 CYD screen sweep** via the bench camera.
+14. **#321** as a PC-side MCP adapter over the head unit's HTTP API (discover boards by mDNS).
+15. **`fleet_status.py`**: poll N boards' `/status` and `/stats` (`perf_soak.py` is single-board).
+16. **MeterCompare with two real Assioma sets** (session 14 stretch S2; today every number in that
     feature is fabricated).
-16. **#334** IP + RSSI on the LCD Settings/More tab (re-filed from PR #255).
+17. **#334** IP + RSSI on the LCD Settings/More tab (re-filed from PR #255).
 
 ## LATER
 
