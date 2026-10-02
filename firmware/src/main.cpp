@@ -1398,6 +1398,11 @@ void setup() {
             return true;
         },
         [](const std::string& action) { lcdLock(); g_wk.control(action, millis()); lcdUnlock(); });
+    // The erg leg for the shared SPA (#347): /workout/state's erg_* fields + POST /workout/bias.
+    wifi.setErgUi(
+        []() { ErgLink e; e.connected = ergTrainer.connected(); e.controlled = ergTrainer.controlled();
+               e.biasW = g_ergBias; return e; },
+        [](int deltaW) { g_ergBias = nudgeErgBias(g_ergBias, deltaW); return (int)g_ergBias; });
 
     ArduinoOTA.onProgress([](unsigned int, unsigned int) { ++g_loopBeat; });  // keep WD fed during OTA
     esp_timer_create_args_t wdArgs = {};

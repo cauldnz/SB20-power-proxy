@@ -70,12 +70,12 @@ the owner's call, taken group by group on 2026-09-24 (every row is decided; §2i
 | id | Feature | Device today | Web today | Legacy today | Verified | Proposed | Decision |
 |---|---|---|---|---|---|---|---|
 | F04 | Pick the source meter from a scan list, pinned by address | Setup screen: filtered list (CPS/FTMS only), tap + Save → reboot | list shown; ⚠ cannot pin by address (`mergeSpaConfigForm` never sets `meterAddress`) | `/setup` list + hidden `addr`, Save → reboot | HW: every session (legacy, LCD) | D+W | D + W; the picker lists every BLE device and filters to PM / trainer (HR later, F46) |
-| F05 | Rescan for devices | Setup → Rescan (scan-window boost) | ⚠ `POST /setup/scan` is a phantom (route is GET-only; the call is dead code) | `GET /setup/scan` | HW: CYD 07-03 | D+W | D + W |
+| F05 | Rescan for devices | Setup → Rescan (scan-window boost) | `POST /setup/scan` exists since #347 (JSON reply); ⚠ `/app` still has no Rescan button (the call is unused — PICKER) | `GET /setup/scan` | HW: CYD 07-03 | D+W | D + W |
 | F06 | Source **name filter** (when not pinned) | — | `src_filter` (inert once an address is pinned) | `name` field | HW 07-11 (HTTP), 07-11 (BLE) | W | W |
 | F07 | Single-sided ×2 (a surviving R crank) | — | checkbox | checkbox | HW BLE 07-11; HTTP sent 07-11 | W | W |
 | F08 | Mode: spoof ↔ corrector (reboots) | More: read-only row | selector + reboot hint | none to set; `/more` read-only | HW 07-11 | W (device shows it) | W; device shows |
 | F09 | Spoof identity: name + serial | More: read-only row; OLED row 4 (the 0.96" panels) | name, editable in both modes (blank = the board's MAC-derived `Stages 9NNNN`, #330; the `Stages 62144` lock string is gone); no serial | name + serial (blank = the per-board default) | HW BLE 07-11; HTTP preserved 07-11; per-board default host-tested only (#330) | W (device shows it); default is per-board (#330) | W; device shows |
-| F10 | Trainer (erg target) selection | Setup: FTMS rows; More → Trainer shows the configured name (the literal `not set` of #346 fixed in #330) | ⚠ "Set trainer" → `POST /workout/trainer` 404 (#347) | `/setup` FTMS tap-list | HW legacy C3 07-05; LCD pick twin-proven 07-05 | D+W | D + W; same picker rule as F04 |
+| F10 | Trainer (erg target) selection | Setup: FTMS rows; More → Trainer shows the configured name (the literal `not set` of #346 fixed in #330) | "Set trainer" → `POST /workout/trainer` (#347): persists the name, reboots only if it changed; desk-tested (host + mock board) | `/setup` FTMS tap-list | HW legacy C3 07-05; LCD pick twin-proven 07-05 | D+W | D + W; same picker rule as F04 |
 | F11 | Reset source + identity to defaults | — | — | `POST /setup/reset` + confirm | CSRF probe only | W | W |
 | F12 | Spoof radio BLE / ANT+ (nRF) | — | BLE: selector, ANT disabled | — | never (S340-gated) | W (BLE) | W (BLE) |
 | F46 | Heart-rate strap as a source (Heart Rate Service `0x180D`): listed under an HR filter in both pickers; bpm on the ride view | — | — | — | not built | D+W (later) | D + W, later (owner: "at some point") |
@@ -84,13 +84,13 @@ the owner's call, taken group by group on 2026-09-24 (every row is decided; §2i
 | id | Feature | Device today | Web today | Legacy today | Verified | Proposed | Decision |
 |---|---|---|---|---|---|---|---|
 | F13 | Live power hero, cadence, L/R balance | Ride: hero + cadence/balance cards; OLED rows | hero (3.4 rem) + Live card, 1 Hz; BLE 2 Hz | `/`: hero 4.6 rem + cards, 1 Hz | HW: LCD every board; SPA/HTTP mock values 07-05; legacy every session | D+W | D + W |
-| F14 | Power history chart | Ride: 48-point line chart | ⚠ none | `/`: 90-sample canvas | HW LCD | D+W (add to `/app` for ride use) | D + W |
+| F14 | Power history chart | Ride: 48-point line chart | hero chart, last 90 s at ≤1 Hz, workout target dashed, outages as gaps (#351); desk-tested on the mock board | `/`: 90-sample canvas | HW LCD | D+W (add to `/app` for ride use) | D + W |
 | F15 | Source / output names, link state, uptime, RSSI, erg trainer | Ride title bar + details pop-down (IN RSSI, OUT uptime + `erg … <trainer>`, #330) | source-link + uptime rows | `/` title + detail cards; `/status` `identity_default` / `source_pin` / `trainer` | HW: CYD 07-03, S3 07-04, Guition 09-23; the erg line host-compiled only | D+W | D + W |
-| F16 | Current erg target, segment, time left **on the ride screen** | ⚠ only in the canvas twin (`RideView` strip never drawn by LVGL); LVGL shows it on the Workout screen only | ⚠ in the Workout card (7th of 10 cards), not the hero | none | desk | D+W (both need it on the ride view) | D + W |
-| F17 | Erg link status (connected / controlled) | Workout screen erg line (4 states) | ⚠ "searching…" forever on HTTP (missing `erg_*` fields, #347); real on BLE | none | LCD: twin 07-05 | D+W | D + W |
-| F18 | Keep the display awake through a ride; survive a board reboot | n/a (device) | ⚠ no Wake Lock; HTTP has no reconnect (errors swallowed, green dot never revoked); BLE reconnects with backoff | n/a | S13 R13 (BLE) | W (required for principle 3) | W |
+| F16 | Current erg target, segment, time left **on the ride screen** | ⚠ only in the canvas twin (`RideView` strip never drawn by LVGL); LVGL shows it on the Workout screen only | on the hero while a workout runs: target (+bias), segment label, time left, erg chip (#351); also in ride mode; desk-tested on the mock board | none | desk | D+W (both need it on the ride view) | D + W |
+| F17 | Erg link status (connected / controlled) | Workout screen erg line (4 states) | `/workout/state` carries `erg_connected`/`erg_controlled`/`bias_w` (#347): Trainer-link row + hero chip, *no trainer* when none is set; real on BLE | none | LCD: twin 07-05 | D+W | D + W |
+| F18 | Keep the display awake through a ride; survive a board reboot | n/a (device) | keep-awake in ride mode or while a workout runs, re-acquired on visibility (#351); ⚠ `http://<board>/app` is not a secure context, so the Wake Lock API is absent there and a muted-video fallback holds the screen — unverified on a phone; HTTP reconnect: `/status` heartbeat, *reconnecting* banner, dot revoked, recovers without a reload (desk-tested on the mock board); BLE reconnects with backoff | n/a | S13 R13 (BLE) | W (required for principle 3) | W |
 | F19 | Identity + mode shown as text | More rows | `devName` = hostname only; mode in Settings | `/` title, `/more` rows | HW 07-02 (legacy) | D+W | D + W |
-| F45 | Full-screen ride mode on the web: large numbers only (watts, cadence, target, time left, erg state), no cards, one tap to leave | n/a (the device is that already) | ⚠ none | `/` comes closest (hero 4.6 rem + cards) | never | W | W (owner: a must-have before riding with a phone on the bars) |
+| F45 | Full-screen ride mode on the web: large numbers only (watts, cadence, target, time left, erg state), no cards, one tap to leave | n/a (the device is that already) | ⛶ Ride mode overlay, one tap leaves; browser fullscreen where allowed (#351); desk-tested at 375 px on the mock board | `/` comes closest (hero 4.6 rem + cards) | never | W | W (owner: a must-have before riding with a phone on the bars) |
 ### 2d. Erg and workouts
 
 | id | Feature | Device today | Web today | Legacy today | Verified | Proposed | Decision |
@@ -102,13 +102,13 @@ the owner's call, taken group by group on 2026-09-24 (every row is decided; §2i
 | F24 | Import a custom workout (ZWO / FIT / JSON) | — | ⚠ none | `/workout/load` textarea; `import_workout.py --post` | legacy + tooling | W | W |
 | F25 | Per-rider FTP (scales `%FTP` and zone segments; presets assume 250 W) | — | — | — | never (ROADMAP Next 3) | W (set) + D (shown) | W set + D shown |
 | F26 | Peloton class as the workout source (#342) | — | — | — | not built | W (login, class pick) → D (runs it) | W sign-in only; D detects the class the rider started (qz-style) and runs it |
-| F27 | Shifter bias ±10 W | via the SB20 buttons (OBC actions 8/9) | ⚠ `POST /workout/bias` 404 (#347); works on BLE | none | BLE bench 07-05 | D (buttons) + W | D (buttons + screen) + W |
+| F27 | Shifter bias ±10 W | via the SB20 buttons (OBC actions 8/9) | ±10 W → `POST /workout/bias` (#347), clamped ±200 W total; works on BLE | none | BLE bench 07-05 | D (buttons) + W | D (buttons + screen) + W |
 | F28 | Workout progress: profile bar chart, next block, total clock | Workout console (bar chart, `N of M`, clock) | segment + time left only | `/workout`: profile, next, total | HW LCD 07-03/04 | D+W | D + W |
 ### 2e. Calibration and corrector mode
 
 | id | Feature | Device today | Web today | Legacy today | Verified | Proposed | Decision |
 |---|---|---|---|---|---|---|---|
-| F29 | Meter-to-meter calibration wizard (pick DUT + ref, collect, fit, save → corrector) | ⚠ Calibrate screen's only button (`Connect + start`) does nothing (#346) | ⚠ card dead on HTTP (`/calibrate/state` phantom; Start posts a name where addresses are required, #347); works on BLE | `/calibrate` 3-state wizard (addresses, coverage bars, fit table) | legacy: desk only; the corrector ride never run | W (device shows state only) | W; device shows state, no button |
+| F29 | Meter-to-meter calibration wizard (pick DUT + ref, collect, fit, save → corrector) | ⚠ Calibrate screen's only button (`Connect + start`) does nothing (#346) | over HTTP (#347): DUT + reference picked **by address** from `/calibrate/state`, Save = fit then save, the page rides the reboots; desk-tested on the mock board only; works on BLE (by name) | `/calibrate` 3-state wizard (addresses, coverage bars, fit table) | legacy: desk only; the corrector ride never run | W (device shows state only) | W; device shows state, no button |
 | F30 | Portable calibration profile export / import (`/curve`) | — | profile card | none | HW 07-05 (HTTP), 07-11 (BLE) | W | W |
 | F31 | Scalar scale / offset (nRF only) | — | BLE inputs; hidden on the ESP32 | — | HW 07-11 (hidden correctly) | W (BLE) | W (BLE) |
 | F32 | Fit review (points, residual) | — | "N points" | full table | desk | W | W |
@@ -142,7 +142,8 @@ Rows whose decided home lacks the feature today, grouped into the work items `RO
 
 - **WEBRIDE** (Now; issue #351): the web ride view — F14 chart, F16 target/segment/time-left on the hero,
   F18 Wake Lock + HTTP reconnect, F45 full-screen ride mode — plus the #347 fields and routes the ride
-  view needs (F17 `erg_*`, F27 bias).
+  view needs (F17 `erg_*`, F27 bias). **Built 2026-10 (desk-tested: host tests, Node, a mock board in a
+  browser at 375 px); the bench pass (§4 F14/F16/F17/F18/F45, step 8) and `route_baseline.py` remain.**
 - **PICKER** (Next): both pickers list every BLE device and filter to power meters and trainers (HR
   later): the device list is pre-filtered today (F04, F10); the web cannot pin by address and its rescan
   is a phantom (F04, F05, #347).
@@ -165,7 +166,11 @@ Rows already where they were placed need only the bench pass (§4) to move their
 `POST /workout/bias` and `POST /setup/scan`, none of which the ESP32 serves; `/workout/state` lacks the
 `erg_*` fields the trainer-link row needs; Calibrate Start posts a name where addresses are required;
 no Wake Lock and no HTTP reconnect. `web/HTTP-API.md` documents the missing routes as existing;
-`web/README.md` still calls the HTTP path "unverified until U4".
+`web/README.md` still calls the HTTP path "unverified until U4". **Fixed at the desk 2026-10
+(#347/#351):** the four routes and the erg fields exist (a native test pins every route the SPA calls),
+Calibrate starts by address, HTTP-API.md and the README match the board; not yet seen on hardware.
+New finding while fixing it: the board's `http://` origin is not a secure context, so the Screen Wake
+Lock API does not exist on `/app` — F18 relies on a video fallback there until the bench proves it.
 
 **Device (issue #346):** the brightness cycle shows 100 % and emits 25 % forever; More → Trainer was
 the literal `not set` (fixed in #330); the Calibrate button falls through to `default`; the Version row
@@ -226,7 +231,7 @@ it on; a row for a surface the owner placed it *off* is a removal check ("not of
 | F33 | bench → bike | two real Assioma sets on one bike (session 14 S2) | the verdict is computed from real pairs, not the ×1.11 stub |
 | F34–F35 | bench | `/app` buttons card + Settings; `obc_reader.py` | a re-bound button emits the new action live; the devmode toggle and the virtual press work from Settings without curl |
 | F36 | bench | `/app` (once moved) or `/report` | download, copy and mailto each produce the same `/diag` text |
-| F37 | bench | curl | `/log`, `/stats`, `/status` answer; `route_baseline.py` diff is 0/57 after any web change |
+| F37 | bench | curl | `/log`, `/stats`, `/status` answer; `route_baseline.py` diff is 0 differing after any web change (62 vectors since #347; a pre-#347 capture adds 5 NEW, `GET /workout/state` differs by design and `GET /app` only in length — see the #347 PR) |
 | F38 | bench | camera; `/app`; `/status` | the same build SHA on the device row, the web and `/status` (needs #346) |
 | F40 | bench | device row; `/app` | reboot returns to the ride screen within 25 s with the config intact |
 | F41 | bench | camera + `TAP` on Bright | four taps walk 25 → 50 → 75 → 100 and the panel visibly changes (needs #346) |

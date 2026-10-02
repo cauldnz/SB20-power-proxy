@@ -1,8 +1,10 @@
 """Capture a golden baseline of every WifiLink HTTP route from a running board, and diff two.
 
 The oracle for firmware refactors that must not change HTTP behaviour: capture against the board
-before the change, flash, capture again, diff. A clean diff is the evidence that 57 route
-behaviours -- including all 17 CSRF rejections -- survived.
+before the change, flash, capture again, diff. A clean diff is the evidence that 62 route
+behaviours -- including all 20 CSRF rejections -- survived. (57/17 until #347 added /calibrate/state,
+a zero /workout/bias and three CSRF probes; a capture taken with the older list diffs against a newer
+one as 5 NEW vectors, not as differences.)
 
     python route_baseline.py capture 192.168.1.165 -o before.json
     # ... flash ...
@@ -70,7 +72,8 @@ def norm(body: str) -> str:
 # /stats and /diag carry loop counters and RSSI in non-JSON text. Diffing their bytes would drown
 # a real regression in noise, so they are compared by STRUCTURE instead -- the field and section
 # names a route refactor would actually break, which measured identical across both runs.
-UNSTABLE_BODY = {"GET /log", "GET /setup", "GET /stats", "GET /diag"}
+# /calibrate/state (#347) lists the live scan's meters while idle, so it is structural too.
+UNSTABLE_BODY = {"GET /log", "GET /setup", "GET /stats", "GET /diag", "GET /calibrate/state"}
 
 
 def shape(body: str) -> str:
@@ -109,6 +112,7 @@ GETS = [
     "/setup", "/setup/scan", "/scan", "/config", "/curve", "/diag", "/report",
     "/workout", "/workout/state",
     "/calibrate", "/calibrate/scan",
+    "/calibrate/state",       # #347: the SPA's calibrate card (read-only)
     "/wifi/off",              # GET is the confirm PAGE - safe. POST is not, and is never sent.
     "/definitely-not-a-route",  # onNotFound behaviour
 ]
@@ -125,6 +129,7 @@ POSTS = [
     ("/workout/skip", ""),
     ("/workout/stop", ""),
     ("/calibrate/finish", ""),         # rejects: not calibrating
+    ("/workout/bias?d=0", ""),         # #347: a zero nudge -- answers the current bias, changes nothing
 ]
 
 # Mutating routes probed with a hostile Origin: expect 403 and NO side effect.
@@ -133,6 +138,9 @@ CSRF = [
     "/workout/start", "/workout/stop", "/config", "/setup/save", "/setup/reset",
     "/calibrate/start", "/calibrate/finish", "/calibrate/save", "/calibrate/cancel",
     "/obc/devmode/on", "/obc/devmode/off", "/obc/shifter/on", "/obc/shifter/off",
+    # #347's new POSTs. Never sent same-origin here: /workout/trainer persists + reboots on a change,
+    # and /setup/scan would reshuffle the live scan the later vectors read.
+    "/workout/trainer", "/workout/bias", "/setup/scan",
 ]
 
 def capture() -> dict:

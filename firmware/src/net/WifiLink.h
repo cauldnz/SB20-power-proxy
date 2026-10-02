@@ -52,6 +52,8 @@ public:
     using WorkoutStateProvider = std::function<std::string()>;
     using WorkoutLoadHook = std::function<bool(const std::string& json)>;
     using WorkoutControlHook = std::function<void(const std::string& action)>;
+    using ErgLinkProvider = std::function<ErgLink()>;
+    using ErgBiasHook = std::function<int(int deltaW)>;
     using CurveSetHook = std::function<void(const CorrectionCurve&)>;
     using ObcPressHook = std::function<void(uint8_t id, uint8_t state)>;
     using ObcButtonsHook = std::function<void(bool enabled, const Sb20ButtonMap&)>;
@@ -88,6 +90,11 @@ public:
         hooks_.workoutState = std::move(state);
         hooks_.workoutLoad = std::move(load);
         hooks_.workoutControl = std::move(control);
+    }
+    // The erg leg for the shared SPA (#347): link state on /workout/state, POST /workout/bias's nudge.
+    void setErgUi(ErgLinkProvider link, ErgBiasHook bias) {
+        hooks_.ergLink = std::move(link);
+        hooks_.ergBias = std::move(bias);
     }
     void setCurveHandler(CurveSetHook set) { hooks_.setCurve = std::move(set); }
     void setObcPressHook(ObcPressHook h) { hooks_.obcPress = std::move(h); }
