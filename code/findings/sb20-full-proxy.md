@@ -1,6 +1,6 @@
 # SB20 full proxy — design (issue #291)
 
-**Status: PROPOSED (2026-10-02) — design only, no code.** The owner decided #291 on 2026-10-02:
+**Status: PROPOSED (2026-10-02) — design only, no code; the owner answered §9 Q1–Q4 and Q7 the same day.** The owner decided #291 on 2026-10-02:
 **option 3, our hardware proxies everything** between the SB20 and qz (`decisions.md`, same date),
 and the same day widened the consumer: **any FTMS trainer app**, so riders can use Zwift, MyWhoosh,
 Rouvy and the like directly, without qz in the middle.
@@ -109,9 +109,10 @@ service relaying `be60`/`be61`, CSC `2A5B` and its reads, and DIS with the bike'
 service and the `0c46beaf` Stages-app channel are not mirrored. The proxy only starts advertising
 once `Sb20Link` is up and the cache is filled, so qz never meets an empty bike.
 
-**Telemetry is relayed verbatim by default.** The bike's power already comes from our crank spoof,
-which carries the Assioma's corrected numbers, so the "power truth" the PELOTON reset asks for is
-already in the bike's `2AD2`. Substituting our own frame is an option (§9 Q3), not the default.
+**Telemetry is relayed verbatim (owner, 2026-10-02).** Every power correction happens *inbound* to the
+bike, through the crank spoof, so the bike's own erg loop runs on corrected power; the bike's `2AD2`
+therefore already carries the "power truth" the PELOTON reset asks for, and the proxy never rewrites
+it (§9 Q3).
 
 ### 3c. The control-point arbiter
 
@@ -120,7 +121,7 @@ The bike has one control point and the proxy is its only writer. The arbiter is 
 
 - **Owner:** `none`, `qz` or `head unit`. A consumer takes ownership with FTMS Request Control
   (`0x00`); the head unit takes it when a workout starts.
-- **Granting:** the first owner holds control; the other is refused, qz with the FTMS reply
+- **Granting (owner, 2026-10-02):** the first owner holds control; the other is refused, qz with the FTMS reply
   `0x80 00 05` (control not permitted), the head unit with a visible message. This enforces
   system-reference §6.3, "never two erg controllers on one bike", in code instead of in a rule.
 - **Relaying:** one request in flight at a time; qz's write is forwarded unchanged, and the bike's
@@ -147,8 +148,9 @@ would see CPS and the Stages crank service next to the bike (§7 E3).
 
 ### 3e. Naming, two bikes, and pinning qz
 
-Proposal: the proxy advertises the bike's own name plus a suffix, e.g. `Stages Bike 0105 P`
-(20-byte name element; with flags and the 16-bit FTMS UUID the packet is 27 of 31 bytes). It reads
+**Decided (owner, 2026-10-02):** the proxy advertises the bike's own name plus ` PXY`, e.g.
+`Stages Bike 0105 PXY` (a 22-byte name element; with flags and the 16-bit FTMS UUID the packet is 29
+of 31 bytes). It reads
 as "the proxy for bike 0105", it is unique per bike without any new configuration, and it still
 starts with `Stages Bike`. The rider sets qz's FTMS bike name to it once, so qz can never pick the
 real bike directly, even before our board is up. (§9 Q4.)
@@ -182,7 +184,9 @@ no qz in the middle. What that adds to the design:
 - **Buttons:** OBC reaches the apps that speak it (MyWhoosh, Rouvy and the others the OBC spec
   lists) and qz's fork decodes the relayed `0c46be60` natively. **Zwift speaks neither**: its own
   controller protocol is the parked `zwift-controls-research.md`. With Zwift directly, erg,
-  simulation and telemetry work through the proxy, and the SB20's buttons do not reach Zwift (§9 Q7).
+  simulation and telemetry work through the proxy, and the SB20's buttons do not reach Zwift. **Out of
+v1 (owner, 2026-10-02):** the owner rides MyWhoosh, which speaks OBC; the Zwift-controller work stays
+parked (§9 Q7).
 - **Naming:** apps other than qz pick the device from a list, so the proxy's name only has to be
   recognisable; qz needs the `Stages Bike` prefix (§3e).
 - **One app at a time in v1:** a second FTMS consumer costs a link and would be refused control by the
@@ -207,7 +211,7 @@ board (§8).
 | Event | Proposal |
 |---|---|
 | Bike link drops | keep qz connected; stop relaying; `/status` and the screen say so; reconnect by address (the bike advertises again once free); re-subscribe; the arbiter re-asserts control and the last target |
-| qz disconnects mid-ride | keep the bike link (the head unit and OBC carry on); release qz's ownership; the bike keeps its last target unless the owner chooses otherwise (§9 Q2) |
+| qz disconnects mid-ride | keep the bike link (the head unit and OBC carry on); release qz's ownership; **the bike holds its last target** (owner, 2026-10-02) |
 | Our board reboots | the bike loses its crank and its controller together; on boot: set A first, then `Sb20Link`, then set B; qz reconnects to the pinned proxy name |
 | Telemetry boots degraded (`0x0011`) | relay as is, and flag it on `/status`; the cause is #288 |
 | A second consumer asks for control | refused per §3c |
@@ -251,17 +255,21 @@ runs erg and a free ride with no qz in the room, the six buttons reach qz
 natively and over OBC, a bike-link drop and a qz drop each recover per §5, and the release switch
 lets the Stages app in.
 
-## 9. Questions for the owner (before code)
+## 9. Questions for the owner
 
-1. **Who wins erg when qz and the head-unit workout both want it?** Proposal: whoever took control
-   first; the other is refused with a visible reason.
-2. **qz disconnects mid-interval:** hold the bike's last target, or release resistance?
-3. **Telemetry:** relay the bike's `2AD2` verbatim (proposal), or substitute our own frame?
-4. **The proxy's name:** the bike's name plus ` P` (proposal), or a scheme of your choice? qz is
-   then pinned to it once.
+Answered by the owner on 2026-10-02:
+
+1. **Erg contention:** whoever took control first keeps it; the other is refused with a visible
+   reason (§3c).
+2. **qz disconnects mid-interval:** the bike **holds** its last target (§5).
+3. **Telemetry:** **pass through unchanged.** All power adjustment happens inbound to the bike, by
+   spoofing the crank, so the bike can still run its own erg loop (§3b).
+4. **The proxy's name:** the bike's name plus ` PXY`, e.g. `Stages Bike 0105 PXY` (§3e).
+7. **Buttons in Zwift:** out of v1. The owner rides MyWhoosh (OBC) rather than Zwift now; the
+   Zwift-controller work stays parked (§3g).
+
+Still open:
+
 5. **Scope:** the ESP32 boards first (C3 basic mode and the LCD head units), the nRF after?
 6. **The iOS observation:** on the next qz ride from the iPhone, read the connected device's name off
    qz's screen, so we know which personality an iOS qz uses (§1).
-7. **Buttons in Zwift:** with Zwift paired directly, the SB20's buttons do not reach it (Zwift speaks
-   neither OBC nor our relayed vendor characteristic). Leave that out of v1, or un-park the Zwift
-   controller emulation (`zwift-controls-research.md`) as its own item?

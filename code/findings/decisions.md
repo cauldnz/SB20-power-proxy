@@ -5252,3 +5252,16 @@ the proxy directly. The design (`code/findings/sb20-full-proxy.md` §3g) therefo
 control-point op, including simulation (`0x11`) for free rides, not only erg. Known gap: Zwift speaks
 neither OBC nor the SB20's vendor characteristic, so the bike's buttons do not reach Zwift unless the
 parked Zwift-controller work is revived (an owner question, the design's §9 Q7).
+
+## 2026-10-02 (later still) — the full proxy's open questions answered
+
+**Decisions (owner)** on `code/findings/sb20-full-proxy.md` §9:
+- **Erg contention:** whoever takes control first keeps it; qz or the head unit, the other is refused.
+- **qz disconnects mid-interval:** the bike holds its last target.
+- **Telemetry passes through unchanged.** The principle behind it, worth keeping beyond this design:
+  **every power correction happens inbound to the bike, by spoofing the crank**, so the bike's own erg
+  loop runs on corrected power. Nothing downstream of the bike rewrites power.
+- **Proxy name:** the bike's name plus ` PXY` (e.g. `Stages Bike 0105 PXY`).
+- **Buttons in Zwift:** out of v1. The owner rides MyWhoosh, which speaks OBC, rather than Zwift.
+
+Still open: board scope (ESP32 first, nRF after?) and which bike personality an iOS qz connects to.
