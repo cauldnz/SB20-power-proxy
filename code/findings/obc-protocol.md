@@ -10,7 +10,8 @@ this week): the on-air half of #367 — the OBC UUID next to the crank spoof (th
 advertising set, #291), the spec's reference apps against every board, qz and MyWhoosh — is still open.
 The **nRF52840** is BLE-only (no WiFi) and has not been brought to parity: it still carries only the
 Button-State characteristic (its parity review is a later item). Everything new is **off by default**:
-it only runs when `obcEnabled` / `obcDevmode` / `obcSinkShifter` is set.
+the BLE additions only run when the OBC service is on (`obcEnabled` / `obcDevmode` / `obcSinkShifter`),
+the TCP transport only when `obcEnabled` and devmode or the shifter sink are on.
 
 This is the canonical doc for the OBC subsystem: what to emit so an OBC-speaking app accepts our SB20
 buttons. Sibling to [`shifter-ble-protocol.md`](shifter-ble-protocol.md) (the read side) — this is the OBC
@@ -113,7 +114,7 @@ The spec's reference BLE consumer ignores any notification whose first byte is n
 
 | Spec item | State |
 |---|---|
-| `ObcNet` started from `main` when `obcEnabled` and the station link is up (never in the portal) | 🔧 |
+| `ObcNet` started from `main` when `obcEnabled` AND a press source is on (`obcDevmode` or `obcSinkShifter`) AND the station link is up (never in the portal). The source condition is deliberate: `obcEnabled` is not shown over HTTP and no route clears it (devmode/on sets it, devmode/off leaves it), so the source toggles are the visible off-switches until `/app` has per-transport ones | 🔧 |
 | Service `_openbikecontrol._tcp`, instance = the board's OBC name, port `obcPort` (21587) | 🔧 |
 | TXT `version=1`, `id=<base MAC hex>`, `name=OBC-SB20-NNNN`, `service-uuids=d273f680-…`, `manufacturer=SB20Proxy`, `model=SB20 Proxy` | ✅ builder (`obcTxtRecord`) · 🔧 published |
 | Several consumers at once | 🔧 up to 3 |

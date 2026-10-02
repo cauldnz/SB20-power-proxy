@@ -1132,7 +1132,12 @@ void setup() {
     crank.setObcDevmode(cfg.obcDevmode);        // Devmode: advertise as the OBC controller (listener test)
     crank.setObcName(g_obcName);                // ... under this board's own OBC name
 #if USE_WIFI
-    g_obcNetWanted = cfg.obcEnabled;            // OBC over mDNS/TCP too (started in loop once WiFi is up)
+    // OBC over mDNS/TCP too (started in loop once WiFi is up) — but only with a press SOURCE on
+    // (devmode or the shifter sink). obcEnabled alone is invisible over HTTP and no route clears it
+    // (devmode/on sets it, devmode/off leaves it), so a board that once ran devmode would otherwise open
+    // a socket + mDNS service after this reflash with no switch to turn it off. The two source toggles
+    // are the existing, visible off-switches until /app grows the per-transport ones.
+    g_obcNetWanted = cfg.obcEnabled && (cfg.obcDevmode || cfg.obcSinkShifter);
     g_obcPort = cfg.obcPort;
 #endif
 
