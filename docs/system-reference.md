@@ -100,9 +100,11 @@ pair with the Stages app (§11).
   pairing fails; both present and it connects (session 9; refines session 8). Hence the recipe: **app L
   = our spoof, R = that bike's real right crank**, and the real R crank stays powered. The bike then
   consumes only the spoof's (doubled-left) total; no double count (session 8).
-- The bike's own telemetry (`0x2AD2` Indoor Bike Data, CSC) can come up **degraded** on a cold start
-  and stay so until the Stages app connects once; the cause is not established (#288, session 13).
-  The healthy `0x2AD2` flag set is `0x00c5`; the degraded frame is `0x0011`.
+- The bike's own telemetry (`0x2AD2` Indoor Bike Data, CSC) can come up **degraded**. The speed
+  (`0x0000`) and distance (`0x0011`) frames keep arriving, but the cadence + power frame (`0x00c5`)
+  is missing and CSC crank revolutions freeze. The cause is not established. The lead hypothesis is
+  that the bike has lost its crank link; the Stages app is not proven necessary
+  (#288, [`sb20-telemetry-wake.md`](../code/findings/sb20-telemetry-wake.md)).
 
 ## 4. Our device: what each mode changes
 

@@ -26,7 +26,13 @@ def test_resolve_char_uuid16_proprietary_and_handle_fallback():
     assert ps.resolve_char("2ad9", None, None, {}) == "fitness_machine_control_point"
     # the 0c46be proprietary base, in the wire order tshark prints
     prop = "e5f4a2e1eac60eaeff48229cb1be460c"
-    assert ps.resolve_char(None, prop, None, {}).startswith("stages_prop")
+    assert ps.resolve_char(None, prop, None, {}) == "stages_prop_0c46beb1"
+    # either byte order -> the same label; sibling chars stay distinct (#288: the
+    # old label collapsed 0c46be60 and 0c46beb0 into one name)
+    canon = bytes.fromhex(prop)[::-1].hex()
+    assert ps.resolve_char(None, canon, None, {}) == "stages_prop_0c46beb1"
+    assert ps.resolve_char(None, "e5f4a2e1eac60eaeff48229c60be460c", None, {}) \
+        == "stages_prop_0c46be60"
     # handle fallback via the discovery map; unknown handle -> labelled, not dropped
     assert ps.resolve_char(None, None, 0x39, {0x39: "stages_prop_x"}) == "stages_prop_x"
     assert ps.resolve_char(None, None, 0x99, {}) == "handle_0x0099"
