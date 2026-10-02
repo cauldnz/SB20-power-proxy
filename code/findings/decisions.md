@@ -5265,3 +5265,10 @@ parked Zwift-controller work is revived (an owner question, the design's §9 Q7)
 - **Buttons in Zwift:** out of v1. The owner rides MyWhoosh, which speaks OBC, rather than Zwift.
 
 Still open: board scope (ESP32 first, nRF after?) and which bike personality an iOS qz connects to.
+
+## 2026-10-02 — the full proxy goes ESP32-first; the nRF gets a parity review
+
+**Decision (owner).** The SB20 full proxy (#291) is built for the ESP32 boards first (the C3 in basic
+mode and the LCD head units). The nRF52840 follows as part of a **broader review that brings the nRF
+build up to par with the ESP32 one**, rather than feature by feature (ROADMAP Next 10). Still open on
+the proxy: which bike personality an iOS qz connects to.

@@ -1,6 +1,6 @@
 # SB20 full proxy — design (issue #291)
 
-**Status: PROPOSED (2026-10-02) — design only, no code; the owner answered §9 Q1–Q4 and Q7 the same day.** The owner decided #291 on 2026-10-02:
+**Status: PROPOSED (2026-10-02) — design only, no code; the owner answered §9 Q1–Q5 and Q7 the same day.** The owner decided #291 on 2026-10-02:
 **option 3, our hardware proxies everything** between the SB20 and qz (`decisions.md`, same date),
 and the same day widened the consumer: **any FTMS trainer app**, so riders can use Zwift, MyWhoosh,
 Rouvy and the like directly, without qz in the middle.
@@ -268,8 +268,10 @@ Answered by the owner on 2026-10-02:
 7. **Buttons in Zwift:** out of v1. The owner rides MyWhoosh (OBC) rather than Zwift now; the
    Zwift-controller work stays parked (§3g).
 
+5. **Scope:** **the ESP32 boards first** (C3 basic mode and the LCD head units); the nRF follows as
+   part of a broader review that brings the nRF build up to par with the ESP32 one (ROADMAP Next 10).
+
 Still open:
 
-5. **Scope:** the ESP32 boards first (C3 basic mode and the LCD head units), the nRF after?
 6. **The iOS observation:** on the next qz ride from the iPhone, read the connected device's name off
    qz's screen, so we know which personality an iOS qz uses (§1).
