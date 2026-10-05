@@ -5272,3 +5272,41 @@ Still open: board scope (ESP32 first, nRF after?) and which bike personality an 
 mode and the LCD head units). The nRF52840 follows as part of a **broader review that brings the nRF
 build up to par with the ESP32 one**, rather than feature by feature (ROADMAP Next 10). Still open on
 the proxy: which bike personality an iOS qz connects to.
+
+## 2026-10-02 — #288 desk analysis: what the session-13 "app wake" capture establishes
+
+Desk read of `SNIFF-session13-sb20-app-wake-20260726.pcap` and its cold-start pair
+(`code/findings/sb20-telemetry-wake.md`, status RESEARCH). Facts the captures establish:
+
+- **"Degraded" is a missing frame, not changed flags.** The SB20 sends `0x2AD2` as separate frames.
+  Degraded: speed `0x0000` and distance `0x0011` frames keep arriving, but the cadence + power frame
+  **`0x00c5` is absent** (0 of 627 frames before the transition) and CSC crank revolutions freeze
+  at 2687. Healthy: all three frames.
+- **The transition is in the capture: 2026-07-26T00:05:28.676Z**, first `c5 00 00 00 00 00 00 00`.
+  Real cadence and power follow at 00:05:41.156 (`c5 00 8d 00 41 00 00 00`), and CSC moves 2687 → 2688
+  at 00:05:42.0.
+- **The capture does not contain the Stages app's link.** The sniffer followed only qz's connection
+  (`0x693c1f72`, from 23:48:10.211Z). **qz wrote nothing for 11 min before the transition**; its last
+  write was FTMS `05 0a 00` at 23:54:27.6Z.
+- **The only non-periodic event in that gap** is an unsolicited burst on vendor `0c46beb0` (handle
+  `0x0036`) at 23:59:12.521–13.690Z: `fd 04` ×10 and `fd 03` ×1. In session 6 the bike sent `fd 04`
+  only in reply to the Stages app's `0c46beb1` commands, so this is consistent with the app's
+  footprint, 6 min 16 s before the wake. It is not proof.
+- **The crank link differs between the two captures.** Degraded window, before qz connected: the
+  real left crank `E8:CF:D8:D9:3A:20` was **advertising as connectable**, so the bike was not
+  connected to it, and the CYD `8C:94:DF:93:CC:8E` was advertising as "Stages 62144". Cold start:
+  the bike (`E4:AA:5A`, as initiator) connected to `E8:CF:D8:D9:3A:20` at 00:21:17.640Z, and
+  `0x00c5` was present from qz's first frame, before any FTMS write.
+- **The recovery happened with the Garmin still trainer-paired** (the watch was changed only during
+  the later cold-start prep). The Garmin hypothesis therefore cannot explain this recovery, though
+  it may still explain the onset.
+- qz subscribes to `0c46be61` and `0c46beb0` (CCCD `01 00`). It never writes `0c46beb1`. This
+  corrects the issue body.
+
+**Not established:** the cause. The lead desk hypothesis is that degraded = no live bike→crank
+link, and wake = the bike re-acquiring its crank (possibly prompted by the app). Confidence is low to
+moderate, from n = 1. The decisive experiment follows the **crank** with the sniffer (the doc's §7),
+folded into session 14 G1b.
+
+**Tooling:** `pcap_sqlite.resolve_char` collapsed every `0c46be…` char into one label
+(`stages_prop_0c46_f4e5`). It now labels `stages_prop_0c46be60/be61/beb0/beb1`, with a test.

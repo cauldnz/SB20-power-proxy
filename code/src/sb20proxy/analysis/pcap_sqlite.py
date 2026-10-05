@@ -170,9 +170,13 @@ def resolve_char(uuid16: str | None, uuid128: str | None,
         return UUID16_CHARS.get(u16, f"uuid16_{u16}")
     if uuid128:
         if any(m in uuid128 for m in _STAGES_MARKERS):
-            # distinguishing byte is the 4th from the 0c46beXX end (wire order varies);
-            # label by the whole short form so different prop chars stay distinct.
-            return f"stages_prop_{uuid128[:4]}_{uuid128[-4:]}"
+            # tshark prints the UUID in either byte order; canonicalise to 0c46beXX…
+            # and label by the first 4 bytes, so 0c46be60 / be61 / beb0 / beb1 stay
+            # distinct (the old first-2 + last-2 label collapsed them all to one).
+            canon = uuid128
+            if canon.startswith("e5f4") and len(canon) == 32:
+                canon = bytes.fromhex(canon)[::-1].hex()
+            return f"stages_prop_{canon[:8]}"
         return f"uuid128_{uuid128[:8]}"
     if handle is not None and handle in handle_map:
         return handle_map[handle]
