@@ -6,6 +6,7 @@
 #include "Config.h"  // SPOOF_* / CORRECTOR_* identity
 #include "Cps.h"  // pure (no NimBLE): CrankCadence + the measurement codec
 #include "ICrankOutput.h"
+#include "ObcApp.h"  // ObcAppState: the OBC app->device messages (pure, host-tested)
 #include "RuntimeConfig.h"  // ProxyMode (Spoof | Corrector)
 
 class NimBLECharacteristic;  // NimBLE-Arduino (global namespace); kept out of the header
@@ -38,11 +39,17 @@ public:
     // Enable an OpenBikeControl (OBC) BLE service (a Button-State notify char, d273f681) alongside the
     // crank, so the SB20's re-presented handlebar buttons can drive OBC-speaking apps (MyWhoosh/qz) over
     // BLE. Call before begin(). See lib/proxy/Obc.h + code/findings/obc-protocol.md.
+    // The service also carries the spec's Haptic (d273f682) and App Information (d273f683) write chars:
+    // writes are decoded (ObcApp.h) and logged; we have no motor, so haptic is accepted and ignored.
     void setObcEnabled(bool e) { obcEnabled_ = e; }
-    // Devmode: advertise as an "OBC-…" controller (name overridden, not the Stages crank) so an OBC
-    // listener (e.g. qz) can discover us by an OBC-prefixed name and drive virtual button presses over
-    // HTTP (GET /obc/press). Implies the OBC service. Call before begin().
+    // Devmode: advertise as an OBC controller (the board's OBC name, not the Stages crank) with the OBC
+    // service UUID in the scan response, so an OBC listener finds us by UUID (the spec, upstream qz) or
+    // by the "OBC-" name (our qz fork), and drive virtual button presses over HTTP (GET /obc/press).
+    // Implies the OBC service. Call before begin().
     void setObcDevmode(bool e) { obcDevmode_ = e; }
+    // The board's OBC name (FleetIdentity.h defaultObcName, e.g. "OBC-SB20-1468"): the devmode advert
+    // name, and the same name the mDNS/TCP transport publishes. Call before begin().
+    void setObcName(const std::string& name) { obcName_ = name; }
     // Notify the OBC Button-State characteristic with a pre-encoded OBC message (from Obc.h). No-op if
     // OBC is disabled / no subscriber.
     void notifyObc(const uint8_t* data, size_t len);
@@ -62,7 +69,9 @@ private:
     NimBLECharacteristic* meas_ = nullptr;
     bool obcEnabled_ = false;
     bool obcDevmode_ = false;                        // advertise as an OBC controller (test/bring-up)
+    std::string obcName_ = "OBC-SB20";              // devmode advert name (main sets the per-board one)
     NimBLECharacteristic* obcButtonChar_ = nullptr;  // OBC Button-State (notify), created when obcEnabled_
+    ObcAppState obcApp_;  // what the BLE OBC consumer told us (AppInfo / haptic) — NimBLE host task only
     CrankCadence cadence_;        // advances crank revs / event time from each reading's rpm
     uint16_t accumTorque_ = 0;    // accumulated torque (1/32 Nm), advanced per completed rev
     uint32_t lastT_ = 0;          // previous reading's t_ms, for the cadence dt

@@ -92,6 +92,32 @@ static std::string g_identity;
 static bool g_identityDefault = false;
 static std::string g_trainerName;
 
+// OpenBikeControl fan-out (#367): every OBC Button-State message goes to BOTH transports with the same
+// bytes — BLE inline (crank.notifyObc), and the mDNS/TCP consumers via a queue the loop drains, because
+// presses arrive on the NimBLE host task (the shifter's notify callback) while the sockets belong to the
+// loop. The queue never merges or drops a queued message (ObcApp.h, host-tested). g_obcName / g_obcId
+// are this board's OBC identity (FleetIdentity.h), the same on both transports.
+static std::string g_obcName;
+static std::string g_obcId;
+#if USE_WIFI
+#include "ObcApp.h"
+#include "net/ObcNet.h"
+static ObcNet obcNet;
+static bool g_obcNetWanted = false;  // cfg.obcEnabled at boot: the TCP transport is on with OBC
+static uint16_t g_obcPort = OBC_DEFAULT_PORT;
+static ObcOutbox<32> g_obcOutbox;
+static portMUX_TYPE g_obcOutboxMux = portMUX_INITIALIZER_UNLOCKED;
+#endif
+static void obcEmit(const uint8_t* b, size_t n) {
+    crank.notifyObc(b, n);
+#if USE_WIFI
+    if (!obcNet.up()) return;  // no network transport this boot: nothing to queue for
+    portENTER_CRITICAL(&g_obcOutboxMux);
+    g_obcOutbox.push(b, n);
+    portEXIT_CRITICAL(&g_obcOutboxMux);
+#endif
+}
+
 // "Sink the SB20's own shifter buttons -> broadcast as OBC" (obcSinkShifter). A central to the SB20's
 // vendor button char (BleShifterClient) feeds each press through the pure ObcShifterSource, which emits
 // OBC ButtonState messages straight to the crank's OBC notify char. Live builds only (needs the shared
@@ -114,7 +140,7 @@ static void shifterEnsureStarted(const RuntimeConfig& cfg) {
         if (!g_shifterEnabled) return;  // sink toggled off — connected but silent
         shifterSrc.feed(
             d, n,
-            [](const uint8_t* b, size_t m) { crank.notifyObc(b, m); },  // OBC re-broadcast
+            [](const uint8_t* b, size_t m) { obcEmit(b, m); },          // OBC re-broadcast
             [](int8_t deltaW) {                                         // local erg nudge
                 int v = g_ergBias + deltaW;
                 g_ergBias = (int16_t)(v < -200 ? -200 : (v > 200 ? 200 : v));
@@ -1071,6 +1097,8 @@ void setup() {
         uint8_t mac[6] = {0};
         esp_read_mac(mac, ESP_MAC_WIFI_STA);
         g_identityDefault = cfg.resolveIdentity(mac);
+        g_obcName = defaultObcName(mac);  // "OBC-SB20-NNNN": the OBC name on BLE (devmode) + mDNS (#367)
+        g_obcId = obcDeviceId(mac);       // the mDNS TXT id=
     }
 #ifdef S3_DIAG
     Serial.printf("[diag] stage: config loaded, spoof=%s\n", cfg.spoofName.c_str());
@@ -1101,7 +1129,17 @@ void setup() {
     crank.setMode(cfg.mode);                    // SPOOF crank vs CORRECTOR (own honest CPS identity)
     crank.setIdentity(cfg.spoofName, cfg.spoofSerial);  // advertised name + DIS serial
     crank.setObcEnabled(cfg.obcEnabled || cfg.obcDevmode || cfg.obcSinkShifter);  // OBC BLE service
-    crank.setObcDevmode(cfg.obcDevmode);        // Devmode: advertise as OBC-SB20 for the listener test
+    crank.setObcDevmode(cfg.obcDevmode);        // Devmode: advertise as the OBC controller (listener test)
+    crank.setObcName(g_obcName);                // ... under this board's own OBC name
+#if USE_WIFI
+    // OBC over mDNS/TCP too (started in loop once WiFi is up) — but only with a press SOURCE on
+    // (devmode or the shifter sink). obcEnabled alone is invisible over HTTP and no route clears it
+    // (devmode/on sets it, devmode/off leaves it), so a board that once ran devmode would otherwise open
+    // a socket + mDNS service after this reflash with no switch to turn it off. The two source toggles
+    // are the existing, visible off-switches until /app grows the per-transport ones.
+    g_obcNetWanted = cfg.obcEnabled && (cfg.obcDevmode || cfg.obcSinkShifter);
+    g_obcPort = cfg.obcPort;
+#endif
 
     // The correction between source and crank: CORRECTOR applies the fitted calibration curve
     // (DUT → reference) — and with an EMPTY curve falls through to identity (1.0×), NEVER the spoof's
@@ -1311,7 +1349,7 @@ void setup() {
     wifi.setObcPressHook([](uint8_t id, uint8_t state) {
         uint8_t buf[sb20proxy::OBC_MAX_MSG];
         const size_t n = sb20proxy::encodeButtonPress(id, state, buf, sizeof(buf));
-        if (n > 0) crank.notifyObc(buf, n);
+        if (n > 0) obcEmit(buf, n);  // both transports, same bytes
     });
     // /obc/buttons.json: persist the sink-enable + per-button binding, apply both live (no reboot) —
     // bindings take effect immediately; enabling starts the SB20 central in place.
@@ -1511,6 +1549,24 @@ void loop() {
 
 #if USE_WIFI
     wifi.handle();  // service HTTP + OTA, promote to healthy
+
+    // OBC over mDNS/TCP (#367): only when OBC is enabled (default off), started once the station link
+    // is up (never in the setup portal), then serviced each pass: accept / read app messages / status,
+    // and drain the press queue to every consumer in order.
+    if (g_obcNetWanted && !obcNet.up() && wifi.isUp() && !wifi.inPortal())
+        obcNet.begin(g_obcPort, SB20_HOSTNAME, g_obcName, g_obcId);
+    if (obcNet.up()) {
+        obcNet.loop();
+        uint8_t m[OBC_MAX_MSG];
+        size_t n = 0;
+        while (true) {
+            portENTER_CRITICAL(&g_obcOutboxMux);
+            const bool got = g_obcOutbox.pop(m, n);
+            portEXIT_CRITICAL(&g_obcOutboxMux);
+            if (!got) break;
+            obcNet.send(m, n);
+        }
+    }
 
     // Onboard status LED: fast blink = setup portal / joining, slow pulse = connected.
     const LinkState ls = wifi.isUp() ? LinkState::Connected : LinkState::Searching;

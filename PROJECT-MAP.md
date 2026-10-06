@@ -93,8 +93,8 @@ Status key: ✅ built & working · ⚙ partial / hardening · 🔒 built but blo
 ### OpenBikeControl (OBC) button proxy — the SB20's handlebar buttons re-presented to any OBC consumer
 | Capability | Status | Lives in |
 |---|---|---|
-| OBC codec + SB20 button map + shifter→action composer (pure, host-tested) | ✅ | `Obc.h`, `Sb20ButtonMap.h`, `ObcShifterSource.h` · [obc-protocol](code/findings/obc-protocol.md) |
-| Transports: BLE peripheral (ESP32 + nRF) and mDNS/TCP-UDP (ESP32); devmode name `OBC-SB20`; the shifter-sink central to the SB20; `/obc/buttons.json` + the shared-SPA button config | ✅ merged 07-10 (#251); G1 proven on air in session 13 | `net/ObcNet`, `BleShifterClient`, `BleCrankPeripheral` · [session 13](sessions/session-13-qz-obc-consumer-and-sb20-buttons.md) |
+| OBC codec (every v1 button id, DeviceStatus, Haptic + AppInfo decoders, TCP framing, TXT record) + multi-action SB20 button map + shifter→action composer (pure, host-tested) | ✅ | `Obc.h`, `ObcApp.h`, `Sb20ButtonMap.h`, `ObcShifterSource.h` · [obc-protocol](code/findings/obc-protocol.md) (spec-coverage tables) |
+| Transports: BLE peripheral (ESP32: all three OBC chars; nRF: Button-State only) and mDNS/TCP (ESP32, `ObcNet` started when OBC is enabled); per-board name `OBC-SB20-NNNN`; the shifter-sink central to the SB20; `/obc/buttons.json` + the shared-SPA button config | ✅ merged 07-10 (#251); G1 proven on air in session 13; the #367 additions compile, not yet on air | `net/ObcNet`, `BleShifterClient`, `BleCrankPeripheral` · [session 13](sessions/session-13-qz-obc-consumer-and-sb20-buttons.md) |
 | qz as an OBC consumer (the fork's `obclistener`, binding by name) | ✅ on air; upstream PR not yet opened (#324) | [qz-upstream-contribution](code/findings/qz-upstream-contribution.md) |
 | Real paddle → C3 shifter-sink → OBC → qz | 🔒 the discovery-ordering deadlock (#291) | [session 11](sessions/session-11-obc-bike-test.md) (blocked) |
 | Third-party shifters (Di2 D-Fly, SRAM AXS) over ANT → OBC: the Controls-page decoder exists, no capture yet | ⚙ decoder only | `AntControlsSource.h` · [obc-shifter-sources](code/findings/obc-shifter-sources.md), issue #249 |

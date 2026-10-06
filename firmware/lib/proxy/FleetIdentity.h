@@ -41,6 +41,31 @@ inline std::string defaultSpoofName(const uint8_t mac[6]) {
     return std::string(buf);
 }
 
+// The board's OpenBikeControl name: "OBC-SB20-NNNN", NNNN the same MAC-derived digits as the crank
+// default above, so a board's two names are recognisably one board ("Stages 91468" / "OBC-SB20-1468").
+// It used to be the fixed string "OBC-SB20", so two devmode boards in one room collided (session 13;
+// #367). Unlike the crank name it is never stored: nothing pairs to it by name, so it stays derived.
+// The "OBC-" prefix is kept because our qz fork's listener (fork bfb84695f) still matches on it; the
+// upstream-bound listener and the spec's reference apps match on the OBC service UUID instead.
+constexpr const char* kObcNamePrefix = "OBC-SB20-";
+
+inline std::string defaultObcName(const uint8_t mac[6]) {
+    const unsigned low16 = (static_cast<unsigned>(mac[4]) << 8) | mac[5];
+    char buf[24];
+    std::snprintf(buf, sizeof(buf), "%s%04u", kObcNamePrefix, low16 % kDerivedIdentityModulus);
+    return std::string(buf);
+}
+
+// The board's OBC device id: the base MAC as 12 lowercase hex digits ("a4cb8fdae9cc"), MDNS.md's
+// "unique device identifier (MAC address or serial)": the TXT record's id=, the same on every
+// transport, and the same MAC BOARDS.md lists.
+inline std::string obcDeviceId(const uint8_t mac[6]) {
+    char buf[13];
+    std::snprintf(buf, sizeof(buf), "%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4],
+                  mac[5]);
+    return std::string(buf);
+}
+
 // Bike 1's real Stages cranks (left 62144, right 4963; captured over BLE — decisions.md 2026-06-17,
 // session 9). A board must never advertise one of these NEXT TO that bike unless it is deliberately
 // standing in for that crank (the single-right-crank rescue): the QA acceptance card fails on it

@@ -123,14 +123,14 @@ flags `obcEnabled`, `obcDevmode`, `obcSinkShifter`, `obcPort`, `obcButtons`. All
 | **Corrector + calibrating** | as above | as above | none | as above | 2: DUT + the reference meter; the erg client is skipped while calibrating |
 | **+ trainer configured** (`trainerNameFilter` non-empty) | unchanged | unchanged | unchanged | unchanged | +1: the FTMS trainer (erg drive from the workout engine) |
 | **+ OBC enabled** (`obcEnabled`) | unchanged | unchanged | unchanged | + the OBC BLE service (and mDNS/TCP on `obcPort` on the ESP32) | unchanged |
-| **+ OBC devmode** (`obcDevmode`) | **`OBC-SB20`** (fixed string) | name + CPS | as per mode | + OBC service | unchanged; `GET /obc/press` fires virtual buttons |
+| **+ OBC devmode** (`obcDevmode`) | **`OBC-SB20-NNNN`** (MAC-derived, same digits as `Stages 9NNNN`; #367) | name + CPS | the OBC service `d273f680` | + OBC service | unchanged; `GET /obc/press` fires virtual buttons |
 | **+ shifter sink** (`obcSinkShifter`) | unchanged | unchanged | unchanged | + OBC service | +1: the SB20 (by name `Stages Bike`), to read `0c46be60` and re-broadcast as OBC |
 | **Setup portal up** (fresh onboarding or a failed WiFi join) | **nothing** — BLE is held off | — | — | — | none; the portal serves only its own pages (`/`, `/rescan`, `/save`, `/forget`, `/log`); `/setup` and `/wifi/off` are station routes, reachable once WiFi is up; BLE starts after provisioning (`main.cpp`, the portal gate) |
 | **Ride-mode WiFi-off** | unchanged | unchanged | unchanged | unchanged | unchanged; HTTP is unreachable until reboot |
 | **Mock / bench build** (`USE_MOCK_METER=1` or `METER_MATCH_ANY_CPS=1`) | `spoofName` | as per mode | as per mode | as per mode | mock: no source at all (a ramp); bench: the *nearest* CPS advertiser that is not a `Stages ` crank. **Never power one in the room during a ride** (`flash.ps1` refuses these envs without `-Force`) |
 
 Sources: `firmware/src/ble/BleCrankPeripheral.cpp` (`begin()`: the DIS, Stages and Battery services,
-the advert/scan-response split "exactly like the real crank", the `OBC-SB20` devmode name),
+the advert/scan-response split "exactly like the real crank", the devmode name + OBC scan response),
 `firmware/src/main.cpp` (`shifterBegin`, `ergBegin`, the portal gate that holds BLE off).
 
 ## 5. Discovery: who finds whom, by what
@@ -143,7 +143,7 @@ the advert/scan-response split "exactly like the real crank", the `OBC-SB20` dev
 | SB20 → its crank(s) | the bike's central | the crank ids typed into the Stages app ↔ the advertised `Stages <id>` names (sufficient in sessions 8/9; whether the DIS serial also matters is §11) | sessions 8, 9 | every `Stages NNNNN` in the room must be unique (§7) |
 | The Stages app → the bike | phone central | the bike's advertised name / the app's pairing list | session 6 | one phone, two bikes: §11 |
 | qz → the bike | qz central | the bike's advertised name (FTMS) | session 7 | qz must not drive erg while a head unit does (§6) |
-| qz → our OBC producer | qz central | an `OBC-` **name prefix** (fork `bfb84695f`), or the OBC service UUID | session 13 | `OBC-SB20` is one fixed string: at most one devmode board in the room |
+| qz → our OBC producer | qz central | an `OBC-` **name prefix** (fork `bfb84695f`), or the OBC service UUID | session 13 | was one fixed `OBC-SB20` until #367; now `OBC-SB20-NNNN` per board, and devmode advertises the OBC UUID |
 | nRF bridge → its four peers | nRF central | the role ladder, by **name substring**: an established source link stays Source; else Trainer if configured and free; else Reference if calibrating and the name matches the reference filter but not the source filter; else SB20 if the shifter sink is on; else **Source, and an empty source filter accepts any CPS advertiser** | `firmware-nrf/lib/bridge/PeerRole.h` `classifyByName` | an empty-filter nRF in the room latches the nearest CPS advertiser, including our own spoof (decisions 2026-07-27) |
 | The Python tooling → anything | laptop | `crank_reader.py` by name or `--address`; `fake_meter.py` advertises CPS with the PC's name in the scan response | `code/scripts/` | two boards on one identity made `--address` mandatory (decisions 2026-09-23) |
 
@@ -184,7 +184,7 @@ ids), the trainer full name in that board's config, the phone that holds the app
 | the trainer name per board | `Stages Bike` matches both bikes | `/setup` trainer → `trainerNameFilter` (full name) |
 | mDNS hostnames | already per board (`sb20proxy`, `-cyd`, `-s3`, `-guition`) | firmware, by board |
 | setup-AP SSIDs | already MAC-derived (`Setup-XXXX`) | `SetupPin.h` |
-| the OBC devmode name | `OBC-SB20` is fixed, so only one board may run devmode | `obcDevmode` |
+| the OBC name | per board since #367 (`OBC-SB20-NNNN`, MAC-derived), on BLE devmode and mDNS alike | firmware, by board |
 
 **ANT+:** the SB20's internal ANT+ crank link and the Python tooling both address devices by number;
 two bikes with distinct crank ids are *expected* to coexist, but this has not been measured with two
@@ -295,7 +295,7 @@ Two boards on one identity make `crank_reader --address` mandatory (decisions 20
 | ESP32, spoof + trainer | as above | as above | source + FTMS trainer by name | the SB20 | + trainer connected, erg target |
 | ESP32, corrector | our own name | `0x1818` primary, no scan response | DUT source | any head unit (Garmin, phone) | `mode: corrector`, curve present or not |
 | ESP32, corrector + calibrating | as above | as above | DUT + reference | as above | calibration state (Idle / Collecting / Fitted) |
-| ESP32, OBC devmode | `OBC-SB20` | `0x1818` + OBC service | as per mode | an OBC consumer (qz, `obc_reader.py`) | OBC enabled, devmode |
+| ESP32, OBC devmode | `OBC-SB20-NNNN` | `0x1818` primary; OBC `d273f680` in the scan response | as per mode | an OBC consumer (qz, `obc_reader.py`) | OBC enabled, devmode |
 | ESP32, shifter sink | as per mode | + OBC service | + the SB20 (`Stages Bike`) | an OBC consumer | shifter central state |
 | ESP32 in the setup portal | nothing (BLE off) | — | none | the phone on `Setup-XXXX` → `172.29.4.1` | portal page, not `/status` |
 | ESP32 mock build (`esp32c3-supermini` etc.) | `spoofName` | as per mode | none (a ramp) | anything that pairs to a crank — **never near a bike** | ramping watts |
