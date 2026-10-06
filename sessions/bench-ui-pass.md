@@ -434,6 +434,28 @@ real use of that route, and the reason it exists (two head units, one trainer, n
 > (`raw = (target - offset) / scale`) reproduced the original calibration to the fifth decimal.
 > **Clearing a board's touch calibration is destructive** — have the restore values before you start.
 
+## 2b. Pre-merge hardware tests for open PRs (owner, 2026-10-02)
+
+Board-behaviour PRs merge only after a hardware test. Each one below is a **draft** until its
+checklist passes on a board; record the result here and as a PR comment, then mark it ready and merge
+it (one at a time: each merge puts the other behind `main`, and a firmware PR's CI takes about 50 min).
+
+| PR | What it changes | Checklist | Result |
+|---|---|---|---|
+| [#376](https://github.com/cauldnz/SB20-power-proxy/pull/376) web ride display (#351, #347) | `/app`'s ride hero, reconnect, chart, full-screen ride mode; four new routes; three keys appended to `/workout/state` | below | |
+| [#380](https://github.com/cauldnz/SB20-power-proxy/pull/380) OBC desk half (#367) | OBC Haptic/AppInfo/DeviceStatus, mDNS/TCP started, multi-action bindings, per-board OBC name; all off by default | its PR description, "Hardware test checklist" (steps 0–4; step 0 is the default-off check on a ride board) | |
+
+**#376 checklist** (a phone on the bench WiFi, the board on that PR's build):
+- Step 8 above, for 15 minutes with one board reboot mid-way: the page shows "reconnecting" and
+  recovers without a reload. Ride mode names the keep-awake mechanism in use: the page is http, so
+  expect the silent-video fallback rather than the Wake Lock. **Record whether the phone stayed awake.**
+  If it did not, the owner chooses between https on the board and the GitHub Pages copy.
+- With a workout running against the trainer sim: target, segment and time left on the hero; the
+  chart advances; ride mode is readable at arm's length; one tap leaves it.
+- `/app` Calibrate picks both meters by address; Set trainer and the bias buttons reach the sim.
+- `route_baseline.py diff` against a pre-#376 capture: expect exactly the changes the PR lists
+  (`/workout/state` gains three keys at the end; `/app` grows; four new routes; 57 → 62 vectors).
+
 ## 3. Close-out
 
 Update the map's Verified column for every row that passed; file an issue per failure (link it in the
