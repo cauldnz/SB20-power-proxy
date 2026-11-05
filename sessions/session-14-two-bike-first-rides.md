@@ -40,9 +40,11 @@ human-in-the-loop contract"). Nothing below is attempted until G0 is green at th
       refuses bench/mock envs). Confirm the build SHA on `/status` for each.
 - [ ] **This session is also the acceptance gate for release `v0.1.0`** (the C3-OLED crank spoof —
       [`beta/RELEASE-AND-OTA.md`](../beta/RELEASE-AND-OTA.md), [`RELEASES.md`](../RELEASES.md)). So flash
-      the C3 ride board from the **release candidate** (`esp32c3-oled-live-release`, built by the release
-      workflow's `workflow_dispatch` path or locally with `SB20_VERSION=0.1.0`) rather than a plain dev
-      build, and run the acceptance card against it:
+      the C3 ride board with the **release artifact itself** — the `.bin` downloaded from the `v0.1.0`
+      draft release (or a `workflow_dispatch` candidate if the tag is not cut yet), flashed per that
+      runbook's step 4, **never a local rebuild**: a local build of the same commit is not
+      byte-identical (`build_version.py` restamps `SB20_BUILD_TIME`), so riding one image and shipping
+      another proves nothing about what the rider downloads. Then run the acceptance card against it:
       `python code/scripts/qa_board.py --port <COM> --env esp32c3-oled-live-release --connect`.
       Then confirm `/status` reports `version: 0.1.0` and **not** `0.0.0-dev` — a dev stamp means the
       board is not running the candidate and nothing below counts as release evidence.

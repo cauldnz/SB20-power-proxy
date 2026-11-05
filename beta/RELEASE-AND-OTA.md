@@ -55,20 +55,49 @@ the image is well-formed and correctly stamped; it cannot prove a bike accepts i
 2. **Write the release notes** — add a `## <version>` section to [`RELEASES.md`](../RELEASES.md).
    This is a precondition, not a courtesy: the workflow publishes that section as the release's
    description and **fails the build if it is missing or empty**.
-3. **Build a candidate first** (`workflow_dispatch` on the release workflow, or the local command
-   above) and **flash it to a board**. Nothing is tagged yet, so a candidate that fails costs only a
-   re-flash.
-4. **QA-gate it on hardware** — `python code/scripts/qa_board.py --port <COM> --env
-   esp32c3-oled-live-release --connect`, then confirm `/status` reports the version you stamped (not
-   `0.0.0-dev`). Keep the prior known-good `.bin` for rollback.
-5. **Ride it.** For the C3 spoof the acceptance ride is session 14's **G1** (the bike pairs and reads
+3. **Tag it** — `git tag v0.1.0 && git push origin v0.1.0`. The workflow re-runs the full gate, builds
+   the stamped image, verifies the stamp is really in the binary, and opens a **draft** release with
+   the `.bin` + `SHA256SUMS`. Nothing is public yet, so a tag that fails its hardware gate costs only
+   a deleted draft and a patch bump.
+4. **Flash the *published* artifact — not a local rebuild.** This is the step that keeps a release
+   honest: the image that gets ridden must be the image that gets downloaded. A local rebuild of the
+   same commit is *not* byte-identical (`build_version.py` stamps a fresh `SB20_BUILD_TIME`), so
+   QA-ing a local build and shipping CI's is testing one thing and releasing another.
+
+   ```
+   gh release download v0.1.0 -p '*.bin' -D .
+   sha256sum -c SHA256SUMS                      # or: gh release download v0.1.0 -p SHA256SUMS
+   mkdir -p firmware/.pio/build/esp32c3-oled-live-release
+   cp sb20proxy-esp32c3-oled-live-release-0.1.0.bin \
+      firmware/.pio/build/esp32c3-oled-live-release/firmware.bin
+   cd firmware && .\flash.ps1 -Env esp32c3-oled-live-release -NoBuild
+   ```
+
+   `flash.ps1` takes its image from `.pio/build/<Env>/firmware.bin` and `-NoBuild` skips compiling, so
+   this pushes the downloaded bytes verbatim — and the ride guard passes the release env, so no
+   `-Force`. **USB caveat:** a fresh or bricked board also needs `bootloader.bin`, `partitions.bin`
+   and `boot_app0.bin` in that directory, which only a local `pio run` produces — build the env once
+   (`SB20_VERSION=0.1.0 pio run -e esp32c3-oled-live-release`) and then overwrite `firmware.bin`
+   with the download.
+5. **QA-gate it on hardware** — `python code/scripts/qa_board.py --port <COM> --env
+   esp32c3-oled-live-release --connect`, then confirm `/status` reports the version you tagged and
+   **not** `0.0.0-dev`. A `0.0.0-dev` here means the board is running a desk build and nothing after
+   this point counts as release evidence. Keep the prior known-good `.bin` for rollback.
+
+   > `qa_board.py` and `flash_c3.py` **flash, never build** — they take whatever is already in
+   > `.pio/build/<env>`. So a stale image in that directory is QA'd silently; the `/status` version
+   > check above is what catches it.
+6. **Ride it.** For the C3 spoof the acceptance ride is session 14's **G1** (the bike pairs and reads
    the rider's pedals through the spoof); erg claims need **G2**. A release that has not been on a
    bike is a candidate, whatever its version says.
-6. **Tag it** — `git tag v0.1.0 && git push origin v0.1.0`. The workflow re-runs the full gate, builds
-   the stamped image, verifies the stamp is in the binary, and opens a **draft** release with the
-   `.bin` + `SHA256SUMS`.
-7. **Publish the draft** once steps 4–5 are green, and log the version + what changed in
-   `decisions.md`; that version string is the fleet's new target.
+7. **Publish the draft** once steps 5–6 are green, and log the version + what changed in
+   `decisions.md`; that version string is the fleet's new target. If the gate fails, **delete the
+   draft and the tag**, fix, and cut the next patch version — never re-point a tag, because a board
+   that already took the old bytes would never update (the compare is strictly-newer).
+
+**Release candidates**, if you want a board on the build before any tag exists: run the release
+workflow via `workflow_dispatch` with a version, download its workflow artifact, and flash it the
+same way as step 4. It publishes nothing and creates no tag.
 
 ## Pushing it to the fleet — two channels
 
