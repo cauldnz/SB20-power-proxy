@@ -38,6 +38,20 @@ human-in-the-loop contract"). Nothing below is attempted until G0 is green at th
       Guition and the C3 ride board were both `Stages 62145`).
 - [ ] **Re-flash both head units from current `main`** (`firmware/flash.ps1`, OTA; the ride guard
       refuses bench/mock envs). Confirm the build SHA on `/status` for each.
+- [ ] **This session is also the acceptance gate for release `v0.1.0`** (the C3-OLED crank spoof —
+      [`beta/RELEASE-AND-OTA.md`](../beta/RELEASE-AND-OTA.md), [`RELEASES.md`](../RELEASES.md)). So flash
+      the C3 ride board from the **release candidate** (`esp32c3-oled-live-release`, built by the release
+      workflow's `workflow_dispatch` path or locally with `SB20_VERSION=0.1.0`) rather than a plain dev
+      build, and run the acceptance card against it:
+      `python code/scripts/qa_board.py --port <COM> --env esp32c3-oled-live-release --connect`.
+      Then confirm `/status` reports `version: 0.1.0` and **not** `0.0.0-dev` — a dev stamp means the
+      board is not running the candidate and nothing below counts as release evidence.
+      **Why it matters for this session:** the ride board was last flashed **2026-07-26**, and since then
+      48 files / +7195 lines changed under `firmware/` — including four pieces of the spoof path that
+      sessions 8/9/13 proved on air (`Cps.h`, `BleCrankPeripheral.cpp`, `main.cpp`'s wiring, and the new
+      `FleetIdentity.h`, which changes *what the board advertises*). **G1 is therefore a re-proof, not a
+      formality** — treat a pairing failure as expected-possible and bisect against the 07-26 build.
+      `v0.1.0` is tagged only after G1 passes; G2 decides whether the release notes may claim erg at all.
 - [ ] **Bike-2 inventory.** BLE scan for its `Stages Bike XXXX` name and address; the ids of its real
       L and R cranks (`Stages NNNNN` adverts, `code/scripts/16_scan_ant.py` for the ANT+ ids); crank
       battery levels (fresh CR2032s ready). Record them in this doc's §4 and in the fleet table.
