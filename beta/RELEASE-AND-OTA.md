@@ -79,14 +79,20 @@ the image is well-formed and correctly stamped; it cannot prove a bike accepts i
    and `boot_app0.bin` in that directory, which only a local `pio run` produces — build the env once
    (`SB20_VERSION=0.1.0 pio run -e esp32c3-oled-live-release`) and then overwrite `firmware.bin`
    with the download.
-5. **QA-gate it on hardware** — `python code/scripts/qa_board.py --port <COM> --env
-   esp32c3-oled-live-release --connect`, then confirm `/status` reports the version you tagged and
-   **not** `0.0.0-dev`. A `0.0.0-dev` here means the board is running a desk build and nothing after
-   this point counts as release evidence. Keep the prior known-good `.bin` for rollback.
+5. **QA-gate it on hardware**, asserting the version rather than eyeballing it:
 
-   > `qa_board.py` and `flash_c3.py` **flash, never build** — they take whatever is already in
-   > `.pio/build/<env>`. So a stale image in that directory is QA'd silently; the `/status` version
-   > check above is what catches it.
+   ```
+   python code/scripts/qa_board.py --port <COM> --env esp32c3-oled-live-release --connect        --expect-version 0.1.0
+   ```
+
+   Exit 0 = shippable. `--expect-version` makes the stamp a **critical** check on the acceptance
+   card: a board on `0.0.0-dev` is reported as a desk build, a board on any other version as a stale
+   image, and asking for a version without a reachable `/status` **fails** rather than skipping. Keep
+   the prior known-good `.bin` for rollback.
+
+   > Why that flag matters: `qa_board.py` and `flash_c3.py` **flash, never build** — they push
+   > whatever is already in `.pio/build/<env>`. Without it, a stale or unstamped image is accepted
+   > silently and the whole acceptance ride becomes evidence for a version the board is not running.
 6. **Ride it.** For the C3 spoof the acceptance ride is session 14's **G1** (the bike pairs and reads
    the rider's pedals through the spoof); erg claims need **G2**. A release that has not been on a
    bike is a candidate, whatever its version says.

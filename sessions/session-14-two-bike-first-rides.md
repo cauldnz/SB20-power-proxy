@@ -45,9 +45,11 @@ human-in-the-loop contract"). Nothing below is attempted until G0 is green at th
       runbook's step 4, **never a local rebuild**: a local build of the same commit is not
       byte-identical (`build_version.py` restamps `SB20_BUILD_TIME`), so riding one image and shipping
       another proves nothing about what the rider downloads. Then run the acceptance card against it:
-      `python code/scripts/qa_board.py --port <COM> --env esp32c3-oled-live-release --connect`.
-      Then confirm `/status` reports `version: 0.1.0` and **not** `0.0.0-dev` — a dev stamp means the
-      board is not running the candidate and nothing below counts as release evidence.
+      `python code/scripts/qa_board.py --port <COM> --env esp32c3-oled-live-release --connect
+      --expect-version 0.1.0` — exit 0 means the board advertises as the spoof crank, answers
+      `/status` healthily, emits decodable CPS **and** is running exactly `0.1.0`. A `0.0.0-dev` or
+      any other version fails the card, because a board that is not running the release makes nothing
+      below count as release evidence.
       **Why it matters for this session:** the ride board was last flashed **2026-07-26**, and since then
       48 files / +7195 lines changed under `firmware/` — including four pieces of the spoof path that
       sessions 8/9/13 proved on air (`Cps.h`, `BleCrankPeripheral.cpp`, `main.cpp`'s wiring, and the new
