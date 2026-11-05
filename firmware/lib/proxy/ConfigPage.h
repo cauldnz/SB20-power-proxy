@@ -20,7 +20,12 @@ namespace sb20proxy {
 // Parse the source-setup form. Keys: `addr` (the pinned BLE address; "" = match by name), `name`
 // (the name-substring fallback), `single` (checkbox; present/"1"/"on" = true). Unknown keys
 // ignored. Reuses Provisioning.h's urlDecode.
-inline RuntimeConfig parseConfigForm(const std::string& body) {
+// `modeForIdentity` decides only whether the bare-id normalisation below applies (SPOOF) or not
+// (CORRECTOR advertises our own non-Stages name). It defaults to SPOOF, matching this function's
+// fresh-config semantics; mergeSetupForm passes the mode it is merging ONTO, which is the one that
+// will actually be live.
+inline RuntimeConfig parseConfigForm(const std::string& body,
+                                     ProxyMode modeForIdentity = ProxyMode::Spoof) {
     RuntimeConfig c;
     bool single = false;
     forEachFormField(body, [&](const std::string& key, const std::string& val) {
@@ -32,6 +37,11 @@ inline RuntimeConfig parseConfigForm(const std::string& body) {
         else if (key == "trainer") c.trainerNameFilter = stripConfigDelims(val);
     });
     c.singleSidedDouble = single;
+    // A bare crank id is normalised to the name the bike actually scans for: "51862" -> "Stages
+    // 51862" (#384). The SB20 finds its crank BY NAME, so a bare id silently never pairs, and
+    // entering the real crank's id is the intended SPOOF workflow. SPOOF only — a CORRECTOR
+    // advertises our own name. Idempotent, so re-saving an already-correct name changes nothing.
+    if (modeForIdentity == ProxyMode::Spoof) c.spoofName = normaliseSpoofName(c.spoofName);
     // A BLANK identity is stored blank on purpose: it means "this board's own default", which the boot
     // path derives from the MAC (RuntimeConfig::resolveIdentity, #330). The old fallback to a fixed
     // "Stages 62144" put every blank-named board on bike 1's real crank id. The serial keeps its fixed
@@ -56,6 +66,10 @@ inline RuntimeConfig mergeSpaConfigForm(const RuntimeConfig& current, const std:
         else if (key == "mode") c.mode = (val == "corrector") ? ProxyMode::Corrector : ProxyMode::Spoof;
     });
     // A blank out_name stays blank = this board's MAC-derived default at boot (see parseConfigForm).
+    // The same bare-id normalisation as parseConfigForm (#384) — applied AFTER the loop, because
+    // `mode` may have changed in this very body, and the rule is SPOOF-only. A board still carrying
+    // a bare id stored before this fix is corrected by the next save, whatever that save was for.
+    if (c.mode == ProxyMode::Spoof) c.spoofName = normaliseSpoofName(c.spoofName);
     return c;
 }
 
@@ -76,7 +90,9 @@ inline bool formHasField(const std::string& body, const std::string& key) {
 // the curve + reverted the mode. Every other config writer already merges like this; /setup was the
 // holdout. Pure + host-tested. (The SPA's POST /config has its own field vocab -> mergeSpaConfigForm.)
 inline RuntimeConfig mergeSetupForm(const RuntimeConfig& current, const std::string& body) {
-    const RuntimeConfig form = parseConfigForm(body);  // applies the /setup field vocab + checkbox rules
+    // The mode is PRESERVED from `current`, so it is also the mode the identity rule must be judged
+    // against (#384): a Corrector board's name must not be given a "Stages " prefix.
+    const RuntimeConfig form = parseConfigForm(body, current.mode);  // /setup field vocab + checkbox rules
     RuntimeConfig c = current;                          // preserve mode / curve / refMeter / calibrating
     c.meterAddress = form.meterAddress;
     c.meterNameFilter = form.meterNameFilter;
@@ -200,8 +216,17 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
          "<label for='spoof_name'>Crank name</label>"
          "<input type='text' id='spoof_name' name='spoof_name' autocomplete='off' "
          "autocapitalize='none' autocorrect='off' spellcheck='false' value='" +
-         htmlEscape(cfg.spoofName) + "' placeholder='blank = this board&#39;s own (Stages 9NNNN)'>"
-         "<label for='spoof_serial'>Serial <span class='hint'>(optional)</span></label>"
+         htmlEscape(cfg.spoofName) + "' placeholder='blank = this board&#39;s own (Stages 9NNNN)'>";
+    // Rule 2 (FleetIdentity.h): a custom SPOOF name with no "Stages " prefix will not be found by
+    // the bike. Warn, don't block — an odd name may be deliberate. A bare id never reaches here;
+    // it is normalised on save.
+    if (cfg.mode == ProxyMode::Spoof && spoofNameMissingStagesPrefix(cfg.spoofName)) {
+        h += "<p class='hint' style='color:var(--bad)'>&#9888; The SB20 scans for its crank by "
+             "name and a real Stages crank is named <code>Stages &lt;id&gt;</code>, so this name "
+             "will not be found. Prefix it with <code>Stages </code> (or enter just the id and we "
+             "add the prefix).</p>";
+    }
+    h += "<label for='spoof_serial'>Serial <span class='hint'>(optional)</span></label>"
          "<input type='text' id='spoof_serial' name='spoof_serial' autocomplete='off' "
          "autocapitalize='none' autocorrect='off' spellcheck='false' value='" +
          htmlEscape(cfg.spoofSerial) + "' placeholder='11821518'>"

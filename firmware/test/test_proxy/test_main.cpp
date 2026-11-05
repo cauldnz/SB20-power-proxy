@@ -1271,6 +1271,67 @@ void test_config_form_parse() {
     TEST_ASSERT_EQUAL_STRING(Config::SPOOF_SERIAL, f.spoofSerial.c_str());
 }
 
+// A bare crank id typed into /setup's "Crank name" is normalised to the name the SB20 actually
+// scans for (#384). The user in #382 entered his real left crank's id, the board advertised "51862",
+// and the bike never paired — silently. Every write path must close that, and CORRECTOR must not be
+// dragged into the Stages namespace along the way.
+void test_a_bare_crank_id_is_prefixed_on_every_save_path() {
+    // /setup, fresh parse (mode defaults to SPOOF).
+    RuntimeConfig a = parseConfigForm("addr=&name=ASSIOMA&spoof_name=51862");
+    TEST_ASSERT_EQUAL_STRING("Stages 51862", a.spoofName.c_str());
+    // Already prefixed -> untouched (no doubling), and blank still means "derive at boot".
+    RuntimeConfig b = parseConfigForm("addr=&name=ASSIOMA&spoof_name=Stages+51862");
+    TEST_ASSERT_EQUAL_STRING("Stages 51862", b.spoofName.c_str());
+    RuntimeConfig c = parseConfigForm("addr=&name=ASSIOMA&spoof_name=");
+    TEST_ASSERT_EQUAL_STRING("", c.spoofName.c_str());
+
+    // /setup/save — the live route (WebRoutes.h): merges onto current, so the mode it must judge the
+    // identity against is the PRESERVED one, not parseConfigForm's default.
+    RuntimeConfig cur = RuntimeConfig::defaults();  // SPOOF
+    RuntimeConfig d = mergeSetupForm(cur, "addr=&name=ASSIOMA&spoof_name=51862");
+    TEST_ASSERT_EQUAL_STRING("Stages 51862", d.spoofName.c_str());
+
+    // The same body on a CORRECTOR board: that mode advertises our own honest name, so a numeric
+    // name is the user's own and must NOT be pulled into the Stages namespace.
+    RuntimeConfig corr = RuntimeConfig::defaults();
+    corr.mode = ProxyMode::Corrector;
+    RuntimeConfig e = mergeSetupForm(corr, "addr=&name=ASSIOMA&spoof_name=51862");
+    TEST_ASSERT_TRUE(e.mode == ProxyMode::Corrector);
+    TEST_ASSERT_EQUAL_STRING("51862", e.spoofName.c_str());
+
+    // POST /config (the shared SPA): same rule, and it is applied AFTER the body's own `mode`, so a
+    // flip to spoof in the same request still normalises.
+    RuntimeConfig f = mergeSpaConfigForm(cur, "out_name=51862");
+    TEST_ASSERT_EQUAL_STRING("Stages 51862", f.spoofName.c_str());
+    RuntimeConfig g = mergeSpaConfigForm(corr, "out_name=51862&mode=spoof");
+    TEST_ASSERT_EQUAL_STRING("Stages 51862", g.spoofName.c_str());
+    RuntimeConfig hh = mergeSpaConfigForm(cur, "out_name=51862&mode=corrector");
+    TEST_ASSERT_EQUAL_STRING("51862", hh.spoofName.c_str());
+}
+
+// The /setup page warns when a SPOOF identity will not be found by the bike, and stays quiet when it
+// will. The warning is advisory — the form still saves (a deliberately odd name is allowed).
+void test_setup_page_warns_only_on_an_unfindable_spoof_name() {
+    RuntimeConfig warn = RuntimeConfig::defaults();
+    warn.mode = ProxyMode::Spoof;
+    warn.spoofName = "my crank";
+    const std::string warned = renderConfigPage(warn);
+    TEST_ASSERT_TRUE(warned.find("will not be found") != std::string::npos);
+
+    RuntimeConfig fine = RuntimeConfig::defaults();
+    fine.spoofName = "Stages 51862";
+    TEST_ASSERT_TRUE(renderConfigPage(fine).find("will not be found") == std::string::npos);
+
+    RuntimeConfig blank = RuntimeConfig::defaults();  // blank = derived at boot, always findable
+    TEST_ASSERT_TRUE(renderConfigPage(blank).find("will not be found") == std::string::npos);
+
+    // CORRECTOR's own name has no Stages prefix and needs none: no warning.
+    RuntimeConfig corr = RuntimeConfig::defaults();
+    corr.mode = ProxyMode::Corrector;
+    corr.spoofName = Config::CORRECTOR_NAME;
+    TEST_ASSERT_TRUE(renderConfigPage(corr).find("will not be found") == std::string::npos);
+}
+
 void test_config_validation() {
     RuntimeConfig empty;  // no address, no name
     TEST_ASSERT_NOT_NULL(configValidationError(empty));
@@ -3029,6 +3090,8 @@ int runUnityTests() {
     RUN_TEST(test_band_label_guards_short_edges);
     RUN_TEST(test_url_encode_roundtrips_with_decode);
     RUN_TEST(test_config_form_parse);
+    RUN_TEST(test_a_bare_crank_id_is_prefixed_on_every_save_path);
+    RUN_TEST(test_setup_page_warns_only_on_an_unfindable_spoof_name);
     RUN_TEST(test_config_validation);
     RUN_TEST(test_add_candidate_dedup_and_cap);
     RUN_TEST(test_dedupe_and_sort_sources);

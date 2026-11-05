@@ -5310,3 +5310,56 @@ folded into session 14 G1b.
 
 **Tooling:** `pcap_sqlite.resolve_char` collapsed every `0c46be…` char into one label
 (`stages_prop_0c46_f4e5`). It now labels `stages_prop_0c46be60/be61/beb0/beb1`, with a test.
+
+## 2026-11-05 — the first outside user, and the "Stages " prefix is load-bearing (#382 → #384)
+
+The repo has been **public** since before 2026-10-06, which nobody here had registered. An outside
+user (`eejeremy`) filed **#382** on 2026-10-14 — the project's first report from someone else's SB20,
+and the first independent confirmation that the crank spoof works off our documentation alone: he
+built from `1314936`, paired, completed the A4 handshake (`[prop fe02] write bfda1853`), passed a
+zero-reset and read live corrected power in the Stages app and Zwift, on a **XIAO ESP32-C3** with a
+U.FL antenna and Assioma PRO DUO pedals. His board also reproduced the session-3 `reason=531`
+disconnect-then-reconnect, independently, on different hardware.
+
+**The defect (#384, fixed here): the SB20 scans for its crank BY NAME, so a bare id never pairs.**
+He entered his real left crank's id (`51862`) in `/setup`'s Crank name field; the board advertised
+`51862`, and the bike never found it. nRF Connect showed the real right crank as `Stages 32059` —
+with the prefix. Adding `Stages ` fixed the pairing. The failure mode is the problem: the board
+advertises happily, the bike just never pairs, and nothing in the UI or `/log` says why.
+
+Why it was reachable: the MAC-**derived** default has always been correct (`Stages 9NNNN`,
+`FleetIdentity.h`), but `Config.h` deliberately ships **no** default name, so typing the real crank's
+identity *is* the intended SPOOF workflow — and `resolveIdentity()` returns early on any stored
+value, so a user string was never normalised. Entering the bare number is the natural reading,
+because the Stages app, the bike's own stored crank ids and these docs all name cranks by number.
+
+Decided and implemented: an all-digits identity is **normalised** to `Stages <digits>` on every save
+path (`parseConfigForm` / `mergeSetupForm` / `mergeSpaConfigForm`); any other unprefixed name is left
+alone but **warned** about on `/setup` (advisory — a deliberately odd name is still allowed);
+CORRECTOR identities are exempt, since that mode advertises our own honest non-Stages name
+(`parseConfigForm` therefore takes the mode to judge the identity against, which `mergeSetupForm`
+passes from the config it merges onto). Blank is untouched by both rules. Host-tested in
+`test_fleetidentity` + `test_proxy`; the derived-default sweep asserts the two rules agree.
+
+**Two of his three symptoms were already answered in these docs, which is its own finding — the
+answers existed and were not reachable by a user:**
+- **Crank length reverting to blank is expected and harmless.** Session 3 A2: the Stages app does not
+  set crank length over the standard CP, so the proxy never sees the write. And per 2026-06-14, once
+  spoofing, the SB20's crank-length setting leaves the power calculation entirely — only the
+  **Favero** app's length matters. It is *not* evidence of incomplete crank integration, which is how
+  he read it.
+- **ERG needs the bike in `External` ride mode** (`stages-app-config.md`): *External* defers to an
+  outside FTMS controller (the Zwift mode), *Grade* and *Power/Erg* keep the target in the app. His
+  symptoms — shifters still changing resistance, resistance ignoring Zwift's targets — are what a
+  non-External mode looks like. Session 4 §C already proved the bike accepts third-party
+  Set-Target-Power in External mode, and that a shift goes inert while a target is held. Asked on the
+  issue; **not yet confirmed** from his bike.
+
+Still open from #382: his ERG mode (awaiting his answer, `needs-info`). Note our own erg-through-the-
+proxy gate on a real SB20 is *also* unrun (ROADMAP Now 7 / session 14 G2), so his report is at the
+frontier, not behind it.
+
+**Process consequence:** #382 sat unlabelled and unanswered for three weeks because nothing watches
+for outside issues, and there is **no release and no tag** — he had to build from a raw commit SHA.
+Hence the owner's commitment on the issue to a robust, flashable build within days, and the
+first tagged release off the existing `firmware/webflash/` browser-installer path.
