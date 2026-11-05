@@ -78,6 +78,59 @@ void test_real_crank_identities_are_bike_1s_two_cranks_exactly() {
     TEST_ASSERT_FALSE(isRealCrankIdentity(""));
 }
 
+// ---------- the "Stages " prefix: a bare id is never found by the bike (#384 / #382) ------------
+
+void test_a_bare_crank_id_is_normalised_to_the_name_the_bike_scans_for() {
+    // The defect an outside user hit: he entered his real left crank's id and the board advertised
+    // "51862", which the SB20 never matches — it scans for "Stages 51862".
+    TEST_ASSERT_EQUAL_STRING("Stages 51862", normaliseSpoofName("51862").c_str());
+    TEST_ASSERT_EQUAL_STRING("Stages 62144", normaliseSpoofName("62144").c_str());
+    TEST_ASSERT_EQUAL_STRING("Stages 4963", normaliseSpoofName("4963").c_str());
+}
+
+void test_normalisation_leaves_everything_else_alone_and_is_idempotent() {
+    TEST_ASSERT_EQUAL_STRING("", normaliseSpoofName("").c_str());  // blank = derive at boot
+    // Already correct -> untouched, so re-saving a good name never doubles the prefix.
+    TEST_ASSERT_EQUAL_STRING("Stages 51862", normaliseSpoofName("Stages 51862").c_str());
+    TEST_ASSERT_EQUAL_STRING("Stages 51862",
+                             normaliseSpoofName(normaliseSpoofName("51862")).c_str());
+    // A custom non-numeric name is the user's business: preserved verbatim, warned about elsewhere.
+    TEST_ASSERT_EQUAL_STRING("SB20 Corrector", normaliseSpoofName("SB20 Corrector").c_str());
+    TEST_ASSERT_EQUAL_STRING("my crank", normaliseSpoofName("my crank").c_str());
+    // Not all-digits -> not a bare id, even though it looks close.
+    TEST_ASSERT_EQUAL_STRING("51862 L", normaliseSpoofName("51862 L").c_str());
+    TEST_ASSERT_EQUAL_STRING(" 51862", normaliseSpoofName(" 51862").c_str());
+}
+
+void test_is_all_digits() {
+    TEST_ASSERT_TRUE(isAllDigits("0"));
+    TEST_ASSERT_TRUE(isAllDigits("51862"));
+    TEST_ASSERT_FALSE(isAllDigits(""));  // blank is not an id
+    TEST_ASSERT_FALSE(isAllDigits("51862 "));
+    TEST_ASSERT_FALSE(isAllDigits("-1"));
+    TEST_ASSERT_FALSE(isAllDigits("1e5"));
+    TEST_ASSERT_FALSE(isAllDigits("Stages 51862"));
+}
+
+void test_the_warning_flags_exactly_the_names_the_bike_cannot_find() {
+    TEST_ASSERT_TRUE(spoofNameMissingStagesPrefix("my crank"));
+    TEST_ASSERT_TRUE(spoofNameMissingStagesPrefix("stages 51862"));  // case matters on the air
+    TEST_ASSERT_TRUE(spoofNameMissingStagesPrefix("Stages51862"));   // the space is part of it
+    TEST_ASSERT_FALSE(spoofNameMissingStagesPrefix(""));             // blank = derived, always fine
+    TEST_ASSERT_FALSE(spoofNameMissingStagesPrefix("Stages 51862"));
+    TEST_ASSERT_FALSE(spoofNameMissingStagesPrefix(defaultSpoofName(kS3Mac)));  // derived is prefixed
+}
+
+void test_every_derived_identity_passes_its_own_prefix_rule() {
+    // The two rules must agree: a MAC-derived default must never trip the warning.
+    for (unsigned tail = 0; tail < 65536u; tail += 7u) {
+        const uint8_t mac[6] = {0, 0, 0, 0, (uint8_t)(tail >> 8), (uint8_t)(tail & 0xFF)};
+        const std::string name = defaultSpoofName(mac);
+        if (spoofNameMissingStagesPrefix(name))
+            TEST_FAIL_MESSAGE(("derived name trips the prefix warning: " + name).c_str());
+    }
+}
+
 // ---------- RuntimeConfig::resolveIdentity — absent vs stored -----------------------------------
 
 void test_defaults_carry_no_identity_until_resolved() {
@@ -146,6 +199,11 @@ int main(int, char**) {
     RUN_TEST(test_zero_padding_keeps_four_digits);
     RUN_TEST(test_never_a_real_crank_id_for_any_mac_tail);
     RUN_TEST(test_real_crank_identities_are_bike_1s_two_cranks_exactly);
+    RUN_TEST(test_a_bare_crank_id_is_normalised_to_the_name_the_bike_scans_for);
+    RUN_TEST(test_normalisation_leaves_everything_else_alone_and_is_idempotent);
+    RUN_TEST(test_is_all_digits);
+    RUN_TEST(test_the_warning_flags_exactly_the_names_the_bike_cannot_find);
+    RUN_TEST(test_every_derived_identity_passes_its_own_prefix_rule);
     RUN_TEST(test_defaults_carry_no_identity_until_resolved);
     RUN_TEST(test_an_absent_identity_is_derived_from_the_mac_and_reported_as_default);
     RUN_TEST(test_a_stored_identity_is_left_exactly_as_stored);

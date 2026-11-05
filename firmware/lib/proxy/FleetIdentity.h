@@ -54,4 +54,52 @@ inline bool isRealCrankIdentity(const std::string& name) {
     return false;
 }
 
+// --- The "Stages " prefix: what makes a spoof identity FINDABLE by the bike (#384) --------------
+//
+// The SB20 scans for its crank BY NAME, and a real Stages crank advertises as "Stages <id>" — the
+// names above, and the "Stages 32059" an outside user read off his own right crank in #382. So a
+// BARE id ("51862") is never found, and the failure is silent: the board advertises happily, the
+// bike simply never pairs, and nothing in the UI or /log says why. That user lost a session to it.
+//
+// Typing the bare id is the natural mistake, not a careless one: the Stages app, the bike's own
+// stored crank ids and our docs all name cranks by number ("51862 : 32059"). And because Config.h
+// ships NO default name, entering the real crank's identity is the intended SPOOF workflow — so
+// this is the common path for every new user, not an edge case.
+//
+// Hence two rules, applied on the way IN (ConfigPage.h's two form parsers):
+//   1. an all-digits identity is NORMALISED to "Stages <digits>" — the intent is unambiguous, and
+//      it is what the real crank calls itself;
+//   2. anything else lacking the prefix is left ALONE but FLAGGED, so /setup can warn without
+//      blocking a deliberately odd name.
+// Blank is untouched by both: blank means "this board's own default", derived above at boot.
+constexpr const char* kStagesNamePrefix = "Stages ";
+
+inline bool isAllDigits(const std::string& s) {
+    if (s.empty()) return false;
+    for (const char ch : s) {
+        if (ch < '0' || ch > '9') return false;
+    }
+    return true;
+}
+
+inline bool hasStagesPrefix(const std::string& name) {
+    return name.rfind(kStagesNamePrefix, 0) == 0;
+}
+
+// Rule 1. "51862" -> "Stages 51862". Blank stays blank; an already-prefixed or non-numeric name is
+// returned unchanged, so this is idempotent and safe to apply on every save. CORRECTOR identities
+// must NOT pass through here — that mode advertises our own honest name, which is not a Stages id.
+inline std::string normaliseSpoofName(const std::string& name) {
+    if (isAllDigits(name)) return std::string(kStagesNamePrefix) + name;
+    return name;
+}
+
+// Rule 2. True when a SPOOF identity is set but will not be found by the bike: a non-blank name
+// without the prefix. (The numeric case is normalised away before this is asked, so what reaches
+// here is a custom name.) Advisory only — the caller warns, it does not reject. Ask this ONLY in
+// SPOOF mode: Config::CORRECTOR_NAME has no "Stages " prefix and is correct without one.
+inline bool spoofNameMissingStagesPrefix(const std::string& name) {
+    return !name.empty() && !hasStagesPrefix(name);
+}
+
 }  // namespace sb20proxy
