@@ -48,6 +48,12 @@ accepts it as its own and runs its erg loop off it. Configured over WiFi at `/se
   host do not — so `0.1.0` cannot update itself.
 - **One rider, one bike.** The two-bike identity discipline is implemented (MAC-derived
   `Stages 9NNNN` defaults, pin-by-address) but only ever exercised at the bench.
+- **A board with no stored identity may not pair.** With nothing in NVS the board advertises a
+  MAC-derived `Stages 9NNNN`, and whether the Stages app accepts a `9xxxx` crank id has **never been
+  tested on a bike** — only our own `62145` is proven (session 8). The `9` prefix was chosen so a
+  derived id can never collide with a real crank, not because it is known-good. If pairing fails,
+  set the identity explicitly in `/setup` (`Stages 62145`) and retry; a stored identity survives a
+  flash and is never overwritten. Never use `Stages 62144` — that is bike 1's real left crank.
 - The telemetry degradation on a cold start (#288) is still uncaused; the Stages app is the known
   workaround.
 

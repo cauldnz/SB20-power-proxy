@@ -51,10 +51,23 @@ human-in-the-loop contract"). Nothing below is attempted until G0 is green at th
       any other version fails the card, because a board that is not running the release makes nothing
       below count as release evidence.
       **Why it matters for this session:** the ride board was last flashed **2026-07-26**, and since then
-      48 files / +7195 lines changed under `firmware/` — including four pieces of the spoof path that
-      sessions 8/9/13 proved on air (`Cps.h`, `BleCrankPeripheral.cpp`, `main.cpp`'s wiring, and the new
-      `FleetIdentity.h`, which changes *what the board advertises*). **G1 is therefore a re-proof, not a
-      formality** — treat a pairing failure as expected-possible and bisect against the 07-26 build.
+      **43 files / +6433 / −829** changed under `firmware/` (baseline `142f3d7`, the last commit before
+      2026-07-27). The reassuring half: **`Cps.h` is untouched**, so the CPS frames the SB20 consumes are
+      byte-for-byte what sessions 8/9/13 rode, and `BleCrankPeripheral.cpp`'s change is a pure refactor of
+      the control-point order into host-tested `CpApply.h` (same `handleControlPoint` call, same
+      persist→reply→zero sequence). The risky half: the new **`FleetIdentity.h`** changes *what an
+      unnamed board advertises*, plus `RuntimeConfig.h` and 205 changed lines of `main.cpp` wiring.
+      **G1 is therefore a re-proof, not a formality** — treat a pairing failure as expected-possible and
+      bisect against `142f3d7`.
+- [ ] **Identity pre-flight — do this before pairing anything.** `curl .../status` on the C3 ride board
+      and read `identity` **and** `identity_default`. A stored identity survives a flash
+      (`RuntimeConfig::resolveIdentity` never overwrites one), but if `identity_default` is `true` the
+      board has nothing stored and is advertising a MAC-derived **`Stages 9NNNN`** — and
+      `FleetIdentity.h` states plainly that whether the Stages app pairs a `9xxxx` id **has never been
+      tested on a bike**; only our own **`62145`** is proven (session 8). So if it is `true`, set the
+      identity explicitly in `/setup` to `Stages 62145` *before* G1, or G1 may fail for a reason that has
+      nothing to do with this release. (Never `Stages 62144` — bike 1's real left crank; the QA card
+      vetoes it.)
       `v0.1.0` is tagged only after G1 passes; G2 decides whether the release notes may claim erg at all.
 - [ ] **Bike-2 inventory.** BLE scan for its `Stages Bike XXXX` name and address; the ids of its real
       L and R cranks (`Stages NNNNN` adverts, `code/scripts/16_scan_ant.py` for the ANT+ ids); crank

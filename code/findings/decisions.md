@@ -5373,10 +5373,32 @@ blake2b **and** ed25519 sig, so an unsigned manifest on a GitHub release would b
 signed-pull still needs the owner-side keygen. `v0.1.0` updates by maintainer push-OTA only.
 
 **The release's real risk, measured.** The C3 ride board was last flashed **2026-07-26**. Since then
-`firmware/` changed by **48 files / +7195 / −1009**, including four parts of the spoof path that
-sessions 8/9/13 proved on air: `Cps.h`, `BleCrankPeripheral.cpp`, `main.cpp`'s wiring, and the new
-`FleetIdentity.h` (which changes *what the board advertises*). So **session 14 G1 is a re-proof of
-pairing, not a formality**, and it is now the acceptance gate for `v0.1.0` (session 14 §2).
+`firmware/` changed by **43 files / +6433 / −829** (baseline `142f3d7`, the last commit before
+2026-07-27 — the exact flashed commit is not recorded anywhere, which is itself worth fixing).
+
+Scoped to the spoof path, the delta splits cleanly:
+- **Unchanged: `Cps.h`.** The CPS frames the SB20 actually consumes are byte-for-byte what sessions
+  8/9/13 rode. (An earlier draft of this entry said `Cps.h` had changed; that came from
+  `HEAD@{2026-07-27}`, which resolves against this machine's *reflog*, not the 07-26 tree. Against
+  the real commit it is untouched.)
+- **Changed but semantically identical: `BleCrankPeripheral.cpp`** (+41) — a pure refactor lifting the
+  control-point order into `CpApply.h` so a host test can see it; same `handleControlPoint` call, same
+  persist → indicate reply → forward zero sequence.
+- **Genuinely new behaviour: `FleetIdentity.h`** (+57, #330/#354) plus `RuntimeConfig.h` (+33) and 205
+  changed lines of `main.cpp` wiring.
+
+So **session 14 G1 is a re-proof of pairing, not a formality**, and it is now the acceptance gate for
+`v0.1.0` (session 14 §2).
+
+**A concrete G1 risk the release inherits, worth stating before the rider is on the bike.** A stored
+identity survives a flash (`RuntimeConfig::resolveIdentity` never overwrites one), so a previously
+named board keeps its id. But a board with **nothing** stored now boots as a MAC-derived
+**`Stages 9NNNN`**, and `FleetIdentity.h` says in its own header that whether the Stages app pairs a
+`9xxxx` id **has never been tested on a bike** — only our own `62145` is proven (session 8). The '9'
+prefix was chosen to avoid colliding with a real crank id, *not* because it is known-good. Hence a new
+G0 pre-flight: read `/status` `identity` **and** `identity_default`, and if the default is in force,
+store `Stages 62145` via `/setup` before G1 — otherwise a pairing failure would be charged to this
+release when the cause is an untested identity namespace.
 
 **Desk state at the time of writing:** `pytest -q` 718 passed / 3 skipped (763 with the new tests),
 `ruff check src tests` clean, `pio test -e native` 405 cases green, `pio run -e esp32c3-oled-live`
