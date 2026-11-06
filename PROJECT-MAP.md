@@ -284,6 +284,7 @@ CI parses this table.
 | Doc | Class | Note |
 |---|---|---|
 | [ROADMAP.md](ROADMAP.md) | living | the one backlog |
+| [RELEASES.md](RELEASES.md) | living | shipped firmware releases; each `## x.y.z` section is published as that release's GitHub notes |
 | [CLAUDE.md](CLAUDE.md) | living | project instructions and invariants |
 | [AGENTS.md](AGENTS.md) | living | mirror of the diagrams convention for other tools |
 | [DEV-PLAYBOOK.md](DEV-PLAYBOOK.md) | living | the desk dev loop |

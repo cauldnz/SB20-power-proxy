@@ -173,7 +173,11 @@ $repo = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 
 # env -> must it be flashable onto a bike?  Named in flash.ps1's own remediation text and BENCH-FLASH.md.
 $rideBuilds = @{
-    'firmware'     = @('esp32c3-oled-live-ota', 'esp32c3-oled-live', 'esp32cyd-live')
+    # esp32c3-oled-live-release is the PUBLISHED build (.github/workflows/release.yml). If the ride
+    # guard ever refuses it, every rider flashing a tagged release has to pass -Force, which trains
+    # them past the guard entirely. It is listed with SB20_VERSION deliberately unset, because that is
+    # how flash.ps1 reads the config on a rider's machine.
+    'firmware'     = @('esp32c3-oled-live-ota', 'esp32c3-oled-live', 'esp32c3-oled-live-release', 'esp32cyd-live')
     'firmware-nrf' = @('xiao-sense')
 }
 $mustBlock = @{

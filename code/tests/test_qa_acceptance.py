@@ -20,6 +20,7 @@ from sb20proxy.qa.acceptance import (
     evaluate,
     is_real_crank_identity,
 )
+from sb20proxy.release import DEV_VERSION
 
 ROOT = Path(__file__).resolve().parents[2]
 FLEET_H = ROOT / "firmware" / "lib" / "proxy" / "FleetIdentity.h"
@@ -248,3 +249,72 @@ def test_python_constants_mirror_the_firmware_header():
         assert f'"{n}"' in text, f"{n} missing from FleetIdentity.h"
     assert f'kDerivedIdentityPrefix = "{DERIVED_IDENTITY_PREFIX}"' in text
     assert f"kDerivedIdentityModulus = {DERIVED_IDENTITY_MODULUS}" in text
+
+
+# --- the release gate: is this board running the version we are about to publish? --------------
+#
+# qa_board.py and flash_c3.py FLASH but never BUILD: they push whatever is already in
+# .pio/build/<env>. Without an asserted version a stale or desk image is accepted silently and the
+# acceptance ride counts as evidence for a version the board is not running. See
+# beta/RELEASE-AND-OTA.md and sb20proxy.release.
+
+
+def _release_board(version: str | None):
+    """A board that is healthy in every other respect, reporting `version` (None = no field)."""
+    status = dict(GOOD_STATUS)
+    if version is not None:
+        status["version"] = version
+    return dict(
+        expected_spoof_name=NAME, advert_seen=True, advert_names=[NAME],
+        status=status, cps_powers=[0, 152], flash_ok=True,
+    )
+
+
+def test_matching_version_passes_the_release_gate():
+    r = evaluate(**_release_board("0.1.0"), expect_version="0.1.0")
+    assert r.passed
+    assert "0.1.0" in r.render()
+
+
+def test_a_desk_build_fails_the_release_gate():
+    """0.0.0-dev is Config.h's default: the board is not running a release at all."""
+    r = evaluate(**_release_board(DEV_VERSION), expect_version="0.1.0")
+    assert not r.passed
+    assert "DESK build" in r.render()
+
+
+def test_a_stale_release_image_fails_the_release_gate():
+    r = evaluate(**_release_board("0.0.9"), expect_version="0.1.0")
+    assert not r.passed
+    assert "stale image" in r.render()
+
+
+def test_a_firmware_with_no_version_field_fails_the_release_gate():
+    r = evaluate(**_release_board(None), expect_version="0.1.0")
+    assert not r.passed
+    assert "no version field" in r.render()
+
+
+def test_gating_a_release_without_status_is_a_failure_not_a_skip():
+    """Asked to gate a version but given no way to read one: the card must not quietly pass."""
+    r = evaluate(
+        expected_spoof_name=NAME, advert_seen=True, advert_names=[NAME],
+        status=None, expect_version="0.1.0",
+    )
+    assert not r.passed
+    assert "/status was not fetched" in r.render()
+
+
+def test_version_is_reported_but_not_judged_when_no_release_is_being_gated():
+    """The ordinary pre-ship card still shows the version; it just does not fail on it."""
+    r = evaluate(**_release_board(DEV_VERSION))
+    assert r.passed
+    assert DEV_VERSION in r.render()
+
+
+def test_the_release_version_check_is_critical():
+    """A non-critical check could not block shipping, which would defeat the point."""
+    r = evaluate(**_release_board("0.0.9"), expect_version="0.1.0")
+    failed = [c for c in r.checks if c.ok is False]
+    assert [c.name for c in failed] == ["firmware version"]
+    assert all(c.critical for c in failed)
