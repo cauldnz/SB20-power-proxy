@@ -32,6 +32,28 @@ its own crank, so the spoof has to be byte-faithful.
 | **A beta tester (or running the beta)** | [`beta/ONBOARDING.md`](beta/ONBOARDING.md) · [`USERS-PLAYBOOK.md`](USERS-PLAYBOOK.md) |
 | **Identifying a physical board** | [`BOARDS.md`](BOARDS.md) |
 
+## Install it on a board
+
+You need an **ESP32-C3** board (a Seeed XIAO ESP32-C3 or a C3 SuperMini; the 0.42" OLED variant adds a
+screen) and a BLE power meter. Grab the **[latest release](https://github.com/cauldnz/SB20-power-proxy/releases/latest)** —
+its notes carry the install link and the flashing one-liner, and `firmware-factory.bin` is attached as
+a single image you write at offset `0x0`.
+
+There is also a **browser installer** ([`firmware/webflash/`](firmware/webflash/)) — an Install button
+that flashes over Web Serial from desktop Chrome or Edge, no command line. It needs to be served over
+HTTPS; the release notes link the hosted copy when there is one.
+
+Then: the board raises a `Setup-XXXX` Wi-Fi network, you join it from a phone, pick your Wi-Fi and your
+meter, and — for the SB20 crank spoof — put the crank id you are standing in for in **Crank identity
+(advanced)**. Pull that crank's battery, and leave the *other* crank findable: the bike wants both of
+its ids present. If ERG won't engage, the bike must be in **External** ride mode in the Stages app.
+
+> **This is a working research project, not a product.** It has ridden real sessions on the author's
+> bike, but it has been tested on very few bikes, there is no support, and a mis-set crank identity can
+> stop your bike pairing until you fix it. Nothing here is affiliated with Stages, Giant/SPIA or Favero.
+> Please [open an issue](https://github.com/cauldnz/SB20-power-proxy/issues) if it fails for you —
+> outside reports are the scarcest thing this project has.
+
 ## Why this exists
 
 Stages Cycling ceased operations in 2024; its brand and assets were later acquired by Giant Group (via
