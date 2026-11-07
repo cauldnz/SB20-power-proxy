@@ -21,6 +21,8 @@ with the same sb20proxy.ble.cps codec the firmware mirrors.
 
     # full pre-ship gate: flash, then accept:
     python code/scripts/qa_board.py --port COM10 --env esp32c3-oled-live --connect
+    # gating a tagged RELEASE (beta/RELEASE-AND-OTA.md): assert the stamped version too:
+    python code/scripts/qa_board.py --port COM10 --env esp32c3-oled-live-release --connect         --expect-version 0.1.0
 
 The card FAILS a board advertising one of bike 1's real crank ids (Stages 62144 / 4963) unless
 --crank-rescue says that is intended, and a name that more than one advertiser is using.
@@ -124,6 +126,11 @@ def main() -> int:
     p.add_argument("--crank-rescue", action="store_true",
                    help="this board deliberately stands in for one of bike 1's real cranks "
                         "(Stages 62144 / 4963): accept that identity instead of failing on it")
+    p.add_argument("--expect-version", metavar="X.Y.Z", default=None,
+                   help="fail unless /status reports exactly this firmware version. Use it when "
+                        "gating a tagged release: these tools FLASH but never BUILD, so without it "
+                        "a stale or 0.0.0-dev image in .pio/build is accepted silently and the "
+                        "whole ride counts as evidence for a version the board is not running")
     p.add_argument("--port", help="COM port to flash (omit / use --no-flash to skip flashing)")
     p.add_argument("--env", default="esp32c3-oled-live", help="platformio env to flash")
     p.add_argument("--no-flash", action="store_true",
@@ -179,6 +186,7 @@ def main() -> int:
         expected_spoof_name=spoof_name, advert_seen=advert_seen,
         advert_names=advert_names, advert_matches=match_addrs, status=status,
         cps_powers=cps_powers, flash_ok=flash_ok, crank_rescue=a.crank_rescue,
+        expect_version=a.expect_version,
     )
 
     if a.json:

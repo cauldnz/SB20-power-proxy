@@ -4,11 +4,25 @@
 
 // Firmware build version (semver) — the OTA fleet channel compares this against a release
 // manifest's version (OtaManifest::shouldUpdate), and it's surfaced in /status + /diag so we
-// know which build a tester is on. Override per release with a build flag in platformio.ini /
-// the release runbook:   build_flags = -DSB20_FIRMWARE_VERSION=\"0.2.0\"
+// know which build a tester is on.
+//
+// A RELEASE build is stamped from the git tag by .github/workflows/release.yml, which builds
+// `env:esp32c3-oled-live-release` with SB20_VERSION set (see beta/RELEASE-AND-OTA.md). Everything
+// else — every dev and CI build — keeps the `0.0.0-dev` default below, so `/status` can never make a
+// desk build look like a shipped one, and any real release is strictly newer than it (0.0.0).
+//
+// Do NOT try to stamp a version with `pio run --project-option=...`: PlatformIO 6.1.19's `run` has
+// no such flag (it exists only on `pio ci` / `project init`), and `PLATFORMIO_BUILD_FLAGS` *replaces*
+// an env's build_flags rather than extending them — which would silently drop -DUSE_OLED / -DUSE_WIFI
+// / -DUSE_MOCK_METER=0 and ship a mock-meter build under a release version. Hence the dedicated env.
 #ifndef SB20_FIRMWARE_VERSION
-#define SB20_FIRMWARE_VERSION "0.1.0"
+#define SB20_FIRMWARE_VERSION "0.0.0-dev"
 #endif
+
+// A mis-invoked release build (SB20_VERSION unset or unexported) would stamp "" or "None" here and
+// make the device's strict newer-than OTA compare meaningless. Fail the compile instead of shipping it.
+static_assert(SB20_FIRMWARE_VERSION[0] >= '0' && SB20_FIRMWARE_VERSION[0] <= '9',
+              "SB20_FIRMWARE_VERSION must start with a digit - release.yml stamps it from the git tag");
 
 // Build stamp — the git short SHA + build time, injected by scripts/build_version.py so we can tell
 // dev builds apart (the semver above only changes at release). Fallbacks keep host/test builds compiling

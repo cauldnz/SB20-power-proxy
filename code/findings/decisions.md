@@ -5363,3 +5363,95 @@ frontier, not behind it.
 for outside issues, and there is **no release and no tag** — he had to build from a raw commit SHA.
 Hence the owner's commitment on the issue to a robust, flashable build within days, and the
 first tagged release off the existing `firmware/webflash/` browser-installer path.
+## 2026-11-05 — the release path had never worked: `pio run --project-option` does not exist
+
+Scoping the **first tagged release** (owner: "a first well tested release in the next few days";
+scope chosen this session = **the C3-OLED crank spoof only**, `esp32c3-oled-live`, with PRs #376 and
+#380 deferred) turned up that the documented way to stamp a firmware version **cannot ever have run**.
+
+**Refuted procedure.** `beta/RELEASE-AND-OTA.md` said to build a release with:
+
+```
+platformio.exe run -e esp32c3-oled-live -d firmware --project-option="build_flags=-DSB20_FIRMWARE_VERSION=\"0.2.0\""
+```
+
+PlatformIO **6.1.19** (`tools/dev-env.lock`) has **no `--project-option` flag on `pio run`** — it
+exists only on `pio ci`, `project init`, `remote` and `device monitor` (verified against the installed
+`platformio/run/cli.py`: the option list is `--environment --target --upload-port --monitor-port
+--project-dir --project-conf --jobs --silent --verbose --disable-auto-clean --list-targets
+--program-arg`). The command fails with "no such option". **Consequence: no build has ever carried a
+version other than `Config.h`'s default**, and no git tag or GitHub release exists in the repo.
+
+**Two near misses recorded so nobody hand-rolls it again:**
+- `--project-option="build_flags=…"` *replaces* an env's `build_flags`; it does not extend them.
+- `PLATFORMIO_BUILD_FLAGS` genuinely does replace them (`project/config.py` returns the env var's
+  value in place of the ini value for an option with a `sysenvvar`).
+
+Either one silently drops `-DUSE_MOCK_METER=0`, `-DUSE_OLED=1` and `-DUSE_WIFI=1` — i.e. it would
+publish a **mock-meter, no-OLED build under a release version**. That is the failure mode the design
+below exists to make impossible.
+
+**Chosen mechanism** (all verified on this machine, not reasoned about):
+- A dedicated env `esp32c3-oled-live-release` that `extends = env:esp32c3-oled-live` and re-includes
+  the parent's flags **by name** (`${env:esp32c3-oled-live.build_flags}`) before appending
+  `-DSB20_FIRMWARE_VERSION=\"${sysenv.SB20_VERSION}\"`. Redefining `build_flags` shadows `extends`,
+  so the explicit re-inclusion is load-bearing and is asserted by `code/tests/test_release.py`.
+  `${sysenv.X}` interpolation is supported (`project/config.py` line ~354).
+- `Config.h`'s default is now **`0.0.0-dev`** (was `0.1.0`), so `/status` can never make a desk build
+  look like a shipped one and any real release outranks it on the strict `isNewerVersion` compare.
+- A `static_assert` that the stamp starts with a digit. **Verified both ways:**
+  `SB20_VERSION=0.1.0 pio run -e esp32c3-oled-live-release` → exit 0, and `0.1.0` is in the ELF
+  exactly once with `0.0.0-dev` absent (0 matches); the same build with `SB20_VERSION` **unset** →
+  exit 1, `static assertion failed` on `ConfigStore.cpp` and `BleCrankPeripheral.cpp`. A mis-invoked
+  release build is a compile error, never a bad artifact.
+- `.github/workflows/release.yml`: a `v*` tag re-runs the full gate (ruff, pytest, `pio test -e
+  native` and `-e native-lvgl`, the flash ride-guard), builds the stamped image, asserts the stamp is
+  in the binary, and opens a **draft** release with the `.bin` + `SHA256SUMS`. `workflow_dispatch`
+  builds a candidate and publishes nothing — the release-candidate path.
+- **No prerelease tags.** The firmware parses `0.1.0-rc1` to `(0,1,0)`, identical to `0.1.0`, so a
+  board that installed an rc would never accept the final release. `version_from_tag` refuses them
+  rather than stripping the suffix.
+- Release notes are a **precondition**: the workflow publishes the `## <version>` section of the new
+  `RELEASES.md` and fails if it is missing or empty. (`RELEASES.md`, not `CHANGELOG.md` — the latter
+  is the ⛔ historical pre-pivot revision history, unmaintained since 2026-06-15, and reusing the
+  name would have overwritten 468 lines of it.)
+- `esp32c3-oled-live-release` added to the flash ride-guard's shippable list
+  (`tools/tests/Test-PioIni.ps1`) — confirmed SHIPPABLE with `SB20_VERSION` unset, which is how
+  `flash.ps1` reads the config on a rider's machine. A guard that refused the published build would
+  train riders to always pass `-Force`.
+
+**Unsigned OTA manifests stay out.** `parseManifest` sets `valid` only with a correctly-sized
+blake2b **and** ed25519 sig, so an unsigned manifest on a GitHub release would be rejected by design;
+signed-pull still needs the owner-side keygen. `v0.1.0` updates by maintainer push-OTA only.
+
+**The release's real risk, measured.** The C3 ride board was last flashed **2026-07-26**. Since then
+`firmware/` changed by **43 files / +6433 / −829** (baseline `142f3d7`, the last commit before
+2026-07-27 — the exact flashed commit is not recorded anywhere, which is itself worth fixing).
+
+Scoped to the spoof path, the delta splits cleanly:
+- **Unchanged: `Cps.h`.** The CPS frames the SB20 actually consumes are byte-for-byte what sessions
+  8/9/13 rode. (An earlier draft of this entry said `Cps.h` had changed; that came from
+  `HEAD@{2026-07-27}`, which resolves against this machine's *reflog*, not the 07-26 tree. Against
+  the real commit it is untouched.)
+- **Changed but semantically identical: `BleCrankPeripheral.cpp`** (+41) — a pure refactor lifting the
+  control-point order into `CpApply.h` so a host test can see it; same `handleControlPoint` call, same
+  persist → indicate reply → forward zero sequence.
+- **Genuinely new behaviour: `FleetIdentity.h`** (+57, #330/#354) plus `RuntimeConfig.h` (+33) and 205
+  changed lines of `main.cpp` wiring.
+
+So **session 14 G1 is a re-proof of pairing, not a formality**, and it is now the acceptance gate for
+`v0.1.0` (session 14 §2).
+
+**A concrete G1 risk the release inherits, worth stating before the rider is on the bike.** A stored
+identity survives a flash (`RuntimeConfig::resolveIdentity` never overwrites one), so a previously
+named board keeps its id. But a board with **nothing** stored now boots as a MAC-derived
+**`Stages 9NNNN`**, and `FleetIdentity.h` says in its own header that whether the Stages app pairs a
+`9xxxx` id **has never been tested on a bike** — only our own `62145` is proven (session 8). The '9'
+prefix was chosen to avoid colliding with a real crank id, *not* because it is known-good. Hence a new
+G0 pre-flight: read `/status` `identity` **and** `identity_default`, and if the default is in force,
+store `Stages 62145` via `/setup` before G1 — otherwise a pairing failure would be charged to this
+release when the cause is an untested identity namespace.
+
+**Desk state at the time of writing:** `pytest -q` 718 passed / 3 skipped (763 with the new tests),
+`ruff check src tests` clean, `pio test -e native` 405 cases green, `pio run -e esp32c3-oled-live`
+exit 0, and `03_static_replay.py --radio loopback` PASS.
