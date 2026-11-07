@@ -26,7 +26,29 @@ proving on the bike since June 2026.
 **What it is.** An ESP32-C3 with a 0.42″ OLED that reads a real power meter over BLE (Cycling Power
 Service `0x1818`) and re-presents it as a Stages left crank, byte-faithfully enough that an SB20
 accepts it as its own and runs its erg loop off it. Configured over WiFi at `/setup`, observed at
-`/`, `/log` and `/status`, updated by push-OTA.
+`/`, `/log` and `/status`.
+
+**Install it.** `firmware-factory.bin` below is the whole thing — bootloader, partition table and
+app merged into one image written at offset `0x0`. With [esptool](https://pypi.org/project/esptool/)
+(4.11 or newer; older versions wedge on the C3's USB-JTAG):
+
+```
+esptool.py --chip esp32c3 --port COM9 --baud 460800 write_flash \
+    --flash_mode dio --flash_freq 80m --flash_size 4MB 0x0 firmware-factory.bin
+```
+
+`sb20proxy-esp32c3-oled-live-release-0.1.0.bin` is the app image only — use it for a push-OTA to a
+board that is already running this firmware, not for a first install. Verify either with
+`sha256sum -c SHA256SUMS`.
+
+There is also a no-command-line **browser installer** (`firmware/webflash/`, an Install button over
+Web Serial from desktop Chrome or Edge) and the attached `manifest.json` drives it — but it has to be
+served over HTTPS, and **this release does not yet host a copy**, so the esptool path above is the
+one that works today.
+
+After flashing, the board raises a `Setup-XXXX` WiFi network: join it from a phone, pick your WiFi
+and your power meter, and set the crank identity — see the first known limit below, because that is
+the step that silently stops the bike pairing.
 
 **Validated on air before this tag** (the sessions behind it, not claims made at the desk):
 - The SB20 accepts the spoof's power *and* cadence with no real crank present (session 2), and pairs
@@ -45,6 +67,16 @@ accepts it as its own and runs its erg loop off it. Configured over WiFi at `/se
   disconnect-then-reconnect first seen in session 3.
 
 **Known limits — read before riding.**
+- **Getting the crank identity right is the one step that silently stops pairing.** The SB20 looks
+  its crank up **by name**, so the board has to advertise the same name the bike already has stored.
+  In `/setup` → **Crank identity (advanced)**, enter the id of the crank you are standing in for
+  (normally the real **left** crank); a bare number like `51862` is now normalised to
+  `Stages 51862` for you, which it was not before this release ([#384](https://github.com/cauldnz/SB20-power-proxy/issues/384)) — that silent failure cost
+  the first outside user a session. Then pull **that** crank's battery and leave the **other** crank
+  powered: the bike wants both of its stored ids findable. Left blank, the board advertises a
+  MAC-derived `Stages 9NNNN`, which is unique and collision-free but has **never been tested against
+  the Stages app on a bike** — so for the SB20 spoof, set the id explicitly. A stored identity
+  survives a flash and is never overwritten.
 - **ERG needs the bike in External ride mode, and that catches people out.** In the Stages app the
   bike's ride mode must be **External** — in **Grade** or **Power/Erg** the bike keeps the target
   itself and ignores the app, so a Zwift or qz workout appears to do nothing: the shifters stay live
@@ -64,16 +96,6 @@ accepts it as its own and runs its erg loop off it. Configured over WiFi at `/se
   host do not — so `0.1.0` cannot update itself.
 - **One rider, one bike.** The two-bike identity discipline is implemented (MAC-derived
   `Stages 9NNNN` defaults, pin-by-address) but only ever exercised at the bench.
-- **Getting the crank identity right is the one step that silently stops pairing.** The SB20 looks
-  its crank up **by name**, so the board has to advertise the same name the bike already has stored.
-  In `/setup` → **Crank identity (advanced)**, enter the id of the crank you are standing in for
-  (normally the real **left** crank); a bare number like `51862` is now normalised to
-  `Stages 51862` for you, which it was not before this release ([#384](https://github.com/cauldnz/SB20-power-proxy/issues/384)) — that silent failure cost
-  the first outside user a session. Then pull **that** crank's battery and leave the **other** crank
-  powered: the bike wants both of its stored ids findable. Left blank, the board advertises a
-  MAC-derived `Stages 9NNNN`, which is unique and collision-free but has **never been tested against
-  the Stages app on a bike** — so for the SB20 spoof, set the id explicitly. A stored identity
-  survives a flash and is never overwritten.
 - The telemetry degradation on a cold start (#288) is still uncaused; the Stages app is the known
   workaround.
 
