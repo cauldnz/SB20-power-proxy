@@ -29,13 +29,17 @@ accepts it as its own and runs its erg loop off it. Configured over WiFi at `/se
 `/`, `/log` and `/status`.
 
 **Install it.** `firmware-factory.bin` below is the whole thing — bootloader, partition table and
-app merged into one image written at offset `0x0`. With [esptool](https://pypi.org/project/esptool/)
-(4.11 or newer; older versions wedge on the C3's USB-JTAG):
+app merged into one image written at offset `0x0`, with the flash mode/frequency/size already baked
+into its header, so you do not pass them. With [esptool](https://pypi.org/project/esptool/)
+(`pip install esptool`; use **4.11 or newer** — older versions wedge on the C3's USB-JTAG with "No
+serial data received"), substituting your own port:
 
 ```
-esptool.py --chip esp32c3 --port COM9 --baud 460800 write_flash \
-    --flash_mode dio --flash_freq 80m --flash_size 4MB 0x0 firmware-factory.bin
+python -m esptool --chip esp32c3 --port COM9 write-flash 0x0 firmware-factory.bin
 ```
+
+On esptool **4.x** that subcommand is spelled `write_flash` (5.x renamed the CLI to hyphens);
+`python -m esptool` works whichever is installed, where a bare `esptool` or `esptool.py` may not.
 
 `sb20proxy-esp32c3-oled-live-release-0.1.0.bin` is the app image only — use it for a push-OTA to a
 board that is already running this firmware, not for a first install. Verify either with
