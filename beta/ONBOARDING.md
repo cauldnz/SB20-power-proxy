@@ -38,8 +38,18 @@ Your real Stages crank and the board both pretend to be "the crank", so they'd c
 ride, **either**:
 - **Pull the battery** out of your SB20's left crank (the master) so only the board is "Stages NNNNN", **or**
 - under **⚙ Source → Crank identity (advanced)**, set the board to a **different** crank number, pair the
-  SB20 to *that* one, and leave your real crank alone. *(Set the identity to **your** crank's number if you
-  did pull the battery, so the bike recognises it — that's the default we ship.)*
+  SB20 to *that* one, and leave your real crank alone.
+
+*(If you **did** pull the battery, set the identity to **your** crank's number so the bike recognises it
+without re-pairing. There is **no** default crank number — we deliberately ship none, because shipping
+one would have every board claiming the same crank. Left blank, a board advertises its own
+`Stages 9NNNN` derived from its MAC, which is unique but is **not** a number your bike already knows, so
+for the SB20 you set this explicitly. Typing just the digits is fine — the board adds the `Stages `
+prefix the bike scans for.)*
+
+**Whichever you choose, the SB20 needs *both* of its configured crank ids findable on air.** If you
+point it at our board for the left crank, the **right** crank still has to be awake, or the app just
+says “pairing failed”. Pedal it to wake it, and keep a spare CR2032 handy.
 
 *Crank-rescue testers:* if your left crank is already dead, there's nothing to pull — you're set.
 
