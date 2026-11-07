@@ -177,7 +177,17 @@ jobs:
           fi
           grep -q "\"version\": \"${SB20_VERSION}\"" manifest.json \
             || { echo "::error::manifest.json does not name ${SB20_VERSION}"; exit 1; }
-          ls -l firmware-factory.bin manifest.json
+          # Size floor: the merged image is bootloader + partitions + boot_app0 + app, ~1.4 MB. A
+          # much smaller file means the merge silently produced a partial image — which is the shape
+          # a future esptool would fail in, since build_factory_bin.py emits the 4.x underscore flag
+          # spelling (--flash_mode) that esptool 5.x renamed, and picks whichever esptool is under
+          # ~/.platformio rather than pinning one.
+          SIZE=$(stat -c%s firmware-factory.bin)
+          echo "factory image: ${SIZE} bytes"
+          if [ "${SIZE}" -lt 1000000 ]; then
+            echo "::error::firmware-factory.bin is only ${SIZE} bytes — expected ~1.4 MB; the merge is incomplete"
+            exit 1
+          fi
 
       - name: Upload the release candidate (publishes nothing)
         if: steps.ver.outputs.publish != 'true'
