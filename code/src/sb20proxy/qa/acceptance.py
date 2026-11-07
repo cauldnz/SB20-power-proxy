@@ -23,6 +23,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from sb20proxy.release import DEV_VERSION
+
 # Free-heap floor (bytes). The C3 idles well above 100 KB; under this it's memory-stressed and a
 # coex/WiFi hang is far likelier (see the PerfMonitor / watchdog work). A real captured /diag showed
 # heap≈120 KB, so 40 KB is a conservative "something is wrong" line, not a tight budget.
@@ -139,6 +141,7 @@ def evaluate(
     cps_powers: list[int] | None = None,
     flash_ok: bool | None = None,
     crank_rescue: bool = False,
+    expect_version: str | None = None,
 ) -> AcceptanceReport:
     """Build the acceptance card from what the bench script observed.
 
@@ -151,6 +154,12 @@ def evaluate(
     - ``cps_powers``: instantaneous-power values decoded from sampled CPS frames, or None.
     - ``crank_rescue``: this board is DELIBERATELY standing in for one of bike 1's real cranks (the
       single-right-crank rescue), so a real-crank identity is intended rather than a hazard.
+    - ``expect_version``: the release version this board is supposed to be running (e.g. ``"0.1.0"``
+      when gating a tagged release). When given, ``/status``'s ``version`` must match it exactly.
+      This exists because `qa_board.py` and `flash_c3.py` **flash but never build**: they push
+      whatever is already in ``.pio/build/<env>``, so a stale or unstamped image is otherwise QA'd
+      silently and the whole ride counts as evidence for a version it isn't running. A board on
+      ``0.0.0-dev`` is a desk build, not a release.
     """
     r = AcceptanceReport()
 
@@ -198,6 +207,12 @@ def evaluate(
         r.add("heap healthy", None, "no /status")
         r.add("source state sane", None, "no /status")
         r.add("identity provenance", None, "no /status", critical=False)
+        if expect_version is not None:
+            # Asked to gate a release but given no way to read the version: that is a failed gate,
+            # not a skipped one — otherwise the card passes a board nobody checked the version of.
+            r.add("firmware version", False,
+                  f"expected {expect_version} but /status was not fetched (pass --ip, or --connect "
+                  "so the board's IP is discovered)")
     else:
         fw = str(status.get("fw", ""))
         r.add("firmware responds (/status)", bool(fw), f"fw={fw or '?'}")
@@ -210,6 +225,23 @@ def evaluate(
         src = str(status.get("source", ""))
         r.add("source state sane", src in _VALID_SOURCE_STATES,
               f"source={src or '?'}")
+        got_version = str(status.get("version", "")) or None
+        if expect_version is None:
+            # Not gating a release — show it, never judge it.
+            r.add("firmware version", None, f"version={got_version or '?'}", critical=False)
+        elif got_version is None:
+            r.add("firmware version", False,
+                  f"expected {expect_version} but /status reports no version field")
+        elif got_version == expect_version:
+            r.add("firmware version", True, f"version={got_version}")
+        elif got_version == DEV_VERSION:
+            r.add("firmware version", False,
+                  f"board is running a DESK build ({DEV_VERSION}), not release {expect_version} — "
+                  "flash the release artifact (beta/RELEASE-AND-OTA.md step 4)")
+        else:
+            r.add("firmware version", False,
+                  f"board reports {got_version}, expected {expect_version} — stale image in "
+                  ".pio/build (these tools flash, they never build)")
         # Informational: a board on its MAC-derived default has not been named by anyone yet. Not a
         # failure (the fleet table may adopt that default), but it should be visible on the card.
         dflt = status.get("identity_default")
