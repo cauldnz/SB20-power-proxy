@@ -147,11 +147,37 @@ jobs:
           fi
           echo "stamp ${SB20_VERSION} present"
 
-      - name: Name the artifact and checksum it
-        working-directory: firmware
+      # The merged, flash-at-offset-0 image. This is the one a visitor can actually install in one
+      # step (and the only one the browser installer accepts), so the README points at it — which
+      # means it has to be attached, not built by hand after the fact.
+      - name: Build the browser-installable factory image
         run: |
-          cp ".pio/build/esp32c3-oled-live-release/firmware.bin" "../${{ steps.ver.outputs.artifact }}"
-          cd .. && sha256sum "${{ steps.ver.outputs.artifact }}" | tee SHA256SUMS
+          python code/scripts/build_factory_bin.py \
+            --env esp32c3-oled-live-release \
+            --version "${SB20_VERSION}" \
+            --name "SB20 Proxy ${SB20_VERSION} (C3 OLED, live)"
+
+      - name: Name the artifacts and checksum them
+        run: |
+          cp "firmware/.pio/build/esp32c3-oled-live-release/firmware.bin" \
+             "${{ steps.ver.outputs.artifact }}"
+          cp firmware/webflash/firmware-factory.bin firmware-factory.bin
+          # Regenerated with the release version by the step above; the committed copy is not this.
+          cp firmware/webflash/manifest.json manifest.json
+          sha256sum "${{ steps.ver.outputs.artifact }}" firmware-factory.bin manifest.json \
+            | tee SHA256SUMS
+
+      # The factory image is what most people flash, so prove the stamp is in THAT too, not just in
+      # the app image the earlier step checked.
+      - name: Verify the factory image carries the release version
+        run: |
+          if ! strings firmware-factory.bin | grep -qxF "${SB20_VERSION}"; then
+            echo "::error::'${SB20_VERSION}' is not in firmware-factory.bin"
+            exit 1
+          fi
+          grep -q "\"version\": \"${SB20_VERSION}\"" manifest.json \
+            || { echo "::error::manifest.json does not name ${SB20_VERSION}"; exit 1; }
+          ls -l firmware-factory.bin manifest.json
 
       - name: Upload the release candidate (publishes nothing)
         if: steps.ver.outputs.publish != 'true'
@@ -160,6 +186,8 @@ jobs:
           name: sb20proxy-candidate-${{ steps.ver.outputs.version }}
           path: |
             ${{ steps.ver.outputs.artifact }}
+            firmware-factory.bin
+            manifest.json
             SHA256SUMS
           if-no-files-found: error
 
@@ -176,4 +204,6 @@ jobs:
             --title "${{ github.ref_name }} — C3-OLED crank spoof" \
             --notes-file release-notes.md \
             "${{ steps.ver.outputs.artifact }}" \
+            firmware-factory.bin \
+            manifest.json \
             SHA256SUMS

@@ -112,19 +112,35 @@ an outside user has already built from a raw commit SHA because there was no rel
 (#382 → `decisions.md` 2026-11-05). So a release is now also a **public artefact**, not just an
 internal known-good marker.
 
-- **Env:** `esp32c3-oled-live-ota` — the shipping C3 build (CLAUDE.md §Commands). It is a superset of
-  the `esp32c3-oled-live` named above: push-OTA compiles in but **self-disables** when
-  `firmware/ota_secret.h` is absent, which it always is for anyone outside this checkout (the gitignored
-  secret). A public build therefore carries no usable inbound update path, which is the right default.
-- **Version:** the tag is the `SB20_FIRMWARE_VERSION` in `Config.h` (`v0.1.0` = the 0.1.0 already baked
-  in, never yet released). Bump per the rules above; never reuse.
-- **The attached image:** `python code/scripts/build_factory_bin.py --env esp32c3-oled-live-ota
-  --version <tag>` merges bootloader + partitions + boot_app0 + app into one
-  `firmware/webflash/firmware-factory.bin` (~1.4 MB) written at offset `0x0`. Attach *that* to the
-  release — it is the only image a user can flash in one step, and the only one the browser installer
-  accepts. Build it from **merged `origin/main`**, never a feature branch (CLAUDE.md flash hygiene).
-- **Gate:** `qa_board.py` on a real board before the release is announced, same as a tester board.
-  A public release that does not pair is worse than no release.
+- **Env:** `esp32c3-oled-live-release` — the one published env, same as the section above. There is no
+  separate public build: it is `esp32c3-oled-live` plus the version stamp, so the bytes a stranger
+  downloads are the bytes the bench and the bike proved.
+
+  > Worth knowing, because it reads like an env choice and is not: **`esp32c3-oled-live-ota` compiles
+  > to the same image as `esp32c3-oled-live`.** The only difference between those envs is
+  > `upload_protocol = espota`, which tells PlatformIO how to *upload* and is not a build flag. Push
+  > OTA is gated in the source by `#if __has_include("../../ota_secret.h")` → `#ifdef OTA_PASSWORD`
+  > (`WifiLink.cpp`), i.e. by the presence of a **gitignored file**. So a public build — any env —
+  > carries no usable inbound update path, because nobody outside this checkout has that secret. That
+  > is fail-closed and the right default; it just is not something an env selects.
+- **Version:** the tag, stamped at build time — **not** a number baked into `Config.h`. `Config.h`'s
+  default is `0.0.0-dev` precisely so an untagged build cannot pose as a release. Bump per the rules
+  above; never reuse or go backwards (the workflow refuses both).
+- **The attached images:** the release workflow builds and attaches **both**, so there is nothing to
+  merge by hand:
+  - `sb20proxy-esp32c3-oled-live-release-<version>.bin` — the app image, for push-OTA and
+    `flash.ps1` / `flash_c3.py`.
+  - `firmware-factory.bin` — bootloader + partitions + boot_app0 + app merged into one image written
+    at offset `0x0` (`code/scripts/build_factory_bin.py`, ~1.4 MB). This is the only image a user can
+    flash in one step and the only one the browser installer accepts, so it is what the README points
+    a visitor at.
+  - `manifest.json` — the ESP Web Tools manifest, regenerated with the release version. The copy
+    committed under `firmware/webflash/` carries whatever version was last written there and is not
+    the release's; take the manifest from the release.
+  - `SHA256SUMS` — covering all of the above.
+- **Gate:** `qa_board.py --expect-version <version>` on a real board before the release is announced,
+  same as a tester board. A public release that does not pair is worse than no release — and #384 is
+  exactly that failure: it advertised, and the bike silently never found it.
 
 ### Hosting the browser installer
 
