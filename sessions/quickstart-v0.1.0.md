@@ -21,9 +21,9 @@ identity path is new. So **G1 is a re-proof of pairing, not a formality.** If it
 - **Bike 1 powered.** Its **real right crank `4963` must be awake and findable** — pedal it to wake
   it, and have a **fresh CR2032** ready. This is not optional: see step 4.
 - Your **Assioma** pedals charged (`17039L` / `22428R`).
-- A **data** USB cable if you need to re-power the board. *(The first cable I tried carried no data
-  at all — the board lit up but never enumerated. If the board ever stops appearing, suspect the
-  cable before you suspect the board.)*
+- A **data** USB cable if you need to re-power the board. *(Your first cable failed: the board lit
+  up, but Windows reported error 43 and gave it no COM port. Swapping the cable fixed it, so if the
+  board ever stops appearing, try another cable first.)*
 
 ## 1. Restore values — write these down before you change any pairing
 
@@ -48,9 +48,10 @@ A clean board has nothing stored, so it comes up as an access point.
 | Its setup network | **`Setup-C9DC`** |
 | What it derives if you leave **Crank name** blank | `Stages 91676` — **don't leave it blank**, a `9xxxx` id has never been pair-tested on a bike |
 
-I confirmed `Setup-C9DC` is on air from the desk at 90% signal, which is what tells me the board
-booted the release build and raised a stable portal rather than crash-looping. The **PIN is on the
-OLED** — it is derived per board from a secret inside the firmware, so I can't read it from here.
+After flashing, `Setup-C9DC` showed up in two WiFi scans from the desk, so the board is running and
+has reached its setup portal. That doesn't tell us which version it is running; capture 3 does. The
+**PIN is on the OLED** — it is derived per board from a secret inside the firmware, so I can't read
+it from here.
 
 1. Power the board over USB. The OLED shows **`SB20 SETUP`** with **`Setup-C9DC`** and a PIN.
 2. On your phone, join the WiFi network **`Setup-C9DC`**. The setup page should open by itself; if
@@ -63,17 +64,26 @@ OLED** — it is derived per board from a secret inside the firmware, so I can't
 > finds nothing — by design, not a fault.
 
 > 📸 **CAPTURE 1 — photo of the OLED** showing `SB20 SETUP`, the `Setup-C9DC` name and the PIN.
-> *(Proves the board booted the release build and the display works.)*
+> *(Proves the board boots and the display works.)*
 
-## 3. Step 2 — WiFi, meter, and the crank identity
+## 3. Step 2 — WiFi first, then the meter and the crank identity
 
-On that setup page:
+This takes **two pages with a reboot between them**. The `Setup-C9DC` page only does WiFi, because
+the meter scan needs Bluetooth and Bluetooth stays off until the board has joined your network.
 
-1. **WiFi:** pick your garage/home network and enter the password.
-2. **Source:** **Scan** → pick **`ASSIOMA`** (your `17039L` pedal) from the list.
-3. **Tick “Single-sided source — double it for total.”** Your left pedal is the source; the board
+**On the `Setup-C9DC` page:**
+
+1. Pick your garage/home network, enter the password and **Save**. The board reboots and the OLED
+   then shows its IP.
+2. Put your phone back on that same network.
+
+**Then open `http://sb20proxy.local/setup`** (or `http://<the IP on the OLED>/setup`):
+
+3. **Source:** spin the pedals so the Assioma wakes, tap **Scan**, and pick **`ASSIOMA`** (your
+   `17039L` pedal) from the list.
+4. **Tick “Single-sided source — double it for total.”** Your left pedal is the source; the board
    doubles it. (This is the `single=1` from session 9.)
-4. Open **“Crank identity (advanced)”** and in **Crank name** type just the digits:
+5. Open **“Crank identity (advanced)”** and in **Crank name** type just the digits:
 
    ```
    62145
@@ -87,7 +97,7 @@ On that setup page:
 > 📸 **CAPTURE 2 — screenshot of the filled setup page**, *before* you press Save. I want to see the
 > meter, the single-sided tick, and `62145` in the Crank name box.
 
-5. **Save.** The board reboots (~2 s) and joins your WiFi; the OLED then shows its IP.
+6. **Save.** The board reboots again (~2 s) to apply it.
 
 ## 4. Step 3 — confirm the board is right *before* you touch the bike
 
@@ -102,7 +112,10 @@ I am checking four things in it, and **all four must be right or stop here and s
 | `version` | **`0.1.0`** | `0.0.0-dev` means you are on a desk build and nothing after this counts as release evidence |
 | `identity` | **`Stages 62145`** | the prefix was added for you — this is #384's fix working |
 | `identity_default` | **`false`** | `true` means your entry did not stick and it is advertising a MAC-derived `Stages 9NNNN` |
-| `source` | `ASSIOMA…` | the meter is pinned |
+| `source_pin` | **not empty** (your pedal's address) | the meter you picked was saved |
+
+`source` will say `searching` while the pedals are asleep, and that's fine. It changes to
+`connected`, and `src_name` fills in, once you spin them.
 
 Then open the dashboard (**`http://sb20proxy.local/`**) and **spin the pedals**. You should see
 **METER IN → CRANK OUT** with live watts and your L/R balance.
@@ -178,7 +191,7 @@ upload them anywhere. If you only manage some, **3, 6 and 9 are the ones I most 
 
 | Capture | Gates |
 |---|---|
-| 1 OLED setup screen | the release build boots on a clean board |
+| 1 OLED setup screen | the board boots and the display works |
 | 2 setup page | the bare-id entry is what got saved |
 | 3 `/status` | **the board is running `0.1.0` and #384's fix worked** — release evidence |
 | 4 dashboard watts | read → correct → rebroadcast, off the bike |
