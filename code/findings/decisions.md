@@ -5455,3 +5455,44 @@ release when the cause is an untested identity namespace.
 **Desk state at the time of writing:** `pytest -q` 718 passed / 3 skipped (763 with the new tests),
 `ruff check src tests` clean, `pio test -e native` 405 cases green, `pio run -e esp32c3-oled-live`
 exit 0, and `03_static_replay.py --radio loopback` PASS.
+
+## 2026-11-09 — `v0.1.0` flashed to a clean C3-OLED board; bench-verified without serial
+
+The release artifact is on hardware. Board: **ESP32-C3 rev v0.4**, 4 MB embedded flash (XMC),
+USB-Serial/JTAG, base MAC **`38:44:be:43:c9:dc`**, on `COM10`. Flashed
+`esp32c3-oled-live-release` (v0.1.0, built from `e65bc5c`) with `flash_c3.py`, which selected
+**esptool 5.3.0** and the hyphen dialect as designed: `Wrote 1369760 bytes … Hash of data verified`
+— byte-for-byte the release `firmware.bin`.
+
+**Derived identity for this board: `Stages 91676`.** MAC tail `c9dc` = 51676; `51676 % 10000 = 1676`
+behind `kDerivedIdentityPrefix` (`FleetIdentity.h`). Its setup SSID is **`Setup-C9DC`** (last two MAC
+bytes, `SetupPin.h`).
+
+**Three gotchas found while trying to verify the board at the bench — all mine, none the firmware's:**
+
+1. **A charge-only USB cable looks exactly like a dead board.** The board powered and lit its OLED
+   but presented as `Unknown USB Device (Device Descriptor Request Failed)`, error 43, under
+   `VID_0000&PID_0002` — no COM port, so nothing to flash. A data cable fixed it immediately. "OLED
+   lit but no enumeration" is the signature: suspect the cable first.
+2. **`pyserial` asserting DTR/RTS on open resets the C3**, and reopening in a retry loop resets it
+   once per attempt — which reads back as a reboot loop (26 × `rst:0x15 (USB_UART_CHIP_RESET)` plus
+   ROM banners). It was not a crash loop; it was the reader. Clearing `dtr`/`rts` on a *deferred*
+   open avoids it, but then a bare RTS pulse does **not** reset the USB-JTAG part (0 bytes), and the
+   app banner (`main.cpp:1033`) prints once, 200 ms after `Serial.begin`, with
+   `setTxTimeoutMs(0)` — so it is lost to anyone who was not already attached. **Serial is a poor
+   boot-verification instrument on a USB-JTAG C3.** Use the SoftAP instead (below).
+3. **A BLE scan of a clean board is a false negative by design.** With no WiFi stored the portal is
+   up, and `main.cpp` then `NimBLEDevice::deinit(true)` + `WiFi.setSleep(false)` so the SoftAP gets
+   the radio to itself (the classic-core coex fix). The crank starts advertising only *after*
+   provisioning. Scanning for `Stages …` before then finds nothing, and concluding "dead board"
+   from that would be wrong.
+
+**So the bench gate is a WiFi scan, not serial and not BLE:** `netsh wlan show networks mode=bssid`
+found **`Setup-C9DC` at 90 %, BSSID `38:44:be:43:c9:dd`** (base MAC + 1, the SoftAP interface). A
+crash-looping board cannot hold a stable AP up, so this one observation proves boot, MAC read, SSID
+derivation and the portal stage together. Folded into `sessions/quickstart-v0.1.0.md`.
+
+**What is therefore still unproven at the desk** and belongs to the rider's run: the advertised crank
+identity on air, `/status` reporting `version 0.1.0`, and pairing. The version on the board is
+established by the verified write of an artifact already checked to contain `0.1.0` and no
+`0.0.0-dev` — not by reading it back off the device, which needs the LAN that provisioning brings up.

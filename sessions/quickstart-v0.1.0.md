@@ -21,8 +21,9 @@ identity path is new. So **G1 is a re-proof of pairing, not a formality.** If it
 - **Bike 1 powered.** Its **real right crank `4963` must be awake and findable** — pedal it to wake
   it, and have a **fresh CR2032** ready. This is not optional: see step 4.
 - Your **Assioma** pedals charged (`17039L` / `22428R`).
-- A **data** USB cable if you need to re-power the board (the one in the machine right now did not
-  enumerate — see my note in chat).
+- A **data** USB cable if you need to re-power the board. *(The first cable I tried carried no data
+  at all — the board lit up but never enumerated. If the board ever stops appearing, suspect the
+  cable before you suspect the board.)*
 
 ## 1. Restore values — write these down before you change any pairing
 
@@ -40,11 +41,28 @@ If anything goes sideways, this is how bike 1 goes back to normal. From session 
 
 A clean board has nothing stored, so it comes up as an access point.
 
-1. Power the board over USB. The OLED shows **`SB20 SETUP`** with a `Setup-XXXX` name and a PIN.
-2. On your phone, join the WiFi network **`Setup-XXXX`**. The setup page should open by itself; if
+**This board, specifically** — flashed and bench-checked 2026-11-09, base MAC `38:44:be:43:c9:dc`:
+
+| | |
+|---|---|
+| Its setup network | **`Setup-C9DC`** |
+| What it derives if you leave **Crank name** blank | `Stages 91676` — **don't leave it blank**, a `9xxxx` id has never been pair-tested on a bike |
+
+I confirmed `Setup-C9DC` is on air from the desk at 90% signal, which is what tells me the board
+booted the release build and raised a stable portal rather than crash-looping. The **PIN is on the
+OLED** — it is derived per board from a secret inside the firmware, so I can't read it from here.
+
+1. Power the board over USB. The OLED shows **`SB20 SETUP`** with **`Setup-C9DC`** and a PIN.
+2. On your phone, join the WiFi network **`Setup-C9DC`**. The setup page should open by itself; if
    not, browse to **`http://172.29.4.1`**.
 
-> 📸 **CAPTURE 1 — photo of the OLED** showing `SB20 SETUP`, the `Setup-XXXX` name and the PIN.
+> ⚠️ **Don't go looking for a `Stages …` crank on air yet — there isn't one, and that's correct.**
+> While the setup portal is up the firmware deliberately holds BLE off and releases the Bluetooth
+> controller altogether, so the SoftAP gets the radio to itself (it was a coexistence fix). The
+> crank only starts advertising **after** you save WiFi and the board reboots. A scan before then
+> finds nothing — by design, not a fault.
+
+> 📸 **CAPTURE 1 — photo of the OLED** showing `SB20 SETUP`, the `Setup-C9DC` name and the PIN.
 > *(Proves the board booted the release build and the display works.)*
 
 ## 3. Step 2 — WiFi, meter, and the crank identity
