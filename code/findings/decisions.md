@@ -5514,3 +5514,14 @@ default baud, hash verified, 18 s), and the board came up in the setup portal wi
 `Setup-4D20` on air at BSSID `2a:84:85:49:4d:20`. NVS was then restored and the board returned to the LAN
 reporting `version 0.1.1`. What was not done: an 8 MB-header image was not installed to watch it fail, so
 "boot-loops" rests on the 2026-07-11 S3 observation of the same mismatch and not on this board.
+
+## 2026-11-09 — `firmware-factory.bin` erases NVS; the `v0.1.0` notes said a stored identity survives a flash
+
+`RELEASES.md` told riders "a stored identity survives a flash", directly below an install command
+that writes `firmware-factory.bin` at `0x0`. Measured on the `v0.1.0` candidate image (1,435,296
+bytes): every byte of the NVS window `0x9000..0xE000` is `0xFF`, because `merge_bin` pads the gap
+between the partition table and `boot_app0`. So the published install path **blanks WiFi, the meter
+and the crank identity**. The claim holds for push-OTA and for the parts-only `flash_c3.py`, which
+is where it came from; the factory image arrived later and the sentence was not revisited. The
+pioarduino `firmware.factory.bin` has the same property (`flash_s3.py`, measured 2026-09-23).
+Corrected in `RELEASES.md` and `beta/RELEASE-AND-OTA.md`. No firmware change.

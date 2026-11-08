@@ -41,6 +41,10 @@ python -m esptool --chip esp32c3 --port COM9 write-flash 0x0 firmware-factory.bi
 On esptool **4.x** that subcommand is spelled `write_flash` (5.x renamed the CLI to hyphens);
 `python -m esptool` works whichever is installed, where a bare `esptool` or `esptool.py` may not.
 
+**Writing this image erases the board's settings** (WiFi, meter, crank identity), because it is a
+whole-flash image. That is what you want on a first install. If you run it again on a working board,
+you will need to redo the setup, including the crank identity.
+
 `sb20proxy-esp32c3-oled-live-release-0.1.0.bin` is the app image only — use it for a push-OTA to a
 board that is already running this firmware, not for a first install. Verify either with
 `sha256sum -c SHA256SUMS`.
@@ -80,7 +84,8 @@ the step that silently stops the bike pairing.
   powered: the bike wants both of its stored ids findable. Left blank, the board advertises a
   MAC-derived `Stages 9NNNN`, which is unique and collision-free but has **never been tested against
   the Stages app on a bike** — so for the SB20 spoof, set the id explicitly. A stored identity
-  survives a flash and is never overwritten.
+  survives a push-OTA and a parts-only flash (`flash_c3.py`), and the firmware never overwrites it;
+  installing `firmware-factory.bin` erases it along with the other settings.
 - **ERG needs the bike in External ride mode, and that catches people out.** In the Stages app the
   bike's ride mode must be **External** — in **Grade** or **Power/Erg** the bike keeps the target
   itself and ignores the app, so a Zwift or qz workout appears to do nothing: the shifters stay live
