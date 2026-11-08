@@ -249,3 +249,26 @@ def test_release_workflow_verifies_the_stamp_landed() -> None:
     """The published image must contain the version it is named for, not the default."""
     text = _RELEASE_YML.read_text(encoding="utf-8")
     assert DEV_VERSION in text, "the workflow must assert the dev default is not in the image"
+
+
+def test_release_workflow_attaches_the_browser_installable_image() -> None:
+    """The README points a visitor at firmware-factory.bin, so the release must actually carry it.
+
+    The app image alone cannot be flashed in one step and the browser installer will not accept it
+    (beta/RELEASE-AND-OTA.md "Public releases"), so a release missing this asset is a release whose
+    own install instructions do not work.
+    """
+    text = _RELEASE_YML.read_text(encoding="utf-8")
+    assert "build_factory_bin.py" in text, "the factory image is never built"
+    assert "firmware-factory.bin" in text, "the factory image is never attached"
+    assert "manifest.json" in text, "the ESP Web Tools manifest is never attached"
+    # Both publish paths: the tagged release and the dry-run candidate upload.
+    assert text.count("firmware-factory.bin") >= 3
+
+
+def test_release_workflow_checksums_every_published_asset() -> None:
+    """A published binary nobody can verify is worse than no checksum at all."""
+    text = _RELEASE_YML.read_text(encoding="utf-8")
+    sha = text[text.index("sha256sum") : text.index("| tee SHA256SUMS")]
+    for asset in ("artifact", "firmware-factory.bin", "manifest.json"):
+        assert asset in sha, f"{asset} is published but not in SHA256SUMS"

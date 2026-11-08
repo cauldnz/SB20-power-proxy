@@ -25,8 +25,11 @@ python code/scripts/build_factory_bin.py --env esp32c3-oled-live-ota --version "
 # -> firmware/webflash/firmware-factory.bin + refreshed manifest.json
 ```
 
-The merge uses the same chip/offsets/flash settings as `flash_c3.py` (kept in step) and esptool 4.11
-(the one that handles the C3 cleanly).
+The merge uses the same chip/offsets/flash settings as `flash_c3.py` (kept in step). It runs whichever
+esptool PlatformIO installed under `~/.platformio/packages/tool-esptoolpy`, which is *not* the 4.11+
+build `flash_c3.py` insists on — and does not need to be: `merge_bin` opens no serial port, so the C3
+USB-JTAG bug behind that rule cannot bite. The real constraint is the CLI dialect (4.x underscores vs
+5.x hyphens); see the script's header.
 
 ## Host it
 

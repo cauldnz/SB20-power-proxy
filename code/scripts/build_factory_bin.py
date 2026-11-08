@@ -9,8 +9,16 @@ a tester can install/recover from Chrome with no CLI.
     pio run -e esp32c3-oled-live-ota                       # build first (the shippable image)
     python code/scripts/build_factory_bin.py --env esp32c3-oled-live-ota
 
-The flash recipe (chip, offsets, mode/freq/size) MIRRORS flash_c3.py — keep them in step. Uses the
-newest esptool under ~/.platformio (4.11+, the one that handles the C3 cleanly).
+The flash recipe (chip, offsets, mode/freq/size) MIRRORS flash_c3.py — keep them in step.
+
+esptool: `_esptool()` prefers the BARE `tool-esptoolpy` directory, so in practice it runs whatever
+PlatformIO installed there (4.5.1 on this machine as of 2026-11-08), not "the newest". That is fine
+here and NOT the 4.11+ rule flash_c3.py needs: `merge_bin` only reads and concatenates files, so the
+C3 USB-JTAG bug that rule exists for cannot apply — no serial port is opened. What this script IS
+sensitive to is the CLI dialect: it emits the 4.x underscore spellings (`merge_bin`, `--flash_mode`),
+which esptool 5.x renamed to hyphens (see flash_c3.py's `_cli_dialect`). If a future platform ships a
+5.x under that directory, this breaks and needs the same dialect switch. The release workflow guards
+the symptom by asserting the merged image is at least 1 MB.
 """
 
 from __future__ import annotations

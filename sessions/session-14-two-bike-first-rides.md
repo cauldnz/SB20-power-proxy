@@ -38,6 +38,9 @@ human-in-the-loop contract"). Nothing below is attempted until G0 is green at th
       Guition and the C3 ride board were both `Stages 62145`).
 - [ ] **Re-flash both head units from current `main`** (`firmware/flash.ps1`, OTA; the ride guard
       refuses bench/mock envs). Confirm the build SHA on `/status` for each.
+- [ ] **G0+G1 on a clean board are being run from [`quickstart-v0.1.0.md`](quickstart-v0.1.0.md)**
+      (2026-11-08) — the rider-facing execution card for the release gate, with the capture points the
+      agent needs to judge it. It is not a separate session; results come back here.
 - [ ] **This session is also the acceptance gate for release `v0.1.0`** (the C3-OLED crank spoof —
       [`beta/RELEASE-AND-OTA.md`](../beta/RELEASE-AND-OTA.md), [`RELEASES.md`](../RELEASES.md)). So flash
       the C3 ride board with the **release artifact itself** — the `.bin` downloaded from the `v0.1.0`

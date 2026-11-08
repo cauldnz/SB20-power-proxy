@@ -58,8 +58,54 @@
       <li>Pick your home Wi-Fi, then your power meter, and save. The board reconnects on your
         network and shows a live dashboard.</li>
     </ol>
-    <p class="muted">Full walkthrough: the onboarding one-pager that came with your board.</p>
   </div>
+
+  <div class="card">
+    <h2 style="font-size:1.1rem;margin-top:0">Pairing the bike to it (SB20 crank spoof)</h2>
+    <p>
+      The SB20 only pairs to <em>its own</em> crank, and it looks that crank up <strong>by
+      name</strong> &mdash; so the board has to carry a crank identity the bike is willing to accept.
+    </p>
+    <ol>
+      <li>Find the crank id you want to stand in for &mdash; the Stages app lists the bike's stored
+        crank ids (e.g. <code>51862 : 32059</code>, left then right).</li>
+      <li>On the board's setup page, open <strong>Crank identity (advanced)</strong> and put that id
+        in <strong>Crank name</strong>. Just the number is fine &mdash; the
+        <code>Stages&nbsp;</code> prefix the bike scans for is added for you. Leave it
+        <strong>blank</strong> to use the board's own unique id (<code>Stages 9NNNN</code>) and type
+        that into the Stages app instead.</li>
+      <li><strong>Pull the battery of the crank you are standing in for</strong>, so two devices
+        never answer to one id.</li>
+      <li>The bike wants <strong>both</strong> of its crank ids findable &mdash; the one you are
+        spoofing <em>and</em> the real one on the other side. If the other crank is dead too, the
+        bike will refuse to pair.</li>
+    </ol>
+    <p class="muted">
+      Crank <em>length</em> is a known quirk: the Stages app won't store it for a spoofed crank, and
+      it does not need to. Once the proxy is in the loop, watts are computed by your pedals &mdash;
+      set the crank length in <strong>their</strong> app (e.g. Favero), not the Stages one.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:1.1rem;margin-top:0">If ERG mode won't engage</h2>
+    <p>
+      Put the bike in <strong>External</strong> ride mode in the Stages app. That is the mode where
+      the SB20 takes its target from an outside app over FTMS (Zwift, qz, TrainerRoad). In
+      <em>Grade</em> or <em>Power&nbsp;/&nbsp;Erg</em> the app keeps the target itself, so the bike
+      ignores the workout's targets and your shifters still change resistance.
+    </p>
+    <p class="muted">
+      This is independent of the proxy: the proxy is the bike's power <em>source</em>, while ERG is
+      the bike's own trainer control.
+    </p>
+  </div>
+
+  <p class="muted">
+    Full walkthrough, and what to do when something doesn't work:
+    <a href="https://github.com/cauldnz/SB20-power-proxy">the project on GitHub</a>
+    (please open an issue &mdash; reports are how this gets better).
+  </p>
 
   <p class="muted">
     Experimental, unaffiliated with Stages or Favero — use at your own risk. MIT-licensed.

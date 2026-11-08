@@ -1,6 +1,6 @@
 {
-  "name": "SB20 Proxy (OLED, live)",
-  "version": "41ff7da",
+  "name": "SB20 Proxy 0.1.0 (C3 OLED, live)",
+  "version": "0.1.0",
   "builds": [
     {
       "chipFamily": "ESP32-C3",
