@@ -68,3 +68,5 @@ graphify-out/
 # Bench-session raw captures (camera frames, serial dumps). Only the frames the run-sheet's
 # Actual table cites are committed, cropped, under sessions/bench-evidence/<date>/.
 sessions/bench-out/
+/firmware/webflash/firmware-factory-guition.bin
+/firmware/webflash/manifest-guition.json

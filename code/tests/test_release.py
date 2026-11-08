@@ -20,11 +20,14 @@ import pytest
 
 from sb20proxy.release import (
     DEV_VERSION,
+    GUITION_RELEASE_ENV,
     RELEASE_ENV,
+    RELEASE_TARGETS,
     artifact_name,
     is_newer_version,
     parse_version,
     release_notes_section,
+    targets_for,
     version_from_tag,
 )
 
@@ -269,6 +272,81 @@ def test_release_workflow_attaches_the_browser_installable_image() -> None:
 def test_release_workflow_checksums_every_published_asset() -> None:
     """A published binary nobody can verify is worse than no checksum at all."""
     text = _RELEASE_YML.read_text(encoding="utf-8")
-    sha = text[text.index("sha256sum") : text.index("| tee SHA256SUMS")]
-    for asset in ("artifact", "firmware-factory.bin", "manifest.json"):
-        assert asset in sha, f"{asset} is published but not in SHA256SUMS"
+    start = text.index("List and checksum everything")
+    step = text[start : text.index("Upload the release candidate")]
+    assert "sha256sum $ASSETS" in step
+    for asset in (
+        "steps.ver.outputs.artifact",
+        "firmware-factory.bin",
+        "manifest.json",
+        "steps.ver.outputs.guition_artifact",
+        "firmware-factory-guition.bin",
+        "manifest-guition.json",
+    ):
+        assert asset in step, f"{asset} is published but not in SHA256SUMS"
+
+
+def test_release_workflow_builds_the_guition_on_its_own_toolchain() -> None:
+    """Sharing a core dir with the C3's platform breaks the build (FRAMEWORK_DIR None)."""
+    text = _RELEASE_YML.read_text(encoding="utf-8")
+    core_dir = 'PLATFORMIO_CORE_DIR="$HOME/.platformio-pioarduino"'
+    assert f"{core_dir} pio run -e {GUITION_RELEASE_ENV}" in text
+
+
+def test_release_publishes_the_list_it_checksummed() -> None:
+    """One list drives both, so an asset cannot be published without appearing in SHA256SUMS."""
+    assert "${{ steps.assets.outputs.list }}" in _RELEASE_YML.read_text(encoding="utf-8")
+
+
+# --- the Guition head unit: a second published board, from 0.1.1 ------------------------------
+
+# What makes the Guition image the real head unit. Each one is a silent failure if it is lost to a
+# shadowed build_flags: a mock meter under a release version, a blank panel, or the status LED
+# driving this board's touch SCL.
+_GUITION_RIDE_FLAGS = (
+    "-DUSE_MOCK_METER=0",
+    "-DLCD_DRIVER_GUITION=1",
+    "-DLCD_LVGL_FULL_REFRESH=1",
+    "-DSB20_STATUS_LED_PIN=2",
+)
+
+
+def _env_block(name: str) -> str:
+    text = _PIO_INI.read_text(encoding="utf-8")
+    m = re.search(rf"^\[env:{re.escape(name)}\]\n(.*?)(?=^\[|\Z)", text, re.MULTILINE | re.DOTALL)
+    assert m, f"platformio.ini has no [env:{name}]"
+    return m.group(1)
+
+
+def test_v0_1_0_stays_c3_only_whatever_commit_it_is_cut_from() -> None:
+    """The owner scoped 0.1.0 to the C3; the Guition must not ride along on a later commit's tag."""
+    assert [t.env for t in targets_for("0.1.0")] == [RELEASE_ENV]
+
+
+@pytest.mark.parametrize("version", ["0.1.1", "0.2.0", "1.0.0"])
+def test_releases_from_0_1_1_publish_both_boards(version: str) -> None:
+    assert [t.env for t in targets_for(version)] == [RELEASE_ENV, GUITION_RELEASE_ENV]
+
+
+def test_every_target_publishes_under_its_own_names() -> None:
+    """Two boards sharing a filename would overwrite one image with the other in the release."""
+    assert len({t.factory_name for t in RELEASE_TARGETS}) == len(RELEASE_TARGETS)
+    assert len({t.manifest_name for t in RELEASE_TARGETS}) == len(RELEASE_TARGETS)
+
+
+def test_guition_release_env_is_the_ride_env_plus_the_stamp() -> None:
+    block = _env_block(GUITION_RELEASE_ENV)
+    assert "extends = env:esp32-guition-live" in block
+    assert "${env:esp32-guition-live.build_flags}" in block
+    assert "${sysenv.SB20_VERSION}" in block
+
+
+def test_guition_image_header_says_16mb() -> None:
+    """board_build.flash_size does not set the header; an 8 MB one rejects the 16 MB partitions."""
+    assert "board_upload.flash_size = 16MB" in _env_block("esp32-guition")
+
+
+def test_guition_ride_flags_reach_the_release() -> None:
+    combined = _env_block("esp32-guition") + _env_block("esp32-guition-live")
+    for flag in _GUITION_RIDE_FLAGS:
+        assert flag in combined, f"the Guition ride build lost {flag}"

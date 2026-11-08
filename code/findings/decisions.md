@@ -5498,3 +5498,19 @@ could still appear in one. Folded into `sessions/quickstart-v0.1.0.md`.
 air, `/status` reporting `version 0.1.0`, and pairing. The version on the board rests on the
 hash-verified write of an artifact already checked to contain `0.1.0` and no `0.0.0-dev`; nothing
 has read the running version back from the device.
+
+## 2026-11-09 — Guition release build: image header said 8 MB; plain factory install proven on the board
+
+Added `esp32-guition-live-release` for `0.1.1`. Its first build carried flash size code `0x3` (8 MB)
+in the header of `bootloader.bin`, `firmware.bin` and `firmware.factory.bin`, on a 16 MB board with a
+16 MB partition table. The cause: the env set `board_build.flash_size = 16MB`, but the platform stamps
+`board_upload.flash_size`, which fell through to the `esp32-s3-devkitc-1` default. `flash_s3.py` passes
+`--flash_size 16MB`, which is why no earlier bench flash showed it; a plain factory install has no such
+argument. `board_upload.flash_size = 16MB` changes the header byte to `0x4f`.
+
+**Proven on the board (MAC `28:84:85:49:4D:20`, COM11).** With NVS backed up first:
+`python -m esptool --chip esp32s3 --port COM11 write-flash 0x0 firmware.factory.bin` (1,977,616 bytes,
+default baud, hash verified, 18 s), and the board came up in the setup portal with the QR screen drawn,
+`Setup-4D20` on air at BSSID `2a:84:85:49:4d:20`. NVS was then restored and the board returned to the LAN
+reporting `version 0.1.1`. What was not done: an 8 MB-header image was not installed to watch it fail, so
+"boot-loops" rests on the 2026-07-11 S3 observation of the same mismatch and not on this board.

@@ -123,6 +123,10 @@ internal known-good marker.
   > (`WifiLink.cpp`), i.e. by the presence of a **gitignored file**. So a public build — any env —
   > carries no usable inbound update path, because nobody outside this checkout has that secret. That
   > is fail-closed and the right default; it just is not something an env selects.
+- **The Guition head unit, from `0.1.1`:** `esp32-guition-live-release` publishes alongside the C3,
+  under its own names (`sb20proxy-esp32-guition-live-release-<version>.bin`,
+  `firmware-factory-guition.bin`, `manifest-guition.json`). `sb20proxy.release.targets_for` decides
+  which boards a version carries, so a `v0.1.0` tag stays C3-only whatever commit it is cut from.
 - **Version:** the tag, stamped at build time — **not** a number baked into `Config.h`. `Config.h`'s
   default is `0.0.0-dev` precisely so an untagged build cannot pose as a release. Bump per the rules
   above; never reuse or go backwards (the workflow refuses both).
