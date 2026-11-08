@@ -16,15 +16,53 @@ refuses what the fleet would silently ignore.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 # Config.h's default stamp. Every dev and CI build carries it, so /status never makes a desk build
 # look like a shipped one, and any real release (>= 0.0.1) is strictly newer than it.
 DEV_VERSION = "0.0.0-dev"
 
-# The one PlatformIO env that is ever published. Its firmware is byte-identical to
+# The headless C3-OLED build, published since 0.1.0. Its firmware is byte-identical to
 # `esp32c3-oled-live` apart from the version stamp; the `-ota` env differs only in upload_protocol,
 # so this single image serves both the USB and the push-OTA flashing paths.
 RELEASE_ENV = "esp32c3-oled-live-release"
+
+# The full-display head unit (Guition JC3248W535), published since 0.1.1.
+GUITION_RELEASE_ENV = "esp32-guition-live-release"
+
+
+@dataclass(frozen=True)
+class ReleaseTarget:
+    """One board a release publishes an image for."""
+
+    env: str
+    label: str  # shown in the installer manifest
+    chip_family: str  # the ESP Web Tools chipFamily
+    first_version: str  # the first release that carries this board
+    factory_name: str  # the merged flash-at-0x0 image
+    manifest_name: str  # the ESP Web Tools manifest for that image
+
+
+# `first_version` keeps a tag honest about its own scope: v0.1.0 was scoped to the C3 alone, and it
+# must stay that way even if the tag is cut from a commit that already knows about the Guition.
+RELEASE_TARGETS = (
+    ReleaseTarget(
+        env=RELEASE_ENV,
+        label="C3 OLED, live",
+        chip_family="ESP32-C3",
+        first_version="0.1.0",
+        factory_name="firmware-factory.bin",
+        manifest_name="manifest.json",
+    ),
+    ReleaseTarget(
+        env=GUITION_RELEASE_ENV,
+        label="Guition 3.5-inch head unit, live",
+        chip_family="ESP32-S3",
+        first_version="0.1.1",
+        factory_name="firmware-factory-guition.bin",
+        manifest_name="manifest-guition.json",
+    ),
+)
 
 # A release tag is exactly `vMAJOR.MINOR.PATCH` — no prerelease suffix, no build metadata. See
 # `version_from_tag` for why a suffix is refused rather than stripped.
@@ -99,6 +137,11 @@ def release_notes_section(text: str, version: str) -> str:
             f"RELEASES.md's '## {version}' section is empty — write the release notes."
         )
     return body
+
+
+def targets_for(version: str) -> tuple[ReleaseTarget, ...]:
+    """The boards a given release publishes, oldest first."""
+    return tuple(t for t in RELEASE_TARGETS if not is_newer_version(version, t.first_version))
 
 
 def artifact_name(version: str, env: str = RELEASE_ENV) -> str:

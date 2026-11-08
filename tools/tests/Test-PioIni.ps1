@@ -177,7 +177,7 @@ $rideBuilds = @{
     # guard ever refuses it, every rider flashing a tagged release has to pass -Force, which trains
     # them past the guard entirely. It is listed with SB20_VERSION deliberately unset, because that is
     # how flash.ps1 reads the config on a rider's machine.
-    'firmware'     = @('esp32c3-oled-live-ota', 'esp32c3-oled-live', 'esp32c3-oled-live-release', 'esp32cyd-live')
+    'firmware'     = @('esp32c3-oled-live-ota', 'esp32c3-oled-live', 'esp32c3-oled-live-release', 'esp32-guition-live-release', 'esp32cyd-live')
     'firmware-nrf' = @('xiao-sense')
 }
 $mustBlock = @{
