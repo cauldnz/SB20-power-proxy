@@ -68,6 +68,12 @@ driver + one `platformio.ini` env family + two one-line `main.cpp` arms + a shar
 
 First USB flash: `python code/scripts/flash_s3.py --env esp32-guition-live --port COM14`.
 
+**Building on the Windows dev machine.** Use a separate, short PlatformIO core dir and the short repo
+junction: `PLATFORMIO_CORE_DIR=C:\pio3`, built from `C:\sbw\firmware`. Sharing `~/.platformio` with the
+C3's stock platform fails with `FRAMEWORK_DIR` None (the same collision CI avoids), and a core dir under
+`~\.platformio-pioarduino` is deep enough that unpacking `esp32-arduino-libs` hits `MAX_PATH`. The first
+install plus compile took about 23 minutes on 2026-11-09.
+
 ## Verified hardware facts (pin map + protocol)
 
 ### Measured on *our* board (2026-09-23, `esptool` + the running firmware)
@@ -134,6 +140,10 @@ display renders correctly and touch works with exactly these pins, which is a st
   (`GUITION_RGB565_SWAP`, default on). Flip to 0 if hues come out inverted.
 - **No hardware 90° rotation.** The panel is native **portrait 320×480** (rotation 0) — which is exactly
   what the portrait UI wants, so no software rotation is needed. Don't reach for `setRotation(1/3)`.
+- **`board_upload.flash_size` sets the image header, not `board_build.flash_size`.** Without it the
+  `esp32-s3-devkitc-1` default (8 MB) goes into the header, and the bootloader then rejects the 16 MB
+  partition table. `flash_s3.py` always passes `--flash_size 16MB`, so this stayed hidden until a
+  plain factory install was tried for the release (2026-11-09).
 - **pioarduino platform.** Same as the S3: build on the pioarduino (IDF 5.5) platform; the stock
   espressif32 core's older bootloader is a known S3 boot-loop risk. Native-USB flashing needs esptool
   ≥ 4.11 (`flash_s3.py`/`flash_c3.py` auto-pick a good one).

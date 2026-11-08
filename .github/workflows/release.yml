@@ -1,4 +1,5 @@
-# Cut a release of the shipped C3-OLED crank-spoof firmware.
+# Cut a release of the shipped firmware: the C3-OLED crank spoof and, from 0.1.1, the Guition head
+# unit (`sb20proxy.release.targets_for` decides which boards a version carries).
 #
 # Push a `vMAJOR.MINOR.PATCH` tag and this builds `esp32c3-oled-live-release` stamped with that
 # version, verifies the stamp landed in the image, and publishes it as a GitHub release with the
@@ -61,7 +62,7 @@ jobs:
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import os, subprocess
-          from sb20proxy.release import artifact_name, release_notes_section, is_newer_version, version_from_tag
+          from sb20proxy.release import GUITION_RELEASE_ENV, artifact_name, release_notes_section, is_newer_version, targets_for, version_from_tag
 
           if os.environ.get("INPUT_VERSION"):
               version = version_from_tag("v" + os.environ["INPUT_VERSION"].lstrip("v"))
@@ -86,6 +87,9 @@ jobs:
 
           print(f"version={version}")
           print(f"artifact={artifact_name(version)}")
+          guition = any(t.env == GUITION_RELEASE_ENV for t in targets_for(version))
+          print(f"guition={str(guition).lower()}")
+          print(f"guition_artifact={artifact_name(version, GUITION_RELEASE_ENV)}")
           print(f"publish={str(publish).lower()}")
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as fh:
               fh.write(f"SB20_VERSION={version}\n")
@@ -164,8 +168,6 @@ jobs:
           cp firmware/webflash/firmware-factory.bin firmware-factory.bin
           # Regenerated with the release version by the step above; the committed copy is not this.
           cp firmware/webflash/manifest.json manifest.json
-          sha256sum "${{ steps.ver.outputs.artifact }}" firmware-factory.bin manifest.json \
-            | tee SHA256SUMS
 
       # The factory image is what most people flash, so prove the stamp is in THAT too, not just in
       # the app image the earlier step checked.
@@ -189,6 +191,53 @@ jobs:
             exit 1
           fi
 
+      # ---- The Guition head unit, from 0.1.1 ------------------------------------------------------
+      # A different platform from the C3 (pioarduino: Arduino 3.x / IDF 5.5), so it gets its own
+      # PlatformIO core dir exactly as tests.yml does: sharing one lets the two platforms overwrite
+      # each other's packages.
+      - name: Cache PlatformIO toolchains (pioarduino, Guition)
+        if: steps.ver.outputs.guition == 'true'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.platformio-pioarduino
+          key: pio-s3-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini', '.github/workflows/tests.yml') }}
+          restore-keys: pio-s3-${{ runner.os }}-
+
+      - name: Build the Guition head-unit firmware
+        if: steps.ver.outputs.guition == 'true'
+        working-directory: firmware
+        run: PLATFORMIO_CORE_DIR="$HOME/.platformio-pioarduino" pio run -e esp32-guition-live-release
+
+      - name: Build and verify the Guition factory image
+        if: steps.ver.outputs.guition == 'true'
+        run: |
+          python code/scripts/build_factory_bin.py \
+            --env esp32-guition-live-release \
+            --version "${SB20_VERSION}" \
+            --name "SB20 Proxy ${SB20_VERSION} (Guition 3.5-inch head unit, live)"
+          cp "firmware/.pio/build/esp32-guition-live-release/firmware.bin" \
+             "${{ steps.ver.outputs.guition_artifact }}"
+          cp firmware/webflash/firmware-factory-guition.bin firmware-factory-guition.bin
+          cp firmware/webflash/manifest-guition.json manifest-guition.json
+          if ! strings firmware-factory-guition.bin | grep -qxF "${SB20_VERSION}"; then
+            echo "::error::'${SB20_VERSION}' is not in firmware-factory-guition.bin"
+            exit 1
+          fi
+          if strings firmware-factory-guition.bin | grep -qxF "0.0.0-dev"; then
+            echo "::error::the Guition image still carries the 0.0.0-dev default"
+            exit 1
+          fi
+
+      - name: List and checksum everything this release publishes
+        id: assets
+        run: |
+          ASSETS="${{ steps.ver.outputs.artifact }} firmware-factory.bin manifest.json"
+          if [ "${{ steps.ver.outputs.guition }}" = "true" ]; then
+            ASSETS="$ASSETS ${{ steps.ver.outputs.guition_artifact }} firmware-factory-guition.bin manifest-guition.json"
+          fi
+          echo "list=$ASSETS" >> "$GITHUB_OUTPUT"
+          sha256sum $ASSETS | tee SHA256SUMS
+
       - name: Upload the release candidate (publishes nothing)
         if: steps.ver.outputs.publish != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -198,6 +247,9 @@ jobs:
             ${{ steps.ver.outputs.artifact }}
             firmware-factory.bin
             manifest.json
+            ${{ steps.ver.outputs.guition_artifact }}
+            firmware-factory-guition.bin
+            manifest-guition.json
             SHA256SUMS
           if-no-files-found: error
 
@@ -209,11 +261,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          TITLE="${{ github.ref_name }} — C3-OLED crank spoof"
+          if [ "${{ steps.ver.outputs.guition }}" = "true" ]; then
+            TITLE="$TITLE + Guition head unit"
+          fi
           gh release create "${{ github.ref_name }}" \
             --draft \
-            --title "${{ github.ref_name }} — C3-OLED crank spoof" \
+            --title "$TITLE" \
             --notes-file release-notes.md \
-            "${{ steps.ver.outputs.artifact }}" \
-            firmware-factory.bin \
-            manifest.json \
+            ${{ steps.assets.outputs.list }} \
             SHA256SUMS
