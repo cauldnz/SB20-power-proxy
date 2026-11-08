@@ -29,6 +29,7 @@ its own crank, so the spoof has to be byte-faithful.
 | **Working on a subsystem** | [`code/findings/README.md`](code/findings/README.md) — the index of every findings doc and the tooling it governs |
 | **Running an on-bike session** | [`sessions/PLAYBOOK.md`](sessions/PLAYBOOK.md), tracked in [`sessions/README.md`](sessions/README.md) |
 | **Doing desk development** | [`DEV-PLAYBOOK.md`](DEV-PLAYBOOK.md) · conventions in [`CLAUDE.md`](CLAUDE.md) |
+| **Setting up or riding with a board** | [`docs/user-guide/`](docs/user-guide/README.md): a step-by-step guide and narrated video |
 | **A beta tester (or running the beta)** | [`beta/ONBOARDING.md`](beta/ONBOARDING.md) · [`USERS-PLAYBOOK.md`](USERS-PLAYBOOK.md) |
 | **Identifying a physical board** | [`BOARDS.md`](BOARDS.md) |
 
