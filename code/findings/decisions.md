@@ -5498,3 +5498,14 @@ could still appear in one. Folded into `sessions/quickstart-v0.1.0.md`.
 air, `/status` reporting `version 0.1.0`, and pairing. The version on the board rests on the
 hash-verified write of an artifact already checked to contain `0.1.0` and no `0.0.0-dev`; nothing
 has read the running version back from the device.
+
+## 2026-11-09 — `firmware-factory.bin` erases NVS; the `v0.1.0` notes said a stored identity survives a flash
+
+`RELEASES.md` told riders "a stored identity survives a flash", directly below an install command
+that writes `firmware-factory.bin` at `0x0`. Measured on the `v0.1.0` candidate image (1,435,296
+bytes): every byte of the NVS window `0x9000..0xE000` is `0xFF`, because `merge_bin` pads the gap
+between the partition table and `boot_app0`. So the published install path **blanks WiFi, the meter
+and the crank identity**. The claim holds for push-OTA and for the parts-only `flash_c3.py`, which
+is where it came from; the factory image arrived later and the sentence was not revisited. The
+pioarduino `firmware.factory.bin` has the same property (`flash_s3.py`, measured 2026-09-23).
+Corrected in `RELEASES.md` and `beta/RELEASE-AND-OTA.md`. No firmware change.

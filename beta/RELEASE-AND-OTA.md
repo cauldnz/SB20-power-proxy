@@ -133,7 +133,9 @@ internal known-good marker.
   - `firmware-factory.bin` — bootloader + partitions + boot_app0 + app merged into one image written
     at offset `0x0` (`code/scripts/build_factory_bin.py`, ~1.4 MB). This is the only image a user can
     flash in one step and the only one the browser installer accepts, so it is what the README points
-    a visitor at.
+    a visitor at. It is `0xFF` across the NVS window (measured 2026-11-09: all of `0x9000..0xE000`),
+    so **installing it erases WiFi, the meter and the crank identity.** Right for a first install; on
+    a working board use push-OTA or `flash_c3.py`, which leave NVS alone.
   - `manifest.json` — the ESP Web Tools manifest, regenerated with the release version. The copy
     committed under `firmware/webflash/` carries whatever version was last written there and is not
     the release's; take the manifest from the release.
