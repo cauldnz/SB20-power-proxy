@@ -5562,3 +5562,32 @@ from a backup that already held those values, and uptime covered each whole run.
 
 The ANT+ stick was reported plugged in but did not enumerate on Windows (no `0FCF` device), and the ESP32
 firmware has no ANT+ radio, so nothing here used it.
+
+## 2026-11-09 — Heap loss while searching was NimBLE storing scan results (#394)
+
+NimBLE keeps a record of every advertiser during a scan, unlimited by default, and the board scans for as
+long as a meter is missing. Nothing in the firmware reads those results. `scan->setMaxResults(0)` stops the
+storing and the callbacks still fire. Shared code, so it applies to the C3 builds too, but it was only run on
+the Guition.
+
+Guition, `perf_soak.py`, build `7620cf1` with and without the change, no meter, no UI polling, 60 minutes:
+
+| Build | Free heap start -> end | Slope after 5 min | Low-water |
+|---|---|---|---|
+| Unfixed | 52,760 -> 47,140 bytes | -115 B/min, not levelling off | 33.4 KB |
+| Fixed | 58,912 -> 58,608 bytes | 0 B/min | 46.9 KB |
+
+Fixed build, meter pinned to an address that does not exist while a simulated meter advertised under another
+one, crank subscriber connecting in a cycle, UI polling, 30 minutes: free heap 61.7 KB -> 58.9 KB, slope -3 B/min
+after 5 min, low-water 40.3 KB, no reboots. 73 stalls over 200 ms, longest 3.1 s.
+
+**The 4.1 KB low-water from the discarded run did not come back** under those conditions, which were chosen to
+match it. There is no matching run on an unfixed build, so this does not show that the scan-result store
+caused it. Its cause is still not established.
+
+Also on the fixed build: `/scan` and `/setup` list CPS meters and FTMS trainers; `0x2F` crank frames at 180 W,
+85 rpm; `qa_board.py --connect --expect-version 0.1.1` passes; the FTMS sim saw 138, 0, 138, 248, 0 W for
+start, pause, resume, skip, stop.
+
+Rig trap: `perf_soak.py --load` silently runs with no meter if another `fake_meter.py` still holds the adapter.
+Check that a `fake_meter.py` process exists after it starts.

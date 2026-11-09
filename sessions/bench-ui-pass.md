@@ -449,7 +449,7 @@ Run on the release env, with no bench flags: the name filter pointed at the PC. 
 | F38, F41 | ✅ Firmware row; brightness label walks 25/50/75/100. The backlight itself was not observed (no camera) |
 | F29 | ✅ no dead button |
 | F33 | ⚠ still the labelled simulated stub |
-| Soak | ✅ 30 min loaded, no reboots. Searching case tracked in #394 |
+| Soak | ✅ 30 min loaded, 60 min searching, 30 min pinned to a gone meter: no reboots, heap flat once #394 was fixed |
 
 ## 2b. Pre-merge hardware tests for open PRs (owner, 2026-10-02)
 
