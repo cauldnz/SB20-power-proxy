@@ -66,6 +66,20 @@ void test_advert_matches_source_by_name_when_filter_set(void) {
     TEST_ASSERT_FALSE(classifyAdvert("Stages 62144", true, true, f, s).connect);
 }
 
+void test_empty_filter_never_takes_a_crank(void) {
+    PeerFilters none;
+    PeerRoleState s;
+    // #404: taking one of these silences it, and the bike can no longer find its crank.
+    TEST_ASSERT_FALSE(classifyAdvert("Stages 99744", true, true, none, s).connect);
+    TEST_ASSERT_FALSE(classifyAdvert("Stages 62144", true, true, none, s).connect);
+    TEST_ASSERT_TRUE(classifyAdvert("ASSIOMA17039L", true, true, none, s).connect);
+    TEST_ASSERT_TRUE(classifyAdvert("", false, true, none, s).connect);
+    // A surviving crank can still be the source when it is asked for by name.
+    PeerFilters crank;
+    crank.source = "Stages 62144";
+    TEST_ASSERT_TRUE(classifyAdvert("Stages 62144", true, true, crank, s).connect);
+}
+
 void test_advert_without_a_name_cannot_match_a_source_filter(void) {
     PeerFilters f;
     f.source = "Assioma";
@@ -312,5 +326,6 @@ int main(int, char**) {
     RUN_TEST(test_connect_ladder_now_agrees_with_the_scan_ladder);
     RUN_TEST(test_scan_and_connect_ladders_agree_across_the_state_space);
     RUN_TEST(test_connection_with_empty_peer_name_is_a_source);
+    RUN_TEST(test_empty_filter_never_takes_a_crank);
     return UNITY_END();
 }
