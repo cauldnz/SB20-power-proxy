@@ -636,7 +636,10 @@ static void lcdExecute(const UiAction& a, const LcdViews& v) {
             BleMeterClient::pickerScanBoost(15000);
 #endif
             break;
-        case UiAction::SetBrightness: lcd.setBrightness((uint8_t)a.index); break;
+        case UiAction::SetBrightness:
+            lcd.setBrightness((uint8_t)a.index);
+            g_lcdUi.brightness = (uint8_t)a.index;  // the More row reads this back (#346): without it
+            break;                                  // the label stuck at 100% and every tap sent 25
 #if defined(LCD_DRIVER_CYD) && LCD_DRIVER_CYD
         case UiAction::TouchCalStart:
             g_tcal.start();

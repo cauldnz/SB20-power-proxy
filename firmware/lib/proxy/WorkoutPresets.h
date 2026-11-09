@@ -15,7 +15,7 @@ struct WorkoutPreset {
 
 inline const std::vector<WorkoutPreset>& workoutPresets() {
     static const std::vector<WorkoutPreset> presets = {
-        {"4x8", "4×8 Threshold",
+        {"4x8", "4x8 Threshold",
          R"({"name":"4x8 Threshold","ftp_w":250,"segments":[)"
          R"({"t":600,"label":"Warm-up","pct_ftp":0.55},)"
          R"({"t":480,"label":"Interval 1","pct_ftp":0.99,"cadence_rpm":90},)"
@@ -26,7 +26,7 @@ inline const std::vector<WorkoutPreset>& workoutPresets() {
          R"({"t":120,"label":"Recovery","pct_ftp":0.50},)"
          R"({"t":480,"label":"Interval 4","pct_ftp":0.99,"cadence_rpm":90},)"
          R"({"t":300,"label":"Cool-down","pct_ftp":0.45}]})"},
-        {"ss3x12", "Sweet Spot 3×12",
+        {"ss3x12", "Sweet Spot 3x12",
          R"({"name":"Sweet Spot 3x12","ftp_w":250,"segments":[)"
          R"({"t":600,"label":"Warm-up","pct_ftp":0.55},)"
          R"({"t":720,"label":"Sweet Spot 1","pct_ftp":0.90},)"
@@ -35,7 +35,7 @@ inline const std::vector<WorkoutPreset>& workoutPresets() {
          R"({"t":300,"label":"Recovery","pct_ftp":0.50},)"
          R"({"t":720,"label":"Sweet Spot 3","pct_ftp":0.90},)"
          R"({"t":300,"label":"Cool-down","pct_ftp":0.45}]})"},
-        {"vo25x3", "VO2 5×3",
+        {"vo25x3", "VO2 5x3",
          R"({"name":"VO2 5x3","ftp_w":250,"segments":[)"
          R"({"t":600,"label":"Warm-up","pct_ftp":0.55},)"
          R"({"t":180,"label":"VO2 1","pct_ftp":1.12,"cadence_rpm":95},)"

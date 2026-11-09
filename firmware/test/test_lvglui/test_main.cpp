@@ -13,6 +13,7 @@
 #include <Arduino.h>   // the host shim (test/lvgl_shim) — millis()/Serial/heap_caps/psramFound
 #include <lvgl.h>
 
+#include "LcdLayout.h"
 #include "LvglUi.h"
 
 using namespace sb20proxy;
@@ -164,14 +165,15 @@ void test_compare_screen_renders() {
 }
 
 // Tap the More row shown at visible position `visRow` (0-based), clearing any queued action first.
-// y mirrors buildMore()'s layout (rows at 36 + i*29, height 27) — the centre is 36 + i*29 + 13.
+// y comes from the same layout buildMore() uses, so a new row cannot make these taps drift.
 static void tapMoreRow(int visRow) {
     lvglUiShowScreen(LcdScreen::More);
     pump(6);
     UiAction drain;
     while (lvglUiPollAction(drain)) {}
     g_tx = W / 2;
-    g_ty = 36 + visRow * 29 + 13;
+    const MoreLayout L = moreLayout(H, 9);  // the non-CYD row count: 8 rows + Firmware
+    g_ty = L.rowTop + visRow * L.pitch + L.pitch / 2;
     pump(4);
     g_tx = -1;   // release -> LVGL fires the CLICKED event on the row
     pump(8);
@@ -204,6 +206,23 @@ void test_more_rows_dispatch() {
     TEST_ASSERT_FALSE(lvglUiPollAction(none));
 }
 
+// #346: the Calibrate screen used to end in a button that did nothing. Pressing where it stood must
+// emit no action at all.
+void test_calibrate_screen_offers_no_dead_button() {
+    lvglUiShowScreen(LcdScreen::Calibrate);
+    pump(5);
+    UiAction drained;
+    while (lvglUiPollAction(drained)) {}
+    g_tx = W / 2;
+    g_ty = H - 60;
+    pump(5);
+    g_tx = g_ty = -1;
+    pump(5);
+    TEST_ASSERT_EQUAL(int(LcdScreen::Calibrate), int(lvglUiCurrentScreen()));
+    UiAction none;
+    TEST_ASSERT_FALSE(lvglUiPollAction(none));
+}
+
 int runUnityTests() {
     UNITY_BEGIN();
     RUN_TEST(test_ride_screen_renders_content);
@@ -211,6 +230,7 @@ int runUnityTests() {
     RUN_TEST(test_update_changes_render);
     RUN_TEST(test_compare_screen_renders);
     RUN_TEST(test_more_rows_dispatch);
+    RUN_TEST(test_calibrate_screen_offers_no_dead_button);
     return UNITY_END();
 }
 

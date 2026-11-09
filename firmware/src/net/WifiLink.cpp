@@ -403,9 +403,9 @@ void WifiLink::startPortal_() {
     WiFi.setAutoReconnect(false);
     WiFi.disconnect(/*wifioff=*/false, /*eraseap=*/false);
     // The setup AP is WPA2-protected (closes the cleartext-PSK window when the user types their home
-    // WiFi password into the portal). OLED builds use a per-device 8-digit PIN shown on the screen;
-    // screenless builds fall back to a known default passphrase the user can type (Config).
-#if defined(USE_OLED) && USE_OLED
+    // WiFi password into the portal). Boards with a display (OLED or LCD) use a per-device 8-digit PIN
+    // shown on the screen; screenless builds fall back to a known default passphrase (Config).
+#if (defined(USE_OLED) && USE_OLED) || (defined(USE_LCD) && USE_LCD)
     uint8_t mac[6];
     WiFi.macAddress(mac);
     setupPin_ = deriveSetupPin(mac, sizeof(mac), Config::SETUP_PIN_SECRET);
