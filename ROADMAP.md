@@ -108,6 +108,9 @@ who owns pairing/identity, whether the ESP32 or the nRF is master, power, and wh
 using the nRF as the whole head unit. Start from `nrf-roadmap.md`, not from scratch. Gated on the
 same S340 SoftDevice download as the rest of the ANT+ track (owner-login).
 
+**A shared device database in NocoDB** (owner, 2026-11-09; for discussion, not decided) — one place to
+look up hardware across all our projects, rather than each repo keeping its own list (here, `BOARDS.md`).
+
 ## PARKED (un-park condition in brackets)
 
 - **Pre-beta programme** (pre-beta-plan Phases 3–5, `beta-program.md`, the recruiting kit)
