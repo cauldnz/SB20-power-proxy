@@ -48,6 +48,10 @@ Writing either image **erases the board's settings** (WiFi, meter, crank identit
 - The Ride page links to pairing the input and setting the output ID, and says when no meter is
   connected.
 - Every page shows straight away that a tap registered.
+- A meter that connects but sends no data is left alone for a while, up to 30 seconds, so the other
+  pedal of a dual Assioma gets its turn and the board stays responsive.
+- A Bluetooth connection attempt now gives up after 8 seconds, so it can no longer trip the stall
+  watchdog and restart the board.
 - Guition: the brightness row now works and shows its real value.
 - Guition: a Firmware row shows the version.
 - Guition: the Calibrate screen no longer has a button that did nothing, and says where calibration

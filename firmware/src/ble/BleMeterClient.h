@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "Config.h"            // compile-time defaults for the source match
+#include "ConnectBackoff.h"    // leave a meter alone for a while after it fails to deliver
 #include "Cps.h"               // BalanceHold (sticky pedal-balance)
 #include "IPowerSource.h"
 #include "SourceCandidate.h"   // discovered-source list for the web picker
@@ -55,6 +56,7 @@ public:
         // never connects).
         for (char& ch : matchAddr_) ch = (char)std::tolower((unsigned char)ch);
         matchNameFilter_ = nameFilter;
+        clearConnectHolds();  // a new choice gets its first attempt straight away
     }
 
     // Tell the loop guard which name is OUR spoof, so we never read a copy of our own crank (the
@@ -104,6 +106,8 @@ public:
     void onMeasurement(const uint8_t* data, size_t len);  // decode power (+ cadence) and emit
     void onDisconnected();  // link dropped: clear state and rescan from loop()
 
+    bool heldOff(const std::string& addr) const;  // recently failed to deliver: not its turn yet
+
 private:
     ReadingCb cb_;
     NimBLEClient* client_ = nullptr;
@@ -114,6 +118,10 @@ private:
     char addr_[24] = {0};
     char name_[32] = {0};         // matched meter's advertised name (for /log field observation)
     bool loggedFrame_ = false;    // log the raw CPS frame once per connection (learn the format)
+    bool attemptOpen_ = false;    // a connect has started and its outcome is not yet recorded
+    ConnectBackoff backoff_;
+    void clearConnectHolds();
+    void endAttempt();            // record a link that ended without delivering a frame
     uint8_t addrType_ = 0;
     // Crank-revolution state, to recover the meter's cadence the way a head unit does.
     bool havePrevCrank_ = false;

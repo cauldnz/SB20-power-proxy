@@ -5622,3 +5622,33 @@ WiFi at about -62 dBm, keeping its settings. One push needed a second attempt. T
 fails on this PC because the default `python` has no PlatformIO, hence `-NoBuild` after building with the venv.
 
 **Heap on the C3.** 119 KB free with no meter, against about 58 KB on the Guition.
+
+## 2026-11-10 — Six-hour C3 soak: memory flat, but one pedal held the loop up for five hours
+
+**Setup.** Bike C3 OLED, `0.1.1`, `build_sha` `1809fb147`, filter `ASSIOMA`, no pinned address, no load, no
+rider, sampled every 30 s for 6 h from about 22:00. 586 of 678 samples answered, the other 92 timed out.
+
+**Memory is fine.** After the first hour free heap held at about 112.5 KB: -0.27 B/min from 60 min, -0.05
+from 120 min, +0.60 from 240 min. The 10 KB step from 122 KB to 112 KB at 40 to 43 min is when the stalls
+below began, so it is the cost of the repeated connects, not a leak. Low-water mark 101.2 KB.
+
+**The right pedal looped.** Stalls began at t+40.7 min (about 22:41) and climbed steadily to the end of the soak. At 04:05 the
+`/log` ring held only `[meter] found 'ASSIOMA22428R'` followed by `[meter] disconnected`, 60 pairs out of
+60. Over 95 s measured live there were 43 stalls of 200 ms or more, 27 a minute, and 35 loops a second
+against 164 before it began. Total 9,783 stalls, worst 6.1 s. **Why the link drops is not established**:
+that line is reached either by the pedal hanging up or by the board failing to find or subscribe to CPS. Nor
+is it known why the pedal was awake all night with nobody riding, or what the repeated connects cost its
+battery. `ASSIOMA17039L` was not among those 60 pairs.
+
+**Why it could not recover.** A name filter matches both pedals (`decisions` 2026-06-15 records that each
+advertises separately) and nothing remembered a failure, so the same advert won every time.
+
+**One watchdog restart during the soak, at t+11.2 min, and the header shows the boot before it was also a
+`loop_stall`.** `client_->connect()` blocks `loop()`, NimBLE defaults to a 30 s timeout, and the watchdog
+fires after one full 15 s window with no progress. A device that vanishes between its advert and the
+connect would do exactly this. The log did not survive the restart, so that is the mechanism the code
+allows, not an observed cause.
+
+**Fix, not yet flashed or proven on hardware.** `ConnectBackoff.h` holds an address for 5 s after a link ends
+with no frame, doubling to a 30 s cap, and one frame clears it. All three BLE clients now give up a connect
+after 8 s. Host tests cover the backoff. Whether the loop stops needs the real pedals.

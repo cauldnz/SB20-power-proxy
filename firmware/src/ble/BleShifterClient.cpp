@@ -6,6 +6,8 @@
 #include <cstring>
 #include <string>
 
+#include "Config.h"
+
 using namespace sb20proxy;
 
 // The SB20's vendor button service + characteristic (code/findings/shifter-ble-protocol.md).
@@ -60,6 +62,7 @@ void BleShifterClient::connectAndSetup() {
     if (!client_) {
         client_ = NimBLEDevice::createClient();
         client_->setClientCallbacks(&g_clientCb, false);
+        client_->setConnectTimeout(Config::BLE_CONNECT_TIMEOUT_MS);
     }
     if (!client_->connect(NimBLEAddress(std::string(addr_), addrType_))) {
         haveTarget_ = false;
