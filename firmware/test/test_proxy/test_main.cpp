@@ -3210,6 +3210,21 @@ void test_backoff_clear_gives_a_new_choice_its_turn() {
     TEST_ASSERT_FALSE(b.heldOff(kPedalR, 1000));
 }
 
+void test_backoff_asks_for_a_rescan_once_when_a_hold_ends() {
+    ConnectBackoff b;
+    b.recordFailure(kPedalR, 1000);
+    TEST_ASSERT_FALSE(b.takeExpired(1000 + ConnectBackoff::kFirstHoldMs - 1));
+    TEST_ASSERT_TRUE(b.takeExpired(1000 + ConnectBackoff::kFirstHoldMs));
+    TEST_ASSERT_FALSE(b.takeExpired(1000 + ConnectBackoff::kFirstHoldMs + 1));
+}
+
+void test_backoff_no_rescan_after_a_frame_cleared_the_hold() {
+    ConnectBackoff b;
+    b.recordFailure(kPedalL, 1000);
+    b.recordSuccess(kPedalL);
+    TEST_ASSERT_FALSE(b.takeExpired(100000));
+}
+
 void test_ble_connect_gives_up_inside_the_stall_window() {
     TEST_ASSERT_LESS_THAN_UINT32(Config::LOOP_STALL_WINDOW_MS, Config::BLE_CONNECT_TIMEOUT_MS);
 }
@@ -3459,6 +3474,8 @@ int runUnityTests() {
     RUN_TEST(test_backoff_survives_the_millis_wrap);
     RUN_TEST(test_backoff_full_table_keeps_the_longest_holds);
     RUN_TEST(test_backoff_clear_gives_a_new_choice_its_turn);
+    RUN_TEST(test_backoff_asks_for_a_rescan_once_when_a_hold_ends);
+    RUN_TEST(test_backoff_no_rescan_after_a_frame_cleared_the_hold);
     RUN_TEST(test_ble_connect_gives_up_inside_the_stall_window);
     return UNITY_END();
 }

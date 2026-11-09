@@ -5652,3 +5652,18 @@ allows, not an observed cause.
 **Fix, not yet flashed or proven on hardware.** `ConnectBackoff.h` holds an address for 5 s after a link ends
 with no frame, doubling to a 30 s cap, and one frame clears it. All three BLE clients now give up a connect
 after 8 s. Host tests cover the backoff. Whether the loop stops needs the real pedals.
+
+## 2026-11-10 — The meter backoff needed a scan restart when a hold ends
+
+`8ef5b67` went to the bike C3 and logged one attempt on `ASSIOMA22428R`, then nothing for 5.5 minutes,
+although the first hold is 5 s. Reading the code explains how that can happen: the scan keeps NimBLE default
+duplicate filtering, so each address is reported once per scan run, and an advert that lands inside a hold is
+dropped and not reported again. On a real meter whose first connect failed, that would mean no retry until
+something restarted the scan. The scan now restarts when a hold ends, signalled once per hold by
+`ConnectBackoff::takeExpired`.
+
+**Not proven on air.** After the next update the same pedal did not appear at all in 155 s from a clean boot,
+so by then it had gone to sleep, and that may also be why the attempts stopped. The retry timing is covered by
+host tests only. The pedal had stayed awake through more than five hours of repeated connects and went quiet
+within minutes of them stopping, which suggests the connects were keeping it awake. One observation, not
+established. With nothing to connect to, that boot ran at 165 loops a second with no stalls of 200 ms or more.

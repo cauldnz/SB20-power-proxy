@@ -312,6 +312,16 @@ void BleMeterClient::loop() {
             if (!noClientNeedsScan()) ensureScanning();
         }
     }
+    // A hold just ended: restart the scan so that meter is reported again (see takeExpired).
+    {
+        const uint32_t now = millis();
+        portENTER_CRITICAL(&s_backoffMux);
+        const bool retry = backoff_.takeExpired(now);
+        portEXIT_CRITICAL(&s_backoffMux);
+        if (retry && !noClientNeedsScan()) {
+            NimBLEDevice::getScan()->start(0, /*isContinue=*/false, /*restart=*/true);
+        }
+    }
     // Staleness watchdog: a connected meter that stops notifying is gone — drop the link and
     // rescan. We reset state HERE rather than waiting on the onDisconnect callback, because an
     // abruptly-vanished peer (a killed host process) can leave the controller link up with the
