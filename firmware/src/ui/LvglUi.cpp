@@ -928,14 +928,15 @@ void lvglUiUpdate(const LcdViews& v) {
                                   dev.name.empty() ? dev.address.c_str() : dev.name.c_str());
                 const bool selM = !v.setup.meterAddr.empty() && dev.address == v.setup.meterAddr;
                 const bool selT = !v.setup.trainerAddr.empty() && dev.address == v.setup.trainerAddr;
-                const char* kind = dev.isFtms ? "trainer" : (dev.isStagesCrank ? "crank" : "meter");
-                snprintf(buf, sizeof(buf), "%s %d%s%s", kind, dev.rssi, selM ? " *" : "",
-                         selT ? " *" : "");
-                lv_label_set_text(S.rowMeta[i], buf);
+                lv_label_set_text(S.rowMeta[i], setupRowMeta(dev, selM, selT).c_str());
             } else {
                 lv_obj_add_flag(S.rows[i], LV_OBJ_FLAG_HIDDEN);
             }
         }
+        // Save looks live once there is something to save (#393).
+        const bool canSave = v.setup.dirty;
+        lv_obj_set_style_bg_color(S.bSave, canSave ? C_ACCENT() : C_CARD(), 0);
+        lv_obj_set_style_text_color(lv_obj_get_child(S.bSave, 0), canSave ? C_FG() : C_MUT(), 0);
     }
 
     // More — fill each row's value cell from the same table that laid out + dispatches the rows.
