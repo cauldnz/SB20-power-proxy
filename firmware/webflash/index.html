@@ -24,8 +24,8 @@
 <body>
   <h1>Install / recover the SB20 Proxy</h1>
   <p>
-    This flashes the proxy firmware onto an ESP32-C3 board directly from your browser — no command
-    line. Use it to set up a fresh board or recover one that won't update over the air.
+    This flashes the proxy firmware onto your board directly from your browser — no command line.
+    Use it to set up a fresh board or recover one that won't update over the air.
   </p>
 
   <div class="card">
@@ -33,13 +33,19 @@
       <li>Use <strong>Chrome</strong> or <strong>Edge</strong> on a desktop (Web Serial isn't in
         Safari/Firefox or on phones).</li>
       <li>Plug the board into USB.</li>
-      <li>Click <strong>Install</strong> and pick the board's serial port.</li>
+      <li>Click <strong>Install</strong> on your board below and pick its serial port.</li>
       <li>If the port doesn't appear or flashing won't start: hold <strong>BOOT</strong>, tap
         <strong>RESET</strong>, release <strong>BOOT</strong>, then retry.</li>
     </ol>
 
+    <p class="warn">Installing erases the board's settings (WiFi, meter and crank identity).</p>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:1.1rem;margin-top:0">Headless board</h2>
+    <p class="muted">ESP32-C3 with the tiny 0.42&Prime; OLED display.</p>
     <esp-web-install-button manifest="manifest.json">
-      <button slot="activate">Install SB20 Proxy</button>
+      <button slot="activate">Install on the headless board</button>
       <span slot="unsupported" class="warn">
         Your browser can't flash over USB — open this page in desktop Chrome or Edge.
       </span>
@@ -49,12 +55,32 @@
     </esp-web-install-button>
   </div>
 
+  <div class="card" id="guition" hidden>
+    <h2 style="font-size:1.1rem;margin-top:0">Screen board</h2>
+    <p class="muted">Guition JC3248W535, the 3.5&Prime; touch screen.</p>
+    <esp-web-install-button manifest="manifest-guition.json">
+      <button slot="activate">Install on the screen board</button>
+      <span slot="unsupported" class="warn">
+        Your browser can't flash over USB — open this page in desktop Chrome or Edge.
+      </span>
+      <span slot="not-allowed" class="warn">
+        This page must be served over HTTPS to flash.
+      </span>
+    </esp-web-install-button>
+  </div>
+  <script>
+    // A release older than 0.1.1 has no Guition image, so its button would only fail.
+    fetch("manifest-guition.json", { method: "HEAD" }).then(function (r) {
+      document.getElementById("guition").hidden = !r.ok;
+    });
+  </script>
+
   <div class="card">
     <h2 style="font-size:1.1rem;margin-top:0">After it flashes</h2>
     <ol>
       <li>The board reboots and creates a per-device Wi-Fi network called <code>Setup-XXXX</code> (the OLED/LCD shows the exact name).</li>
       <li>Join it from your phone; a setup page opens (or browse to
-        <code>http://192.168.4.1/</code>).</li>
+        <code>http://172.29.4.1/</code>).</li>
       <li>Pick your home Wi-Fi, then your power meter, and save. The board reconnects on your
         network and shows a live dashboard.</li>
     </ol>
@@ -103,7 +129,7 @@
 
   <p class="muted">
     Full walkthrough, and what to do when something doesn't work:
-    <a href="https://github.com/cauldnz/SB20-power-proxy">the project on GitHub</a>
+    <a href="https://github.com/cauldnz/SB20-power-proxy/blob/main/docs/user-guide/README.md">the user guide</a>
     (please open an issue &mdash; reports are how this gets better).
   </p>
 

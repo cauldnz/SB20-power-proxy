@@ -387,6 +387,7 @@ static LcdCanvas& g_lcdFrame() {
     return frame;
 }
 static std::string g_lcdIdentity, g_lcdSource, g_lcdMeterAddr;  // captured from cfg at boot
+static bool g_lcdSetupDirty = false;  // a Setup row was tapped: there is something to Save
 static std::string g_lcdTrainerName, g_lcdTrainerAddr;  // FTMS trainer pick (name persisted;
                                                         // addr is session-local, for the badge)
 static bool g_lcdCorrector = false;
@@ -570,13 +571,18 @@ static void buildLcdViews(LcdViews& v) {
     s.devices = meter.pickerCandidates();
 #endif
     s.meterAddr = g_lcdMeterAddr;
+    s.dirty = g_lcdSetupDirty;
     s.trainerAddr = g_lcdTrainerAddr;  // session pick (the [erg] badge); the NAME is what persists
 
     // More / Settings summary
     MoreView& m = v.more;
     m.mode = g_lcdCorrector ? "Corrector" : "Crank spoof";
     m.identity = g_lcdIdentity;
+#if USE_MOCK_METER
     m.source = g_lcdSource;
+#else
+    m.source = moreSourceLabel(meter.connected(), meter.sourceName(), g_lcdSource);
+#endif
     m.trainer = g_trainerName.empty() ? "not set" : g_trainerName;  // was hard-coded "not set": the
                                                                      // row never showed the configured trainer
     m.version = std::string(Config::FIRMWARE_VERSION);
@@ -648,6 +654,7 @@ static void lcdExecute(const UiAction& a, const LcdViews& v) {
         case UiAction::SetupPick: {
             const auto ds = lcdPickerList(v.setup.devices);  // MUST match the rendered list
             if (a.index >= 0 && a.index < (int)ds.size()) {
+                g_lcdSetupDirty = true;
                 if (ds[a.index].isFtms) {  // an erg-able trainer -> the workout's erg target
                     g_lcdTrainerName = ds[a.index].name;
                     g_lcdTrainerAddr = ds[a.index].address;

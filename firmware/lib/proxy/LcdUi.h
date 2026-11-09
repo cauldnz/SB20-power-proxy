@@ -74,6 +74,24 @@ struct SetupView {
     bool dirty = false;                    // a pick was made -> show Save
 };
 
+// A Setup row's right-hand text. A connected meter has no scan RSSI (the pickers give it 0 so it
+// sorts first), so say so rather than printing a signal strength of 0. Pure, host-tested.
+inline std::string setupRowMeta(const SourceCandidate& d, bool selMeter, bool selTrainer) {
+    std::string s = d.isFtms ? "trainer" : (d.isStagesCrank ? "crank" : "meter");
+    s += " ";
+    s += d.isConnected ? "connected" : std::to_string(d.rssi);
+    if (selMeter) s += " *";
+    if (selTrainer) s += " *";
+    return s;
+}
+
+// More > Source: the meter's name while it is connected, else what was saved or picked, which is
+// an address once a meter has been pinned (#392).
+inline std::string moreSourceLabel(bool connected, const std::string& connectedName,
+                                   const std::string& saved) {
+    return (connected && !connectedName.empty()) ? connectedName : saved;
+}
+
 struct MoreView {
     std::string mode;      // "Crank spoof" / "Corrector"
     std::string identity;

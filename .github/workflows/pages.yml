@@ -1,0 +1,72 @@
+# Publish the browser installer (firmware/webflash/) to GitHub Pages.
+#
+# Publishing a GitHub release is the gate: the release workflow creates a draft, the owner publishes
+# it after the acceptance run, and only then can its images reach this page. A draft can never get
+# here, because `gh release view` and the `published` event both ignore drafts.
+#
+# Run it by hand (with no input, for the latest release) when the page changes, and for a release
+# whose tag predates this file: GitHub takes a `release` event's workflow from the tagged commit.
+name: web-flasher
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release to serve (blank = the latest published one)."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: web-flasher
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main # the current page, even when serving an older release's images
+
+      - name: Assemble the site from the release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release view --json tagName --jq .tagName)
+          fi
+          echo "Serving $TAG"
+          mkdir site
+          cp firmware/webflash/index.html site/
+          gh release download "$TAG" --dir site \
+            --pattern firmware-factory.bin --pattern manifest.json \
+            --pattern firmware-factory-guition.bin --pattern manifest-guition.json
+          # Each manifest must have its image beside it, or the Install button fails for the rider.
+          for pair in manifest.json:firmware-factory.bin manifest-guition.json:firmware-factory-guition.bin; do
+            m=${pair%%:*}; f=${pair##*:}
+            if [ -f "site/$m" ] && [ ! -f "site/$f" ]; then
+              echo "::error::$m is in $TAG without $f"; exit 1
+            fi
+          done
+          test -f site/manifest.json
+          ls -l site
+
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
