@@ -251,6 +251,10 @@ void BleMeterClient::begin() {
     if (!g_scanCallbacksSet) {
         scan->setScanCallbacks(&g_scanCb, false);
         scan->setActiveScan(true);  // harvest scan responses too (a meter may carry its name there)
+        // Don't let NimBLE keep a record of every advertiser. The default is unlimited, nothing here
+        // reads the results, and the scan runs for as long as a meter is missing: free heap fell
+        // about 95 bytes a minute without levelling off (#394). The callbacks still fire.
+        scan->setMaxResults(0);
         g_scanCallbacksSet = true;
     }
     ensureScanning();  // continuous scan; shared across all registered clients
