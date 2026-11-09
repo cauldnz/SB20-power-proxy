@@ -143,7 +143,7 @@ builds, with pioarduino in its own core dir and cache so the two Arduino platfor
 other's packages (#348, closes #323) · fleet identity: a board with no stored name advertises its
 own `Stages 9NNNN` derived from its MAC (the nRF from its BLE address), `/status` shows where the name
 came from plus the pinned pedals and the trainer, and the web app no longer force-posts `Stages 62144`
-(#354, closes #330; the hardware checks ride in the bench pass and session 14 G0).
+(#354, closes #330; the hardware checks ride in the bench pass and session 14 G0). · November 2026: the Guition release build and its first-run fixes for `0.1.1` (#388, #389), bench-tested but not yet ridden.
 
 ## Maintenance rule
 

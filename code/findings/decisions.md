@@ -5525,3 +5525,69 @@ and the crank identity**. The claim holds for push-OTA and for the parts-only `f
 is where it came from; the factory image arrived later and the sentence was not revisited. The
 pioarduino `firmware.factory.bin` has the same property (`flash_s3.py`, measured 2026-09-23).
 Corrected in `RELEASES.md` and `beta/RELEASE-AND-OTA.md`. No firmware change.
+
+## 2026-11-09 — Guition `0.1.1` candidate: bench results and two first-run bugs
+
+Bench: Guition (`28:84:85:49:4D:20`, COM11), `fake_meter.py`, the FTMS sim C3 (COM13), the nRF sniffer.
+Candidate `esp32-guition-live-release` at `a60af7f` + the Rescan fix, stamped `0.1.1`.
+
+**Bugs found by using it the way a new rider would.**
+1. **Rescan emptied the picker for good while the board was searching.** `pickerScanBoost` only started a
+   scan if none was running. A running scan's duplicate filter had already seen every advertiser, so
+   after `clearCandidates()` nothing came back. Fixed by restarting the scan. Proven on the panel.
+2. **The LCD builds used the shared default setup password**, because the PIN was gated on `USE_OLED`
+   alone. Now `USE_OLED || USE_LCD`. The panel shows an 8-digit PIN.
+
+**Soaks (`perf_soak.py`, 5 s interval, WiFi polling).**
+| Run | Length | Result |
+|---|---|---|
+| Meter connected, crank subscriber connecting in a 12 s cycle | 30 min | no reboots; free internal heap 61.0 KB -> 58.4 KB, flat after the first minutes; low-water 37 KB; 101 stalls over 200 ms, longest 5.9 s |
+| No meter, searching | 20 min | no reboots; free heap 57.0 KB -> 52.8 KB, about 100 B/min after the first 5 min; low-water 33 KB (#394) |
+
+The stalls match the known synchronous web server under `--ui-poll` (#325) but were not separately
+attributed here.
+
+**A run that does not count.** The first 30-minute soak reached a low-water of 4.1 KB with free heap falling
+32.8 -> 24.7 KB, but its meter was pinned to the PC's rotating BLE address, so the link died partway and
+the load was not what the label said. The low figure did not reproduce in either run above and its cause
+is not established. It may be the pinned-and-gone state, which is worth a look under #394.
+
+**Rig trap.** One PC cannot be the meter and the crank reader in the wrong order: with `crank_reader.py`
+already connected, the board's connection back to `fake_meter.py` on the same adapter drops immediately
+(`[meter] found` / `[meter] disconnected` repeating). Start the meter, wait for `source: connected`, then
+start the crank reader. `perf_soak.py --load` starts them in the wrong order for one PC.
+
+The `/stats` `reset_reason: sw` / `loop_stall` in these runs is not evidence of a stall: NVS was restored
+from a backup that already held those values, and uptime covered each whole run.
+
+The ANT+ stick was reported plugged in but did not enumerate on Windows (no `0FCF` device), and the ESP32
+firmware has no ANT+ radio, so nothing here used it.
+
+## 2026-11-09 — Heap loss while searching was NimBLE storing scan results (#394)
+
+NimBLE keeps a record of every advertiser during a scan, unlimited by default, and the board scans for as
+long as a meter is missing. Nothing in the firmware reads those results. `scan->setMaxResults(0)` stops the
+storing and the callbacks still fire. Shared code, so it applies to the C3 builds too, but it was only run on
+the Guition.
+
+Guition, `perf_soak.py`, build `7620cf1` with and without the change, no meter, no UI polling, 60 minutes:
+
+| Build | Free heap start -> end | Slope after 5 min | Low-water |
+|---|---|---|---|
+| Unfixed | 52,760 -> 47,140 bytes | -115 B/min, not levelling off | 33.4 KB |
+| Fixed | 58,912 -> 58,608 bytes | 0 B/min | 46.9 KB |
+
+Fixed build, meter pinned to an address that does not exist while a simulated meter advertised under another
+one, crank subscriber connecting in a cycle, UI polling, 30 minutes: free heap 61.7 KB -> 58.9 KB, slope -3 B/min
+after 5 min, low-water 40.3 KB, no reboots. 73 stalls over 200 ms, longest 3.1 s.
+
+**The 4.1 KB low-water from the discarded run did not come back** under those conditions, which were chosen to
+match it. There is no matching run on an unfixed build, so this does not show that the scan-result store
+caused it. Its cause is still not established.
+
+Also on the fixed build: `/scan` and `/setup` list CPS meters and FTMS trainers; `0x2F` crank frames at 180 W,
+85 rpm; `qa_board.py --connect --expect-version 0.1.1` passes; the FTMS sim saw 138, 0, 138, 248, 0 W for
+start, pause, resume, skip, stop.
+
+Rig trap: `perf_soak.py --load` silently runs with no meter if another `fake_meter.py` still holds the adapter.
+Check that a `fake_meter.py` process exists after it starts.

@@ -26,6 +26,8 @@ The per-device WiFi **setup-AP SSID is `Setup-XXXX`** where `XXXX` = the last 2 
 | **Garmin/Dynastream ANT+ stick** | — | — | `0FCF:1008` | — | ANT+ radio for the Python tooling (`scripts/01_capture_stages.py`, `03_static_replay.py --radio ant`). |
 
 ## Notes / gaps
+- **COM ports on 2026-11-09 (will change):** Guition `COM11`, FTMS sim C3 (`38:44:BE:45:53:34`) `COM13`,
+  nRF sniffer `COM9`. The ANT+ stick did not enumerate on Windows that day.
 - **COM ports observed this session (2026-07-11, will change):** XIAO nRF `COM9`, C3-0.42 `COM5`,
   C3-0.96 `COM13`, CYD `COM12`, S3-Touch `COM14`/`COM16`, nRF dongle `COM8`, ANT+ stick (WSL usb).
 - **CYD full MAC not yet captured** — only the STA suffix `CC:8C` (from its `Setup-CC8C` SSID). Read it

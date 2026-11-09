@@ -1,7 +1,8 @@
 # Releases
 
-Shipped releases of the **C3-OLED crank-spoof firmware** (`esp32c3-oled-live-release`) — the build a
-rider flashes and rides. Cut by pushing a `vMAJOR.MINOR.PATCH` tag; the mechanics, the QA gate and the
+Shipped releases of the firmware a rider flashes and rides: the **C3-OLED crank spoof**
+(`esp32c3-oled-live-release`) and, from `0.1.1`, the **Guition head unit**
+(`esp32-guition-live-release`). Cut by pushing a `vMAJOR.MINOR.PATCH` tag; the mechanics, the QA gate and the
 rollback path are in [`beta/RELEASE-AND-OTA.md`](beta/RELEASE-AND-OTA.md).
 
 Each `## <version>` section below is published verbatim as that release's GitHub notes, so a tag with
@@ -16,6 +17,58 @@ Versions are compared by the device as three integers (`OtaManifest::isNewerVers
 prerelease tags — a `v0.1.0-rc1` would be indistinguishable from `v0.1.0` and would strand any board
 that installed it. Release candidates are built through the release workflow's dry-run path, which
 publishes nothing.
+
+## 0.1.1 — unreleased
+
+The first release for the **Guition JC3248W535**, a 3.5″ touch-screen head unit that is intended to
+be the standard full-display board. The headless C3-OLED build is published alongside it. New to
+this? Start with the [user guide](docs/user-guide/README.md), which has a narrated video.
+
+**Install it.** Each board has its own merged image, written at offset `0x0`. On esptool 4.x, type
+`write_flash` instead of `write-flash`.
+
+```
+python -m esptool --chip esp32s3 --port COM9 write-flash 0x0 firmware-factory-guition.bin
+python -m esptool --chip esp32c3 --port COM9 write-flash 0x0 firmware-factory.bin
+```
+
+Writing either image **erases the board's settings** (WiFi, meter, crank identity).
+
+**Fixed since 0.1.0.** These are in the shared firmware unless marked:
+- **Rescan** no longer leaves the device list empty on a board still searching for its first meter.
+  The web page's Scan took the same path.
+- **Free memory no longer falls while a board searches for a meter.** It was losing about 100 bytes a
+  minute for as long as no meter was found ([#394](https://github.com/cauldnz/SB20-power-proxy/issues/394)).
+- Guition: the brightness row now works and shows its real value.
+- Guition: a Firmware row shows the version.
+- Guition: the Calibrate screen no longer has a button that did nothing, and says where calibration
+  runs.
+- Guition: the details card no longer overlaps text, and the workout picker has no missing-glyph
+  boxes.
+- Guition: the setup WiFi now has a per-device password, shown on the screen, in place of a shared
+  default.
+- Guition: release images now say 16 MB in their header. They said 8 MB before, which the bootloader
+  can reject on this board.
+
+**Tested on the bench, not on a bike.** On a real Guition running this build, with a simulated meter
+and a simulated FTMS trainer:
+- A plain install of the factory image, then the setup screen and its WiFi network.
+- Picking a meter and a trainer on the touch screen, saved across a reboot.
+- Live power in and crank frames out (`0x2F` flags).
+- A workout driven from the board: start 138 W, pause 0 W, resume 138 W, skip 248 W, stop 0 W, as
+  reported by the trainer simulator.
+- 30 minutes under load (meter, crank subscriber, WiFi polling): no reboots, heap flat.
+- 60 minutes searching with no meter, and 30 minutes with the meter pinned to an address that had gone
+  away: no reboots, heap flat.
+
+**Known limits — read before riding.**
+- **The Guition has never been ridden.** It has not been paired with a real SB20 or read a real power
+  meter in this build. Everything in the 0.1.0 notes about crank identity and pairing applies.
+- **A workout driven by the board has only met a simulated trainer.** No SB20 has been driven this
+  way. Zwift or qz is the path with real mileage.
+- **Compare shows simulated numbers.** Meter B on that screen is made up and labelled `SIMULATED B`.
+- **The Guition has no over-the-air path for riders**, the same as the C3: updates are by USB or
+  maintainer push-OTA.
 
 ## 0.1.0 — unreleased
 

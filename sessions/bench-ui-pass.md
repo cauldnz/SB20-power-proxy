@@ -434,6 +434,23 @@ real use of that route, and the reason it exists (two head units, one trainer, n
 > (`raw = (target - offset) / scale`) reproduced the original calibration to the fifth decimal.
 > **Clearing a board's touch calibration is destructive** — have the restore values before you start.
 
+### Guition `0.1.1` candidate (2026-11-09)
+
+Run on the release env, with no bench flags: the name filter pointed at the PC. Details and soak numbers are in
+`decisions.md` 2026-11-09.
+
+| Step | Result |
+|---|---|
+| 1 geometry | ✅ all six screens, every tap landed |
+| F01 portal | ✅ on a plain factory install: QR, SSID on air, 8-digit PIN. The phone join was not run |
+| F04/F05/F10 Setup | ✅ Rescan refills (fixed here); pick meter + trainer; Save persists |
+| F13-F15, F19 | ✅ live numbers; details card no longer collides (#359) |
+| F17, F20-F23 | ✅ erg line, and the sim saw 138/0/138/248/0 W |
+| F38, F41 | ✅ Firmware row; brightness label walks 25/50/75/100. The backlight itself was not observed (no camera) |
+| F29 | ✅ no dead button |
+| F33 | ⚠ still the labelled simulated stub |
+| Soak | ✅ 30 min loaded, 60 min searching, 30 min pinned to a gone meter: no reboots, heap flat once #394 was fixed |
+
 ## 2b. Pre-merge hardware tests for open PRs (owner, 2026-10-02)
 
 Board-behaviour PRs merge only after a hardware test. Each one below is a **draft** until its
