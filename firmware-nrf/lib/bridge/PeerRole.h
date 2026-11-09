@@ -112,10 +112,13 @@ inline AdvertDecision classifyAdvert(const char* name, bool haveName, bool adver
     if (s.srcConnected) return AdvertDecision(false, PeerRole::Source);
 
     // Otherwise this is a source candidate. With a filter set we match on name; without one we take
-    // any CPS advertiser. NB no `filterUuid` upstream: the name lives in the scan RESPONSE while
-    // 0x1818 lives in the ADV packet, so a UUID filter would drop the very reports a name filter
-    // needs.
-    const bool take = f.source[0] ? (haveName && nameContains(name, f.source)) : advertisesCps;
+    // any CPS advertiser except a crank. A crank we connect to stops advertising, so the bike can no
+    // longer find it: our other boards' spoofs and real Stages cranks need an explicit filter (#404).
+    // NB no `filterUuid` upstream: the name lives in the scan RESPONSE while 0x1818 lives in the ADV
+    // packet, so a UUID filter would drop the very reports a name filter needs.
+    const bool isCrank = haveName && strncmp(name, "Stages ", 7) == 0;
+    const bool take = f.source[0] ? (haveName && nameContains(name, f.source))
+                                  : (advertisesCps && !isCrank);
     return AdvertDecision(take, PeerRole::Source);
 }
 
