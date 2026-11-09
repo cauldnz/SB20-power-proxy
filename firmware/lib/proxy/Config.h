@@ -39,6 +39,12 @@ namespace sb20proxy {
 // What the proxy spoofs and reads. Phase 0 / Phase 1 values; later these move to NVS +
 // an on-device setup wizard. Kept platform-agnostic so the core + tests see the same values.
 struct Config {
+    // The stall watchdog restarts the board when loop() has not advanced for a whole window, and a
+    // BLE connect blocks loop(). NimBLE defaults to 30 s, so a device that vanished between its advert
+    // and the connect could restart the board. Give up well inside the window.
+    static constexpr uint32_t    LOOP_STALL_WINDOW_MS   = 15000;
+    static constexpr uint32_t    BLE_CONNECT_TIMEOUT_MS = 8000;
+
     // Build version, surfaced in /status + /diag and used as the OTA "currentVersion".
     static constexpr const char* FIRMWARE_VERSION = SB20_FIRMWARE_VERSION;
     // Build stamp (git SHA + build time) — uniquely identifies a dev build; see build_version.py.

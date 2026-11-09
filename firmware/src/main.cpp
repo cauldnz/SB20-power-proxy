@@ -1416,7 +1416,7 @@ void setup() {
     wdArgs.dispatch_method = ESP_TIMER_TASK;
     wdArgs.name = "stallwd";
     if (esp_timer_create(&wdArgs, &s_stallTimer) == ESP_OK) {
-        esp_timer_start_periodic(s_stallTimer, (uint64_t)15000 * 1000);  // 15 s window
+        esp_timer_start_periodic(s_stallTimer, (uint64_t)Config::LOOP_STALL_WINDOW_MS * 1000);
     }
 #endif
 

@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <NimBLEDevice.h>
+#include <freertos/FreeRTOS.h>
 
 #include <cstring>
 #include <string>
@@ -19,6 +20,9 @@ using namespace sb20proxy;
 // it's gone — but an abruptly-vanished peer (e.g. a killed host process) can leave the link up
 // at the controller with no notifications, so we force a disconnect to recover and rescan.
 static constexpr uint32_t kMeterStaleMs = 6000;
+
+// The holds are touched from the BLE host task (scan, disconnect, frames) and from loop().
+static portMUX_TYPE s_backoffMux = portMUX_INITIALIZER_UNLOCKED;
 
 // The NimBLE scan is a single shared resource, so every active client routes through ONE scan
 // callback (and one registry). For the spoof this is exactly one client; the meter-to-meter
@@ -111,7 +115,8 @@ class MeterScanCallbacks : public NimBLEScanCallbacks {
         // bike-session 2), and we never read a copy of our own spoof (a loop). MATCH_ANY_CPS loosens
         // the named-device rule for the WinRT fake_meter rig (decisions.md 2026-06-22).
         for (auto* c : g_clients) {
-            if (c->wantsTarget() && c->isTarget(name, cps, addr) && !addrClaimedByOther(c, addr)) {
+            if (c->wantsTarget() && c->isTarget(name, cps, addr) && !addrClaimedByOther(c, addr) &&
+                !c->heldOff(addr)) {
                 c->onFound(addr.c_str(), d->getAddress().getType(), name.c_str());
                 break;  // one advertiser feeds one client
             }
@@ -148,6 +153,29 @@ void BleMeterClient::recordCandidate(const char* addr, const char* name, int rss
     addCandidate(candidates_, c, 16);  // pure, host-tested dedup + cap
 }
 
+bool BleMeterClient::heldOff(const std::string& addr) const {
+    portENTER_CRITICAL(&s_backoffMux);
+    const bool held = backoff_.heldOff(addr.c_str(), millis());
+    portEXIT_CRITICAL(&s_backoffMux);
+    return held;
+}
+
+void BleMeterClient::clearConnectHolds() {
+    portENTER_CRITICAL(&s_backoffMux);
+    backoff_.clear();
+    portEXIT_CRITICAL(&s_backoffMux);
+}
+
+void BleMeterClient::endAttempt() {
+    const uint32_t now = millis();
+    portENTER_CRITICAL(&s_backoffMux);
+    const bool failed = attemptOpen_ && !loggedFrame_;
+    attemptOpen_ = false;
+    if (failed) backoff_.recordFailure(addr_, now);
+    portEXIT_CRITICAL(&s_backoffMux);
+    if (failed) logf("[meter] no data from '%s', leaving it for a while", name_);
+}
+
 void BleMeterClient::onFound(const char* addr, uint8_t addrType, const char* name) {
     strncpy(addr_, addr, sizeof(addr_) - 1);
     strncpy(name_, name ? name : "", sizeof(name_) - 1);
@@ -165,6 +193,9 @@ void BleMeterClient::onMeasurement(const uint8_t* data, size_t len) {
     // cadence (the crank-rev flag) so the rebroadcast/OLED cadence is real, not assumed.
     if (!loggedFrame_) {
         loggedFrame_ = true;
+        portENTER_CRITICAL(&s_backoffMux);
+        backoff_.recordSuccess(addr_);  // this meter works, so a later drop reconnects at once
+        portEXIT_CRITICAL(&s_backoffMux);
         const uint16_t flags = decodeCpsFlags(data, len);
         const CpsBalance b0 = decodeCpsBalance(data, len);
         logf("[meter] cps flags=0x%04x cadence=%s balanceHalfPct=%d %s", flags,
@@ -206,6 +237,7 @@ void BleMeterClient::onMeasurement(const uint8_t* data, size_t len) {
 }
 
 void BleMeterClient::onDisconnected() {
+    endAttempt();
     connected_ = false;
     haveTarget_ = false;
     havePrevCrank_ = false;  // don't carry crank deltas across a reconnect
@@ -295,7 +327,9 @@ void BleMeterClient::loop() {
         client_ = NimBLEDevice::createClient();
         clientCb_ = new MeterClientCallbacks(this);  // per-instance (static-lifetime client)
         client_->setClientCallbacks(clientCb_, false);
+        client_->setConnectTimeout(Config::BLE_CONNECT_TIMEOUT_MS);
     }
+    attemptOpen_ = true;
     if (client_->connect(NimBLEAddress(std::string(addr_), addrType_))) {
         NimBLERemoteService* svc = client_->getService(UUID_CPS);
         if (svc) {
@@ -310,6 +344,7 @@ void BleMeterClient::loop() {
         }
     }
     if (!connected_) {
+        endAttempt();
         client_->disconnect();
         haveTarget_ = false;
         ensureScanning();  // resume the shared scan

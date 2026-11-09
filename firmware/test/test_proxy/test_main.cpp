@@ -11,6 +11,7 @@
 #include "CalibrationPage.h"
 #include "CalibrationSession.h"
 #include "ConfigPage.h"
+#include "ConnectBackoff.h"
 #include "Correction.h"
 #include "Cps.h"
 #include "spoofs/StagesSpm2.h"
@@ -3141,6 +3142,78 @@ void test_ride_details_panel_covers_what_it_replaces() {
     }
 }
 
+// --- ConnectBackoff: a meter that links but delivers nothing must not hog the radio ------------------
+
+static const char* const kPedalR = "cc:d2:a0:d6:5c:9d";
+static const char* const kPedalL = "e6:20:90:8c:f3:fe";
+
+void test_backoff_holds_a_meter_that_gave_no_data() {
+    ConnectBackoff b;
+    TEST_ASSERT_FALSE(b.heldOff(kPedalR, 1000));
+    b.recordFailure(kPedalR, 1000);
+    TEST_ASSERT_TRUE(b.heldOff(kPedalR, 1000));
+    TEST_ASSERT_TRUE(b.heldOff(kPedalR, 1000 + ConnectBackoff::kFirstHoldMs - 1));
+    TEST_ASSERT_FALSE(b.heldOff(kPedalR, 1000 + ConnectBackoff::kFirstHoldMs));
+}
+
+void test_backoff_grows_and_stops_at_the_cap() {
+    ConnectBackoff b;
+    uint32_t now = 0;
+    const uint32_t expected[] = {5000, 10000, 20000, 30000, 30000, 30000};
+    for (uint32_t hold : expected) {
+        b.recordFailure(kPedalR, now);
+        TEST_ASSERT_TRUE(b.heldOff(kPedalR, now + hold - 1));
+        TEST_ASSERT_FALSE(b.heldOff(kPedalR, now + hold));
+        now += hold;
+    }
+}
+
+void test_backoff_leaves_the_other_pedal_free() {
+    ConnectBackoff b;
+    b.recordFailure(kPedalR, 1000);
+    TEST_ASSERT_FALSE(b.heldOff(kPedalL, 1000));
+}
+
+void test_backoff_one_frame_clears_the_record() {
+    ConnectBackoff b;
+    for (int i = 0; i < 5; ++i) b.recordFailure(kPedalL, 1000);
+    b.recordSuccess(kPedalL);
+    TEST_ASSERT_FALSE(b.heldOff(kPedalL, 1000));
+    b.recordFailure(kPedalL, 2000);  // and the next failure starts from the short hold again
+    TEST_ASSERT_FALSE(b.heldOff(kPedalL, 2000 + ConnectBackoff::kFirstHoldMs));
+}
+
+void test_backoff_survives_the_millis_wrap() {
+    ConnectBackoff b;
+    const uint32_t nearWrap = 0xFFFFFFFFu - 1000u;
+    b.recordFailure(kPedalR, nearWrap);
+    TEST_ASSERT_TRUE(b.heldOff(kPedalR, nearWrap + 2000u));  // past zero, still inside the 5 s hold
+    TEST_ASSERT_FALSE(b.heldOff(kPedalR, nearWrap + 5000u));
+}
+
+void test_backoff_full_table_keeps_the_longest_holds() {
+    ConnectBackoff b;
+    b.recordFailure("aa", 1000);  // ends soonest, so it is the one to go
+    b.recordFailure("bb", 2000);
+    b.recordFailure("cc", 3000);
+    b.recordFailure("dd", 4000);
+    b.recordFailure("ee", 4500);
+    TEST_ASSERT_FALSE(b.heldOff("aa", 4600));
+    TEST_ASSERT_TRUE(b.heldOff("bb", 4600));
+    TEST_ASSERT_TRUE(b.heldOff("ee", 4600));
+}
+
+void test_backoff_clear_gives_a_new_choice_its_turn() {
+    ConnectBackoff b;
+    b.recordFailure(kPedalR, 1000);
+    b.clear();
+    TEST_ASSERT_FALSE(b.heldOff(kPedalR, 1000));
+}
+
+void test_ble_connect_gives_up_inside_the_stall_window() {
+    TEST_ASSERT_LESS_THAN_UINT32(Config::LOOP_STALL_WINDOW_MS, Config::BLE_CONNECT_TIMEOUT_MS);
+}
+
 int runUnityTests() {
     UNITY_BEGIN();
     RUN_TEST(test_setup_pin_is_eight_digits);
@@ -3379,6 +3452,14 @@ int runUnityTests() {
     RUN_TEST(test_ride_cards_sit_just_above_the_nav_on_every_panel);
     RUN_TEST(test_ride_chart_takes_the_slack_rather_than_leaving_a_hole);
     RUN_TEST(test_ride_details_panel_covers_what_it_replaces);
+    RUN_TEST(test_backoff_holds_a_meter_that_gave_no_data);
+    RUN_TEST(test_backoff_grows_and_stops_at_the_cap);
+    RUN_TEST(test_backoff_leaves_the_other_pedal_free);
+    RUN_TEST(test_backoff_one_frame_clears_the_record);
+    RUN_TEST(test_backoff_survives_the_millis_wrap);
+    RUN_TEST(test_backoff_full_table_keeps_the_longest_holds);
+    RUN_TEST(test_backoff_clear_gives_a_new_choice_its_turn);
+    RUN_TEST(test_ble_connect_gives_up_inside_the_stall_window);
     return UNITY_END();
 }
 
