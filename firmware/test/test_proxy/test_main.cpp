@@ -1076,6 +1076,22 @@ void test_runtime_config_calibrating_roundtrip() {
     TEST_ASSERT_FALSE(old.calibrating);
 }
 
+void test_setup_row_meta_says_connected_rather_than_a_zero_rssi() {
+    SourceCandidate m; m.isCps = true; m.rssi = -41;
+    TEST_ASSERT_EQUAL_STRING("meter -41", setupRowMeta(m, false, false).c_str());
+    TEST_ASSERT_EQUAL_STRING("meter -41 *", setupRowMeta(m, true, false).c_str());
+    m.isConnected = true; m.rssi = 0;
+    TEST_ASSERT_EQUAL_STRING("meter connected", setupRowMeta(m, false, false).c_str());
+    SourceCandidate t; t.isFtms = true; t.rssi = -60;
+    TEST_ASSERT_EQUAL_STRING("trainer -60 *", setupRowMeta(t, false, true).c_str());
+}
+
+void test_more_source_prefers_the_connected_name_over_an_address() {
+    TEST_ASSERT_EQUAL_STRING("ASSIOMA17039L", moreSourceLabel(true, "ASSIOMA17039L", "4a:c6:f2:61:2c:db").c_str());
+    TEST_ASSERT_EQUAL_STRING("4a:c6:f2:61:2c:db", moreSourceLabel(false, "", "4a:c6:f2:61:2c:db").c_str());
+    TEST_ASSERT_EQUAL_STRING("ASSIOMA", moreSourceLabel(true, "", "ASSIOMA").c_str());
+}
+
 void test_lcd_picker_list_filters_noise() {
     // A busy desk: two irrelevant BLE gadgets, a crank, a CPS meter, an FTMS trainer.
     std::vector<SourceCandidate> in = {
@@ -3350,6 +3366,8 @@ int runUnityTests() {
     RUN_TEST(test_runtime_config_calibrating_roundtrip);
     RUN_TEST(test_runtime_config_trainer_roundtrip);
     RUN_TEST(test_lcd_picker_list_filters_noise);
+    RUN_TEST(test_setup_row_meta_says_connected_rather_than_a_zero_rssi);
+    RUN_TEST(test_more_source_prefers_the_connected_name_over_an_address);
     RUN_TEST(test_correction_to_curve_passthrough_and_linear);
     RUN_TEST(test_proxycore_tap_sees_raw_source_reading);
     RUN_TEST(test_ble_off_round_trips_and_defaults_off_on_old_lines);
