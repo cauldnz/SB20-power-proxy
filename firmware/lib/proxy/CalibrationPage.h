@@ -196,7 +196,7 @@ inline std::string renderCalibrationPage(const CalWizardView& v) {
         "<!DOCTYPE html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>SB20 Proxy &mdash; Calibrate</title>";
-    if (v.scanning || v.state == CalState::Collecting) h += "<meta http-equiv='refresh' content='2'>";
+    if (v.state == CalState::Collecting) h += "<meta http-equiv='refresh' content='2'>";
     h += detail::calStyle() +
          "</head><body><div class='wrap'>"
          "<div class='tb'><span>Calibrate a meter</span></div>";
@@ -209,7 +209,7 @@ inline std::string renderCalibrationPage(const CalWizardView& v) {
              "<div class='row'><label>Nearby meters</label> <a href='/calibrate/scan'>";
         h += v.scanning ? "Scanning&hellip;" : "Scan";
         h += "</a></div>";
-        const std::vector<SourceCandidate> ds = dedupeAndSortSources(v.devices);
+        const std::vector<SourceCandidate> ds = powerSources(dedupeAndSortSources(v.devices));
         if (ds.empty()) {
             h += "<p class='hint'>No meters yet &mdash; spin them so they advertise, then Scan.</p>";
         } else {
@@ -217,7 +217,8 @@ inline std::string renderCalibrationPage(const CalWizardView& v) {
             for (const auto& d : ds) {
                 h += "<div class='dev'><span class='nm'>";
                 h += d.name.empty() ? "<i>(unnamed)</i>" : htmlEscape(d.name);
-                h += "<br><small>" + htmlEscape(d.address) + "</small></span><span class='pick'>"
+                h += "<br><small>" + htmlEscape(d.address) + (d.isConnected ? " &middot; connected" : "") +
+                     "</small></span><span class='pick'>"
                      "<button type='button' class='bd' data-a='" + htmlEscape(d.address) +
                      "' onclick='setRole(this,\"dut\")'>DUT</button>"
                      "<button type='button' class='br' data-a='" + htmlEscape(d.address) +
@@ -233,7 +234,7 @@ inline std::string renderCalibrationPage(const CalWizardView& v) {
              "<tr><td>Reference (match this)</td><td id='refL'>" +
              (v.refAddr.empty() ? "&mdash;" : htmlEscape(v.refAddr)) + "</td></tr></table>"
              "<button class='go' type='submit'>Connect both &amp; start</button></form>"
-             "<script>function setRole(b,role){var a=b.getAttribute('data-a');"
+             "<script>function setRole(b,role){window.sbDirty=1;var a=b.getAttribute('data-a');"
              "document.getElementById(role).value=a;"
              "document.getElementById(role+'L').textContent=a;"
              "var cls=(role=='dut')?'bd':'br';var bs=document.querySelectorAll('.'+cls);"
@@ -291,6 +292,7 @@ inline std::string renderCalibrationPage(const CalWizardView& v) {
              "<form method='POST' action='/calibrate/cancel'>"
              "<button class='sec' type='submit'>Discard &amp; recalibrate</button></form>";
     }
+    if (v.scanning) h += webuiScanReloadJs();
     h += "</div>"  // .wrap
          "<nav class='nav'><a href='/'>Ride</a><a href='/setup'>Setup</a>"
          "<a href='/more'>More</a></nav>"

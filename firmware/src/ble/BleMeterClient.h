@@ -70,6 +70,12 @@ public:
     // a fresh discovery pass. The dedup/cap logic is the pure addCandidate (SourceCandidate.h).
     void recordCandidate(const char* addr, const char* name, int rssi, bool cps, bool ftms);
     std::vector<SourceCandidate> candidates() const { return candidates_; }
+    // What the pickers show: the scan results plus the meter we are connected to, which has
+    // stopped advertising and would otherwise vanish on a rescan.
+    std::vector<SourceCandidate> pickerCandidates() const {
+        return withConnectedSource(candidates_, connected_ ? addr_ : "", name_);
+    }
+    static bool pickerScanActive();  // a Rescan window is open
     void clearCandidates() { candidates_.clear(); }
 
     // The most recent RAW source-meter CPS frames (hex, oldest→newest) for the /diag report — what

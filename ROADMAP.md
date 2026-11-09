@@ -111,6 +111,12 @@ same S340 SoftDevice download as the rest of the ANT+ track (owner-login).
 **A shared device database in NocoDB** (owner, 2026-11-09; for discussion, not decided) — one place to
 look up hardware across all our projects, rather than each repo keeping its own list (here, `BOARDS.md`).
 
+**Working nRF52840 firmware, including ANT+ receive and broadcast** (owner, 2026-11-09: "by v 1.2") —
+the target for the nRF board. The existing plan is `code/findings/nrf-roadmap.md`.
+
+**Disco light control** (owner, 2026-11-09; "at some point") — drive the LED controller in the gym
+(`GD_LED`, seen by the board's Bluetooth scan) from the ride.
+
 ## PARKED (un-park condition in brackets)
 
 - **Pre-beta programme** (pre-beta-plan Phases 3–5, `beta-program.md`, the recruiting kit)
@@ -127,7 +133,9 @@ look up hardware across all our projects, rather than each repo keeping its own 
   transmitter enters the rig].
 - **#324 qz-fork OBC listener, upstream PR** [the SB20 proxy is more stable and "done" (owner,
   2026-10-02); until then OBC tests against qz use our fork's local build].
-- **OTA signed-pull P3/P4** (`ota-update-plan.md`) [the backend and the signing key exist].
+- **OTA signed-pull P3/P4** (`ota-update-plan.md`). The device core and signer are already built. Owner,
+  2026-11-09: boards should pull GitHub builds, signed in CI with a key held as a GitHub secret
+  [the backend and the signing key exist].
 - **The Python/ANT+ Pi proxy path, `zwift-controls-research.md`, forward-plan §3 Lane 2**
   [superseded; history only].
 - **#131 / #144 cross-repo notices** [closed as acknowledged; reopen on a concrete request].
