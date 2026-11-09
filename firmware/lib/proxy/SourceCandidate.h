@@ -117,9 +117,10 @@ inline std::vector<SourceCandidate> withConnectedSource(std::vector<SourceCandid
 }
 
 // Could this device feed the proxy? The scan records every advertiser, which is right for the
-// trainer list but puts LED controllers in the meter pickers.
+// trainer list but puts LED controllers in the meter pickers. isStagesCrank is only a name check, so
+// it is also true of the bike itself ("Stages Bike 0105"), which advertises FTMS rather than power.
 inline bool isPowerSource(const SourceCandidate& d) {
-    return d.isCps || d.isStagesCrank || d.isConnected;
+    return d.isCps || d.isConnected || (d.isStagesCrank && !d.isFtms);
 }
 
 inline std::vector<SourceCandidate> powerSources(const std::vector<SourceCandidate>& in) {

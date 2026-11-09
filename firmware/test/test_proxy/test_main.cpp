@@ -1810,12 +1810,18 @@ void test_pickers_list_only_power_sources() {
     // GD_LED is the owner's LED controller, seen in the Calibrate list on the first ride.
     SourceCandidate led; led.address = "a4:c1:38:a4:64:9b"; led.name = "GD_LED";
     SourceCandidate pm; pm.address = "aa:aa:aa:aa:aa:aa"; pm.name = "ASSIOMA17039L"; pm.isCps = true;
+    // The shape a real SB20 has on air: the name check marks it a crank, and it advertises FTMS.
     SourceCandidate bike; bike.address = "bb:bb:bb:bb:bb:bb"; bike.name = "Stages Bike"; bike.isFtms = true;
+    bike.isStagesCrank = true;
     CalWizardView v;
     v.devices = {led, pm};
     std::string cal = renderCalibrationPage(v);
     TEST_ASSERT_TRUE(cal.find("GD_LED") == std::string::npos);
     TEST_ASSERT_TRUE(cal.find("ASSIOMA17039L") != std::string::npos);
+    v.devices = {bike};
+    TEST_ASSERT_TRUE(renderCalibrationPage(v).find("Stages Bike") == std::string::npos);
+    SourceCandidate crank; crank.address = "cc:cc:cc:cc:cc:cc"; crank.name = "Stages 4963"; crank.isStagesCrank = true;
+    TEST_ASSERT_TRUE(isPowerSource(crank));  // a surviving crank is still offered
     RuntimeConfig cfg;
     std::string setup = renderConfigPage(cfg, {led, pm, bike});
     TEST_ASSERT_TRUE(setup.find("GD_LED") == std::string::npos);

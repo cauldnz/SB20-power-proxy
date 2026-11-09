@@ -100,7 +100,8 @@ workouts from the board, tap your trainer as well (tagged `trainer`) before you 
 <img src="img/guition-setup-pick.png" width="240" alt="The Pick devices screen listing a meter and a trainer">
 
 **Headless board.** Open `http://sb20proxy.local/setup`, or the IP address from the OLED in place of
-`sb20proxy.local`. Tap **Scan** and pick your meter.
+`sb20proxy.local`. Tap **Scan** and pick your meter. The list fills in by itself over about 15
+seconds. A meter the board is already reading stays in the list, marked `connected`.
 
 <img src="img/web-setup.png" width="280" alt="The Pick your meter web page">
 
@@ -140,7 +141,9 @@ by side.
 
 <img src="img/guition-ride.png" width="220" alt="The Ride screen with live power"> <img src="img/guition-details.png" width="220" alt="The details view with IN and OUT cards">
 
-**Headless board.** Open `http://sb20proxy.local/`.
+**Headless board.** Open `http://sb20proxy.local/`. Tap the top bar to see the input and output
+side by side. **Change meter** and **Change ID** take you to the right part of setup. If no meter
+is connected, the page says so and links you there.
 
 <img src="img/web-dashboard.png" width="240" alt="The web dashboard with live power">
 
@@ -203,7 +206,8 @@ pause, skip or stop from the same screen.
 | Board shows power, but the bike doesn't | Check the crank number matches what's set in the app. It's a pairing problem, not a power problem. |
 | `identity_default` is `true` | Your crank name didn't save. Enter it again in `/setup`. |
 | ERG does nothing | Set the ride mode to `External` in the Stages app. |
-| Your meter isn't in the list | Spin the pedals and scan again. |
+| Your meter isn't in the list | Spin the pedals and scan again. A meter connected to something else, such as a phone app, may not show up, so disconnect it there first. |
+| `/setup` says it is still looking for a meter you don't have | The board has old settings. Tap your meter and **Save**, or use **Reset to defaults** at the bottom of the page. |
 | `sb20proxy.local` doesn't open | Use the IP address on the board's display. |
 | The board went back to `Setup-XXXX` | It couldn't join your WiFi. Check the password and that the network is 2.4 GHz. |
 | Screen is frozen | Unplug it, plug it back in, and tell us what you were doing. |

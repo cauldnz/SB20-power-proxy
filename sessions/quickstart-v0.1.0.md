@@ -1,6 +1,6 @@
 # QuickStart — ride-test the `v0.1.0` release on bike 1
 
-**Status: READY (2026-11-08).** The execution card for the **release acceptance gate** of `v0.1.0`
+**Status: IN PROGRESS (first ride 2026-11-09; see the Actual section at the end).** The execution card for the **release acceptance gate** of `v0.1.0`
 (the C3-OLED crank spoof). This is not a new session — it is
 [session 14](session-14-two-bike-first-rides.md)'s **G0 + G1** run on a clean board, with the capture
 points I need to judge the result. Generic tester flow:
@@ -216,3 +216,34 @@ upload them anywhere. If you only manage some, **3, 6 and 9 are the ones I most 
 
 **Do not fight a problem on the bike.** Grab `/log` and `/diag` and send them — that is faster than
 debugging under load, and it is how #384 got found and fixed.
+
+---
+
+## 12. Actual — first ride, 2026-11-09
+
+**Build.** Reflashed over USB just before the ride from `main` at `625f928`, stamped `0.1.0`. `/status`
+confirmed it: `version` `0.1.0`, `build_sha` `625f92892`. This is newer than the build first flashed for
+this card: it includes the Rescan fix (#389) and the scan memory fix (#395).
+
+**What the owner reported.** "Working well", and ride performance was fine. A screenshot at 17:38 showed
+`ASSIOMA17039L` -> `Stages 91676`, 191 W in and 191 W out, 57 rpm, up 15 m 54 s, free heap 119 KB.
+
+**Not yet established.** The capture points in this card have not come back. In particular there is no
+record yet of the SB20 itself pairing to `Stages 91676`, of its reading being true, or of ERG. The green
+dot beside the crank name on that page is always on while the page can reach the board, so it does not
+show that the bike is connected. `Stages 91676` is the board's default name, which this card warned has
+not been pair-tested.
+
+**Feedback from the ride.**
+
+| Report | Issue |
+|---|---|
+| Had to press Reset on the setup screen because old settings were interfering; nothing suggested it | #397 |
+| Needed a link from the meter and crank names to pair the input or set the output ID | #398 |
+| Some taps are slow and nothing shows the tap registered | #399 |
+| Paired pedals don't appear on Calibrate; `GD_LED`, the gym's LED controller, was listed as a meter | #400 |
+| Device scanning is flaky on Setup and Calibrate | #401 |
+
+**An error in my guidance during the ride.** I told the owner that `Setup-C9DC` being on air meant the
+board had no saved settings. It only means the board had no WiFi to join. The Reset they needed suggests
+settings were stored, but which ones is not known.
