@@ -1788,6 +1788,112 @@ void test_portal_page_has_rescan_and_manual_entry() {
     TEST_ASSERT_TRUE(html.find("http-equiv='refresh'") == std::string::npos);   // not scanning
 }
 
+void test_with_connected_source_keeps_the_meter_a_rescan_loses() {
+    // Not in the scan (a connected meter stops advertising): added, flagged, sorted first.
+    SourceCandidate far; far.address = "11:11:11:11:11:11"; far.name = "OTHER"; far.isCps = true; far.rssi = -40;
+    auto out = dedupeAndSortSources(withConnectedSource({far}, "aa:aa:aa:aa:aa:aa", "ASSIOMA17039L"));
+    TEST_ASSERT_EQUAL(2, (int)out.size());
+    TEST_ASSERT_EQUAL_STRING("ASSIOMA17039L", out[0].name.c_str());
+    TEST_ASSERT_TRUE(out[0].isConnected);
+    TEST_ASSERT_TRUE(out[0].isCps);
+    // Still in the scan: flagged in place, not duplicated.
+    auto same = withConnectedSource({far}, "11:11:11:11:11:11", "OTHER");
+    TEST_ASSERT_EQUAL(1, (int)same.size());
+    TEST_ASSERT_TRUE(same[0].isConnected);
+    // Not connected: the list is untouched.
+    auto none = withConnectedSource({far}, "", "");
+    TEST_ASSERT_EQUAL(1, (int)none.size());
+    TEST_ASSERT_FALSE(none[0].isConnected);
+}
+
+void test_pickers_list_only_power_sources() {
+    // GD_LED is the owner's LED controller, seen in the Calibrate list on the first ride.
+    SourceCandidate led; led.address = "a4:c1:38:a4:64:9b"; led.name = "GD_LED";
+    SourceCandidate pm; pm.address = "aa:aa:aa:aa:aa:aa"; pm.name = "ASSIOMA17039L"; pm.isCps = true;
+    // The shape a real SB20 has on air: the name check marks it a crank, and it advertises FTMS.
+    SourceCandidate bike; bike.address = "bb:bb:bb:bb:bb:bb"; bike.name = "Stages Bike"; bike.isFtms = true;
+    bike.isStagesCrank = true;
+    CalWizardView v;
+    v.devices = {led, pm};
+    std::string cal = renderCalibrationPage(v);
+    TEST_ASSERT_TRUE(cal.find("GD_LED") == std::string::npos);
+    TEST_ASSERT_TRUE(cal.find("ASSIOMA17039L") != std::string::npos);
+    v.devices = {bike};
+    TEST_ASSERT_TRUE(renderCalibrationPage(v).find("Stages Bike") == std::string::npos);
+    SourceCandidate crank; crank.address = "cc:cc:cc:cc:cc:cc"; crank.name = "Stages 4963"; crank.isStagesCrank = true;
+    TEST_ASSERT_TRUE(isPowerSource(crank));  // a surviving crank is still offered
+    RuntimeConfig cfg;
+    std::string setup = renderConfigPage(cfg, {led, pm, bike});
+    TEST_ASSERT_TRUE(setup.find("GD_LED") == std::string::npos);
+    TEST_ASSERT_TRUE(setup.find("data-addr='aa:aa:aa:aa:aa:aa'") != std::string::npos);
+    TEST_ASSERT_TRUE(setup.find("data-addr='bb:bb:bb:bb:bb:bb'") == std::string::npos);  // not a meter
+    TEST_ASSERT_TRUE(setup.find("data-tname='Stages Bike'") != std::string::npos);       // still a trainer
+}
+
+void test_connected_meter_can_be_picked_on_both_pages() {
+    auto ds = withConnectedSource({}, "aa:aa:aa:aa:aa:aa", "ASSIOMA17039L");
+    CalWizardView v;
+    v.devices = ds;
+    std::string cal = renderCalibrationPage(v);
+    TEST_ASSERT_TRUE(cal.find("data-a='aa:aa:aa:aa:aa:aa'") != std::string::npos);
+    TEST_ASSERT_TRUE(cal.find("connected") != std::string::npos);
+    RuntimeConfig cfg;
+    std::string setup = renderConfigPage(cfg, ds);
+    TEST_ASSERT_TRUE(setup.find("data-addr='aa:aa:aa:aa:aa:aa'") != std::string::npos);
+    TEST_ASSERT_TRUE(setup.find(">connected<") != std::string::npos);
+}
+
+void test_scan_pages_reload_without_losing_unsaved_work() {
+    RuntimeConfig cfg;
+    std::string idle = renderConfigPage(cfg, {}, "", false);
+    TEST_ASSERT_TRUE(idle.find("location.reload") == std::string::npos);
+    std::string scanning = renderConfigPage(cfg, {}, "", true);
+    TEST_ASSERT_TRUE(scanning.find("location.reload") != std::string::npos);
+    TEST_ASSERT_TRUE(scanning.find("http-equiv='refresh'") == std::string::npos);  // would wipe the form
+    TEST_ASSERT_TRUE(scanning.find("function pick(b){window.sbDirty=1") != std::string::npos);
+    CalWizardView v;
+    v.scanning = true;
+    std::string cal = renderCalibrationPage(v);
+    TEST_ASSERT_TRUE(cal.find("location.reload") != std::string::npos);
+    TEST_ASSERT_TRUE(cal.find("http-equiv='refresh'") == std::string::npos);
+    TEST_ASSERT_TRUE(cal.find("function setRole(b,role){window.sbDirty=1") != std::string::npos);
+    TEST_ASSERT_TRUE(cal.find("Scanning") != std::string::npos);
+}
+
+void test_stale_source_hint_says_when_a_reset_would_help() {
+    RuntimeConfig cfg;
+    cfg.meterAddress = "";
+    cfg.meterNameFilter = "CAULDT9H";
+    SourceCandidate pm; pm.address = "aa:aa:aa:aa:aa:aa"; pm.name = "ASSIOMA17039L"; pm.isCps = true;
+    std::string hint = staleSourceHint(cfg, {pm}, false);
+    TEST_ASSERT_TRUE(hint.find("CAULDT9H") != std::string::npos);
+    TEST_ASSERT_TRUE(hint.find("ASSIOMA17039L") != std::string::npos);
+    TEST_ASSERT_TRUE(staleSourceHint(cfg, {pm}, true).empty());   // connected: nothing wrong
+    TEST_ASSERT_TRUE(staleSourceHint(cfg, {}, false).empty());    // nothing nearby to switch to
+    SourceCandidate crank; crank.address = "bb:bb:bb:bb:bb:bb"; crank.name = "Stages 62144";
+    crank.isCps = true; crank.isStagesCrank = true;
+    TEST_ASSERT_TRUE(staleSourceHint(cfg, {crank}, false).empty());  // the bike's own crank
+    cfg.meterNameFilter = "ASSIOMA";
+    TEST_ASSERT_TRUE(staleSourceHint(cfg, {pm}, false).empty());  // saved meter is here, connecting
+    cfg.meterNameFilter = "";
+    cfg.meterAddress = "cc:cc:cc:cc:cc:cc";
+    TEST_ASSERT_TRUE(staleSourceHint(cfg, {pm}, false).find("cc:cc:cc:cc:cc:cc") != std::string::npos);
+    std::string page = renderConfigPage(cfg, {pm}, "", false, -1, "", staleSourceHint(cfg, {pm}, false));
+    TEST_ASSERT_TRUE(page.find("href='#reset'") != std::string::npos);
+    TEST_ASSERT_TRUE(page.find("id='reset'") != std::string::npos);
+}
+
+void test_ride_page_links_to_pairing_and_the_crank_id() {
+    std::string h = appPageHtml();
+    TEST_ASSERT_TRUE(h.find("href='/setup'>Change meter") != std::string::npos);
+    TEST_ASSERT_TRUE(h.find("href='/setup#crank'>Change ID") != std::string::npos);
+    TEST_ASSERT_TRUE(h.find("id='pairLnk'") != std::string::npos);
+    RuntimeConfig cfg;
+    std::string setup = renderConfigPage(cfg);
+    TEST_ASSERT_TRUE(setup.find("<details id='crank'>") != std::string::npos);
+    TEST_ASSERT_TRUE(setup.find("location.hash==='#crank'") != std::string::npos);
+}
+
 void test_portal_page_scanning_state() {
     std::string html = renderProvisioningPage({}, "", -1, /*scanning=*/true);
     TEST_ASSERT_TRUE(html.find("http-equiv='refresh'") != std::string::npos);  // auto-polls
@@ -3141,6 +3247,12 @@ int runUnityTests() {
     RUN_TEST(test_portal_page_marks_secured_and_open);
     RUN_TEST(test_portal_page_has_rescan_and_manual_entry);
     RUN_TEST(test_portal_page_scanning_state);
+    RUN_TEST(test_with_connected_source_keeps_the_meter_a_rescan_loses);
+    RUN_TEST(test_pickers_list_only_power_sources);
+    RUN_TEST(test_connected_meter_can_be_picked_on_both_pages);
+    RUN_TEST(test_scan_pages_reload_without_losing_unsaved_work);
+    RUN_TEST(test_stale_source_hint_says_when_a_reset_would_help);
+    RUN_TEST(test_ride_page_links_to_pairing_and_the_crank_id);
     RUN_TEST(test_portal_page_password_not_a_credential_field);
     RUN_TEST(test_logbuffer_keeps_recent_in_order);
     RUN_TEST(test_logbuffer_drops_oldest_past_capacity);

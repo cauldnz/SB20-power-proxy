@@ -39,6 +39,14 @@ Writing either image **erases the board's settings** (WiFi, meter, crank identit
   The web page's Scan took the same path.
 - **Free memory no longer falls while a board searches for a meter.** It was losing about 100 bytes a
   minute for as long as no meter was found ([#394](https://github.com/cauldnz/SB20-power-proxy/issues/394)).
+- **Scan** on the Setup and Calibrate pages now shows that it is running, and the list fills in
+  without a manual reload.
+- The pickers keep the meter the board is connected to, so it can be chosen as a calibration
+  reference. Devices that are not power meters are no longer offered as meters.
+- The Setup page says when a reset would help: the saved meter is missing and another is in range.
+- The Ride page links to pairing the input and setting the output ID, and says when no meter is
+  connected.
+- Every page shows straight away that a tap registered.
 - Guition: the brightness row now works and shows its real value.
 - Guition: a Firmware row shows the version.
 - Guition: the Calibrate screen no longer has a button that did nothing, and says where calibration

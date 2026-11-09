@@ -34,6 +34,8 @@ inline std::string appPageHtml() {
 .cn{font-size:.85rem;font-weight:600;margin:8px 0 6px;word-break:break-word}
 .cp{font-size:1.5rem;font-weight:700;line-height:1}.cp small{font-size:.8rem;color:var(--mut);font-weight:500}
 .cs{font-size:.8rem;color:var(--mut);margin-top:4px}
+.lnk{display:block;margin-top:9px;font-size:.82rem;color:var(--accent);text-decoration:none}
+.pair{display:none;margin-top:12px;padding:11px 12px;border-radius:11px;background:var(--card);color:var(--accent);text-decoration:none;font-size:.92rem}
 .dev{margin-top:10px;font-size:.78rem;color:var(--mut);line-height:1.7;word-break:break-word}
 .dev b{color:var(--fg);font-weight:500}
 .power{text-align:center;margin-top:18px}
@@ -53,12 +55,13 @@ canvas{width:100%;height:96px;display:block;margin-top:6px}
 <div class='details' id='details'>
 <div class='cols'>
 <div class='col'><span class='badge bin'>IN</span><div class='cn' id='dnIn'>&mdash;</div>
-<div class='cp'><span id='dpIn'>--</span><small> W</small></div><div class='cs'><span id='dcIn'>--</span> rpm</div></div>
+<div class='cp'><span id='dpIn'>--</span><small> W</small></div><div class='cs'><span id='dcIn'>--</span> rpm</div><a class='lnk' href='/setup'>Change meter &#8250;</a></div>
 <div class='col'><span class='badge bout'>OUT</span><div class='cn' id='dnOut'>&mdash;</div>
-<div class='cp'><span id='dpOut'>--</span><small> W</small></div><div class='cs'><span id='dcOut'>--</span> rpm</div></div>
+<div class='cp'><span id='dpOut'>--</span><small> W</small></div><div class='cs'><span id='dcOut'>--</span> rpm</div><a class='lnk' href='/setup#crank'>Change ID &#8250;</a></div>
 </div>
 <div class='dev'>WiFi <b id='rssi'>--</b> &middot; up <b id='up'>--</b> &middot; heap <b id='heap'>--</b> &middot; fwd <b id='fwd'>--</b> &middot; <b id='fw'>--</b></div>
 </div>
+<a class='pair' id='pairLnk' href='/setup'>No meter connected &mdash; pick one &#8250;</a>
 <div class='power'><div class='plabel'>POWER</div><div class='pbig'><span id='pw'>--</span><small> W</small></div></div>
 <canvas id='chart'></canvas>
 <div class='chips'>
@@ -75,7 +78,7 @@ function fmtUp(ms){var s=Math.floor(ms/1000),h=Math.floor(s/3600);s%=3600;var m=
 function draw(){var c=$('chart'),r=window.devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*r;c.height=h*r;var x=c.getContext('2d');x.scale(r,r);x.clearRect(0,0,w,h);if(hist.length<2)return;var mx=100;for(var i=0;i<hist.length;i++){if(hist[i]>mx)mx=hist[i];}x.beginPath();for(var i=0;i<hist.length;i++){var px=i/(MAX-1)*w,py=h-8-(hist[i]/mx)*(h-16);if(i){x.lineTo(px,py);}else{x.moveTo(px,py);}}x.strokeStyle='#3b82f6';x.lineWidth=2;x.stroke();x.lineTo((hist.length-1)/(MAX-1)*w,h);x.lineTo(0,h);x.closePath();x.fillStyle='rgba(59,130,246,.16)';x.fill();}
 function tick(){fetch('/status',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
 var inOn=(d.source==='connected'||d.source==='mock');
-$('dIn').classList.toggle('on',inOn);$('dOut').classList.add('on');
+$('dIn').classList.toggle('on',inOn);$('pairLnk').style.display=inOn?'none':'block';$('dOut').classList.add('on');
 $('nIn').textContent=(d.src_name||(d.source==='mock'?'mock':d.source||'searching'));
 $('nOut').textContent=(d.identity||'crank');
 $('pw').textContent=d.power_w;$('cad').textContent=(d.cadence_rpm<0?'--':d.cadence_rpm);

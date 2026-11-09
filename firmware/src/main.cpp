@@ -567,7 +567,7 @@ static void buildLcdViews(LcdViews& v) {
     // Setup: scanned candidates (live builds only)
     SetupView& s = v.setup;
 #if !USE_MOCK_METER
-    s.devices = meter.candidates();
+    s.devices = meter.pickerCandidates();
 #endif
     s.meterAddr = g_lcdMeterAddr;
     s.trainerAddr = g_lcdTrainerAddr;  // session pick (the [erg] badge); the NAME is what persists
@@ -593,7 +593,7 @@ static void buildLcdViews(LcdViews& v) {
         ci.session = &g_cal;
         ci.dutConnected = meter.connected();
         ci.refConnected = refMeter.connected();
-        const std::vector<SourceCandidate> cands = meter.candidates();
+        const std::vector<SourceCandidate> cands = meter.pickerCandidates();
         ci.devices = &cands;
         // DUT/Ref selection from the LCD lands with the erg/calibrate-action PR; use the phone
         // wizard (/calibrate) meanwhile.
@@ -1285,7 +1285,7 @@ void setup() {
         [](const RuntimeConfig& c) { ConfigStore::save(c); },
         []() {});
 #else
-        []() { return meter.candidates(); },
+        []() { return meter.pickerCandidates(); },
         [](const RuntimeConfig& c) { ConfigStore::save(c); },
         []() {
             meter.clearCandidates();
@@ -1335,6 +1335,7 @@ void setup() {
 
     // The meter-to-meter calibration wizard (GET /calibrate). The view reflects the live session;
     // start/save/cancel persist + reboot (the wizard moves in/out of a calibration boot). Live only.
+    wifi.setScanActive([]() { return BleMeterClient::pickerScanActive(); });
     wifi.setCalibrationUi(
         []() {  // build the wizard view from the live session + meter state
             CalWizardView v;
@@ -1343,7 +1344,7 @@ void setup() {
             ci.session = &g_cal;
             ci.dutConnected = meter.connected();
             ci.refConnected = refMeter.connected();
-            const std::vector<SourceCandidate> cands = meter.candidates();
+            const std::vector<SourceCandidate> cands = meter.pickerCandidates();
             ci.devices = &cands;
             projectCalWizard(ci, v);  // shared with the LCD frame builder
             return v;
