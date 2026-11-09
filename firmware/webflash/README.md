@@ -1,8 +1,8 @@
 # Browser flashing (ESP Web Tools)
 
-A no-CLI way to install/recover the proxy firmware: a static page with an **Install** button that
-flashes an ESP32-C3 over Web Serial straight from Chrome/Edge. The scalable path beyond the first
-pre-flashed boards, and the recovery path when a board won't take an OTA update.
+The way riders install the firmware: a static page with an **Install** button per board that flashes
+over Web Serial straight from Chrome/Edge. It is also the recovery path when a board won't take an OTA
+update. Live at <https://cauldnz.github.io/SB20-power-proxy/> once a release has been published.
 
 ## Files
 
@@ -31,17 +31,20 @@ build `flash_c3.py` insists on — and does not need to be: `merge_bin` opens no
 USB-JTAG bug behind that rule cannot bite. The real constraint is the CLI dialect (4.x underscores vs
 5.x hyphens); see the script's header.
 
-## Host it
+## How it gets published
 
-ESP Web Tools requires **HTTPS** (Web Serial won't run otherwise) and a Chromium browser on desktop.
-Serve the three files (`index.html`, `manifest.json`, `firmware-factory.bin`) together from any
-static HTTPS host:
+`.github/workflows/pages.yml` deploys it to GitHub Pages. It assembles `index.html` from `main` with
+the manifests and factory images of a **published** release, so a draft can never reach riders.
+Publishing a release runs it. Run it by hand after changing the page, or for a release whose tag
+predates that workflow:
 
-- **GitHub Pages** (simplest): publish this folder. Because the factory bin is gitignored, the
-  publishing step must run `build_factory_bin.py` first (a CI job, or a one-off manual copy onto the
-  `gh-pages` branch). Don't commit the 1.2 MB binary to `main`.
-- Or attach `firmware-factory.bin` to a **GitHub Release** and point `manifest.json`'s `path` at that
-  asset URL (absolute), hosting only `index.html` + `manifest.json` on Pages.
+```bash
+gh workflow run pages.yml
+```
+
+Before the first run, the repository needs Pages set to deploy from GitHub Actions. The images are
+served from the same origin as the page on purpose: release-asset downloads redirect to a host whose
+CORS headers we don't control.
 
 ## Verify before you publish
 
@@ -55,5 +58,6 @@ static HTTPS host:
 
 - The page is intentionally dependency-light: it pulls ESP Web Tools from a CDN at runtime, so there's
   nothing to build for the page itself — only the firmware image.
-- Phones can't flash over USB (no Web Serial); the page says so. Pre-flashed boards remain the default
-  for testers — this is the install/recover escape hatch, not the primary path.
+- Phones can't flash over USB (no Web Serial); the page says so.
+- After the first install, the aim is that boards update over the air, and need this page only to
+  recover (`code/findings/ota-update-plan.md`).

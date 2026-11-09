@@ -92,7 +92,7 @@ primary erg driver and qz/Peloton is kept; rides happen together and apart; peda
 forward-plan §11 crank-length bridge (three captures first) · §8 L/R balance value grounding ·
 #305 / R5b (needs a Garmin) · #289 tap vs hold · #292 MyWhoosh validation · #287 voice narration ·
 session 5 corrector ride (opportunistic, track bike) · forward-plan §12 battery-out variant (needs an
-nRF sniff) · §13 remainder (persisted workout library, true pause/resume) · §6 ESP Web Tools flasher
+nRF sniff) · §13 remainder (persisted workout library, true pause/resume)
 · nRF: R3 spoof vs a real SB20, ANT+ spoof on air, session-13 N0–N2 + R9, P4 slave channel, R1b
 part 2, R1d.3, gnu++17, `BOARD_HAS_IMU` gating, cadence −1 in the Status notify · R2c Monkey-C
 golden lock · R3b · R4a/b · U1 parity test (do it or close it) · session-13 R1 double-fire exclusion ·

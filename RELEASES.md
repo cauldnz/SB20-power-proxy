@@ -24,8 +24,9 @@ The first release for the **Guition JC3248W535**, a 3.5″ touch-screen head uni
 be the standard full-display board. The headless C3-OLED build is published alongside it. New to
 this? Start with the [user guide](docs/user-guide/README.md), which has a narrated video.
 
-**Install it.** Each board has its own merged image, written at offset `0x0`. On esptool 4.x, type
-`write_flash` instead of `write-flash`.
+**Install it.** Use [the browser installer](https://cauldnz.github.io/SB20-power-proxy/) in desktop
+Chrome or Edge. Or write each board's merged image at offset `0x0` with esptool (on 4.x, type
+`write_flash` instead of `write-flash`):
 
 ```
 python -m esptool --chip esp32s3 --port COM9 write-flash 0x0 firmware-factory-guition.bin
