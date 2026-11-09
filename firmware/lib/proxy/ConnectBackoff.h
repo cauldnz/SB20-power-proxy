@@ -33,10 +33,24 @@ class ConnectBackoff {
         if (hold > kMaxHoldMs) hold = kMaxHoldMs;
         if (s->failures < 255) ++s->failures;
         s->untilMs = nowMs + hold;
+        s->retryDue = true;
     }
 
     void recordSuccess(const char* addr) {
         if (Slot* s = find(addr)) *s = Slot{};
+    }
+
+    // True once when a hold has ended. The scan reports each address only once per run, so an advert
+    // heard during the hold is gone for good unless the caller restarts the scan at this point.
+    bool takeExpired(uint32_t nowMs) {
+        bool any = false;
+        for (Slot& s : slots_) {
+            if (s.retryDue && static_cast<int32_t>(nowMs - s.untilMs) >= 0) {
+                s.retryDue = false;
+                any = true;
+            }
+        }
+        return any;
     }
 
     void clear() {
@@ -48,6 +62,7 @@ class ConnectBackoff {
         char addr[24] = {0};
         uint32_t untilMs = 0;
         uint8_t failures = 0;
+        bool retryDue = false;
     };
 
     const Slot* find(const char* addr) const {
