@@ -8,7 +8,8 @@ def scenes(Shot, Scene):
     return [
         Scene(
             title="SB20 Power Proxy",
-            caption="A walkthrough for both boards: the screen board and the headless board.",
+            caption="A walkthrough for both boards: the screen board and the headless board.\n"
+                    "Narration is AI-generated.",
             say=(
                 "This is a walkthrough of the S B twenty Power Proxy. It reads your own power meter, "
                 "and presents it to your Stages S B twenty as if it were the bike's own crank. "
@@ -21,12 +22,12 @@ def scenes(Shot, Scene):
         Scene(
             title="Install the firmware",
             tag="Both boards",
-            caption="Download your board's image from the release page, then write it at offset 0 "
-                    "with esptool.\nA data USB cable is essential.",
+            caption="Open the installer in desktop Chrome or Edge, click Install for your board, "
+                    "and pick its port.\nA data USB cable is essential.",
             say=(
-                "First, install the firmware. Connect the board with a U S B cable that carries data. "
-                "Download the image for your board from the release page, and write it with esptool. "
-                "The exact command is in the guide. Installing erases the board's settings, "
+                "First, install the firmware. Connect the board to a computer with a U S B cable that "
+                "carries data. Open the installer page, linked from the guide, in desktop Chrome or Edge. "
+                "Click Install for your board, and pick its port. Installing erases the board's settings, "
                 "so you'll only want to do this once."
             ),
             device="none",

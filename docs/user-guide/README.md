@@ -8,7 +8,7 @@ It covers both boards. Most steps are the same, and where they differ you'll see
 > modified, but use it at your own risk.
 
 ▶️ **Prefer to watch?** [`walkthrough.mp4`](walkthrough.mp4) is a four-minute narrated tour of these
-steps.
+steps. The narration is AI-generated, using Microsoft VibeVoice.
 
 ## Which board do you have?
 
