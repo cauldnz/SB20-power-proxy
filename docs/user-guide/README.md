@@ -7,7 +7,7 @@ It covers both boards. Most steps are the same, and where they differ you'll see
 > ⚠️ This is a hobby project, not affiliated with Stages or Favero. Nothing inside the bike is
 > modified, but use it at your own risk.
 
-▶️ **Prefer to watch?** [`walkthrough.mp4`](walkthrough.mp4) is a six-minute narrated tour of these
+▶️ **Prefer to watch?** [`walkthrough.mp4`](walkthrough.mp4) is a seven-minute narrated tour of these
 steps. The narration is AI-generated, using Microsoft VibeVoice.
 
 ## Which board do you have?
@@ -109,20 +109,22 @@ seconds. A meter the board is already reading stays in the list, marked `connect
 
 ## 4. Set the crank identity
 
-The SB20 looks for its crank by name, so **this is the step that most often stops pairing**, and it
-fails silently. You do it on the web page, on either board:
+The SB20 looks for its crank by name, so this step sometimes causes problems, and it fails silently.
+The board makes up its own name, `Stages 9NNNN`, from its hardware address, and you'll need that number
+in step 6. It's shown at the top of the **Ride** screen and on the dashboard page. To check or change
+the settings, use the web page, on either board:
 
 1. Open `/setup` on your board's address.
 2. If the meter you picked reports one leg only, tick **Single-sided source**. The board will double
    the reading.
-3. Open **Crank identity (advanced)**. In **Crank name**, type the number you want the board to use,
-   digits only, such as `62145`. The board adds the `Stages ` prefix for you.
+3. To choose your own number, open **Crank identity (advanced)**. In **Crank name**, type it, digits
+   only, such as `62145`. The board adds the `Stages ` prefix for you.
 4. Tap **Save**. The board restarts.
 
 <img src="img/web-identity.png" width="280" alt="The crank identity section of the setup page">
 
-Don't leave **Crank name** blank. The board would then make up its own `Stages 9NNNN` name, and that
-has never been tried against the Stages app on a real bike.
+If you leave **Crank name** blank, the board uses its own `Stages 9NNNN` name. That name hasn't yet
+been confirmed against the Stages app on a real bike, so if pairing fails, type a number of your own.
 
 **Which number should you use?** Your real crank and the board can't both be the same crank at once,
 so pick one of these:
@@ -138,7 +140,7 @@ so pick one of these:
 Spin the pedals and watch the live numbers.
 
 **Screen board.** The **Ride** screen shows your meter on the left of the top bar, then the crank
-name the board is using. Green dots mean connected. Tap the top bar to see the input and output side
+name the board is using. A green dot by your meter means it's connected. Tap the top bar to see the input and output side
 by side.
 
 <img src="img/guition-ride.png" width="220" alt="The Ride screen with live power"> <img src="img/guition-details.png" width="220" alt="The details view with IN and OUT cards">
@@ -165,7 +167,7 @@ does.
 
 In the **Stages app**, set the bike's crank ids:
 
-- **Left:** the number you gave the board.
+- **Left:** your board's number.
 - **Right:** your real right crank.
 
 **Your real right crank has to be awake.** The bike needs to find both ids, or the app just says
