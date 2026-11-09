@@ -85,18 +85,63 @@ class PropWriteCallbacks : public NimBLECharacteristicCallbacks {
 
 // Log connect/disconnect to study the SB20's bonding + reconnection behaviour (does it reconnect
 // cleanly after a drop, does it bond, what disconnect reasons appear).
+// A disconnect also empties that link's OBC App Information (BLE.md: the written value is emptied on
+// every disconnect) — only that link's, so the SB20 dropping does not forget a connected OBC app.
 class CrankServerCallbacks : public NimBLEServerCallbacks {
+ public:
+    explicit CrankServerCallbacks(ObcAppState* obcApp) : obcApp_(obcApp) {}
     void onConnect(NimBLEServer* /*s*/, NimBLEConnInfo& info) override {
         logf("[srv] connect from %s", info.getAddress().toString().c_str());
     }
-    void onDisconnect(NimBLEServer* /*s*/, NimBLEConnInfo& /*info*/, int reason) override {
+    void onDisconnect(NimBLEServer* /*s*/, NimBLEConnInfo& info, int reason) override {
         logf("[srv] disconnect reason=%d", reason);
+        obcApp_->onDisconnect((int)info.getConnHandle());
+    }
+
+ private:
+    ObcAppState* obcApp_;
+};
+
+// OBC Haptic (d273f682) + App Information (d273f683) writes: one write is one message, decoded by the
+// pure ObcAppState. Haptic is accepted and logged (no motor — BLE.md says accept, do nothing); the
+// latest AppInfo is kept per link. Runs on the NimBLE host task, the only context touching obcApp.
+class ObcWriteCallbacks : public NimBLECharacteristicCallbacks {
+ public:
+    explicit ObcWriteCallbacks(ObcAppState* obcApp) : obcApp_(obcApp) {}
+    void onWrite(NimBLECharacteristic* c, NimBLEConnInfo& info) override {
+        NimBLEAttValue v = c->getValue();
+        const ObcAppMsg kind = obcApp_->onMessage((int)info.getConnHandle(), v.data(), v.size());
+        if (kind == ObcAppMsg::AppInfo) {
+            const ObcAppInfo& a = obcApp_->appInfo();
+            logf("[obc] ble app '%s' %s (%u ids%s)", a.appId, a.appVersion, (unsigned)a.buttonCount,
+                 a.allButtons() ? " = all" : "");
+        } else if (kind == ObcAppMsg::Haptic) {
+            logf("[obc] ble haptic pattern=%u (no motor: accepted)", (unsigned)obcApp_->lastHaptic().pattern);
+        } else {
+            logf("[obc] ble write ignored %s", toHex(v.data(), v.size()).c_str());
+        }
+    }
+
+ private:
+    ObcAppState* obcApp_;
+};
+
+// OBC Button-State subscribe: tell that consumer we are here and ready — DeviceStatus
+// [0x02, 0xFF (not battery-powered), 0x01 (connected)], sent to the subscribing link only.
+class ObcButtonCallbacks : public NimBLECharacteristicCallbacks {
+    void onSubscribe(NimBLECharacteristic* c, NimBLEConnInfo& info, uint16_t subValue) override {
+        if ((subValue & 0x0001) == 0) return;  // notifications off
+        uint8_t st[3];
+        const size_t n = encodeDeviceStatus(OBC_BATTERY_NA, true, st, sizeof(st));
+        c->notify(st, n, info.getConnHandle());
+        logf("[obc] ble subscribe from %s -> status %s", info.getAddress().toString().c_str(),
+             toHex(st, n).c_str());
     }
 };
 
 void BleCrankPeripheral::begin() {
     NimBLEServer* server = NimBLEDevice::createServer();
-    server->setCallbacks(new CrankServerCallbacks());
+    server->setCallbacks(new CrankServerCallbacks(&obcApp_));
     // Re-advertise after a disconnect so the SB20 reconnects without an ESP reboot (the NimBLE
     // default is m_advertiseOnDisconnect=false, which left the SB20 stuck "searching" in session 2).
     server->advertiseOnDisconnect(true);
@@ -156,21 +201,37 @@ void BleCrankPeripheral::begin() {
     //     advert, and the 128-bit Stages proprietary service in the SCAN RESPONSE. Putting the
     //     128-bit UUID in the primary packet crowds the name out of the 31-byte advert (the real
     //     crank's capture has name+1818 primary, d445fe01 in the scan response). ---
-    // OpenBikeControl (OBC) service — a Button-State notify char so our re-presented SB20 buttons drive
-    // OBC-speaking apps over BLE (lib/proxy/Obc.h). Gated on config; discoverable on connect.
+    // OpenBikeControl (OBC) service (BLE.md): the Button-State notify char so our re-presented SB20
+    // buttons drive OBC-speaking apps over BLE, plus the Haptic and App Information write chars the spec
+    // defines (lib/proxy/Obc.h, ObcApp.h). Gated on config. It is created LAST, so the handles of the
+    // crank's services above are the same with or without it (nothing the SB20 cached moves).
     if (obcEnabled_ || obcDevmode_) {
         NimBLEService* obc = server->createService(OBC_BLE_SERVICE_UUID);
         obcButtonChar_ = obc->createCharacteristic(
             OBC_BLE_BUTTON_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+        obcButtonChar_->setCallbacks(new ObcButtonCallbacks());
+        ObcWriteCallbacks* obcWrites = new ObcWriteCallbacks(&obcApp_);
+        obc->createCharacteristic(OBC_BLE_HAPTIC_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR)
+            ->setCallbacks(obcWrites);
+        obc->createCharacteristic(OBC_BLE_APPINFO_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR)
+            ->setCallbacks(obcWrites);
         obc->start();
     }
 
     NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
-    // Devmode advertises as an OBC controller so an OBC listener finds us by an "OBC-"-prefixed name
-    // (the crank identity would otherwise read as "Stages …"); normal builds keep the runtime identity.
-    adv->setName(obcDevmode_ ? "OBC-SB20" : spoofName_.c_str());
+    // Devmode advertises as an OBC controller (this board's OBC name, not the crank's "Stages …"), with
+    // the OBC service UUID in the scan response so a UUID-matching listener (the spec's reference apps,
+    // upstream qz) finds it; the "OBC-" name still serves our qz fork's name matcher. Every other mode
+    // keeps its advert bytes exactly as before: the OBC UUID next to the crank spoof belongs on the full
+    // proxy's second advertising set (sb20-full-proxy.md §3d, #291), not in the crank's own packets.
+    adv->setName(obcDevmode_ ? obcName_.c_str() : spoofName_.c_str());
     adv->addServiceUUID(UUID_CPS);
-    if (!corrector) {
+    if (obcDevmode_) {
+        NimBLEAdvertisementData scanResp;
+        scanResp.addServiceUUID(OBC_BLE_SERVICE_UUID);
+        adv->enableScanResponse(true);
+        adv->setScanResponseData(scanResp);
+    } else if (!corrector) {
         // SPOOF: the 128-bit Stages proprietary UUID rides in the scan response (mirrors the real
         // crank's capture: name+1818 primary, d445fe01 in the scan response). CORRECTOR omits it —
         // a plain CPS advert with just our name + 0x1818, which is all a Garmin needs.
