@@ -5591,3 +5591,34 @@ start, pause, resume, skip, stop.
 
 Rig trap: `perf_soak.py --load` silently runs with no meter if another `fake_meter.py` still holds the adapter.
 Check that a `fake_meter.py` process exists after it starts.
+
+## 2026-11-09 — First ride of the C3 build, and the web fixes it asked for
+
+**Ride.** C3 OLED, `0.1.0` from `625f928` (`build_sha` `625f92892`). The owner reported it working well. A
+17:38 screenshot showed `ASSIOMA17039L` -> `Stages 91676`, 191 W in and out, 57 rpm, free heap 119 KB, up
+15 m 54 s. The capture points in `sessions/quickstart-v0.1.0.md` have not come back, so pairing, power
+accuracy and ERG on the bike are not yet established.
+
+**The flaky scan was the page, not the radio.** Scan cleared the list and redirected straight away, so the
+page was drawn before any results arrived. On the Guition the first paint had 0 meters and the list filled
+within the 15 s window. Nothing ever set the `scanning` flag on the Setup or Calibrate pages, so they did
+not refresh.
+
+**A connected meter stops advertising**, so a rescan lost it, and it could not be picked as a calibration
+reference. The pickers now merge it in with `withConnectedSource`, with rssi 0 so it sorts first.
+
+**`isStagesCrank` is only a name check.** It is also true of `Stages Bike 0105`. The first power-source
+filter let the SB20s through as meters, which only the real C3 showed, because the unit test used a bike with
+that flag unset. A real SB20 advertises FTMS, so the filter is `isCps || isConnected || (isStagesCrank &&
+!isFtms)`.
+
+**The nRF takes crank spoofs (#404).** At its default empty source filter it connected to any CPS advertiser,
+and a connected crank stops advertising. The Guition failed `qa_board.py` with its crank off air, three runs
+out of three. With the nRF given a filter matching nothing and the Guition restarted, the same build passed:
+on air, frames at 180 W. Keep an nRF at an empty filter away from a bike being ridden until #405 is flashed.
+
+**OTA.** `flash.ps1 -Env esp32c3-oled-live-release -Target 192.168.1.6 -NoBuild` updated the bike C3 twice on
+WiFi at about -62 dBm, keeping its settings. One push needed a second attempt. The script's own build step
+fails on this PC because the default `python` has no PlatformIO, hence `-NoBuild` after building with the venv.
+
+**Heap on the C3.** 119 KB free with no meter, against about 58 KB on the Guition.
