@@ -11,13 +11,58 @@ def scenes(Shot, Scene):
             caption="A walkthrough for both boards: the screen board and the headless board.\n"
                     "Narration is AI-generated.",
             say=(
-                "This is a walkthrough of the S B twenty Power Proxy. It reads your own power meter, "
-                "and presents it to your Stages S B twenty as if it were the bike's own crank. "
-                "There are two boards. One has a three and a half inch touch screen. "
-                "The other is a tiny headless board with a small display. "
-                "Setup is nearly the same on both, so we'll go through it once."
+                "This is a walkthrough of the S B twenty Power Proxy. It reads your power meter pedals, "
+                "and presents them to your Stages S B twenty as if they were the bike's own crank. "
+                "It is not yet tested with a Stages S B two hundred, but if we can get our hands on one, "
+                "it should port across."
             ),
             device="none",
+        ),
+        Scene(
+            title="Why you'd want this",
+            caption="One power number you can trust, indoors and out.\n"
+                    "The bike's erg runs on your pedals, not its cranks.",
+            say=(
+                "So why would you want this? If you train with power, you want one number you can trust, "
+                "indoors and out. The S B twenty measures power with its own cranks, and they may not agree "
+                "with the pedals on your road bike. On our test bike the difference wasn't even a fixed amount. "
+                "It changed with cadence, so one correction factor can't fix it. "
+                "Pairing your pedals to your training app doesn't solve it either, "
+                "because the bike's erg mode still steers by its own cranks. "
+                "With this board, the bike itself runs on your pedals, "
+                "so two hundred and fifty watts means two hundred and fifty watts on the numbers you already train by."
+            ),
+            device="none",
+        ),
+        Scene(
+            title="Your apps don't change",
+            caption="It all happens between the pedals and the bike. "
+                    "Your app just sees a normal Stages bike.",
+            say=(
+                "The important part is where this happens. It's entirely between the pedals and the bike. "
+                "Your pedals talk to the board, and the board talks to the bike. "
+                "Zwift, or any other trainer app, connects to the bike exactly as it always has, "
+                "and just sees a normal Stages bike. "
+                "There's nothing to install in the app, and nothing to change in it. "
+                "Nothing inside the bike is modified either."
+            ),
+            device="none",
+            flow=("Your pedals", "Power Proxy board", "Stages SB20", "Zwift or any app"),
+        ),
+        Scene(
+            title="The boards",
+            caption="ESP32 boards: a touch screen head unit, or a tiny headless board.\n"
+                    "Your phone works as a remote screen for either.",
+            say=(
+                "It is designed to run on E S P thirty two microprocessor boards. "
+                "Initially we target two boards, but it is easy to port to something new. "
+                "One board has a three and a half inch touch screen, "
+                "and can act as a full head unit for your Stages bike. "
+                "The other is a tiny headless board, with a small display for diagnostics. "
+                "Both boards support using your phone as a remote user interface. "
+                "Setup is nearly the same on both, so we'll go through it once."
+            ),
+            shots=[Shot("guition-ride.png")],
         ),
         Scene(
             title="Install the firmware",
@@ -175,7 +220,27 @@ def scenes(Shot, Scene):
             say=(
                 "If something's not right, don't try to fix it on the bike. "
                 "Open slash report on the board's address, download the file, and attach it to a GitHub issue. "
-                "Everything shown here is in the written guide. Enjoy the ride."
+                "Everything shown here is in the written guide."
+            ),
+            device="none",
+        ),
+        Scene(
+            title="Coming soon",
+            caption="Calibration profiles: Stages cranks matched to your pedals, for the bike and your Garmin\n"
+                    "OpenBikeControl: map the Stages buttons into apps that support it\n"
+                    "Better integration with qdomyos-zwift, for Peloton rides and more\n"
+                    "Updates over WiFi, and a small board that adds ANT+",
+            say=(
+                "Finally, here's what's coming soon. First, power meter calibration. "
+                "You'll build a calibration profile with your pedals. "
+                "The board can then read the bike's Stages cranks, adjust them to match your pedals, "
+                "and send the result to the bike and to your Garmin. "
+                "That keeps your Garmin training load and training status consistent. "
+                "Next, Open Bike Control, so the Stages buttons can be mapped into apps that support it, "
+                "like My Whoosh. "
+                "Then better integration with Q Domyos Zwift, for Peloton rides and other advanced things. "
+                "And updates over WiFi with no cable, and a small board that adds Ant plus. "
+                "Enjoy the ride."
             ),
             device="none",
         ),

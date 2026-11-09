@@ -73,6 +73,7 @@ class Scene:
     shots: list[Shot] = field(default_factory=list)
     device: str = "guition"  # guition | phone | oled | none
     tag: str = ""  # which board this step applies to
+    flow: tuple[str, ...] = ()  # boxes of a left-to-right diagram, drawn under the caption
 
 
 def device_panel(frames: Path, shot: Shot, device: str) -> Image.Image:
@@ -124,7 +125,41 @@ def compose(frames: Path, scene: Scene, shot: Shot | None) -> tuple[Image.Image,
     for line in wrap(draw, scene.caption, cf, text_w):
         draw.text((text_x, y), line, font=cf, fill=MUTED)
         y += 54
+    if scene.flow:
+        draw_flow(draw, scene.flow)
     return canvas, tap_at
+
+
+def draw_flow(draw: ImageDraw.ImageDraw, boxes: tuple[str, ...]) -> None:
+    """Boxes joined by arrows. The second box is ours, so it alone is filled, and the last link is marked unchanged."""
+    gap = 100
+    box_w = (W - 220 - gap * (len(boxes) - 1)) // len(boxes)
+    box_h, top = 170, 690
+    f = font(38, bold=True)
+    for i, label in enumerate(boxes):
+        x = 110 + i * (box_w + gap)
+        ours = i == 1
+        draw.rounded_rectangle((x, top, x + box_w, top + box_h), radius=22,
+                               fill=ACCENT if ours else BEZEL, outline=ACCENT if ours else MUTED, width=3)
+        lines = wrap(draw, label, f, box_w - 40)
+        ty = top + (box_h - 50 * len(lines)) // 2
+        for line in lines:
+            draw.text((x + (box_w - draw.textlength(line, font=f)) // 2, ty), line, font=f, fill=FG)
+            ty += 50
+        if i < len(boxes) - 1:
+            ax, ay = x + box_w + 14, top + box_h // 2
+            bx = x + box_w + gap - 14
+            draw.line((ax, ay, bx - 14, ay), fill=FG, width=6)
+            draw.polygon([(bx, ay), (bx - 22, ay - 15), (bx - 22, ay + 15)], fill=FG)
+    note = font(32)
+    left = 110
+    right = 110 + 2 * (box_w + gap) + box_w
+    draw.line((left, top + box_h + 28, right, top + box_h + 28), fill=ACCENT, width=4)
+    text = "All of the work happens here"
+    draw.text(((left + right - draw.textlength(text, font=note)) // 2, top + box_h + 44), text, font=note, fill=ACCENT)
+    last = 110 + 3 * (box_w + gap)
+    text = "No change"
+    draw.text((last + (box_w - draw.textlength(text, font=note)) // 2, top + box_h + 44), text, font=note, fill=MUTED)
 
 
 # --- voice --------------------------------------------------------------------------------------

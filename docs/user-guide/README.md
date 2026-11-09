@@ -7,7 +7,7 @@ It covers both boards. Most steps are the same, and where they differ you'll see
 > ⚠️ This is a hobby project, not affiliated with Stages or Favero. Nothing inside the bike is
 > modified, but use it at your own risk.
 
-▶️ **Prefer to watch?** [`walkthrough.mp4`](walkthrough.mp4) is a four-minute narrated tour of these
+▶️ **Prefer to watch?** [`walkthrough.mp4`](walkthrough.mp4) is a six-minute narrated tour of these
 steps. The narration is AI-generated, using Microsoft VibeVoice.
 
 ## Which board do you have?
