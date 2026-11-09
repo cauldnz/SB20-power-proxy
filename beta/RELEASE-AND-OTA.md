@@ -150,15 +150,10 @@ internal known-good marker.
 
 ### Hosting the browser installer
 
-ESP Web Tools needs **HTTPS**, so `firmware/webflash/index.html` has to be served, not opened from
-disk. Publish **all three files together** — `index.html`, `manifest.json` and
-`firmware-factory.bin` — from one origin on GitHub Pages (a `gh-pages` branch; the bin is gitignored
-on `main` on purpose and lives only there). Same-origin keeps the image fetch simple.
-
-Do **not** point `manifest.json`'s `path` at a release-asset URL instead: asset downloads redirect to
-`objects.githubusercontent.com`, whose CORS headers are not something we control, so the installer can
-fail to fetch the image for reasons invisible to the user. The release asset is the thing people
-download and flash with `esptool`; Pages is the thing the Install button reads.
+`.github/workflows/pages.yml` publishes `firmware/webflash/` to GitHub Pages with the images of a
+**published** release, so a draft cannot reach riders. Publishing the release runs it. For a release
+whose tag predates that workflow, run `gh workflow run pages.yml`. Details:
+[`firmware/webflash/README.md`](../firmware/webflash/README.md).
 
 ## Pushing it to the fleet — two channels
 

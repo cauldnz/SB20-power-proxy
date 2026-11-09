@@ -32,24 +32,26 @@ steps.
 
 ## 1. Install the firmware
 
-Skip this if your board came ready to use. Otherwise, download the image for your board from the
+Skip this if your board came ready to use. Otherwise, plug the board in with a data cable, open
+**[the installer](https://cauldnz.github.io/SB20-power-proxy/)** in desktop Chrome or Edge, click
+**Install** on your board and pick its port. Phones and other browsers can't do this.
+
+<details><summary>Prefer the command line?</summary>
+
+Download the image for your board from the
 [latest release](https://github.com/cauldnz/SB20-power-proxy/releases/latest), install
 [esptool](https://pypi.org/project/esptool/) version 4.11 or newer (`pip install esptool`), and run
-the line for your board, using your own port in place of `COM9`:
-
-**Screen board**
+the line for your board, using your own port in place of `COM9`. On esptool 4.x, type `write_flash`
+instead of `write-flash`.
 
 ```bash
 python -m esptool --chip esp32s3 --port COM9 write-flash 0x0 firmware-factory-guition.bin
-```
-
-**Headless board**
-
-```bash
 python -m esptool --chip esp32c3 --port COM9 write-flash 0x0 firmware-factory.bin
 ```
 
-On esptool 4.x, type `write_flash` instead of `write-flash`.
+The first line is the screen board, the second the headless board.
+
+</details>
 
 > **Installing erases the board's settings** (WiFi, meter and crank identity). That's fine the first
 > time. If you run it again later, you'll need to repeat the steps below.
