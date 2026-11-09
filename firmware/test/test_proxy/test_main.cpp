@@ -2306,6 +2306,14 @@ void test_lcd_tap_more_rows_dispatch() {
       TEST_ASSERT_EQUAL_INT((int)UiAction::None, (int)a.type); }
 }
 
+// #361: the baked Inter subset has no U+00D7, so a non-ASCII preset label draws a missing-glyph box
+// on the panel. The picker shows these strings verbatim.
+void test_workout_preset_labels_are_ascii() {
+    for (const auto& p : workoutPresets())
+        for (const char* c = p.label; *c; ++c)
+            TEST_ASSERT_TRUE_MESSAGE((unsigned char)*c < 0x80, p.label);
+}
+
 void test_lcd_tap_workout_controls_and_presets() {
     LcdViews v;
     LcdUiState st; st.screen = LcdScreen::Workout;
@@ -3176,6 +3184,7 @@ int runUnityTests() {
     RUN_TEST(test_lcd_tap_more_rows_dispatch);
     RUN_TEST(test_lcd_tap_ride_title_toggles_details);
     RUN_TEST(test_lcd_tap_workout_controls_and_presets);
+    RUN_TEST(test_workout_preset_labels_are_ascii);
     RUN_TEST(test_workout_runtime_unload_returns_to_picker);
     RUN_TEST(test_lcd_tap_calibrate_roles_and_start);
     RUN_TEST(test_report_page_review_and_send);

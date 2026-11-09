@@ -42,8 +42,10 @@ static uint32_t g_pickerScanUntilMs = 0;
 
 void BleMeterClient::pickerScanBoost(uint32_t ms) {
     g_pickerScanUntilMs = millis() + ms;
-    NimBLEScan* scan = NimBLEDevice::getScan();
-    if (!scan->isScanning()) scan->start(0, false);
+    // Restart even if a scan is already running. A running scan's duplicate filter has already seen
+    // every nearby advertiser, so after clearCandidates() it reports nothing new and the picker stays
+    // empty: exactly the state of a board still searching for its first meter (bench, 2026-11-09).
+    NimBLEDevice::getScan()->start(0, /*isContinue=*/false, /*restart=*/true);
 }
 
 // True when no registered client still needs to discover a meter (all connected or already targeted)

@@ -55,8 +55,8 @@ PANELS = {
 SCREENS = {0: "Ride", 1: "Setup", 2: "More", 3: "Workout", 4: "Calibrate", 5: "Compare"}
 
 # How many rows the More screen shows on each board. `Touch cal` is compiled in only for a resistive
-# panel, so the CYD has nine where the others have eight -- which is the whole of #364.
-MORE_ROWS = {"guition": 8, "cyd": 9, "s3": 8}
+# panel, so the CYD has one more than the others -- which is the whole of #364.
+MORE_ROWS = {"guition": 9, "cyd": 10, "s3": 9}
 
 
 def more_pitch(h: int, rows: int) -> tuple[int, int, int]:

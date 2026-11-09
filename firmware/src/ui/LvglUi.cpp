@@ -303,7 +303,8 @@ void buildRide() {
     auto mkSide = [&](lv_align_t al, int ox, const char* badge, lv_color_t bc, lv_obj_t** name,
                       lv_obj_t** watts, lv_obj_t** cad, lv_obj_t** meta) {
         lv_obj_t* card = mkCard(R.det);
-        lv_obj_set_size(card, dw, 134);
+        // Tall enough for name, watts, cadence, the erg line and the meta line without overlap (#359).
+        lv_obj_set_size(card, dw, RL.detailsH < 150 ? RL.detailsH : 150);
         lv_obj_align(card, al, ox, 0);
         mkLabel(card, &lv_inter_12, bc, badge);
         *name = mkLabel(card, &lv_inter_12, C_FG());
@@ -324,8 +325,8 @@ void buildRide() {
         // rider checks pedals -> identity -> bike in one glance (system-reference §7, #330).
         lv_obj_t* card = lv_obj_get_parent(R.dOutMeta);
         R.dOutErg = mkLabel(card, &lv_inter_12, C_MUT(), "");
-        lv_obj_set_width(R.dOutErg, dw - 20);
-        lv_label_set_long_mode(R.dOutErg, LV_LABEL_LONG_DOT);
+        lv_obj_set_size(R.dOutErg, dw - 20, 16);   // LONG_DOT only truncates a label with a fixed height;
+        lv_label_set_long_mode(R.dOutErg, LV_LABEL_LONG_DOT);  // width alone wraps onto the next row (#359)
         lv_obj_align(R.dOutErg, LV_ALIGN_TOP_LEFT, 0, 92);
     }
 
@@ -502,6 +503,7 @@ const MoreRowDef kMoreRows[] = {
     {"Trainer",   LcdScreen::More,      UiAction::None,          MoreVal::Trainer,     false},
     {"Bright",    LcdScreen::More,      UiAction::SetBrightness, MoreVal::Brightness,  false},
     {"Touch cal", LcdScreen::More,      UiAction::TouchCalStart, MoreVal::Link,        true },
+    {"Firmware",  LcdScreen::More,      UiAction::None,          MoreVal::Version,     false},
 };
 constexpr int kMoreRowCount = (int)(sizeof(kMoreRows) / sizeof(kMoreRows[0]));
 static_assert(kMoreRowCount <= (int)(sizeof(M.val) / sizeof(M.val[0])),
@@ -578,16 +580,13 @@ void buildCalibrate() {
     lv_obj_t* s = g_scrObj[4] = mkScreen();
     lv_obj_t* h = mkLabel(s, &lv_inter_sb_20, C_FG(), "Calibrate");
     lv_obj_align(h, LV_ALIGN_TOP_LEFT, 10, 8);
-    CAL.sub = mkLabel(s, &lv_inter_16, C_MUT(), "correct DUT to match ref\nwake both meters...");
+    // Calibration runs on the web page; the button that used to sit here did nothing (#346, map F29).
+    CAL.sub = mkLabel(s, &lv_inter_16, C_MUT(),
+                      "Calibration runs from the web page. In a browser, open this board's "
+                      "address and add /calibrate");
+    lv_obj_set_width(CAL.sub, g_hor - 20);
+    lv_label_set_long_mode(CAL.sub, LV_LABEL_LONG_WRAP);
     lv_obj_align(CAL.sub, LV_ALIGN_TOP_LEFT, 10, 40);
-    CAL.btn = mkButton(s, "Connect + start", C_CARD(), C_MUT(), &lv_inter_16,
-                       [](lv_event_t*) {
-                           UiAction a;
-                           a.type = UiAction::CalStart;
-                           emitAction(a);
-                       }, nullptr);
-    lv_obj_set_size(CAL.btn, g_hor - 20, 40);
-    lv_obj_align(CAL.btn, LV_ALIGN_BOTTOM_MID, 0, -40);
     mkNav(s, 4);
 }
 
