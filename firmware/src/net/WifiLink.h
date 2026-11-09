@@ -75,6 +75,7 @@ public:
         hooks_.rescanSources = std::move(scan);
     }
     void setDiagFrames(DiagFramesProvider frames) { hooks_.diagFrames = std::move(frames); }
+    void setScanActive(std::function<bool()> active) { hooks_.scanActive = std::move(active); }
     void setCalibrationUi(CalViewProvider view, CalStartHook start, CalFinishHook finish,
                           CalSaveHook save, CalSimpleHook cancel, CalSimpleHook scan) {
         hooks_.calView = std::move(view);

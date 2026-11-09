@@ -17,6 +17,7 @@ struct SourceCandidate {
     bool isCps = false;    // advertises Cycling Power Service 0x1818
     bool isStagesCrank = false;  // name starts with "Stages " (a native crank)
     bool isFtms = false;   // advertises Fitness Machine Service 0x1826 (an erg-able trainer)
+    bool isConnected = false;  // the meter this board is reading right now, not a scan result
 };
 
 // Add/refresh one scanned device in a bounded candidate list, in place. Dedups by address (keeps
@@ -62,6 +63,7 @@ inline std::vector<SourceCandidate> dedupeAndSortSources(const std::vector<Sourc
                 e.isCps = e.isCps || d.isCps;
                 e.isStagesCrank = e.isStagesCrank || d.isStagesCrank;
                 e.isFtms = e.isFtms || d.isFtms;
+                e.isConnected = e.isConnected || d.isConnected;
                 merged = true;
                 break;
             }
@@ -85,6 +87,47 @@ inline std::vector<SourceCandidate> lcdPickerList(const std::vector<SourceCandid
         if (d.isCps || d.isFtms || d.isStagesCrank) relevant.push_back(d);
     }
     return dedupeAndSortSources(relevant);
+}
+
+// The meter this board is connected to has stopped advertising, so a rescan never finds it again.
+// Keep it in the pickers: flag it if the scan still has it, add it if not. rssi 0 sorts it first;
+// the pickers show a "connected" label rather than signal bars for it. Pure, host-tested.
+inline std::vector<SourceCandidate> withConnectedSource(std::vector<SourceCandidate> list,
+                                                        const std::string& address,
+                                                        const std::string& name) {
+    if (address.empty()) return list;
+    for (auto& e : list) {
+        if (e.address == address) {
+            e.isConnected = true;
+            e.isCps = true;
+            e.rssi = 0;
+            if (e.name.empty()) e.name = name;
+            return list;
+        }
+    }
+    SourceCandidate c;
+    c.address = address;
+    c.name = name;
+    c.rssi = 0;
+    c.isCps = true;
+    c.isStagesCrank = (name.rfind("Stages ", 0) == 0);
+    c.isConnected = true;
+    list.push_back(c);
+    return list;
+}
+
+// Could this device feed the proxy? The scan records every advertiser, which is right for the
+// trainer list but puts LED controllers in the meter pickers.
+inline bool isPowerSource(const SourceCandidate& d) {
+    return d.isCps || d.isStagesCrank || d.isConnected;
+}
+
+inline std::vector<SourceCandidate> powerSources(const std::vector<SourceCandidate>& in) {
+    std::vector<SourceCandidate> out;
+    for (const auto& d : in) {
+        if (isPowerSource(d)) out.push_back(d);
+    }
+    return out;
 }
 
 }  // namespace sb20proxy

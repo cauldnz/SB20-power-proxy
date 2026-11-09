@@ -48,6 +48,8 @@ void BleMeterClient::pickerScanBoost(uint32_t ms) {
     NimBLEDevice::getScan()->start(0, /*isContinue=*/false, /*restart=*/true);
 }
 
+bool BleMeterClient::pickerScanActive() { return millis() < g_pickerScanUntilMs; }
+
 // True when no registered client still needs to discover a meter (all connected or already targeted)
 // — the cue to stop the shared scan, exactly as the single-client path did on its one match.
 static bool noClientNeedsScan() {

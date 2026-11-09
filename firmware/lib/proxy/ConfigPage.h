@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "MeterMatch.h"
 #include "Provisioning.h"     // reuse urlDecode / htmlEscape / rssiBars (the captive-portal helpers)
 #include "RuntimeConfig.h"
 #include "SourceCandidate.h"  // SourceCandidate + dedupeAndSortSources (the scanned-source model)
@@ -120,13 +121,14 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
                                     const std::vector<SourceCandidate>& devices = {},
                                     const std::string& message = std::string(),
                                     bool scanning = false, int logState = -1,
-                                    const std::string& currentStatus = std::string()) {
+                                    const std::string& currentStatus = std::string(),
+                                    const std::string& resetHint = std::string()) {
     const std::vector<SourceCandidate> ds = dedupeAndSortSources(devices);
+    const std::vector<SourceCandidate> meters = powerSources(ds);
     std::string h =
         "<!DOCTYPE html><html><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>SB20 Proxy &mdash; Power source</title>";
-    if (scanning) h += "<meta http-equiv='refresh' content='2'>";
     h += "<style>";
     h += webuiCss();  // shared palette + base layout + bottom-nav
     h += ".tb a.scan{color:var(--ok);font-size:.85rem;font-weight:500;text-decoration:none}"
@@ -169,15 +171,17 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
     // connected before riding (the pre-flight-verify principle), straight from this page.
     if (!currentStatus.empty()) h += "<p class='ok'>" + htmlEscape(currentStatus) + "</p>";
     if (!message.empty()) h += "<p class='msg'>" + htmlEscape(message) + "</p>";
+    if (!resetHint.empty())
+        h += "<p class='msg'>" + htmlEscape(resetHint) + " <a href='#reset'>Go to Reset</a></p>";
 
-    if (ds.empty()) {
+    if (meters.empty()) {
         h += "<p class='hint'>";
         h += scanning ? "Scanning for power sources&hellip;"
                       : "No sources yet &mdash; spin your meter/crank so it advertises, then tap Scan.";
         h += "</p>";
     } else {
         h += "<div class='devs'>";
-        for (const auto& d : ds) {
+        for (const auto& d : meters) {
             const bool sel = (!cfg.meterAddress.empty() && d.address == cfg.meterAddress);
             const int bars = rssiBars(d.rssi);
             h += "<button type='button' class='dev";
@@ -186,6 +190,10 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
             h += "<span class='nm'>";
             h += d.name.empty() ? "<i>(unnamed)</i>" : htmlEscape(d.name);
             h += "<br><small>" + htmlEscape(d.address) + "</small></span>";
+            if (d.isConnected) {
+                h += "<span class='badge' title='this board is reading it now'>connected</span></button>";
+                continue;
+            }
             if (d.isStagesCrank) h += "<span class='badge crank' title='a Stages crank'>crank</span>";
             else if (d.isCps) h += "<span class='badge' title='Cycling Power Service'>power</span>";
             h += "<span class='sig' title='" + std::to_string(d.rssi) + " dBm'>";
@@ -206,7 +214,7 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
     h += "> Single-sided source &mdash; double it for total <span class='hint'>(a right-only / "
          "surviving crank)</span></label>"
          // --- Crank identity: what the SB20 sees as its crank (advanced) --------------------------
-         "<details><summary style='cursor:pointer;font-weight:600;margin:6px 0 10px'>Crank identity "
+         "<details id='crank'><summary style='cursor:pointer;font-weight:600;margin:6px 0 10px'>Crank identity "
          "(advanced)</summary>"
          "<p class='hint'>What the SB20 pairs to as its crank. <b>Blank = this board's own default</b> "
          "(<code>Stages 9NNNN</code>, from its MAC &mdash; unique per board; type that id into the "
@@ -264,19 +272,23 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
          "<button class='go' type='submit'>Save</button></form>"
          // Recovery: clear the saved source + identity back to the shipped defaults (for a tester who
          // mis-picks). Separate form; confirm before it reboots.
-         "<form method='POST' action='/setup/reset' style='margin-top:18px' "
+         "<form id='reset' method='POST' action='/setup/reset' style='margin-top:18px' "
          "onsubmit='return confirm(\"Reset source and crank identity to defaults?\")'>"
          "<button class='reset' type='submit'>Reset to defaults</button></form>"
-         "<script>function pick(b){"
+         "<script>function pick(b){window.sbDirty=1;"
          "document.getElementById('addr').value=b.getAttribute('data-addr');"
          "var ds=document.querySelectorAll('.dev[data-addr]');"
          "for(var i=0;i<ds.length;i++)ds[i].classList.remove('sel');"
          "b.classList.add('sel');}"
-         "function pickTrainer(b){"
+         "function pickTrainer(b){window.sbDirty=1;"
          "document.getElementById('trainer').value=b.getAttribute('data-tname');"
          "var ds=document.querySelectorAll('.dev[data-tname]');"
          "for(var i=0;i<ds.length;i++)ds[i].classList.remove('sel');"
-         "b.classList.add('sel');}</script>";
+         "b.classList.add('sel');}"
+         // The Ride page's "Change ID" link lands here with the section open.
+         "if(location.hash==='#crank'){var c=document.getElementById('crank');c.open=true;"
+         "c.scrollIntoView();}</script>";
+    if (scanning) h += webuiScanReloadJs();
 
     h += renderLogToggleFooter(logState);
     h += "</div>"  // .wrap
@@ -284,6 +296,26 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
          "<a href='/more'>More</a></nav>"
          "</body></html>";
     return h;
+}
+
+// When a reset would help: the saved source is not connected and not in range, yet another power
+// meter is. Old settings from a bench or a previous rider look exactly like this. Stages cranks do
+// not count, because the bike's own cranks are always nearby. "" = nothing to say. Pure, host-tested.
+inline std::string staleSourceHint(const RuntimeConfig& cfg,
+                                   const std::vector<SourceCandidate>& devices, bool connected) {
+    if (connected) return std::string();
+    std::string other;
+    for (const auto& d : devices) {
+        if (!isPowerSource(d) || d.isStagesCrank) continue;
+        if (isTargetMeter(d.name, d.isCps, d.address, cfg.meterAddress, cfg.spoofName,
+                          cfg.meterNameFilter))
+            return std::string();  // the saved source is here: it is just connecting
+        if (other.empty()) other = d.name.empty() ? d.address : d.name;
+    }
+    if (other.empty()) return std::string();
+    const std::string saved = cfg.meterAddress.empty() ? cfg.meterNameFilter : cfg.meterAddress;
+    return "Still looking for " + saved + ", but " + other +
+           " is nearby. Tap it above and Save, or reset to clear old settings.";
 }
 
 // The page shown right after the user saves a source. The device reboots to apply it, so this

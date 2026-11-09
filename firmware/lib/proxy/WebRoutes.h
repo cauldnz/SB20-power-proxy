@@ -118,6 +118,9 @@ struct HttpResponse {
         return r;
     }
     static HttpResponse page(std::string b) {
+        // Every full page gets the "your tap registered" feedback from one place.
+        const size_t end = b.rfind("</body>");
+        b.insert(end == std::string::npos ? b.size() : end, webuiBusyHtml());
         HttpResponse r = html(std::move(b));
         r.stream = true;
         return r;
@@ -150,6 +153,7 @@ struct DeviceHooks {
         return std::vector<SourceCandidate>{};
     };
     std::function<void()> rescanSources = [] {};
+    std::function<bool()> scanActive = [] { return false; };  // a picker scan is running
 
     std::function<std::string()> perfJson = [] { return std::string("{}"); };
     std::function<void()> perfReset = [] {};
@@ -246,8 +250,12 @@ inline std::string sourceBanner(const ProxyStatus& st) {
 }
 
 inline HttpResponse setupPage(DeviceHooks& h, const HttpRequest&) {
-    return HttpResponse::page(renderConfigPage(h.config(), h.sources(), std::string(), false, -1,
-                                               sourceBanner(h.status())));
+    const RuntimeConfig cfg = h.config();
+    const std::vector<SourceCandidate> sources = h.sources();
+    const ProxyStatus st = h.status();
+    return HttpResponse::page(renderConfigPage(
+        cfg, sources, std::string(), h.scanActive(), -1, sourceBanner(st),
+        st.mock ? std::string() : staleSourceHint(cfg, sources, st.sourceConnected)));
 }
 inline HttpResponse setupScan(DeviceHooks& h, const HttpRequest&) {
     h.rescanSources();
@@ -313,6 +321,7 @@ inline HttpResponse report(DeviceHooks&, const HttpRequest&) {
 
 inline HttpResponse calRender(DeviceHooks& h, const std::string& message) {
     CalWizardView v = h.calView();
+    v.scanning = h.scanActive();
     if (!message.empty()) v.message = message;
     return HttpResponse::page(renderCalibrationPage(v));
 }

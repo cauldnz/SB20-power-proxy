@@ -607,6 +607,25 @@ void test_setup_save_preserves_a_parked_radio_but_reset_clears_it() {
     TEST_ASSERT_FALSE(saved.bleOff);         // defaults() = radio on: the second way back
 }
 
+void test_scan_routes_report_a_running_scan() {
+    DeviceHooks h;
+    h.scanActive = [] { return true; };
+    HttpRequest req;
+    TEST_ASSERT_TRUE(routes::setupPage(h, req).body.find("Scanning&hellip;") != std::string::npos);
+    TEST_ASSERT_TRUE(routes::calRender(h, "").body.find("Scanning&hellip;") != std::string::npos);
+    h.scanActive = [] { return false; };
+    TEST_ASSERT_TRUE(routes::setupPage(h, req).body.find("location.reload") == std::string::npos);
+}
+
+void test_full_pages_show_that_a_tap_registered() {
+    std::string body = HttpResponse::page("<html><body>x</body></html>").body;
+    size_t busy = body.find("id='sbBusy'");
+    TEST_ASSERT_TRUE(busy != std::string::npos);
+    TEST_ASSERT_TRUE(busy < body.find("</body>"));
+    TEST_ASSERT_TRUE(HttpResponse::page("no body tag").body.find("id='sbBusy'") != std::string::npos);
+    TEST_ASSERT_TRUE(HttpResponse::html("<body></body>").body.find("sbBusy") == std::string::npos);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
 
@@ -661,6 +680,8 @@ int main(int, char**) {
     RUN_TEST(test_ble_on_clears_the_flag_and_reboots);
     RUN_TEST(test_ble_on_is_reachable_on_the_station_server);
     RUN_TEST(test_setup_save_preserves_a_parked_radio_but_reset_clears_it);
+    RUN_TEST(test_scan_routes_report_a_running_scan);
+    RUN_TEST(test_full_pages_show_that_a_tap_registered);
 
     return UNITY_END();
 }
