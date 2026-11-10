@@ -10,6 +10,8 @@ It covers both boards. Most steps are the same, and where they differ you'll see
 ▶️ **Prefer to watch?** [`walkthrough.mp4`](walkthrough.mp4) is a seven-minute narrated tour of these
 steps. The narration is AI-generated, using Microsoft VibeVoice.
 
+❓ **Got a question?** See the [FAQ](FAQ.md), including what to do if your cranks have died.
+
 ## Which board do you have?
 
 | | **Screen board** | **Headless board** |
