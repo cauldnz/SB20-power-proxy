@@ -1,6 +1,6 @@
 """Board acceptance verdict — hermetic tests for the pre-ship QA gate (no hardware).
 
-The boards in these tests advertise ``Stages 92729`` (a MAC-derived default, #330) rather than the
+The boards in these tests advertise ``Stages 42729`` (a MAC-derived default, #330) rather than the
 old ``Stages 62144`` default: that name is bike 1's REAL crank and is now exactly what the card
 must veto — see the fleet-identity tests at the bottom.
 """
@@ -12,12 +12,13 @@ from pathlib import Path
 import pytest
 
 from sb20proxy.qa.acceptance import (
-    DERIVED_IDENTITY_MODULUS,
     DERIVED_IDENTITY_PREFIX,
     HEAP_FLOOR_BYTES,
+    MAX_ANT_DEVICE_NUMBER,
     REAL_CRANK_NAMES,
     default_spoof_name,
     evaluate,
+    is_ant_range_identity,
     is_real_crank_identity,
 )
 from sb20proxy.release import DEV_VERSION
@@ -25,7 +26,7 @@ from sb20proxy.release import DEV_VERSION
 ROOT = Path(__file__).resolve().parents[2]
 FLEET_H = ROOT / "firmware" / "lib" / "proxy" / "FleetIdentity.h"
 
-NAME = "Stages 92729"
+NAME = "Stages 42729"
 GOOD_STATUS = {
     "fw": "sb20proxy-esp32", "source": "searching", "src_name": "",
     "heap": 120000, "ms": 12345, "rssi": -55, "power_w": 0,
@@ -157,10 +158,10 @@ def test_real_crank_identity_is_accepted_when_the_rescue_is_intended():
                and "--crank-rescue" in c.detail for c in r.checks)
 
 
-def test_a_real_crank_identity_reported_by_status_fails_even_with_a_prefix_expectation():
-    # qa_board's no-name default expects any "Stages 9" board; /status saying 62144 still vetoes.
-    r = evaluate(expected_spoof_name=DERIVED_IDENTITY_PREFIX, advert_seen=True,
-                 advert_names=["Stages 92729"], status={**GOOD_STATUS, "identity": "Stages 62144"})
+def test_a_real_crank_identity_reported_by_status_fails_even_when_the_expectation_differs():
+    # qa_board expected the MAC-derived name, but /status says the board is on 62144: still a veto.
+    r = evaluate(expected_spoof_name="Stages 42729", advert_seen=True,
+                 advert_names=["Stages 42729"], status={**GOOD_STATUS, "identity": "Stages 62144"})
     assert not r.passed
     assert any(c.name == "identity is not a real crank" and c.ok is False for c in r.checks)
 
@@ -210,12 +211,14 @@ def test_identity_provenance_is_reported_non_critically():
 def test_default_spoof_name_golden_vectors_match_the_firmware_suite():
     # Same vectors as test_fleetidentity: the S3-Touch and 0.96" C3 base MACs from BOARDS.md, and
     # the SetupPin.h example SSID "Setup-A6E9" (the identity is cut from the same two MAC bytes).
-    assert default_spoof_name("A4:CB:8F:DA:E9:CC") == "Stages 99852"   # 0xE9CC = 59852 -> 9852
-    assert default_spoof_name("10:b4:1d:ba:c9:0c") == "Stages 91468"   # lowercase is fine
-    assert default_spoof_name("00-00-00-00-A6-E9") == "Stages 92729"   # dash-separated is fine
-    assert default_spoof_name("00:00:00:00:00:07") == "Stages 90007"   # zero-padded
-    assert default_spoof_name("00:00:00:00:27:10") == "Stages 90000"   # 10000 wraps
-    assert default_spoof_name("00:00:00:00:08:60") == "Stages 92144"   # spells 2144, NOT 62144
+    assert default_spoof_name("A4:CB:8F:DA:E9:CC") == "Stages 59852"   # 0xE9CC = 59852
+    assert default_spoof_name("10:b4:1d:ba:c9:0c") == "Stages 51468"   # lowercase is fine
+    assert default_spoof_name("00-00-00-00-A6-E9") == "Stages 42729"   # dash-separated is fine
+    assert default_spoof_name("00:00:00:00:00:07") == "Stages 7"       # unpadded, like a real crank
+    assert default_spoof_name("00:00:00:00:00:00") == "Stages 1"       # 0 is the ANT wildcard
+    assert default_spoof_name("00:00:00:00:FF:FF") == "Stages 65535"   # the app's maximum
+    assert default_spoof_name("00:00:00:00:F2:C0") == "Stages 62145"   # 62144: low bit flipped
+    assert default_spoof_name("00:00:00:00:13:63") == "Stages 4962"    # 4963: low bit flipped
 
 
 @pytest.mark.parametrize(
@@ -225,30 +228,40 @@ def test_default_spoof_name_rejects_a_non_mac(bad):
         default_spoof_name(bad)
 
 
-def test_derived_names_are_never_a_real_crank_for_any_mac_tail():
+def test_derived_names_fit_the_stages_app_and_are_never_a_real_crank_for_any_mac_tail():
+    # The Stages app's Left/Right ANT ID fields take 0..65535 only (it rejected 99744, 2026-11-11).
     for tail in range(65536):
         name = default_spoof_name(f"00:00:00:00:{tail >> 8:02X}:{tail & 0xFF:02X}")
-        assert name.startswith(DERIVED_IDENTITY_PREFIX) and len(name) == 12
+        assert is_ant_range_identity(name), name
+        assert 1 <= int(name[len(DERIVED_IDENTITY_PREFIX):]) <= MAX_ANT_DEVICE_NUMBER
         assert not is_real_crank_identity(name)
+
+
+@pytest.mark.parametrize("name,ok", [
+    ("Stages 1", True), ("Stages 62145", True), ("Stages 65535", True),
+    ("Stages 0", False), ("Stages 65536", False), ("Stages 99744", False), ("Stages 0123", False),
+    ("Stages ", False), ("62145", False), ("SB20 Corrector", False)])
+def test_is_ant_range_identity(name, ok):
+    assert is_ant_range_identity(name) is ok
 
 
 def test_real_crank_names_are_exactly_bike_1s_cranks():
     assert is_real_crank_identity("Stages 62144")
     assert is_real_crank_identity("Stages 4963")
     assert not is_real_crank_identity("Stages 62145")   # our own id (session 8)
-    assert not is_real_crank_identity("Stages 92729")
+    assert not is_real_crank_identity("Stages 42729")
     assert not is_real_crank_identity("")
 
 
 def test_python_constants_mirror_the_firmware_header():
     """The C++ header is the source of truth; the Python twin must carry the same names, prefix and
-    modulus, so the QA card and the firmware can never disagree about what a real crank or a default
+    range, so the QA card and the firmware can never disagree about what a real crank or a default
     looks like."""
     text = FLEET_H.read_text(encoding="utf-8")
     for n in REAL_CRANK_NAMES:
         assert f'"{n}"' in text, f"{n} missing from FleetIdentity.h"
     assert f'kDerivedIdentityPrefix = "{DERIVED_IDENTITY_PREFIX}"' in text
-    assert f"kDerivedIdentityModulus = {DERIVED_IDENTITY_MODULUS}" in text
+    assert f"kMaxAntDeviceNumber = {MAX_ANT_DEVICE_NUMBER}" in text
 
 
 # --- the release gate: is this board running the version we are about to publish? --------------

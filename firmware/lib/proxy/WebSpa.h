@@ -927,7 +927,7 @@ function wire(t) {
 }
 // Broadcast-mode (spoof/corrector) UI. In SPOOF the advertised name is the Stages crank id the SB20
 // pairs to, and it is PER BOARD (fleet table: docs/system-reference.md §2/§7, #330): blank = the board's
-// own MAC-derived default ("Stages 9NNNN"), never a fixed "Stages 62144" — that is bike 1's real crank,
+// own MAC-derived default ("Stages N", N in 1..65535), never a fixed "Stages 62144" — that is bike 1's real crank,
 // and forcing it here put every board on it. (The nRF ignores the name in spoof mode and uses its own
 // fixed profile.) Corrector broadcasts under our own name. The ANT+ spoof radio shows only on
 // ANT-capable hardware (the nRF) and stays disabled until the S340 SoftDevice lands — the ESP32 is BLE-only.
@@ -938,7 +938,7 @@ function applyModeUi() {
     ? "Impersonate the SB20's own Stages crank so the SB20 accepts our corrected power and runs erg — pair the SB20 to us as its crank."
     : "Re-broadcast the corrected meter under our own name; any head unit (Garmin, Zwift) pairs to it. For meter-to-meter correction.";
   $("cfgRadioRow").style.display = (spoof && T && T.caps.antCapable) ? "" : "none";
-  $("cfgOut").placeholder = spoof ? "blank = this board's own default (Stages 9NNNN)" : "SB20 Corrector";
+  $("cfgOut").placeholder = spoof ? "blank = this board's own default (Stages N)" : "SB20 Corrector";
   $("cfgRebootHint").style.display = (spoof !== loadedSpoof) ? "" : "none";
 }
 $("cfgMode").onchange = applyModeUi;

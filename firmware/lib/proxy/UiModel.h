@@ -19,7 +19,7 @@ namespace sb20proxy {
 // The ride/live-data view — the numbers both panels display (power/cadence/balance + link state).
 struct RideView {
     std::string srcName;      // "ASSIOMA17039L" or "searching…"
-    std::string outName;      // the identity we advertise ("Stages 92729", or the configured id)
+    std::string outName;      // the identity we advertise ("Stages 42729", or the configured id)
     bool srcOn = false;
     bool outOn = true;
     std::string trainerName;  // the FTMS trainer this board erg-drives ("" = erg off) — with srcName and
@@ -54,7 +54,7 @@ struct RideInputs {
     PowerReading src;             // the reading we RECEIVED (pre-correction)
     bool meterConnected = false;  // (mock-meter builds report true with meterName = "mock meter")
     std::string meterName;        // only meaningful while connected
-    std::string identity;         // the name we advertise, e.g. "Stages 92729"
+    std::string identity;         // the name we advertise, e.g. "Stages 42729"
     std::string trainerName;      // RuntimeConfig.trainerNameFilter as configured at boot ("" = erg off)
     bool trainerConnected = false;
     bool wifiUp = false;

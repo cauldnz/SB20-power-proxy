@@ -544,7 +544,7 @@ void test_source_banner_reflects_connection_state() {
 void test_ble_off_sets_only_the_flag_and_reboots() {
     DeviceHooks h;
     RuntimeConfig stored = RuntimeConfig::defaults();
-    stored.spoofName = "Stages 99744";
+    stored.spoofName = "Stages 42729";
     stored.meterAddress = "aa:bb:cc:dd:ee:ff";
     stored.trainerNameFilter = "Stages Bike 0105";
     RuntimeConfig saved;
@@ -554,7 +554,7 @@ void test_ble_off_sets_only_the_flag_and_reboots() {
     HttpResponse r = dispatch(*station("/ble/off", HttpMethod::Post), h, post("/ble/off"));
     TEST_ASSERT_TRUE(saved.bleOff);
     TEST_ASSERT_TRUE(r.reboot);
-    TEST_ASSERT_EQUAL_STRING("Stages 99744", saved.spoofName.c_str());
+    TEST_ASSERT_EQUAL_STRING("Stages 42729", saved.spoofName.c_str());
     TEST_ASSERT_EQUAL_STRING("aa:bb:cc:dd:ee:ff", saved.meterAddress.c_str());
     TEST_ASSERT_EQUAL_STRING("Stages Bike 0105", saved.trainerNameFilter.c_str());
 }

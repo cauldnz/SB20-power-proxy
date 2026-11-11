@@ -18,40 +18,51 @@
 
 namespace sb20proxy {
 
-// The derived-default namespace: "Stages 9NNNN".
+// The derived default: "Stages N", N in 1..65535.
 //
-// ASSUMPTION (docs/system-reference.md §11): the Stages app has only been PROVEN to accept our own
-// crank id 62145 on the bike (session 8). Whether it pairs a 9xxxx id is untested. The '9' prefix is
-// chosen so that no derived id can ever equal a real crank's id in this fleet (62144 / 4963 on bike 1)
-// and so a derived id is recognisable at a glance in a scan — not because 9xxxx is known-good. If the
-// app rejects it, the remedy is a stored per-board identity in /setup; the derivation rule stays.
-constexpr const char* kDerivedIdentityPrefix = "Stages 9";
-// NNNN = the last 16 bits of the MAC, modulo this, zero-padded to 4 digits: 10000 distinct values
-// (two boards whose MAC tails differ by a multiple of 10000 would collide; check /status, not luck).
-constexpr unsigned kDerivedIdentityModulus = 10000;
+// The number a rider types into the Stages app is an ANT device number: the app's Power meters dialog
+// labels the fields "Left ANT ID" / "Right ANT ID" and rejects anything outside 0..65535 (screenshot
+// code/findings/screenshots/stages-app/power-meters-ant-id-range-rejects-99744.png, 2026-11-11). The
+// old "Stages 9NNNN" default (90000..99999) could therefore never be entered, so a board left on it
+// could never be paired.
+//
+// N = the last two bytes of the base MAC as one 16-bit number, the same bytes as "Setup-XXXX". 0 becomes
+// 1, because ANT device number 0 is the search wildcard. If N spells one of the fleet's real cranks below,
+// its lowest bit is flipped (62144 -> 62145), so a fresh board never advertises bike 1's own crank.
+//
+// There is NO collision-free namespace: real Stages crank ids span the whole 16-bit range (4963, 32059,
+// 51862, 62144 seen so far). A clash with a rider's own crank is about 2 in 65535. It shows on /status
+// (`identity`), and the fix is to type a different number in /setup. Real cranks advertise unpadded
+// ("Stages 4963"), so the derived name is unpadded too.
+constexpr const char* kDerivedIdentityPrefix = "Stages ";
+constexpr unsigned kMaxAntDeviceNumber = 65535;
 
-// The identity a board advertises when nothing is stored. `mac` is the 6-byte BASE (efuse) MAC — the
-// one `esptool read-mac` prints and BOARDS.md lists, whose last two bytes are ALSO the "Setup-XXXX"
-// SSID suffix, so a board's default identity is predictable from either. (The BLE address a scanner
-// shows is base + 2 on the ESP32 family; the base is the one humans have on paper.)
-inline std::string defaultSpoofName(const uint8_t mac[6]) {
-    const unsigned low16 = (static_cast<unsigned>(mac[4]) << 8) | mac[5];
-    char buf[24];
-    std::snprintf(buf, sizeof(buf), "%s%04u", kDerivedIdentityPrefix, low16 % kDerivedIdentityModulus);
-    return std::string(buf);
-}
-
-// Bike 1's real Stages cranks (left 62144, right 4963; captured over BLE — decisions.md 2026-06-17,
-// session 9). A board must never advertise one of these NEXT TO that bike unless it is deliberately
+// The fleet's real Stages cranks: bike 1 left 62144, right 4963 (captured over BLE — decisions.md 2026-06-17,
+// session 9); bike 2 60253 : 30314 (Stages app, 2026-11-11). A board must never advertise one of these NEXT TO that bike unless it is deliberately
 // standing in for that crank (the single-right-crank rescue): the QA acceptance card fails on it
 // unless told the rescue is intended (qa_board.py --crank-rescue).
-constexpr const char* kRealCrankNames[] = {"Stages 62144", "Stages 4963"};
+constexpr const char* kRealCrankNames[] = {"Stages 62144", "Stages 4963",   // bike 1 (Stages Bike 0105)
+                                           "Stages 60253", "Stages 30314"};  // bike 2 (Stages Bike 0061)
 
 inline bool isRealCrankIdentity(const std::string& name) {
     for (const char* real : kRealCrankNames) {
         if (name == real) return true;
     }
     return false;
+}
+
+
+// The identity a board advertises when nothing is stored. `mac` is the 6-byte BASE (efuse) MAC — the
+// one `esptool read-mac` prints and BOARDS.md lists, whose last two bytes are ALSO the "Setup-XXXX"
+// SSID suffix, so a board's default identity is predictable from either. (The BLE address a scanner
+// shows is base + 2 on the ESP32 family; the base is the one humans have on paper.)
+inline std::string defaultSpoofName(const uint8_t mac[6]) {
+    unsigned n = (static_cast<unsigned>(mac[4]) << 8) | mac[5];
+    if (n == 0) n = 1;  // ANT device number 0 is the wildcard
+    char buf[24];
+    std::snprintf(buf, sizeof(buf), "%s%u", kDerivedIdentityPrefix, n);
+    if (isRealCrankIdentity(buf)) std::snprintf(buf, sizeof(buf), "%s%u", kDerivedIdentityPrefix, n ^ 1u);
+    return std::string(buf);
 }
 
 // --- The "Stages " prefix: what makes a spoof identity FINDABLE by the bike (#384) --------------

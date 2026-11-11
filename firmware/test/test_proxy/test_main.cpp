@@ -2064,12 +2064,12 @@ void test_oled_struct_overload_projects_ride_view() {
     ride.watts = 217;
     ride.cadence = 92;
     ride.wifiRssi = -55;
-    ride.outName = "Stages 92729";
+    ride.outName = "Stages 42729";
     auto l = formatOledLines(prov, ride, /*wifiUp=*/true, "192.168.1.7");
     TEST_ASSERT_EQUAL_STRING("WiFi -55", l[0].c_str());
     TEST_ASSERT_EQUAL_STRING("192.168.1.7", l[1].c_str());
     TEST_ASSERT_EQUAL_STRING("217W 92rpm", l[2].c_str());
-    TEST_ASSERT_EQUAL_STRING("Stages 92729", l[3].c_str());  // row 4: the crank id this board IS (#330)
+    TEST_ASSERT_EQUAL_STRING("Stages 42729", l[3].c_str());  // row 4: the crank id this board IS (#330)
 }
 
 void test_oled_scalar_adapter_matches_struct() {
@@ -2508,7 +2508,7 @@ void test_diag_report() {
     ProxyStatus st;
     st.sourceConnected = true;
     st.srcName = "ASSIOMA17039L";
-    st.identity = "Stages 92729";  // the LIVE name (the stored one above is a crank-rescue config)
+    st.identity = "Stages 42729";  // the LIVE name (the stored one above is a crank-rescue config)
     st.identityDefault = true;
     st.trainerName = "Stages Bike 0105";
     st.srcPowerW = 158;
@@ -2518,7 +2518,7 @@ void test_diag_report() {
     TEST_ASSERT_TRUE(r.find("SB20 Proxy diagnostic") != std::string::npos);
     TEST_ASSERT_TRUE(r.find("source_addr=e6:20:90:8c:f3:fe") != std::string::npos);  // config
     TEST_ASSERT_TRUE(r.find("spoof_name=Stages 62144") != std::string::npos);
-    TEST_ASSERT_TRUE(r.find("identity=Stages 92729  identity_default=yes  trainer=Stages Bike 0105") !=
+    TEST_ASSERT_TRUE(r.find("identity=Stages 42729  identity_default=yes  trainer=Stages Bike 0105") !=
                      std::string::npos);  // the live identity + its provenance (#330)
     TEST_ASSERT_TRUE(r.find("ASSIOMA17039L") != std::string::npos);                  // status
     TEST_ASSERT_TRUE(r.find("src_balance_pct=44") != std::string::npos);

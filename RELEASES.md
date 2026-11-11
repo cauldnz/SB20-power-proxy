@@ -36,6 +36,11 @@ python -m esptool --chip esp32c3 --port COM9 write-flash 0x0 firmware-factory.bi
 Writing either image **erases the board's settings** (WiFi, meter, crank identity).
 
 **Fixed since 0.1.0.** These are in the shared firmware unless marked:
+- **A board's own crank number now fits the Stages app.** With no crank name stored, a board used to
+  make up `Stages 9NNNN`, between 90000 and 99999, and the Stages app only accepts ANT IDs up to
+  65535, so that number could never be typed in. The board now makes up `Stages N` with N between
+  1 and 65535. **If your board has no crank name stored, it gets a new number after this update:**
+  read it off the screen or the dashboard, and enter it again in the Stages app.
 - **Rescan** no longer leaves the device list empty on a board still searching for its first meter.
   The web page's Scan took the same path.
 - **Free memory no longer falls while a board searches for a meter.** It was losing about 100 bytes a
@@ -148,8 +153,8 @@ the step that silently stops the bike pairing.
   `Stages 51862` for you, which it was not before this release ([#384](https://github.com/cauldnz/SB20-power-proxy/issues/384)) — that silent failure cost
   the first outside user a session. Then pull **that** crank's battery and leave the **other** crank
   powered: the bike wants both of its stored ids findable. Left blank, the board advertises a
-  MAC-derived `Stages 9NNNN`, which is unique and collision-free but has **never been tested against
-  the Stages app on a bike** — so for the SB20 spoof, set the id explicitly. A stored identity
+  MAC-derived `Stages 9NNNN`, which the Stages app **cannot accept**: its ANT ID fields stop at
+  65535 (found 2026-11-11, fixed in 0.1.1) — so for the SB20 spoof, set the id explicitly. A stored identity
   survives a push-OTA and a parts-only flash (`flash_c3.py`), and the firmware never overwrites it;
   installing `firmware-factory.bin` erases it along with the other settings.
 - **ERG needs the bike in External ride mode, and that catches people out.** In the Stages app the
@@ -170,7 +175,7 @@ the step that silently stops the bike pairing.
   verifier and the signing tool all exist and are host-tested, but the signing key and the manifest
   host do not — so `0.1.0` cannot update itself.
 - **One rider, one bike.** The two-bike identity discipline is implemented (MAC-derived
-  `Stages 9NNNN` defaults, pin-by-address) but only ever exercised at the bench.
+  per-board defaults, pin-by-address) but only ever exercised at the bench.
 - The telemetry degradation on a cold start (#288) is still uncaused; the Stages app is the known
   workaround.
 
