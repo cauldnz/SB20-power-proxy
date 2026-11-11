@@ -296,6 +296,7 @@ CI parses this table.
 | [docs/system-reference.md](docs/system-reference.md) | living | how the pieces fit at runtime (issue #290) |
 | [docs/ui-feature-map.md](docs/ui-feature-map.md) | living | every UI feature, its placement, its test (issue #345) |
 | [docs/user-guide/README.md](docs/user-guide/README.md) | living | the rider's walkthrough for both boards, with a narrated video |
+| [docs/user-guide/FAQ.md](docs/user-guide/FAQ.md) | living | rider questions and answers, starting with dead cranks |
 | [docs/bike-session-workflow.md](docs/bike-session-workflow.md) | living | short companion to the playbook |
 | [docs/diagrams/README.md](docs/diagrams/README.md) | index | diagram convention |
 | [docs/reviews/README.md](docs/reviews/README.md) | index | dated reviews, indexed there |
