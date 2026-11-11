@@ -43,13 +43,14 @@ _VALID_SOURCE_STATES = {"mock", "connected", "searching"}
 # (parity-tested).
 REAL_CRANK_NAMES = ("Stages 62144", "Stages 4963")
 
-# The MAC-derived default identity namespace, "Stages 9NNNN": what a board with NOTHING stored
-# advertises (FleetIdentity.h::defaultSpoofName). NNNN = the last 16 bits of the base MAC mod 10000,
-# zero-padded. The '9' prefix keeps every derived id clear of the real cranks; whether the Stages
-# app pairs a 9xxxx id is an open assumption (system-reference §11): only 62145 is proven on the
-# bike.
-DERIVED_IDENTITY_PREFIX = "Stages 9"
-DERIVED_IDENTITY_MODULUS = 10000
+# The MAC-derived default identity, "Stages N" with N in 1..65535: what a board with NOTHING
+# stored advertises (FleetIdentity.h::defaultSpoofName). N = the last 16 bits of the base MAC,
+# 0 -> 1 (the ANT wildcard), and a value spelling a real crank above has its low bit flipped. The
+# Stages app takes ANT device numbers only, 0..65535, so the old "Stages 9NNNN" default could never
+# be entered there (screenshots/stages-app/power-meters-ant-id-range-rejects-99744.png). Unpadded,
+# like a real crank.
+DERIVED_IDENTITY_PREFIX = "Stages "
+MAX_ANT_DEVICE_NUMBER = 65535
 
 _MAC_SEP_RE = re.compile(r"[:\-]")
 
@@ -63,8 +64,22 @@ def default_spoof_name(mac: str) -> str:
     parts = [p for p in _MAC_SEP_RE.split(mac.strip()) if p]
     if len(parts) != 6 or not all(len(p) == 2 for p in parts):
         raise ValueError(f"not a 6-byte MAC: {mac!r}")
-    low16 = (int(parts[4], 16) << 8) | int(parts[5], 16)
-    return f"{DERIVED_IDENTITY_PREFIX}{low16 % DERIVED_IDENTITY_MODULUS:04d}"
+    n = (int(parts[4], 16) << 8) | int(parts[5], 16)
+    if n == 0:
+        n = 1  # ANT device number 0 is the wildcard
+    name = f"{DERIVED_IDENTITY_PREFIX}{n}"
+    if name in REAL_CRANK_NAMES:
+        name = f"{DERIVED_IDENTITY_PREFIX}{n ^ 1}"
+    return name
+
+
+def is_ant_range_identity(name: str) -> bool:
+    """Is ``name`` "Stages N" with N a number the Stages app accepts (1..65535, unpadded)?"""
+    if not name.startswith(DERIVED_IDENTITY_PREFIX):
+        return False
+    digits = name[len(DERIVED_IDENTITY_PREFIX):]
+    return (digits.isdigit() and not digits.startswith("0")
+            and 1 <= int(digits) <= MAX_ANT_DEVICE_NUMBER)
 
 
 def is_real_crank_identity(name: str) -> bool:

@@ -70,7 +70,7 @@ void test_empty_filter_never_takes_a_crank(void) {
     PeerFilters none;
     PeerRoleState s;
     // #404: taking one of these silences it, and the bike can no longer find its crank.
-    TEST_ASSERT_FALSE(classifyAdvert("Stages 99744", true, true, none, s).connect);
+    TEST_ASSERT_FALSE(classifyAdvert("Stages 42729", true, true, none, s).connect);
     TEST_ASSERT_FALSE(classifyAdvert("Stages 62144", true, true, none, s).connect);
     TEST_ASSERT_TRUE(classifyAdvert("ASSIOMA17039L", true, true, none, s).connect);
     TEST_ASSERT_TRUE(classifyAdvert("", false, true, none, s).connect);

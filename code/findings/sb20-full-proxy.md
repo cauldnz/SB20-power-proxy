@@ -41,7 +41,7 @@ sends `0x0011` (#288, system-reference §3).
 **How qz finds and classifies the bike** (read in qz's `src/devices/bluetooth.cpp`, to understand only):
 a name starting `STAGES BIKE` is an FTMS bike (`ftmsbike`); any *other* name starting `STAGES ` gets
 qz's Stages power-bike class. Consequences: the proxy must advertise a name starting `Stages Bike`
-with FTMS `0x1826`, and our crank spoof's `Stages 9NNNN` name already falls into qz's other class
+with FTMS `0x1826`, and our crank spoof's `Stages N` name already falls into qz's other class
 (a latent hazard if qz is not pinned to a device name). qz can also match one exact configured
 name, which is how a rider pins qz to the proxy (§3e).
 
@@ -69,7 +69,7 @@ flowchart LR
   A[Assioma pedals] -- CPS notify --> B
   subgraph B[our board]
     direction TB
-    C[crank spoof<br/>adv set A: Stages 9NNNN]
+    C[crank spoof<br/>adv set A: Stages N]
     L[Sb20Link<br/>one central to the bike]
     P[proxy bike<br/>adv set B: Stages Bike ... + FTMS + OBC]
     R[control-point arbiter]
@@ -136,7 +136,7 @@ The bike has one control point and the proxy is its only writer. The arbiter is 
 
 | Set | For | Primary packet | Scan response |
 |---|---|---|---|
-| A | the SB20 (crank) | `Stages 9NNNN` + CPS `0x1818`, byte-for-byte as today | the Stages UUID `d445fe01` |
+| A | the SB20 (crank) | `Stages N` + CPS `0x1818`, byte-for-byte as today | the Stages UUID `d445fe01` |
 | B | qz (the proxy bike, OBC consumers) | `Stages Bike …` + FTMS `0x1826` | the OBC service UUID `d273f680` |
 
 A 128-bit UUID costs 18 of a packet's 31 bytes, so set A cannot also carry the OBC UUID. Set B's

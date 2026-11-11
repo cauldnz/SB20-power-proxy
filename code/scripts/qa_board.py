@@ -10,9 +10,8 @@ The decision logic lives in sb20proxy.qa.acceptance (pure, unit-tested); this sc
 BLE/HTTP/flash seam that gathers the observations. Real-data-first: sampled CPS frames are decoded
 with the same sb20proxy.ble.cps codec the firmware mirrors.
 
-    # a board on its MAC-derived default identity ("Stages 9NNNN", #330) needs no --spoof-name:
-    python code/scripts/qa_board.py --no-flash --connect
-    # ...or name it explicitly / from its base MAC (esptool read-mac, BOARDS.md) / from its /status:
+    # name the board explicitly, or from its base MAC (esptool read-mac, BOARDS.md: a board with no
+    # stored name advertises its MAC-derived "Stages N", N in 1..65535, #330), or from its /status:
     python code/scripts/qa_board.py --no-flash --spoof-name "Stages 62145"
     python code/scripts/qa_board.py --no-flash --mac A4:CB:8F:DA:E9:CC
     python code/scripts/qa_board.py --no-flash --ip 192.168.1.50          # also pulls /status
@@ -46,7 +45,6 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "code" / "src"))
 from sb20proxy.ble import cps  # noqa: E402
 from sb20proxy.qa.acceptance import (  # noqa: E402
-    DERIVED_IDENTITY_PREFIX,
     default_spoof_name,
     evaluate,
 )
@@ -118,8 +116,8 @@ def main() -> int:
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--spoof-name", default=None,
                    help="the crank name the board should advertise. Default: --mac's derived name, "
-                        "else /status's identity (with --ip), else any MAC-derived default "
-                        f"('{DERIVED_IDENTITY_PREFIX}' prefix)")
+                        "else /status's identity (with --ip). One of the three is required: a "
+                        "derived default is a plain 'Stages N', so there is no prefix to scan for")
     p.add_argument("--mac",
                    help="the board's base MAC (esptool read-mac / BOARDS.md): expect its "
                         "MAC-derived default identity")
@@ -152,7 +150,9 @@ def main() -> int:
     if not a.no_flash:
         if not a.port:
             p.error("give --port to flash, or pass --no-flash")
-        flash_ok = _flash(a.env, a.port, spoof_name or DERIVED_IDENTITY_PREFIX)
+        if spoof_name is None:
+            p.error("flashing verifies the advert by name: give --spoof-name or --mac")
+        flash_ok = _flash(a.env, a.port, spoof_name)
         if not flash_ok:
             print("flash failed — board is not shippable")
 
@@ -162,8 +162,8 @@ def main() -> int:
         spoof_name = str(status["identity"])
         print(f"expecting the identity /status reports: '{spoof_name}'")
     if spoof_name is None:
-        spoof_name = DERIVED_IDENTITY_PREFIX
-        print(f"no --spoof-name/--mac/--ip: expecting any MAC-derived default ('{spoof_name}...')")
+        p.error("give --spoof-name, --mac or --ip: a derived default is a plain 'Stages N', and "
+                "scanning for the bare 'Stages ' prefix would match real cranks too")
 
     advert_seen = advert_names = match_addrs = None
     if flash_ok is not False:  # don't bother scanning if the flash itself failed

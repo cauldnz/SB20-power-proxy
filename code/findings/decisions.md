@@ -5667,3 +5667,28 @@ so by then it had gone to sleep, and that may also be why the attempts stopped. 
 host tests only. The pedal had stayed awake through more than five hours of repeated connects and went quiet
 within minutes of them stopping, which suggests the connects were keeping it awake. One observation, not
 established. With nothing to connect to, that boot ran at 165 loops a second with no stalls of 200 ms or more.
+
+## 2026-11-11 — The Stages app takes ANT IDs up to 65535, so the `Stages 9NNNN` default could never pair
+
+**Evidence.** On the bike, the owner typed the Guition's MAC-derived default `99744` into the Stages app's
+Power meters dialog. The fields are labelled **Left ANT ID** / **Right ANT ID**, and the app refused it:
+`0 <= value <= 65535`
+([`screenshots/stages-app/power-meters-ant-id-range-rejects-99744.png`](screenshots/stages-app/power-meters-ant-id-range-rejects-99744.png)).
+That settles the open assumption from #330 (system-reference §11, `FleetIdentity.h`): every derived
+`Stages 9NNNN` (90000-99999) is outside the range, so a board on its default could never be paired.
+The board was unblocked by storing `Stages 62145`, the id proven in session 8.
+
+**New rule** (`FleetIdentity.h::defaultSpoofName`, Python twin `qa.acceptance.default_spoof_name`, shared
+golden vectors): `N` = the base MAC's last two bytes as one 16-bit number, the same bytes as `Setup-XXXX`;
+`0` becomes `1` (ANT device number 0 is the wildcard); a value spelling bike 1's own crank has its low bit
+flipped (`62144` -> `62145`, `4963` -> `4962`); the name is `Stages N`, unpadded like a real crank. Host
+tests sweep all 65536 tails for range and the real-crank veto.
+
+**No namespace is collision-free.** Real crank ids seen so far are 4963, 32059, 51862 and 62144, spread
+across the whole range, so the old "9 prefix keeps us clear of real cranks" reasoning has no 16-bit
+equivalent. A clash with a rider's own crank is about 2 in 65535; it shows on `/status` and is fixed by
+storing a number in `/setup`. `qa_board.py` can no longer scan for a recognisable prefix, so it now needs
+`--spoof-name`, `--mac` or `--ip`.
+
+**Rider impact.** A board with no stored name gets a new number after updating and has to be re-entered in
+the Stages app (`RELEASES.md` 0.1.1). Still untried: whether the app pairs a derived id other than `62145`.

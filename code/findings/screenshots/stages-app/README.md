@@ -27,6 +27,7 @@ Two capture sessions are filed here:
 |------|---------------|
 | `power-meters-tab-172mm.png` | Meter **`Stages 62144 : 4963`** = *Connected*, **Crank length 172.5 mm** (note: corrected up from the 165 mm seen in the earlier set), *Pair with Bluetooth* toggle (off), ZERO RESET. |
 | `power-meters-edit-ant-ids.png` | The edit dialog behind that row: **Left ANT ID `62144`**, **Right ANT ID `4963`** — confirms the meter "62144 : 4963" is literally the two ANT device IDs, and that **both are user-editable**. |
+| `power-meters-ant-id-range-rejects-99744.png` | The same dialog, 2026-11-11: typing **`99744`** in Left ANT ID shows **`0 <= value <= 65535`**. The ids are 16-bit ANT device numbers, so the old `Stages 9NNNN` board default could never be entered (`decisions.md` 2026-11-11). |
 | `01-power-meters-tab-connected.png` | Earlier set — same tab, crank length **165 mm**, connected (green link). |
 | `02-zero-reset-dialog.png` | Earlier set — Zero Reset result: **Left 903 / Right 951**. |
 | `03-power-meters-tab-connected.png` | Earlier set — duplicate of 01 (later timestamp). |

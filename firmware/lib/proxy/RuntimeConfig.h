@@ -126,7 +126,7 @@ struct RuntimeConfig {
 
     // Fill in an ABSENT identity. Nothing stored — a fresh board, --erase-nvs, a legacy line with an
     // empty identity slot, a /setup form saved blank — means "this board's own default": in SPOOF mode
-    // the MAC-derived "Stages 9NNNN" (FleetIdentity.h), in CORRECTOR mode our own honest name. A STORED
+    // the MAC-derived "Stages N", N in 1..65535 (FleetIdentity.h), in CORRECTOR mode our own honest name. A STORED
     // identity is left exactly as saved, including a deliberately configured real-crank id for a crank
     // rescue. The MAC is passed in by the seam (esp_read_mac in main.cpp) so this stays pure and
     // host-tested. Returns true when a default was applied: /status reports it as `identity_default`

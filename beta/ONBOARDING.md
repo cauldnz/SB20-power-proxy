@@ -43,7 +43,8 @@ ride, **either**:
 *(If you **did** pull the battery, set the identity to **your** crank's number so the bike recognises it
 without re-pairing. There is **no** default crank number — we deliberately ship none, because shipping
 one would have every board claiming the same crank. Left blank, a board advertises its own
-`Stages 9NNNN` derived from its MAC, which is unique but is **not** a number your bike already knows, so
+`Stages N` (N up to 65535, the Stages app's limit) derived from its MAC, which is **not** a number your
+bike already knows, so
 for the SB20 you set this explicitly. Typing just the digits is fine — the board adds the `Stages `
 prefix the bike scans for.)*
 

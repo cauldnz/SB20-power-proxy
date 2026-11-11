@@ -74,10 +74,11 @@ static void setLed(bool r, bool g, bool b) { boardLed(r, g, b); }
 static void cfgLoad() { g_cfg = bridgestore::loadConfig(); applyCorrectionFromCfg(); }
 
 // The name SPOOF mode advertises. There is no fixed default any more (#330): "Stages 62144" is bike 1's
-// REAL left crank, and every board used to boot as it. This board derives its own "Stages 9NNNN" from
-// its BLE address with the same rule as the ESP32 fleet (FleetIdentity.h), so no two boards — and no
-// board and that crank — share a name. Computed once, after Bluefruit.begin() (the address is only
-// valid then); the bytes are reordered so NNNN comes from the last two bytes AS PRINTED in a scan.
+// REAL left crank, and every board used to boot as it. This board derives its own "Stages N" (N in 1..65535, the
+// Stages app's ANT ID range) from its BLE address with the same rule as the ESP32 fleet
+// (FleetIdentity.h), so it never shares bike 1's crank name and rarely another board's. Computed once,
+// after Bluefruit.begin() (the address is only valid then); the bytes are reordered so N comes from the
+// last two bytes AS PRINTED in a scan.
 static const char* spoofIdentityName() {
     static char s_name[24] = {0};
     if (s_name[0] == 0) {

@@ -217,14 +217,14 @@ inline std::string renderConfigPage(const RuntimeConfig& cfg,
          "<details id='crank'><summary style='cursor:pointer;font-weight:600;margin:6px 0 10px'>Crank identity "
          "(advanced)</summary>"
          "<p class='hint'>What the SB20 pairs to as its crank. <b>Blank = this board's own default</b> "
-         "(<code>Stages 9NNNN</code>, from its MAC &mdash; unique per board; type that id into the "
+         "(<code>Stages N</code>, a number up to 65535 from its MAC; type that number into the "
          "Stages app). Every crank name in the room must be unique: never another board's, and never "
          "a real crank's id unless this board is standing in for that crank &mdash; then pull the "
          "matching crank's battery before riding.</p>"
          "<label for='spoof_name'>Crank name</label>"
          "<input type='text' id='spoof_name' name='spoof_name' autocomplete='off' "
          "autocapitalize='none' autocorrect='off' spellcheck='false' value='" +
-         htmlEscape(cfg.spoofName) + "' placeholder='blank = this board&#39;s own (Stages 9NNNN)'>";
+         htmlEscape(cfg.spoofName) + "' placeholder='blank = this board&#39;s own (Stages N)'>";
     // Rule 2 (FleetIdentity.h): a custom SPOOF name with no "Stages " prefix will not be found by
     // the bike. Warn, don't block — an odd name may be deliberate. A bare id never reaches here;
     // it is normalised on save.
