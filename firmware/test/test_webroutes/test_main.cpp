@@ -14,6 +14,7 @@
 
 #include <unity.h>
 
+#include "BodyPump.h"
 #include "WebRoutes.h"
 
 using namespace sb20proxy;
@@ -626,9 +627,191 @@ void test_full_pages_show_that_a_tap_registered() {
     TEST_ASSERT_TRUE(HttpResponse::html("<body></body>").body.find("sbBusy") == std::string::npos);
 }
 
+// --- BodyPump: page bodies go out a slice per loop() pass, never blocking it ---------------------
+
+namespace {
+struct FakeSock {
+    std::string got;
+    int room = 1 << 30;  // bytes the socket will take this pass
+    bool dead = false;
+    BodyPump::WriteFn fn() {
+        return [this](const char* d, size_t n) -> int {
+            if (dead) return -1;
+            const size_t take = n < static_cast<size_t>(room) ? n : static_cast<size_t>(room);
+            got.append(d, take);
+            room -= static_cast<int>(take);
+            return static_cast<int>(take);
+        };
+    }
+};
+}  // namespace
+
+void test_bodypump_sends_a_whole_static_body_and_reports_done() {
+    static const char kPage[] = "<html>hello</html>";
+    FakeSock s; int done = -1;
+    BodyPump p;
+    TEST_ASSERT_TRUE(p.add("", kPage, sizeof(kPage) - 1, s.fn(), [&](bool ok) { done = ok; }, 0, 2000));
+    p.pump(1);
+    TEST_ASSERT_EQUAL_STRING(kPage, s.got.c_str());
+    TEST_ASSERT_EQUAL(1, done);
+    TEST_ASSERT_EQUAL(0, (int)p.inFlight());
+}
+
+void test_bodypump_waits_when_the_socket_is_full_without_losing_bytes() {
+    std::string body(10000, 'x');
+    for (size_t i = 0; i < body.size(); ++i) body[i] = static_cast<char>('a' + i % 26);
+    FakeSock s; int done = -1;
+    BodyPump p;
+    p.add(body, nullptr, 0, s.fn(), [&](bool ok) { done = ok; }, 0, 2000);
+    s.room = 3000; p.pump(10);   // takes what fits, then returns at once
+    TEST_ASSERT_EQUAL(3000, (int)s.got.size());
+    TEST_ASSERT_EQUAL(-1, done);
+    s.room = 0; p.pump(20);      // full: no progress, still queued
+    TEST_ASSERT_EQUAL(1, (int)p.inFlight());
+    for (int pass = 0; pass < 10 && p.inFlight(); ++pass) { s.room = 2000; p.pump(30 + pass); }
+    TEST_ASSERT_EQUAL(1, done);
+    TEST_ASSERT_TRUE(s.got == body);
+}
+
+void test_bodypump_caps_the_work_of_one_pass() {
+    std::string body(BodyPump::kSlice * BodyPump::kSlicesPerPass * 3, 'z');
+    FakeSock s;
+    BodyPump p;
+    p.add(body, nullptr, 0, s.fn(), nullptr, 0, 2000);
+    p.pump(1);
+    TEST_ASSERT_EQUAL((int)(BodyPump::kSlice * BodyPump::kSlicesPerPass), (int)s.got.size());
+}
+
+void test_bodypump_drops_a_phone_that_stops_taking_data() {
+    FakeSock s; int done = -1;
+    BodyPump p;
+    p.add(std::string(5000, 'q'), nullptr, 0, s.fn(), [&](bool ok) { done = ok; }, 0, 2000);
+    s.room = 100; p.pump(0);
+    s.room = 0; p.pump(2000);
+    TEST_ASSERT_EQUAL(-1, done);          // exactly at the budget: still waiting
+    p.pump(2001);
+    TEST_ASSERT_EQUAL(0, done);           // past it: abandoned, reported incomplete
+    TEST_ASSERT_EQUAL(0, (int)p.inFlight());
+}
+
+void test_bodypump_drops_a_closed_connection() {
+    FakeSock s; int done = -1;
+    BodyPump p;
+    p.add(std::string(5000, 'q'), nullptr, 0, s.fn(), [&](bool ok) { done = ok; }, 0, 2000);
+    s.dead = true; p.pump(1);
+    TEST_ASSERT_EQUAL(0, done);
+    TEST_ASSERT_EQUAL(0, (int)p.inFlight());
+}
+
+void test_bodypump_refuses_past_its_limit_so_the_caller_can_fall_back() {
+    FakeSock s; s.room = 0;
+    BodyPump p;
+    for (size_t i = 0; i < BodyPump::kMaxBodies; ++i)
+        TEST_ASSERT_TRUE(p.add("x", nullptr, 0, s.fn(), nullptr, 0, 2000));
+    TEST_ASSERT_FALSE(p.add("x", nullptr, 0, s.fn(), nullptr, 0, 2000));
+}
+
+void test_bodypump_serves_bodies_side_by_side() {
+    FakeSock a, b; int da = -1, db = -1;
+    BodyPump p;
+    p.add(std::string(4000, 'a'), nullptr, 0, a.fn(), [&](bool ok) { da = ok; }, 0, 2000);
+    p.add("small", nullptr, 0, b.fn(), [&](bool ok) { db = ok; }, 0, 2000);
+    a.room = 1000; p.pump(1);    // a slow phone does not hold up the next request
+    TEST_ASSERT_EQUAL(1, db);
+    TEST_ASSERT_EQUAL(-1, da);
+}
+
+void test_bodypump_survives_the_millis_wrap() {
+    FakeSock s; int done = -1;
+    BodyPump p;
+    const uint32_t near = 0xFFFFFFFFu - 500u;
+    p.add(std::string(5000, 'q'), nullptr, 0, s.fn(), [&](bool ok) { done = ok; }, near, 2000);
+    s.room = 0; p.pump(near + 1500u);   // past zero, inside the budget
+    TEST_ASSERT_EQUAL(-1, done);
+}
+
+// --- Fixed pages carry the build's ETag; a browser that already has it gets 304 and no body -------
+
+void test_fixed_pages_carry_the_build_etag() {
+    DeviceHooks h;
+    HttpRequest req;
+    for (auto fn : {routes::dashboard, routes::settings, routes::workoutPage}) {
+        const HttpResponse r = fn(h, req);
+        TEST_ASSERT_EQUAL(200, r.status);
+        TEST_ASSERT_EQUAL_STRING(routes::buildEtag().c_str(), r.etag.c_str());
+        TEST_ASSERT_EQUAL_STRING("no-cache", r.cacheControl.c_str());
+        TEST_ASSERT_TRUE(r.body.size() > 1000);
+    }
+}
+
+void test_a_fixed_page_the_browser_holds_is_not_resent() {
+    DeviceHooks h;
+    HttpRequest req;
+    req.ifNoneMatch = routes::buildEtag();
+    for (auto fn : {routes::dashboard, routes::settings, routes::workoutPage, routes::spa}) {
+        const HttpResponse r = fn(h, req);
+        TEST_ASSERT_EQUAL(304, r.status);
+        TEST_ASSERT_TRUE(r.body.empty());
+        TEST_ASSERT_NULL(r.staticBody);
+        TEST_ASSERT_FALSE(r.stream);
+    }
+}
+
+void test_a_page_from_older_firmware_is_resent() {
+    DeviceHooks h;
+    h.spaHtml = [] { return "<html>spa</html>"; };
+    HttpRequest req;
+    req.ifNoneMatch = "\"0.0.9-abc1234-2026-01-01T00:00\"";
+    TEST_ASSERT_EQUAL(200, routes::dashboard(h, req).status);
+    const HttpResponse spa = routes::spa(h, req);
+    TEST_ASSERT_EQUAL(200, spa.status);
+    TEST_ASSERT_EQUAL_STRING("<html>spa</html>", spa.staticBody);
+    TEST_ASSERT_EQUAL_STRING(routes::buildEtag().c_str(), spa.etag.c_str());
+}
+
+void test_live_and_setup_pages_are_never_cached() {
+    DeviceHooks h;
+    HttpRequest req;
+    req.ifNoneMatch = routes::buildEtag();
+    TEST_ASSERT_EQUAL(200, routes::status(h, req).status);
+    TEST_ASSERT_TRUE(routes::status(h, req).etag.empty());
+    TEST_ASSERT_EQUAL(200, routes::setupPage(h, req).status);
+    TEST_ASSERT_TRUE(routes::setupPage(h, req).etag.empty());
+}
+
+// --- Live pages poll one round at a time, never with setInterval (which stacked requests) --------
+
+void test_live_pages_poll_one_round_at_a_time() {
+    const std::string pages[] = {appPageHtml(), workoutPageHtml()};
+    const std::string helper = webuiPollJs();
+    for (const std::string& pg : pages) {
+        TEST_ASSERT_TRUE(pg.find("setInterval(") == std::string::npos);
+        const size_t def = pg.find(helper);
+        const size_t use = pg.find("poll(tick)");
+        TEST_ASSERT_TRUE(def != std::string::npos);
+        TEST_ASSERT_TRUE(use != std::string::npos);
+        TEST_ASSERT_TRUE(def < use);  // defined before the page's script calls it
+        TEST_ASSERT_TRUE(pg.find("signal:sig()") != std::string::npos);  // requests time out
+    }
+    TEST_ASSERT_TRUE(helper.find("document.hidden") != std::string::npos);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
 
+    RUN_TEST(test_bodypump_sends_a_whole_static_body_and_reports_done);
+    RUN_TEST(test_bodypump_waits_when_the_socket_is_full_without_losing_bytes);
+    RUN_TEST(test_bodypump_caps_the_work_of_one_pass);
+    RUN_TEST(test_bodypump_drops_a_phone_that_stops_taking_data);
+    RUN_TEST(test_bodypump_drops_a_closed_connection);
+    RUN_TEST(test_bodypump_refuses_past_its_limit_so_the_caller_can_fall_back);
+    RUN_TEST(test_bodypump_serves_bodies_side_by_side);
+    RUN_TEST(test_bodypump_survives_the_millis_wrap);
+    RUN_TEST(test_fixed_pages_carry_the_build_etag);
+    RUN_TEST(test_a_fixed_page_the_browser_holds_is_not_resent);
+    RUN_TEST(test_a_page_from_older_firmware_is_resent);
+    RUN_TEST(test_live_and_setup_pages_are_never_cached);
+    RUN_TEST(test_live_pages_poll_one_round_at_a_time);
     RUN_TEST(test_every_post_route_is_csrf_guarded);
     RUN_TEST(test_csrf_rejection_runs_no_side_effect);
     RUN_TEST(test_get_routes_are_not_csrf_guarded);
