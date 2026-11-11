@@ -148,10 +148,10 @@ def scenes(Shot, Scene):
                     "To choose your own, open Crank identity on /setup and type it, digits only.",
             say=(
                 "Next is the step that sometimes causes problems. The bike looks for its crank by name. "
-                "The board makes up its own name automatically, the word Stages and a number starting with nine, "
+                "The board makes up its own name automatically, the word Stages and a number, "
                 "and you'll need that number to pair the bike. "
                 "If you'd rather choose your own, open Crank identity on the setup page, "
-                "and type the number, digits only. "
+                "and type the number, digits only, up to sixty five thousand five hundred and thirty five. "
                 "If your meter only reports one leg, tick Single sided as well. Then tap Save."
             ),
             shots=[Shot("web-identity.png")],
@@ -193,11 +193,10 @@ def scenes(Shot, Scene):
         Scene(
             title="Pair the bike",
             tag="Both boards",
-            caption="In the Stages app: left crank is your board's number, right crank is your real right crank.\nWake the right crank first.",
+            caption="In the Stages app: set the left crank to your board's number. Leave the right crank as it is.",
             say=(
                 "Now pair the bike. In the Stages app, set the left crank to your board's number, "
-                "and the right crank to your real right crank. "
-                "The right crank must be awake, or the app will say that pairing failed. "
+                "and leave the right crank as it is. "
                 "The first connection often drops and reconnects a moment later, and that's normal."
             ),
             device="none",
