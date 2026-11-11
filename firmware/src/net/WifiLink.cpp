@@ -19,6 +19,9 @@
 #include <esp_ota_ops.h>
 #include <esp_system.h>
 #include <esp_timer.h>
+#include <lwip/sockets.h>  // send(..., MSG_DONTWAIT): the body pump must never wait on a phone
+#include <cerrno>
+#include <memory>
 #if __has_include(<esp_coexist.h>)
 #include <esp_coexist.h>  // coex preference (classic-ESP32 BLE starves multi-KB HTTP otherwise)
 #define HAVE_ESP_COEX 1
@@ -210,6 +213,8 @@ HttpRequest WifiLink::buildRequest_(HttpMethod m) const {
     r.host = std::string(server_->hostHeader().c_str());
     if (server_->hasHeader("Origin")) r.origin = std::string(server_->header("Origin").c_str());
     if (server_->hasHeader("Referer")) r.referer = std::string(server_->header("Referer").c_str());
+    if (server_->hasHeader("If-None-Match"))
+        r.ifNoneMatch = std::string(server_->header("If-None-Match").c_str());
     if (m == HttpMethod::Post) r.body = formBody(server_);
     for (int i = 0; i < server_->args(); ++i) {
         const std::string k(server_->argName(i).c_str());
@@ -219,38 +224,60 @@ HttpRequest WifiLink::buildRequest_(HttpMethod m) const {
     return r;
 }
 
-// Drain-aware body write. Arduino's WebServer::send() writes the body with WiFiClient::write and
-// IGNORES short writes — under lwIP memory pressure (the no-PSRAM CYD idles ~30 KB free with
-// WiFi+BLE+LVGL up) multi-KB pages get silently TRUNCATED mid-stream (2026-07-04). This streams
-// the body in small slices and, on a short write, waits for the TCP buffers to drain instead of
-// dropping the tail.
-void WifiLink::writeStream_(const char* data, size_t len, uint32_t stallMs) {
-    server_->setContentLength(len);
-    server_->send(200, "text/html", "");  // status + headers only; body streamed below
-    WiFiClient c = server_->client();
+// Page bodies. Arduino's WebServer::send() writes with WiFiClient::write, which IGNORES short writes
+// under lwIP memory pressure (multi-KB pages were silently TRUNCATED, 2026-07-04), and the drain-aware
+// loop that replaced it waited inside loop() until the phone had taken every byte. With WiFi
+// power-save on, that froze loop() -- and the power the bike gets -- for up to 2.6 s on an 8.5 KB page
+// and 3.3 s on /app (bike C3, 2026-11-11). So: status + headers go out now, the body is handed to
+// pump_, and handle() writes what the socket will take each pass with MSG_DONTWAIT (BodyPump.h).
+void WifiLink::queueBody_(std::string owned, const char* data, size_t len, const char* contentType,
+                          uint32_t stallMs) {
+    const size_t n = owned.empty() ? len : owned.size();
+    server_->setContentLength(n);
+    server_->send(200, contentType, "");  // status + headers only; the body follows from handle()
+    // Holding a copy keeps the socket open after the WebServer drops its own reference.
+    auto client = std::make_shared<WiFiClient>(server_->client());
+    const int fd = client->fd();
+    auto write = [client, fd](const char* d, size_t k) -> int {
+        if (fd < 0) return -1;
+        const int r = ::send(fd, d, k, MSG_DONTWAIT);
+        if (r > 0) return r;
+        if (r == 0) return 0;
+        return (errno == EAGAIN || errno == EWOULDBLOCK || errno == ENOMEM) ? 0 : -1;
+    };
+    auto done = [client](bool) { client->stop(); };
+    if (pump_.add(std::move(owned), data, len, write, done, millis(), stallMs)) return;
+
+    // Pump full (several slow phones at once): fall back to the old drain-aware write.
+    const char* base = data;
+    std::string keep;
+    if (base == nullptr) { keep = std::move(owned); base = keep.data(); }
     size_t off = 0;
     uint32_t lastProgress = millis();
-    while (off < len && c.connected()) {
-        const size_t want = (len - off > 1024) ? 1024 : (len - off);
-        const size_t n = c.write(reinterpret_cast<const uint8_t*>(data) + off, want);
-        if (n > 0) {
-            off += n;
+    while (off < n && client->connected()) {
+        const size_t want = (n - off > 1024) ? 1024 : (n - off);
+        const size_t w = client->write(reinterpret_cast<const uint8_t*>(base) + off, want);
+        if (w > 0) {
+            off += w;
             lastProgress = millis();
         } else {
-            if (millis() - lastProgress > stallMs) break;  // client gone / stuck: give up
-            delay(5);  // lwIP send buffers full — let the WiFi task drain them
+            if (millis() - lastProgress > stallMs) break;
+            delay(5);
         }
     }
+    client->stop();
 }
 
 void WifiLink::deliver_(const HttpResponse& r) {
+    if (!r.etag.empty()) server_->sendHeader("ETag", r.etag.c_str());
+    if (!r.cacheControl.empty()) server_->sendHeader("Cache-Control", r.cacheControl.c_str());
     if (r.staticBody) {
         // Straight from flash: the embedded SPA is ~34 KB and the C3's heap is tight beside BLE,
         // so it must never be materialised as a std::string. 2 s stall budget (a phone that walks
         // out of range shouldn't hold the loop for 5).
-        writeStream_(r.staticBody, strlen(r.staticBody), 2000);
+        queueBody_(std::string(), r.staticBody, strlen(r.staticBody), r.contentType.c_str(), 2000);
     } else if (r.stream) {
-        writeStream_(r.body.data(), r.body.size(), 5000);
+        queueBody_(r.body, nullptr, 0, r.contentType.c_str(), 5000);
     } else {
         if (!r.location.empty()) server_->sendHeader("Location", r.location.c_str(), true);
         server_->send(r.status, r.contentType.c_str(), r.body.c_str());
@@ -309,8 +336,8 @@ void WifiLink::installWorkoutVerbs_() {
 // Tell the WebServer to retain the Origin/Referer request headers (it drops all headers by
 // default), so the CSRF guard in dispatch() can see them.
 void WifiLink::collectCsrfHeaders_() {
-    static const char* kHeaders[] = {"Origin", "Referer"};
-    server_->collectHeaders(kHeaders, 2);
+    static const char* kHeaders[] = {"Origin", "Referer", "If-None-Match"};  // + the cache check
+    server_->collectHeaders(kHeaders, 3);
 }
 
 // ---------------------------------------------------------------------------
@@ -455,9 +482,11 @@ void WifiLink::handle() {
     if (portal_) {
         if (dns_) dns_->processNextRequest();
         if (server_) server_->handleClient();
+        pump_.pump(millis());
         return;
     }
     if (server_) server_->handleClient();
+    pump_.pump(millis());
     if (otaEnabled_) ArduinoOTA.handle();
     if (!healthy_ && server_ && WiFi.status() == WL_CONNECTED) {
         healthy_ = true;

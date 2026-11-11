@@ -65,6 +65,7 @@ struct HttpRequest {
     std::string host;
     std::string origin;
     std::string referer;
+    std::string ifNoneMatch;  // the ETag the browser already holds, if any
     std::string body;  // form body, or the raw payload for a JSON POST
     std::vector<std::pair<std::string, std::string>> args;
 
@@ -89,6 +90,8 @@ struct HttpResponse {
     // std::string — the adapter writes it in slices from the pointer.
     const char* staticBody = nullptr;
     std::string location;  // non-empty => send a Location header with this status
+    std::string etag;          // non-empty => send ETag (a fixed page the browser may keep)
+    std::string cacheControl;  // non-empty => send Cache-Control
     bool stream = false;   // use the drain-aware slice writer (multi-KB HTML)
     bool reboot = false;   // restart once the response has been flushed
     bool radioOff = false; // ride mode: power the radio down after replying
@@ -198,19 +201,48 @@ namespace routes {
 
 // -- dashboard / observability ---------------------------------------------
 
-inline HttpResponse dashboard(DeviceHooks&, const HttpRequest&) {
-    return HttpResponse::page(appPageHtml());
+// Fixed pages (the same text until the firmware changes; live numbers come from /status) carry an
+// ETag of the build, so a browser revisiting a tab gets "304 Not Modified" with no body instead of
+// the whole page again. `no-cache` = always ask, so a page can never outlive a firmware update.
+// Measured 2026-11-11 on the bike C3: these pages are 5-9 KB and, before BodyPump, occasionally held
+// loop() for over 2 s each time a tab was opened.
+inline std::string buildEtag() {
+    return std::string("\"") + Config::FIRMWARE_VERSION + "-" + Config::BUILD_SHA + "-" +
+           Config::BUILD_TIME + "\"";
 }
-inline HttpResponse settings(DeviceHooks&, const HttpRequest&) {
-    return HttpResponse::page(settingsPageHtml());
+inline HttpResponse notModified(const std::string& tag) {
+    HttpResponse r;
+    r.status = 304;
+    r.etag = tag;
+    r.cacheControl = "no-cache";
+    return r;
+}
+inline HttpResponse fixedPage(const HttpRequest& req, std::string (*make)()) {
+    const std::string tag = buildEtag();
+    if (req.ifNoneMatch == tag) return notModified(tag);
+    HttpResponse r = HttpResponse::page(make());
+    r.etag = tag;
+    r.cacheControl = "no-cache";
+    return r;
+}
+
+inline HttpResponse dashboard(DeviceHooks&, const HttpRequest& req) {
+    return fixedPage(req, appPageHtml);
+}
+inline HttpResponse settings(DeviceHooks&, const HttpRequest& req) {
+    return fixedPage(req, settingsPageHtml);
 }
 inline HttpResponse status(DeviceHooks& h, const HttpRequest&) {
     return HttpResponse::json(renderStatusJson(h.status()));
 }
-inline HttpResponse spa(DeviceHooks& h, const HttpRequest&) {
+inline HttpResponse spa(DeviceHooks& h, const HttpRequest& req) {
+    const std::string tag = buildEtag();
+    if (req.ifNoneMatch == tag) return notModified(tag);  // 64 KB the phone already has
     HttpResponse r;
     r.contentType = "text/html";
     r.staticBody = h.spaHtml();  // streamed from flash; never copied to the heap
+    r.etag = tag;
+    r.cacheControl = "no-cache";
     return r;
 }
 inline HttpResponse stats(DeviceHooks& h, const HttpRequest&) {
@@ -383,8 +415,8 @@ inline HttpResponse calibrateCancel(DeviceHooks& h, const HttpRequest&) {
 
 // -- workout ----------------------------------------------------------------
 
-inline HttpResponse workoutPage(DeviceHooks&, const HttpRequest&) {
-    return HttpResponse::page(workoutPageHtml());
+inline HttpResponse workoutPage(DeviceHooks&, const HttpRequest& req) {
+    return fixedPage(req, workoutPageHtml);
 }
 inline HttpResponse workoutStateJson(DeviceHooks& h, const HttpRequest&) {
     return HttpResponse::json(h.workoutState());

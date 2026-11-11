@@ -43,6 +43,17 @@ inline const char* webuiScanReloadJs() {
 // that a tap registered: a bar across the top, and the tapped control dimmed. It covers links, form
 // posts and POSTs made with fetch. GETs made with fetch are the 1 Hz status poll, so they are left
 // out. Cleared on pageshow for when Safari restores a page from its back/forward cache.
+// The pages' live polling. One round at a time (a slow reply never stacks more requests on the
+// board's one-at-a-time server), each request abandoned after 3 s, and nothing while the tab is
+// hidden. setInterval(tick,1000) used to fire regardless: with WiFi power-save on, one ~6 s reply
+// (measured 2026-11-11, bike C3) queued six more behind it. `tick` must return a promise.
+inline const char* webuiPollJs() {
+    return "function sig(){return(window.AbortSignal&&AbortSignal.timeout)?AbortSignal.timeout(3000):undefined;}"
+           "function poll(f,ms){ms=ms||1000;function go(){if(document.hidden){setTimeout(go,ms);return;}"
+           "var t0=Date.now();function next(){setTimeout(go,Math.max(250,ms-(Date.now()-t0)));}"
+           "Promise.resolve().then(f).then(next,next);}go();}";
+}
+
 inline const char* webuiBusyHtml() {
     return "<style>#sbBusy{display:none;position:fixed;top:0;left:0;right:0;height:3px;z-index:99;"
            "background:#3b82f6;animation:sbP .7s ease-in-out infinite alternate}"

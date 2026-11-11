@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "BodyPump.h"                 // page bodies sent a slice per loop() pass (never blocking it)
 #include "WebRoutes.h"                // pure request -> response layer + the route tables
 #include "net/ProvisioningDisplay.h"  // injectable setup-UX seam (Serial default)
 
@@ -117,7 +118,9 @@ private:
     void installWorkoutVerbs_();                           // the five shared control verbs
     HttpRequest buildRequest_(HttpMethod m) const;         // WebServer -> pure request
     void deliver_(const HttpResponse& r);                  // pure response -> WebServer (+ effects)
-    void writeStream_(const char* data, size_t len, uint32_t stallMs);  // drain-aware body write
+    // Send status + headers now and queue the body for pump_ (handle() drains it without blocking).
+    void queueBody_(std::string owned, const char* data, size_t len, const char* contentType,
+                    uint32_t stallMs);
 
     void startStationServer_();  // dashboard/API/setup/calibrate routes + opt-in auth OTA
     void startPortal_();         // SoftAP + captive DNS + setup routes
@@ -135,6 +138,7 @@ private:
     bool healthy_ = false;
     bool portal_ = false;
     bool portalJoinFail_ = false;  // portal is the join-failed fallback, not fresh onboarding
+    BodyPump pump_;          // bodies in flight, written a slice per handle() pass
     bool radioOff_ = false;  // ride mode: WiFi powered down (BLE-only); handle() then no-ops
     bool logEnabled_ = true;  // serve GET /log? (persisted in NVS via WifiCreds)
     bool otaEnabled_ = false;  // authenticated ArduinoOTA started? (only when OTA_PASSWORD is set)

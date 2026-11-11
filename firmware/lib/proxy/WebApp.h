@@ -70,13 +70,13 @@ canvas{width:100%;height:96px;display:block;margin-top:6px}
 </div>
 </div>
 <nav class='nav'><a class='on' href='/'>Ride</a><a href='/setup'>Setup</a><a href='/more'>More</a></nav>
-<script>
+<script>)HTML" + std::string(webuiPollJs()) + R"HTML(
 var $=function(i){return document.getElementById(i)};
 var hist=[],MAX=90;
 function toggle(){$('ttl').classList.toggle('open');$('details').classList.toggle('open');}
 function fmtUp(ms){var s=Math.floor(ms/1000),h=Math.floor(s/3600);s%=3600;var m=Math.floor(s/60);s%=60;return (h?h+'h ':'')+(m||h?m+'m ':'')+s+'s';}
 function draw(){var c=$('chart'),r=window.devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*r;c.height=h*r;var x=c.getContext('2d');x.scale(r,r);x.clearRect(0,0,w,h);if(hist.length<2)return;var mx=100;for(var i=0;i<hist.length;i++){if(hist[i]>mx)mx=hist[i];}x.beginPath();for(var i=0;i<hist.length;i++){var px=i/(MAX-1)*w,py=h-8-(hist[i]/mx)*(h-16);if(i){x.lineTo(px,py);}else{x.moveTo(px,py);}}x.strokeStyle='#3b82f6';x.lineWidth=2;x.stroke();x.lineTo((hist.length-1)/(MAX-1)*w,h);x.lineTo(0,h);x.closePath();x.fillStyle='rgba(59,130,246,.16)';x.fill();}
-function tick(){fetch('/status',{cache:'no-store'}).then(function(r){return r.json();}).then(function(d){
+function tick(){return fetch('/status',{cache:'no-store',signal:sig()}).then(function(r){return r.json();}).then(function(d){
 var inOn=(d.source==='connected'||d.source==='mock');
 $('dIn').classList.toggle('on',inOn);$('pairLnk').style.display=inOn?'none':'block';$('dOut').classList.add('on');
 $('nIn').textContent=(d.src_name||(d.source==='mock'?'mock':d.source||'searching'));
@@ -88,7 +88,7 @@ $('dnOut').textContent=(d.identity||'--');$('dpOut').textContent=d.power_w;$('dc
 $('rssi').textContent=d.rssi+' dBm';$('up').textContent=fmtUp(d.ms);$('heap').textContent=Math.round(d.heap/1024)+'k';$('fwd').textContent=d.forwarded;$('fw').textContent=(d.identity?d.version:d.fw);
 hist.push(d.power_w);if(hist.length>MAX){hist.shift();}draw();
 }).catch(function(){$('dIn').classList.remove('on');$('dOut').classList.remove('on');});}
-setInterval(tick,1000);tick();window.addEventListener('resize',draw);
+poll(tick);window.addEventListener('resize',draw);
 </script></body></html>)HTML";
 }
 
@@ -196,7 +196,7 @@ textarea{width:100%;height:120px;margin:8px 0;background:#0a0d16;color:var(--fg)
 </div>
 </div>
 <nav class='nav'><a href='/'>Ride</a><a href='/setup'>Setup</a><a href='/more'>More</a></nav>
-<script>
+<script>)HTML" + std::string(webuiPollJs()) + R"HTML(
 var $=function(i){return document.getElementById(i)};
 function fmtT(s){if(s<0)s=0;var m=Math.floor(s/60);s=Math.floor(s%60);return m+':'+(s<10?'0':'')+s;}
 function post(p){return fetch(p,{method:'POST'}).then(tick);}
@@ -210,8 +210,8 @@ if(!d.running){mk('Start','bp',function(){post('/workout/start')});}
 else{if(d.paused)mk('Resume','bp',function(){post('/workout/resume')});else mk('Pause','bg',function(){post('/workout/pause')});
 mk('Skip','bg',function(){post('/workout/skip')});mk('Stop','bd',function(){post('/workout/stop')});}}
 function tick(){return Promise.all([
-fetch('/workout/state',{cache:'no-store'}).then(function(r){return r.json();}),
-fetch('/status',{cache:'no-store'}).then(function(r){return r.json();}).catch(function(){return{};})
+fetch('/workout/state',{cache:'no-store',signal:sig()}).then(function(r){return r.json();}),
+fetch('/status',{cache:'no-store',signal:sig()}).then(function(r){return r.json();}).catch(function(){return{};})
 ]).then(function(a){var d=a[0],s=a[1];
 if(!d.loaded){$('console').style.display='none';$('picker').style.display='block';$('wname').textContent='Workout';$('wtot').textContent='';return;}
 $('picker').style.display='none';$('console').style.display='block';
@@ -225,7 +225,7 @@ $('cad').innerHTML=((s.cadence_rpm===undefined||s.cadence_rpm<0)?'':('&middot; '
 $('next').innerHTML=(d.next_label?('next &middot; <b>'+d.next_label+'</b> &middot; '+(d.next_target_w<0?'--':d.next_target_w+' W')):'last block');
 chart(d.segments||[],d.finished?(d.seg_count):d.seg_index);btns(d);
 });}
-setInterval(tick,1000);tick();
+poll(tick);
 </script></body></html>)HTML";
 }
 
