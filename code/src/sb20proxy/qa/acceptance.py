@@ -41,7 +41,7 @@ _VALID_SOURCE_STATES = {"mock", "connected", "searching"}
 # of these next to bike 1 pairs the bike to an unfed spoof (0 W) or refuses pairing
 # (system-reference §7). Mirrors firmware/lib/proxy/FleetIdentity.h::kRealCrankNames
 # (parity-tested).
-REAL_CRANK_NAMES = ("Stages 62144", "Stages 4963")
+REAL_CRANK_NAMES = ("Stages 62144", "Stages 4963", "Stages 60253", "Stages 30314")  # bike 1, bike 2
 
 # The MAC-derived default identity, "Stages N" with N in 1..65535: what a board with NOTHING
 # stored advertises (FleetIdentity.h::defaultSpoofName). N = the last 16 bits of the base MAC,

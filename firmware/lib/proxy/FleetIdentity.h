@@ -37,11 +37,12 @@ namespace sb20proxy {
 constexpr const char* kDerivedIdentityPrefix = "Stages ";
 constexpr unsigned kMaxAntDeviceNumber = 65535;
 
-// Bike 1's real Stages cranks (left 62144, right 4963; captured over BLE — decisions.md 2026-06-17,
-// session 9). A board must never advertise one of these NEXT TO that bike unless it is deliberately
+// The fleet's real Stages cranks: bike 1 left 62144, right 4963 (captured over BLE — decisions.md 2026-06-17,
+// session 9); bike 2 60253 : 30314 (Stages app, 2026-11-11). A board must never advertise one of these NEXT TO that bike unless it is deliberately
 // standing in for that crank (the single-right-crank rescue): the QA acceptance card fails on it
 // unless told the rescue is intended (qa_board.py --crank-rescue).
-constexpr const char* kRealCrankNames[] = {"Stages 62144", "Stages 4963"};
+constexpr const char* kRealCrankNames[] = {"Stages 62144", "Stages 4963",   // bike 1 (Stages Bike 0105)
+                                           "Stages 60253", "Stages 30314"};  // bike 2 (Stages Bike 0061)
 
 inline bool isRealCrankIdentity(const std::string& name) {
     for (const char* real : kRealCrankNames) {
