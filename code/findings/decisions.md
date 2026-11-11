@@ -5691,3 +5691,20 @@ and `/app` carry the build as an ETag (`no-cache`, so 304 on revisit and never s
 Ride and Workout poll one round at a time with a 3 s timeout and pause while hidden. Host-tested
 (`test_webroutes`); a Node check of the rendered Ride page against a fake 6 s board showed at most one
 request in flight and none while hidden. **Not yet measured on a board.**
+
+## 2026-11-11 — BodyPump measured on the bike C3: page loads no longer stall the loop
+
+PR #415's build OTA'd to the bike C3 (`a4dab30af+dirty`, built 17:52) and the same probes re-run, four
+loads per page with `/stats` reset before each:
+
+| Request | Before: worst `loop_max_us` | After: worst `loop_max_us` | After: load time |
+|---|---|---|---|
+| `/` (Ride) | 2,629 ms | 13 ms | 88-117 ms |
+| `/setup` | 99 ms | 14 ms | 40-119 ms |
+| `/workout` | 1,849 ms | 12 ms | 39-101 ms |
+| `/app` | 3,264 ms | 14.7 ms | 236-327 ms (was 401-5,649) |
+
+Idle `loop_max_us` is ~12 ms, so a page load now costs the loop nothing measurable. Polling 20 rounds of
+four requests: median 60 ms, p95 138 ms (was 5,790 ms; part of that is the WiFi on the day). Revisits
+with the ETag get `304` and 0 bytes in 19-81 ms on `/`, `/more`, `/workout` and `/app`. Source was
+`searching` (pedals asleep) during the run, so this is without BLE meter traffic.
