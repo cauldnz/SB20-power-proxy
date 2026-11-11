@@ -5667,3 +5667,27 @@ so by then it had gone to sleep, and that may also be why the attempts stopped. 
 host tests only. The pedal had stayed awake through more than five hours of repeated connects and went quiet
 within minutes of them stopping, which suggests the connects were keeping it awake. One observation, not
 established. With nothing to connect to, that boot ran at 165 loops a second with no stalls of 200 ms or more.
+
+## 2026-11-11 — Web pages froze loop() for seconds; bodies now go out a slice per pass
+
+Measured on the bike C3 (`esp32c3-oled-live-release`, WiFi power-save on, as it must be beside BLE),
+`/stats` reset before each request:
+
+| Request | Size | Typical | Worst seen | `loop_max_us` at worst |
+|---|---|---|---|---|
+| `/` (Ride) | 8,504 B | 30-120 ms | 2,644 ms | 2,629 ms |
+| `/workout` | 8,376 B | ~100 ms | 1,923 ms | 1,849 ms |
+| `/app` (SPA) | 64,481 B | 400 ms | 5,649 ms | 3,264 ms |
+| `/status` poll | ~440 B | 17-80 ms | 5,790 ms (p95 of 80) | 21 ms |
+
+`loop_max_us` matched the transfer time for pages: the drain-aware writer waited inside `loop()` until
+the phone had taken every byte, so opening a tab mid-ride stopped the power going to the bike for up to
+2.6 s (3.3 s for `/app`). Slow `/status` replies did **not** stall the loop, so those are WiFi latency,
+and the pages' `setInterval(tick,1000)` stacked further requests behind them. gzip would cut the tab
+pages to ~3.1 KB and `/app` to 20.7 KB (not done yet).
+
+Changed: `BodyPump.h` writes bodies with `MSG_DONTWAIT` a slice per `handle()` pass; the fixed pages
+and `/app` carry the build as an ETag (`no-cache`, so 304 on revisit and never stale after an update);
+Ride and Workout poll one round at a time with a 3 s timeout and pause while hidden. Host-tested
+(`test_webroutes`); a Node check of the rendered Ride page against a fake 6 s board showed at most one
+request in flight and none while hidden. **Not yet measured on a board.**
